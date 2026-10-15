@@ -11,7 +11,7 @@ where = ["src"]
 
 [project]
 name = "xlspy"
-version = "0.4.1"
+version = "0.5.0"
 authors = [
   { name="Krzysztof Duśko"},
 ]
@@ -32,9 +32,20 @@ dependencies = [
 Repository = "https://github.com/justybase/xlspy/"
 
 [project.optional-dependencies]
+pandas = [
+    "pandas>=2.0",
+]
+polars = [
+    "polars>=1.0",
+]
 test = [
     "openpyxl",
+    "pandas",
+    "polars",
     "pytest",
+    "pytest-cov",
+    "pytest-randomly",
+    "hypothesis",
     "xlsxwriter",
 ]
 examples = [
@@ -47,3 +58,28 @@ archs = "auto64"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "slow: longer-running tests (skipped by default only with -m 'not slow')",
+    "com: requires Microsoft Excel via COM (set XLSPY_RUN_EXCEL_COM=1)",
+]
+filterwarnings = [
+    "error",
+]
+
+[tool.coverage.run]
+source = ["src/xlspy"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+# Baseline (Linux, Python 3.12, with pandas/polars installed) is ~87% branch
+# coverage; the threshold leaves headroom for platform differences.
+fail_under = 84
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

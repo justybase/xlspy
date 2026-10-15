@@ -1,11 +1,8 @@
 import os
-import sys
 from typing import Generator
 
 import pytest
 nzpy = pytest.importorskip("nzpy_extended.sync")
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from xlspy import XlsbWriter, XlsxWriter
 

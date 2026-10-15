@@ -91,6 +91,14 @@ static double _read_double(const unsigned char *data, Py_ssize_t data_len, Py_ss
     return result;
 }
 
+static PyObject *_number_from_double(double value)
+{
+    /* Avoid an epsilon test here: it turns tiny, non-zero doubles into zero. */
+    if (isfinite(value) && trunc(value) == value)
+        return PyLong_FromDouble(value);
+    return PyFloat_FromDouble(value);
+}
+
 static double _read_rk(const unsigned char *data, Py_ssize_t data_len, Py_ssize_t pos)
 {
     if (pos + 4 > data_len) return 0.0;
@@ -121,7 +129,10 @@ static PyObject *_utf16le_to_pystr(const unsigned char *data, Py_ssize_t data_le
     if (char_len <= 0) return PyUnicode_FromStringAndSize("", 0);
     Py_ssize_t byte_len = char_len * 2;
     if (pos + byte_len > data_len) return PyUnicode_FromStringAndSize("", 0);
-    return PyUnicode_DecodeUTF16((const char *)(data + pos), (Py_ssize_t)byte_len, "little", NULL);
+    int byteorder = -1; /* UTF-16LE */
+    return PyUnicode_DecodeUTF16(
+        (const char *)(data + pos), (Py_ssize_t)byte_len, "surrogatepass", &byteorder
+    );
 }
 
 /* ===== Read a single cell's value from a worksheet cell record ===== */
@@ -129,7 +140,8 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
                                     Py_ssize_t body_start, long rec_id, long rec_len,
                                     PyObject *shared_strings, Py_ssize_t ss_len,
                                     PyObject *styles_list, Py_ssize_t styles_len,
-                                    PyObject *date_num_fmts, long xf_idx, int *has_cell)
+                                    PyObject *date_num_fmts, long xf_idx, int *has_cell,
+                                    int date_1904)
 {
     PyObject *cell_val = NULL;
     int is_date = 0;
@@ -154,11 +166,17 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
         if (is_date)
         {
             _ensure_types();
-            PyObject *epoch = PyDateTime_FromDateAndTime(1899, 12, 30, 0, 0, 0, 0);
+            /* Excel's fictitious 1900-02-29: serials 1..59 read one day later. */
+            double serial = dval;
+            if (!date_1904 && serial >= 1.0 && serial < 60.0)
+                serial += 1.0;
+            PyObject *epoch = date_1904
+                ? PyDateTime_FromDateAndTime(1904, 1, 1, 0, 0, 0, 0)
+                : PyDateTime_FromDateAndTime(1899, 12, 30, 0, 0, 0, 0);
             if (!epoch) { PyErr_Clear(); is_date = 0; }
             else
             {
-                PyObject *td_kw = Py_BuildValue("{s:d}", "days", dval);
+                PyObject *td_kw = Py_BuildValue("{s:d}", "days", serial);
                 if (!td_kw) { PyErr_Clear(); Py_DECREF(epoch); is_date = 0; }
                 else
                 {
@@ -179,11 +197,7 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
         }
         if (!is_date)
         {
-            long long_val = (long)dval;
-            if (fabs((double)long_val - dval) < 1e-10)
-                cell_val = PyLong_FromLong(long_val);
-            else
-                cell_val = PyFloat_FromDouble(dval);
+            cell_val = _number_from_double(dval);
         }
     }
     else if (rec_id == 0x04 || rec_id == 0x0A)
@@ -209,11 +223,17 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
         if (is_date)
         {
             _ensure_types();
-            PyObject *epoch = PyDateTime_FromDateAndTime(1899, 12, 30, 0, 0, 0, 0);
+            /* Excel's fictitious 1900-02-29: serials 1..59 read one day later. */
+            double serial = dval;
+            if (!date_1904 && serial >= 1.0 && serial < 60.0)
+                serial += 1.0;
+            PyObject *epoch = date_1904
+                ? PyDateTime_FromDateAndTime(1904, 1, 1, 0, 0, 0, 0)
+                : PyDateTime_FromDateAndTime(1899, 12, 30, 0, 0, 0, 0);
             if (!epoch) { PyErr_Clear(); is_date = 0; }
             else
             {
-                PyObject *td_kw = Py_BuildValue("{s:d}", "days", dval);
+                PyObject *td_kw = Py_BuildValue("{s:d}", "days", serial);
                 if (!td_kw) { PyErr_Clear(); Py_DECREF(epoch); is_date = 0; }
                 else
                 {
@@ -234,11 +254,7 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
         }
         if (!is_date)
         {
-            long long_val = (long)dval;
-            if (fabs((double)long_val - dval) < 1e-10)
-                cell_val = PyLong_FromLong(long_val);
-            else
-                cell_val = PyFloat_FromDouble(dval);
+            cell_val = _number_from_double(dval);
         }
     }
     else if (rec_id == 0x06 || rec_id == 0x08)
@@ -320,6 +336,10 @@ static double _get_excel_serial(PyObject *cell, int cell_kind)
     Py_DECREF(ord);
 
     long epoch_ord = 693594;
+    /* Excel's fictitious 1900-02-29: dates before 1900-03-01 use the
+       1899-12-31 epoch, so 1900-01-01 is stored as serial 1. */
+    if (ord_val < 693655)
+        epoch_ord = 693595;
     double serial = (double)(ord_val - epoch_ord);
 
     if (cell_kind == 1)
@@ -624,10 +644,10 @@ typedef struct {
     /* State tracking */
     long cur_row_num;          /* row number of currently accumulating row */
     long gap_rows_remaining;   /* number of empty rows to emit before next data row */
-    int is_first_row;          /* 1 during first row processing (column alignment) */
-    long first_col;
-    long cols_per_row;
+    long first_col;            /* first column of the first row that has cells */
+    long cols_per_row;         /* width of the first row that has cells */
     int is_initialized;        /* 1 after first Row record consumed */
+    int date_1904;             /* 1 when the workbook uses the 1904 date system */
 } XlsbReader;
 
 static void XlsbReader_dealloc(XlsbReader *self)
@@ -693,6 +713,78 @@ static PyObject *_make_empty_row(XlsbReader *self)
     return row;
 }
 
+/* Pre-scan worksheet records to determine the column layout (first_col,
+   cols_per_row) of the first row that contains any cell.  Doing this upfront
+   keeps empty leading rows aligned with the data width; tracking the layout
+   only while streaming would leave it unset whenever the first Row record has
+   no cells and would mis-index later cells. */
+static void _prescan_first_data_row(XlsbReader *self)
+{
+    const unsigned char *data = self->data;
+    Py_ssize_t data_len = self->data_len;
+    Py_ssize_t pos = 0;
+    long cur_row = -1;
+    long span_row = -2;        /* row of the first row with cells (-2 = none) */
+    long min_col = 0, max_col = -1;
+
+    while (pos < data_len)
+    {
+        long rec_id = _read_varint(data, data_len, &pos);
+        if (rec_id < 0) break;
+        long rec_len = _read_varint(data, data_len, &pos);
+        if (rec_len < 0) break;
+
+        Py_ssize_t body_start = pos;
+        pos += rec_len;
+
+        if (rec_id == 0x00)
+        {
+            /* The next row header marks the end of the first data row. */
+            if (span_row != -2 && cur_row != span_row)
+                break;
+            long new_row;
+            if (_read_uint32_safe(data, data_len, body_start, &new_row))
+                cur_row = new_row;
+        }
+        else if (rec_id >= 0x01 && rec_id <= 0x0B)
+        {
+            if (span_row == -2) span_row = cur_row;
+            if (cur_row == span_row)
+            {
+                long col;
+                if (_read_uint32_safe(data, data_len, body_start, &col))
+                {
+                    if (max_col < 0)
+                    {
+                        min_col = col;
+                        max_col = col;
+                    }
+                    else
+                    {
+                        if (col < min_col) min_col = col;
+                        if (col > max_col) max_col = col;
+                    }
+                }
+            }
+        }
+        else if (rec_id == 0x92)
+        {
+            break;
+        }
+    }
+
+    if (span_row != -2 && max_col >= 0)
+    {
+        self->first_col = min_col;
+        self->cols_per_row = max_col - min_col + 1;
+    }
+    else
+    {
+        self->first_col = -1;
+        self->cols_per_row = -1;
+    }
+}
+
 /* Helper: read a cell record and store in cur_cells */
 static int _process_cell_record(XlsbReader *self, const unsigned char *data,
                                  Py_ssize_t data_len, Py_ssize_t body_start,
@@ -703,23 +795,13 @@ static int _process_cell_record(XlsbReader *self, const unsigned char *data,
     if (!_read_uint32_safe(data, data_len, body_start + 4, &xf_idx)) return 1;
     xf_idx &= 0xFFFFFF;
 
-    /* On first row, track column range for alignment (frozen after first row) */
-    if (self->is_first_row)
-    {
-        if (self->first_col < 0 || col < self->first_col)
-            self->first_col = col;
-        long observed_max = col;
-        long new_cols = observed_max - self->first_col + 1;
-        if (new_cols > self->cols_per_row)
-            self->cols_per_row = new_cols;
-    }
-
     int has_cell_alloc;
     PyObject *cell_val = _parse_cell_value(data, data_len, body_start,
                                              rec_id, rec_len,
                                              self->shared_strings, self->ss_len,
                                              self->styles_list, self->styles_len,
-                                             self->date_num_fmts, xf_idx, &has_cell_alloc);
+                                             self->date_num_fmts, xf_idx, &has_cell_alloc,
+                                             self->date_1904);
     if (!cell_val) return 1;
 
     /* Index relative to frozen first_col (if first_col < 0, default to col itself) */
@@ -809,7 +891,6 @@ static PyObject *XlsbReader_iternext(PyObject *self_ptr)
             /* Calculate gap rows between previous and new row */
             self->gap_rows_remaining = new_row - self->cur_row_num - 1;
 
-            if (self->is_first_row) self->is_first_row = 0;
             self->cur_row_num = new_row;
             return row;
         }
@@ -840,8 +921,9 @@ static PyObject *C_read_xlsb_worksheet(PyObject *self_mod, PyObject *args)
     PyObject *shared_strings;
     PyObject *styles_list;
     PyObject *date_num_fmts;
+    int date_1904 = 0;
 
-    if (!PyArg_ParseTuple(args, "y*OOO", &view, &shared_strings, &styles_list, &date_num_fmts))
+    if (!PyArg_ParseTuple(args, "y*OOO|p", &view, &shared_strings, &styles_list, &date_num_fmts, &date_1904))
         return NULL;
 
     if (!PyList_Check(shared_strings)) { PyErr_SetString(PyExc_TypeError, "shared_strings must be a list"); PyBuffer_Release(&view); return NULL; }
@@ -869,10 +951,12 @@ static PyObject *C_read_xlsb_worksheet(PyObject *self_mod, PyObject *args)
     reader->cur_cells_len = 0;
     reader->cur_row_num = -1;
     reader->gap_rows_remaining = 0;
-    reader->is_first_row = 1;
     reader->first_col = -1;
     reader->cols_per_row = -1;
     reader->is_initialized = 0;
+    reader->date_1904 = date_1904;
+
+    _prescan_first_data_row(reader);
 
     Py_INCREF(shared_strings);
     Py_INCREF(styles_list);

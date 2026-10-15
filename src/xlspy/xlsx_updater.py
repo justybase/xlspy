@@ -32,6 +32,7 @@ from .updater_utils import (
     unescape_xml_text,
     unwrap_cell,
 )
+from .excel_dates import datetime_to_serial
 
 
 StyleFallback = Literal["inherit", "general"]
@@ -90,6 +91,24 @@ class XlsxUpdater:
         self._shared_strings_dirty = False
         self._use_shared_strings = False
         self._stream_shared_strings: DiskStringIndex | None = None
+
+    def close(self) -> None:
+        """Release temporary files held by the updater.
+
+        While in use, the updater keeps shared-string data and staged package
+        parts on disk.  Calling ``close`` (or simply dropping the updater)
+        removes them.
+        """
+
+        if self._stream_shared_strings is not None:
+            self._stream_shared_strings.close()
+        self._package.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def get_sheet_names(self) -> list[str]:
         """Return worksheet names in workbook order."""
@@ -879,11 +898,8 @@ class XlsxUpdater:
 
     def _date_to_serial(self, value: _datetime.date | _datetime.datetime) -> float:
         if isinstance(value, _datetime.datetime):
-            date_value = value.replace(tzinfo=None)
-        else:
-            date_value = _datetime.datetime.combine(value, _datetime.time())
-        epoch = _datetime.datetime(1904, 1, 1) if self._date_1904 else _datetime.datetime(1899, 12, 30)
-        return (date_value - epoch).total_seconds() / 86400
+            value = value.replace(tzinfo=None)
+        return datetime_to_serial(value, self._date_1904)
 
     @staticmethod
     def _row_xml(row_number: int, cells: list[str], prefix: str = "") -> str:

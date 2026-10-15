@@ -5,6 +5,8 @@ from typing import Dict, List, Optional, Set, Generator, Any
 from xml.parsers.expat import ParserCreate
 
 from .biff_reader import BiffReader, CellType
+from .biff_utils import iter_records as _iter_biff_records
+from .excel_dates import serial_to_datetime as _serial_to_datetime
 from ._accel import HAVE_C_EXT, read_xlsb_worksheet as _c_read_xlsb_worksheet
 
 
@@ -66,7 +68,20 @@ def _looks_like_date_format(fmt_code: str) -> bool:
     date_indicators = sum([has_y, has_m and not has_h and not has_s, has_d])
     return date_indicators >= 2
 
-_number_formats_type_dict: Dict[int, type] = {
+
+def _xlsb_date_1904(workbook_bin: bytes) -> bool:
+    """Return whether ``workbook.bin`` selects the 1904 date system.
+
+    The flag lives in the BrtWbProp record (0x99); bit 0 is the
+    ``f1904`` flag.
+    """
+
+    for record in _iter_biff_records(workbook_bin):
+        if record.record_id == 0x99 and record.length >= 4:
+            return bool(workbook_bin[record.data_start] & 0x01)
+    return False
+
+_default_number_formats_type_dict: Dict[int, type] = {
     0: str,
     1: float,
     2: float,
@@ -89,8 +104,8 @@ _number_formats_type_dict: Dict[int, type] = {
 }
 
 
-def _get_date_num_fmt_ids() -> Set[int]:
-    return {k for k, v in _number_formats_type_dict.items() if v is datetime.datetime}
+def _get_date_num_fmt_ids(number_formats_type_dict: Dict[int, type]) -> Set[int]:
+    return {k for k, v in number_formats_type_dict.items() if v is datetime.datetime}
 
 _letters = [chr(65 + i) for i in range(26)]
 for i in range(26):
@@ -117,12 +132,27 @@ class ExcelReader:
         self._worksheet_id_to_location: Dict[str, str] = {}
         self._shared_string_array: List[str] = []
         self._styles_cell_xfs_array: List[dict] = []
+        self._number_formats_type_dict: Dict[int, type] = dict(_default_number_formats_type_dict)
         self._shared_strings_location: Optional[str] = None
         self._styles_location: Optional[str] = None
+        self._date_1904 = False
         self._path: Optional[str] = path
         self.use_memory_stream_for_xlsb = use_memory_stream_for_xlsb
 
     def open(self, path: str):
+        # Re-opening the same instance must not leak the previous archive nor
+        # accumulate worksheet/style/shared-string state from the previous file.
+        self.close()
+        self._worksheet_id_to_name = {}
+        self._worksheet_name_to_id = {}
+        self._worksheet_id_to_location = {}
+        self._shared_string_array = []
+        self._styles_cell_xfs_array = []
+        self._number_formats_type_dict = dict(_default_number_formats_type_dict)
+        self._shared_strings_location = None
+        self._styles_location = None
+        self._date_1904 = False
+
         ext = path.lower()
         if ext.endswith('xlsb'):
             self._is_xlsb = True
@@ -191,6 +221,7 @@ class ExcelReader:
                     self._worksheet_id_to_name[reader.rec_id] = reader.workbook_name
                     self._worksheet_name_to_id[reader.workbook_name] = reader.rec_id
             reader.close()
+            self._date_1904 = _xlsb_date_1904(raw)
 
         self._fill_rels('bin')
 
@@ -216,6 +247,9 @@ class ExcelReader:
             r_id = attrs.get('r:id') or attrs.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id', '')
             self._worksheet_id_to_name[r_id] = name
             self._worksheet_name_to_id[name] = r_id
+        elif local == 'workbookPr':
+            value = attrs.get('date1904', '')
+            self._date_1904 = value.strip().lower() in {'1', 'true'}
         elif local == 'pivotCache':
             pass
 
@@ -324,6 +358,7 @@ class ExcelReader:
         reader.close()
 
     def _fill_styles(self):
+        self._number_formats_type_dict = dict(_default_number_formats_type_dict)
         if self._styles_location is None:
             return
         entry_path = self._resolve_path(self._styles_location)
@@ -331,6 +366,7 @@ class ExcelReader:
             content = f.read().decode('utf-8')
 
         self._styles_cell_xfs_array = []
+        fmt_types = self._number_formats_type_dict
 
         class StylesHandler:
             def __init__(self, xfs_list):
@@ -351,11 +387,11 @@ class ExcelReader:
                 elif local == 'numFmt' and self.in_num_fmts:
                     num_fmt_id = int(attrs.get('numFmtId', '0'))
                     fmt_code = attrs.get('formatCode', '')
-                    if num_fmt_id not in _number_formats_type_dict:
+                    if num_fmt_id not in fmt_types:
                         if fmt_code in _date_excel_masks or _looks_like_date_format(fmt_code):
-                            _number_formats_type_dict[num_fmt_id] = datetime.datetime
+                            fmt_types[num_fmt_id] = datetime.datetime
                         else:
-                            _number_formats_type_dict[num_fmt_id] = str
+                            fmt_types[num_fmt_id] = str
 
             def end(self, tag):
                 local = tag.split('}')[-1] if '}' in tag else tag
@@ -375,6 +411,7 @@ class ExcelReader:
         parser.Parse(content, True)
 
     def _fill_bin_styles(self):
+        self._number_formats_type_dict = dict(_default_number_formats_type_dict)
         if self._styles_location is None:
             return
         entry_path = self._resolve_path(self._styles_location)
@@ -401,11 +438,11 @@ class ExcelReader:
                     format_first_time = False
                 fmt_code = reader.format_string
                 num_fmt_id = reader.format
-                if num_fmt_id not in _number_formats_type_dict:
+                if num_fmt_id not in self._number_formats_type_dict:
                     if fmt_code in _date_excel_masks or _looks_like_date_format(fmt_code):
-                        _number_formats_type_dict[num_fmt_id] = datetime.datetime
+                        self._number_formats_type_dict[num_fmt_id] = datetime.datetime
                     else:
-                        _number_formats_type_dict[num_fmt_id] = str
+                        self._number_formats_type_dict[num_fmt_id] = str
 
         reader.close()
 
@@ -552,11 +589,11 @@ class ExcelReader:
                         if s_idx is not None and s_idx < len(self.outer._styles_cell_xfs_array):
                             style = self.outer._styles_cell_xfs_array[s_idx]
                             num_fmt_id = style['numFmtId']
-                            fmt_type = _number_formats_type_dict.get(num_fmt_id, str)
+                            fmt_type = self.outer._number_formats_type_dict.get(num_fmt_id, str)
                             if fmt_type is datetime.datetime:
                                 try:
                                     excel_date = float(val)
-                                    self.current_row[col_num] = datetime.datetime(1899, 12, 30) + datetime.timedelta(days=excel_date)
+                                    self.current_row[col_num] = _serial_to_datetime(excel_date, self.outer._date_1904)
                                 except (ValueError, OverflowError):
                                     self.current_row[col_num] = val if val else None
                                 return
@@ -600,7 +637,8 @@ class ExcelReader:
                 raw,
                 self._shared_string_array,
                 self._styles_cell_xfs_array,
-                _get_date_num_fmt_ids(),
+                _get_date_num_fmt_ids(self._number_formats_type_dict),
+                self._date_1904,
             )
             if rows is not None:
                 yield from rows
@@ -609,11 +647,25 @@ class ExcelReader:
         stream = _MemoryStream(raw)
         reader = BiffReader(stream)
 
+        # Track the first and the last Row record while scanning for the first
+        # cell.  Rows without any cell record are not visible to the cell-driven
+        # loop below, so the row records are the only source of truth for
+        # leading / trailing all-empty rows.
+        first_row_record_index = -1
+        last_row_record_index = -1
         while not reader.read_cell:
             if not reader.read_worksheet():
                 break
+            if reader.row_index != -1:
+                if first_row_record_index == -1:
+                    first_row_record_index = reader.row_index
+                last_row_record_index = reader.row_index
         if not reader.read_cell:
             reader.close()
+            # A sheet with only all-empty rows (no cell records at all).
+            if first_row_record_index != -1:
+                for _ in range(last_row_record_index - first_row_record_index + 1):
+                    yield [None]
             return
 
         prev_row = -1
@@ -622,6 +674,11 @@ class ExcelReader:
         number_of_first_column_with_data = -1
         number_of_last_column_with_data = -1
         columns_cnt_from_first_row = -1
+        leading_empty_rows = (
+            row_num - first_row_record_index
+            if first_row_record_index != -1 and row_num > first_row_record_index
+            else 0
+        )
         is_first_row = True
         return_value = True
         prev_col_num = -1
@@ -637,13 +694,10 @@ class ExcelReader:
                     inner_row[i] = None
 
             if prev_row != -1 and row_num > prev_row + 1 and columns_cnt_from_first_row > 0:
-                for i in range(columns_cnt_from_first_row):
-                    inner_row[i] = None
                 how_many_empty = row_num - prev_row - 1
-                prev_row += 1
+                prev_row = row_num - 1
                 for _ in range(how_many_empty):
-                    row_list = [inner_row.get(c, None) for c in range(columns_cnt_from_first_row)]
-                    yield row_list
+                    yield [None] * columns_cnt_from_first_row
                 continue
 
             prev_row = row_num
@@ -676,19 +730,17 @@ class ExcelReader:
                         style_index = reader.xf_index
                         if style_index != 0 and style_index < len(self._styles_cell_xfs_array):
                             num_fmt_id = self._styles_cell_xfs_array[style_index]['numFmtId']
-                            fmt_type = _number_formats_type_dict.get(num_fmt_id, str)
+                            fmt_type = self._number_formats_type_dict.get(num_fmt_id, str)
                             if fmt_type is datetime.datetime:
-                                inner_row[tmp_len] = datetime.datetime(1899, 12, 30) + datetime.timedelta(days=double_val)
+                                inner_row[tmp_len] = _serial_to_datetime(double_val, self._date_1904)
                             else:
-                                long_val = int(double_val)
-                                if abs(long_val - double_val) < 1e-10:
-                                    inner_row[tmp_len] = long_val
+                                if double_val.is_integer():
+                                    inner_row[tmp_len] = int(double_val)
                                 else:
                                     inner_row[tmp_len] = double_val
                         else:
-                            long_val = int(double_val)
-                            if abs(long_val - double_val) < 1e-10:
-                                inner_row[tmp_len] = long_val
+                            if double_val.is_integer():
+                                inner_row[tmp_len] = int(double_val)
                             else:
                                 inner_row[tmp_len] = double_val
                     else:
@@ -714,9 +766,21 @@ class ExcelReader:
 
             if is_first_row:
                 is_first_row = False
+                # Leading all-empty rows: emit them now that the column width
+                # of the first row with data is known.
+                if leading_empty_rows > 0 and columns_cnt_from_first_row > 0:
+                    for _ in range(leading_empty_rows):
+                        yield [None] * columns_cnt_from_first_row
+                    leading_empty_rows = 0
 
             row_list = [inner_row.get(c, None) for c in range(columns_cnt_from_first_row)]
             yield row_list
+
+        # Trailing all-empty rows: the read-ahead consumed their Row records
+        # before hitting EOF, so they are recovered from the last row index.
+        if columns_cnt_from_first_row > 0 and reader.row_index > prev_row:
+            for _ in range(reader.row_index - prev_row):
+                yield [None] * columns_cnt_from_first_row
 
         reader.close()
 

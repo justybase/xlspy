@@ -29,7 +29,9 @@ def calc_column_widths(rows, max_cols):
     return None
 
 
-def read_xlsb_worksheet(data, shared_strings, styles_list, date_num_fmts):
+def read_xlsb_worksheet(data, shared_strings, styles_list, date_num_fmts, date_1904=False):
     if HAVE_C_EXT:
-        return _c_read_xlsb_worksheet(data, shared_strings, styles_list, date_num_fmts)
+        return _c_read_xlsb_worksheet(
+            data, shared_strings, styles_list, date_num_fmts, date_1904
+        )
     return None

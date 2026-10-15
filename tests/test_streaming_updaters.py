@@ -18,6 +18,8 @@ from xlspy import (
 from xlspy.biff_utils import build_record
 from xlspy.updater_utils import ZipPackage
 
+from zip_utils import rewrite_workbook_members
+
 
 ROWS = [
     ["new & <value>", 42, True, datetime.date(2025, 2, 3)],
@@ -65,13 +67,10 @@ def _read_sheets(path: Path) -> dict[str, list[list[object]]]:
 
 
 def _add_complex_parts(path: Path, binary: bool) -> None:
-    with zipfile.ZipFile(path, "a") as archive:
+    with zipfile.ZipFile(path) as archive:
         if binary:
             sheet = archive.read("xl/worksheets/sheet1.bin")
-            archive.writestr(
-                "xl/worksheets/sheet1.bin",
-                sheet + build_record(0xA1, b"\x00" * 16),
-            )
+            sheet = sheet + build_record(0xA1, b"\x00" * 16)
             sheet_name = "Data".encode("utf-16le")
             source_payload = (
                 b"\x00\x00\x00"
@@ -79,28 +78,31 @@ def _add_complex_parts(path: Path, binary: bool) -> None:
                 + sheet_name
                 + struct.pack("<iiii", 0, 1, 0, 1)
             )
-            archive.writestr(
-                "xl/pivotCache/pivotCacheDefinition1.bin",
-                build_record(0xB3, b"\x00\x00\x00\x00")
-                + build_record(0xBB, source_payload),
-            )
+            replacements = {
+                "xl/worksheets/sheet1.bin": sheet,
+                "xl/pivotCache/pivotCacheDefinition1.bin": (
+                    build_record(0xB3, b"\x00\x00\x00\x00")
+                    + build_record(0xBB, source_payload)
+                ),
+            }
         else:
             sheet = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
             sheet = sheet.replace(
                 "</worksheet>", '<autoFilter ref="A1:D2"/></worksheet>'
             )
-            archive.writestr("xl/worksheets/sheet1.xml", sheet.encode("utf-8"))
-            archive.writestr(
-                "xl/pivotCache/pivotCacheDefinition1.xml",
-                b'<pivotCacheDefinition recordCount="2">'
-                b'<cacheSource type="worksheet">'
-                b'<worksheetSource ref="A1:D2" sheet="Data"/>'
-                b"</cacheSource></pivotCacheDefinition>",
-            )
-            archive.writestr(
-                "xl/pivotTables/pivotTable1.xml",
-                b'<pivotTableDefinition refreshOnLoad="0"/>',
-            )
+            replacements = {
+                "xl/worksheets/sheet1.xml": sheet.encode("utf-8"),
+                "xl/pivotCache/pivotCacheDefinition1.xml": (
+                    b'<pivotCacheDefinition recordCount="2">'
+                    b'<cacheSource type="worksheet">'
+                    b'<worksheetSource ref="A1:D2" sheet="Data"/>'
+                    b"</cacheSource></pivotCacheDefinition>"
+                ),
+                "xl/pivotTables/pivotTable1.xml": (
+                    b'<pivotTableDefinition refreshOnLoad="0"/>'
+                ),
+            }
+    rewrite_workbook_members(path, replacements)
 
 
 def _make_xlsm(path: Path) -> bytes:

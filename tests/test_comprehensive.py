@@ -3,10 +3,9 @@ Comprehensive cross-validation: openpyxl, xlsxwriter, xlspy, Excel COM.
 All temp files created dynamically, cleaned up after tests.
 Tests performed on Windows 11.
 """
-import os, sys, tempfile, datetime, shutil
+import os, tempfile, datetime, shutil
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
 from xlspy import XlsbWriter, XlsxWriter, ExcelReader
 from conftest import PROJECT_TMP
 

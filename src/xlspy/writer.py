@@ -8,6 +8,7 @@ import io
 import itertools
 from ._accel import encode_xlsb_row, calc_column_widths as accel_calc_column_widths
 from .formats import _is_formatted_cell, _unwrap_cell, _get_format
+from .excel_dates import datetime_to_serial
 
 
 @dataclass
@@ -83,6 +84,29 @@ class XlsbWriter:
         self._zf.writestr(f"xl/worksheets/_rels/sheet{sheet_id}.bin.rels", self._create_worksheet_rels(sheet_id))
         self._zf.writestr(f"xl/worksheets/binaryIndex{sheet_id}.bin", self._binaryIndexBin)
 
+    def write_dataframe(self, df, include_index: bool = False, na_rep=None, formats: dict = None):
+        """Write a pandas or polars DataFrame to the current sheet.
+
+        pandas and polars are optional: they are imported lazily only when a
+        DataFrame is actually passed in.
+
+        Parameters
+        ----------
+        df:
+            A ``pandas.DataFrame`` or ``polars.DataFrame``.
+        include_index:
+            pandas only -- prepend the index as leading column(s).
+        na_rep:
+            Value for missing cells, defaults to ``None`` (empty cell).
+        formats:
+            Optional ``{column_name: format_string}`` mapping (see ``xlspy.F``).
+        """
+        from .dataframe import dataframe_to_rows
+
+        self.write_sheet(
+            dataframe_to_rows(df, include_index=include_index, na_rep=na_rep, formats=formats)
+        )
+
     def save(self):
         if self._zf is None:
             raise RuntimeError("Zip file not initialized. Use context manager or initialize manually.")
@@ -153,7 +177,9 @@ class XlsbWriter:
             sheet_id = i + 1
             r_id = f"rId{sheet_id}"
             
-            record_length = 4 + 3 * 4 + len(sheet_name) * 2 + len(r_id) * 2
+            sheet_name_utf16 = sheet_name.encode('utf-16-le')
+            r_id_utf16 = r_id.encode('utf-16-le')
+            record_length = 4 + 3 * 4 + len(sheet_name_utf16) + len(r_id_utf16)
             
             data.extend(b'\x9C\x01')
             data.extend(self._write_custom_variable_int(record_length))
@@ -164,10 +190,10 @@ class XlsbWriter:
                 data.extend(struct.pack('<I', 0)) 
 
             data.extend(struct.pack('<I', sheet_id))
-            data.extend(struct.pack('<I', len(r_id)))
-            data.extend(r_id.encode('utf-16-le'))
-            data.extend(struct.pack('<I', len(sheet_name)))
-            data.extend(sheet_name.encode('utf-16-le'))
+            data.extend(struct.pack('<I', len(r_id_utf16) // 2))
+            data.extend(r_id_utf16)
+            data.extend(struct.pack('<I', len(sheet_name_utf16) // 2))
+            data.extend(sheet_name_utf16)
 
         data.extend(self._workbookBinMiddle)
         self._write_filter_defined_names(data)
@@ -199,10 +225,14 @@ class XlsbWriter:
         buffer.write(struct.pack('<II', self._sst_all_count, self._sst_unique_count))
         
         for s in self._shared_strings:
-            str_len = len(s)
-            if str_len > 32767: 
-                str_len = 32767
-                s = s[:str_len]
+            encoded = s.encode('utf-16-le')
+            str_len = len(encoded) // 2
+            if str_len > 32767:
+                encoded = encoded[: 32767 * 2]
+                # Do not leave a dangling high surrogate at the truncation edge.
+                if len(encoded) >= 2 and 0xD800 <= struct.unpack_from('<H', encoded, len(encoded) - 2)[0] <= 0xDBFF:
+                    encoded = encoded[:-2]
+                str_len = len(encoded) // 2
             
             record_length = 1 + 4 + 2 * str_len
             
@@ -210,7 +240,7 @@ class XlsbWriter:
             buffer.write(self._write_custom_variable_int(record_length))
             buffer.write(b'\x00')
             buffer.write(struct.pack('<I', str_len))
-            buffer.write(s.encode('utf-16-le'))
+            buffer.write(encoded)
 
             if buffer.tell() > BUFFER_SIZE:
                 sst_file.write(buffer.getvalue())
@@ -223,14 +253,15 @@ class XlsbWriter:
             sst_file.write(buffer.getvalue())
 
     def _build_font_numfmt_record(self, ifmt: int, fmt_string: str) -> bytes:
-        cch = len(fmt_string)
+        encoded = fmt_string.encode('utf-16-le')
+        cch = len(encoded) // 2
         remaining = 2 + 4 + cch * 2
         buf = bytearray()
         buf.append(0x2C)
         buf.append(remaining)
         buf.extend(struct.pack('<H', ifmt))
         buf.extend(struct.pack('<I', cch))
-        buf.extend(fmt_string.encode('utf-16-le'))
+        buf.extend(encoded)
         return bytes(buf)
 
     def _build_style_record(self, ifmt: int, flags: int, byte6_extra: int = 0) -> bytes:
@@ -469,7 +500,7 @@ class XlsbWriter:
                     if cell.year < 1900 or cell.year > 9999:
                         self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx)
                     else:
-                        excel_date = (cell - datetime.datetime(1899, 12, 30, tzinfo=cell.tzinfo)).total_seconds() / 86400.0
+                        excel_date = datetime_to_serial(cell)
                         style_ref = xf_index if has_custom_fmt else 1
                         buffer.write(b'\x05\x10')
                         buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
@@ -477,7 +508,7 @@ class XlsbWriter:
                     if cell.year < 1900 or cell.year > 9999:
                         self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx)
                     else:
-                        excel_date = (datetime.datetime.combine(cell, datetime.time()) - datetime.datetime(1899, 12, 30)).total_seconds() / 86400.0
+                        excel_date = datetime_to_serial(cell)
                         style_ref = xf_index if has_custom_fmt else 2
                         buffer.write(b'\x05\x10')
                         buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))

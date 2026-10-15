@@ -7,6 +7,7 @@ from typing import Tuple, Iterable
 import io
 import itertools
 from .formats import _is_formatted_cell, _unwrap_cell, _get_format
+from .excel_dates import datetime_to_serial
 
 
 @dataclass
@@ -98,6 +99,29 @@ class XlsxWriter:
         sheet_id = self._sheet_count
         with self._zf.open(f"xl/worksheets/sheet{sheet_id}.xml", 'w') as sheet_file:
             self._write_worksheet_xml(sheet_file, data, self._sheet_count - 1)
+
+    def write_dataframe(self, df, include_index: bool = False, na_rep=None, formats: dict = None):
+        """Write a pandas or polars DataFrame to the current sheet.
+
+        pandas and polars are optional: they are imported lazily only when a
+        DataFrame is actually passed in.
+
+        Parameters
+        ----------
+        df:
+            A ``pandas.DataFrame`` or ``polars.DataFrame``.
+        include_index:
+            pandas only -- prepend the index as leading column(s).
+        na_rep:
+            Value for missing cells, defaults to ``None`` (empty cell).
+        formats:
+            Optional ``{column_name: format_string}`` mapping (see ``xlspy.F``).
+        """
+        from .dataframe import dataframe_to_rows
+
+        self.write_sheet(
+            dataframe_to_rows(df, include_index=include_index, na_rep=na_rep, formats=formats)
+        )
 
     def save(self):
         if self._zf is None:
@@ -358,7 +382,7 @@ class XlsxWriter:
                     else:
                         if cell.tzinfo is not None:
                             cell = cell.replace(tzinfo=None)
-                        excel_date = (cell - datetime.datetime(1899, 12, 30)).total_seconds() / 86400.0
+                        excel_date = datetime_to_serial(cell)
                         if has_custom_fmt:
                             buffer.write(f'<c s="{xf_index}"><v>{excel_date}</v></c>')
                         else:
@@ -367,7 +391,7 @@ class XlsxWriter:
                     if cell.year < 1900 or cell.year > 9999:
                         self._write_string_cell(buffer, str(cell), row_idx == 0)
                     else:
-                        excel_date = (datetime.datetime.combine(cell, datetime.time()) - datetime.datetime(1899, 12, 30)).total_seconds() / 86400.0
+                        excel_date = datetime_to_serial(cell)
                         if has_custom_fmt:
                             buffer.write(f'<c s="{xf_index}"><v>{excel_date}</v></c>')
                         else:

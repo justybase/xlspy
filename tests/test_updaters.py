@@ -8,6 +8,8 @@ import pytest
 from xlspy import ExcelReader, F, XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWriter
 from xlspy.biff_utils import build_record, iter_records, read_utf16
 
+from zip_utils import rewrite_workbook_members
+
 
 def _write_xlsx(path, sheets, *, use_shared_strings=True):
     with XlsxWriter(path, useSharedStrings=use_shared_strings) as writer:
@@ -33,9 +35,7 @@ def _read_sheet(path, name):
 
 
 def _add_zip_members(path, members):
-    with zipfile.ZipFile(path, "a") as archive:
-        for name, data in members.items():
-            archive.writestr(name, data)
+    rewrite_workbook_members(path, members)
 
 
 def _make_xlsx_pivot(path):

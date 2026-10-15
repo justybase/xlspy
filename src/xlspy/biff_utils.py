@@ -132,7 +132,7 @@ def read_utf16(data: bytes, offset: int, character_count: int) -> tuple[str, int
     end = offset + character_count * 2
     if end > len(data):
         raise ValueError("Truncated BIFF12 UTF-16 string")
-    return data[offset:end].decode("utf-16le"), end
+    return data[offset:end].decode("utf-16le", errors="surrogatepass"), end
 
 
 @dataclass

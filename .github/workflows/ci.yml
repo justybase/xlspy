@@ -65,3 +65,101 @@ jobs:
       - name: Verify C extension is disabled
         run: |
           XLSPY_DISABLE_C_EXT=1 python -c "from xlspy._accel import HAVE_C_EXT; print('C_EXT:', HAVE_C_EXT); assert not HAVE_C_EXT, 'C extension should be disabled!'"
+
+  wheel-smoke:
+    name: Wheel smoke test (installed wheel, clean venv)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir dist
+
+      - name: Install the wheel into a clean venv
+        run: |
+          python -m venv .venv-smoke
+          .venv-smoke/bin/python -m pip install --upgrade pip
+          .venv-smoke/bin/python -m pip install dist/*.whl pytest
+
+      - name: Smoke-test the installed wheel
+        run: .venv-smoke/bin/python tools/wheel_smoke.py
+
+      - name: Run core tests against the installed wheel
+        run: |
+          smoke="$RUNNER_TEMP/wheel-smoke"
+          mkdir -p "$smoke"
+          cp tests/test_reader.py tests/test_updaters.py tests/test_streaming_updaters.py \
+             tests/test_output_integrity.py tests/conftest.py tests/zip_utils.py "$smoke/"
+          cd "$smoke"
+          "$GITHUB_WORKSPACE/.venv-smoke/bin/python" -m pytest -q
+
+  deps-floor:
+    name: Dependency floor (pandas 2.1, polars 1.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package with test deps
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[test]"
+
+      - name: Downgrade to the oldest supported pandas / polars
+        run: |
+          pip install "numpy<2" "pandas==2.1.*" "polars==1.0.*"
+
+      - name: Verify floor versions
+        run: |
+          python -c "import numpy, pandas, polars; print('numpy', numpy.__version__); print('pandas', pandas.__version__); print('polars', polars.__version__)"
+          python - <<'PY'
+          import pandas, polars
+          assert pandas.__version__.startswith("2.1."), pandas.__version__
+          assert polars.__version__.startswith("1.0."), polars.__version__
+          PY
+
+      - name: Run tests
+        run: python -m pytest tests/ -q --tb=short
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package with test deps
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[test]"
+
+      - name: Run tests with coverage
+        run: python -m pytest tests/ -q --cov --cov-report=term --cov-report=xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml

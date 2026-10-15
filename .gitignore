@@ -149,9 +149,12 @@ cython_debug/
 
 # Test files
 *.xlsb
+# ...but committed golden workbooks are the cross-validation reference data.
+!tests/data/golden_*.xlsb
 .pytest-tmp/
 test_xlsxwriter.xlsx
 real_netezza_output.xlsb
+examples/output/
 .vs/slnx.sqlite
 .vs/VSWorkspaceState.json
 .vs/PythonXlsb/v17/.wsuo

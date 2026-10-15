@@ -138,11 +138,8 @@ class BiffReader:
 
     @staticmethod
     def _get_string(buffer, offset, length):
-        chars = []
-        for i in range(offset, offset + 2 * length, 2):
-            ch = (buffer[i + 1] << 8) + buffer[i]
-            chars.append(chr(ch))
-        return ''.join(chars)
+        end = offset + 2 * length
+        return buffer[offset:end].decode('utf-16-le', errors='surrogatepass')
 
     @staticmethod
     def _get_nullable_string(buffer, offset):
@@ -150,13 +147,8 @@ class BiffReader:
         offset += 4
         if length == 0xFFFFFFFF:
             return None, offset
-        chars = []
         end = offset + length * 2
-        while offset < end:
-            ch = (buffer[offset + 1] << 8) + buffer[offset]
-            chars.append(chr(ch))
-            offset += 2
-        return ''.join(chars), offset
+        return buffer[offset:end].decode('utf-16-le', errors='surrogatepass'), end
 
     @staticmethod
     def _get_rk_number(buffer, offset):

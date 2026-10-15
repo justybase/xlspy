@@ -234,6 +234,15 @@ class DiskStringIndex:
         self._pending.close()
         self._database.close()
 
+    def __del__(self):
+        # Close the pending file (and the sqlite handle) explicitly: relying on
+        # garbage collection alone leaks the file handle and makes Python 3.12+
+        # emit a ResourceWarning.
+        try:
+            self.close()
+        except Exception:
+            pass
+
 
 def rewrite_shared_strings_xml(
     source_path: str | os.PathLike[str],
@@ -510,6 +519,21 @@ class ZipPackage:
         ] | None = None
         self._superseded_paths: set[Path] = set()
 
+    def close(self) -> None:
+        """Remove the temporary directory holding staged package parts."""
+
+        self._temporary_directory.cleanup()
+
+    def __del__(self):
+        # TemporaryDirectory warns ("Implicitly cleaning up ...") when only its
+        # own finalizer gets to clean it.  Doing it here makes the cleanup
+        # explicit, so dropping an updater no longer emits a ResourceWarning
+        # on Python 3.12+.
+        try:
+            self._temporary_directory.cleanup()
+        except Exception:
+            pass
+
     def has(self, name: str) -> bool:
         return name in self._indices
 
@@ -537,7 +561,6 @@ class ZipPackage:
     @contextmanager
     def open_entry(self, name: str):
         """Open one entry for bounded-memory reading."""
-
         index = self._index_for(name)
         override = self._overrides.get(index)
         if isinstance(override, bytes):
