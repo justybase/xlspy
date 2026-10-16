@@ -123,6 +123,46 @@ writer.write_sheet([
 
 The formatting works transparently on both `XlsxWriter` and `XlsbWriter`.
 
+### Cell Styles (colors, fonts, alignment)
+
+`Style` can be used on the header or on arbitrary A1 cell ranges in both
+writers. Styles are deduplicated in the workbook, so cells with the same style
+share one Excel style record.
+
+```python
+from xlspy import F, Style, XlsxWriter  # XlsbWriter has the same API
+
+header = Style(fill="#008000", font_color="#FFFFFF", bold=True)
+warning = Style(fill="FFF2CC", italic=True, horizontal="center", wrap=True)
+
+with XlsxWriter("report.xlsx") as writer:
+    writer.add_sheet("Data")
+    writer.write_sheet(
+        [
+            ["Product", "Quantity", "Comment"],
+            ["Apples", (1200, F.THOUSANDS_SEP), "Restock soon"],
+        ],
+        header_style=header,
+        styles={"B2:B2": warning, "C2:C2": warning},
+    )
+```
+
+Supported `Style` properties: `fill`, `font_color`, `bold`, `italic`,
+`underline`, `number_format`, `horizontal`, `vertical`, and `wrap`. Colors are
+six-digit RGB strings with or without `#`. Alignment and wrapping currently
+apply to XLSX output; XLSB raises `NotImplementedError` for those properties
+rather than silently ignoring them. Use `header_style` to style all
+cells in the first row (including numeric cells); use `styles` to provide an
+ordered mapping of A1 cell/range references to styles. When ranges overlap,
+later ranges override only the properties they specify. A cell's existing
+`(value, number_format)` tuple remains supported and its number format takes
+precedence over a range style's `number_format`.
+
+`write_dataframe()` accepts the same `header_style` and `styles` arguments.
+Unstyled rows continue to use the XLSB C acceleration path. The C encoder also
+accepts compact row style IDs, avoiding the old tuple-based fallback for
+styled rows.
+
 ### Writing pandas / polars DataFrames (optional)
 
 `xlspy` can write a DataFrame directly to `.xlsx` or `.xlsb`. **pandas and

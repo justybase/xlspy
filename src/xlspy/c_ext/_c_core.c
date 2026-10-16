@@ -431,11 +431,12 @@ static PyObject *C_calc_column_widths(PyObject *self, PyObject *args)
 static int _write_str_cell(unsigned char **buf, size_t *buf_size, size_t *buf_cap,
                            PyObject *cell_str, PyObject *ss_dict, PyObject *ss_list,
                            unsigned int col_idx, unsigned int row_idx,
+                           unsigned int style_override,
                            unsigned int *sst_uniq, unsigned int *sst_all)
 {
     PyObject *idx_obj = PyDict_GetItem(ss_dict, cell_str);
     unsigned int string_index;
-    unsigned int style_ref = (row_idx == 0) ? 3 : 0;
+    unsigned int style_ref = style_override ? style_override : ((row_idx == 0) ? 3 : 0);
 
     if (idx_obj)
         string_index = (unsigned int)PyLong_AsLong(idx_obj);
@@ -476,13 +477,22 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
     unsigned int sst_uniq;
     unsigned int sst_all;
     unsigned int row_idx;
+    PyObject *style_ids = Py_None;
 
-    if (!PyArg_ParseTuple(args, "OOOIII", &row, &ss_dict, &ss_list, &sst_uniq, &sst_all, &row_idx))
+    if (!PyArg_ParseTuple(args, "OOOIII|O", &row, &ss_dict, &ss_list, &sst_uniq, &sst_all, &row_idx, &style_ids))
         return NULL;
 
     if (!PyList_Check(row)) { PyErr_SetString(PyExc_TypeError, "row must be a list"); return NULL; }
     if (!PyDict_Check(ss_dict)) { PyErr_SetString(PyExc_TypeError, "ss_dict must be a dict"); return NULL; }
     if (!PyList_Check(ss_list)) { PyErr_SetString(PyExc_TypeError, "ss_list must be a list"); return NULL; }
+    if (style_ids != Py_None && !PyList_Check(style_ids) && !PyTuple_Check(style_ids) && !PyLong_Check(style_ids)) { PyErr_SetString(PyExc_TypeError, "style_ids must be an integer, list, tuple, or None"); return NULL; }
+    unsigned int row_style = 0;
+    if (PyLong_Check(style_ids))
+    {
+        unsigned long style_value = PyLong_AsUnsignedLong(style_ids);
+        if (PyErr_Occurred()) return NULL;
+        row_style = (unsigned int)style_value;
+    }
 
     _ensure_types();
 
@@ -495,6 +505,9 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
     if (!buf) return PyErr_NoMemory();
 
     Py_ssize_t row_len = PyList_Size(row);
+    Py_ssize_t style_len = PyList_Check(style_ids) ? PyList_GET_SIZE(style_ids)
+                         : PyTuple_Check(style_ids) ? PyTuple_GET_SIZE(style_ids) : 0;
+    Py_ssize_t style_pair_index = 0;
     unsigned int last_col = (row_len > 0) ? (unsigned int)(row_len - 1) : 0;
 
     buf[buf_size++] = 0x00; buf[buf_size++] = 0x19;
@@ -510,7 +523,69 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
     for (Py_ssize_t col_idx = 0; col_idx < row_len; col_idx++)
     {
         PyObject *cell = PyList_GetItem(row, col_idx);
-        if (!cell || cell == Py_None) continue;
+        unsigned int cell_style = 0;
+        if (style_ids != Py_None)
+        {
+            if (row_style)
+                cell_style = row_style;
+            else if (PyList_Check(style_ids) && col_idx < style_len)
+            {
+                PyObject *style_obj = PyList_GetItem(style_ids, col_idx);
+                if (style_obj && style_obj != Py_None)
+                {
+                    unsigned long style_value = PyLong_AsUnsignedLong(style_obj);
+                    if (PyErr_Occurred()) { PyErr_Clear(); style_value = 0; }
+                    cell_style = (unsigned int)style_value;
+                }
+            }
+            else if (PyTuple_Check(style_ids))
+            {
+                while (style_pair_index < style_len)
+                {
+                    PyObject *pair = PyTuple_GET_ITEM(style_ids, style_pair_index);
+                    if (!PyTuple_Check(pair) || PyTuple_GET_SIZE(pair) != 2)
+                    {
+                        PyErr_SetString(PyExc_TypeError, "sparse style entries must be (column, style_id) pairs");
+                        PyMem_Free(buf);
+                        return NULL;
+                    }
+                    long style_col = PyLong_AsLong(PyTuple_GET_ITEM(pair, 0));
+                    if (PyErr_Occurred()) { PyMem_Free(buf); return NULL; }
+                    if (style_col < col_idx)
+                    {
+                        style_pair_index++;
+                        continue;
+                    }
+                    if (style_col == col_idx)
+                    {
+                        unsigned long style_value = PyLong_AsUnsignedLong(PyTuple_GET_ITEM(pair, 1));
+                        if (PyErr_Occurred()) { PyMem_Free(buf); return NULL; }
+                        cell_style = (unsigned int)style_value;
+                        style_pair_index++;
+                    }
+                    break;
+                }
+            }
+        }
+        if (!cell || cell == Py_None)
+        {
+            if (cell_style)
+            {
+                size_t need = buf_size + 10;
+                if (need > buf_cap)
+                {
+                    buf_cap = need + 4096;
+                    unsigned char *nb = (unsigned char *)PyMem_Realloc(buf, buf_cap);
+                    if (!nb) { err = 1; break; }
+                    buf = nb;
+                }
+                unsigned int ci = (unsigned int)col_idx;
+                buf[buf_size++] = 0x01; buf[buf_size++] = 0x08;
+                memcpy(buf + buf_size, &ci, 4); buf_size += 4;
+                memcpy(buf + buf_size, &cell_style, 4); buf_size += 4;
+            }
+            continue;
+        }
 
         size_t need = buf_size + 16;
         if (need > buf_cap)
@@ -526,13 +601,14 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
 
         if (PyUnicode_CheckExact(cell))
         {
-            if (_write_str_cell(&buf, &buf_size, &buf_cap, cell, ss_dict, ss_list, ci, row_idx, &sst_uniq, &sst_all) < 0) { err = 1; break; }
+            if (_write_str_cell(&buf, &buf_size, &buf_cap, cell, ss_dict, ss_list, ci, row_idx, cell_style, &sst_uniq, &sst_all) < 0) { err = 1; break; }
         }
         else if (cell == Py_True || cell == Py_False)
         {
             buf[buf_size++] = 0x04; buf[buf_size++] = 0x09;
             memcpy(buf + buf_size, &ci, 4); buf_size += 4;
-            memcpy(buf + buf_size, &zero, 4); buf_size += 4;
+            unsigned int style_ref = cell_style ? cell_style : zero;
+            memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
             buf[buf_size++] = (cell == Py_True) ? 1 : 0;
         }
         else if (PyLong_CheckExact(cell))
@@ -544,14 +620,16 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
                 int rk_val = ((int)val << 2) | 2;
                 buf[buf_size++] = 0x02; buf[buf_size++] = 0x0C;
                 memcpy(buf + buf_size, &ci, 4); buf_size += 4;
-                memcpy(buf + buf_size, &zero, 4); buf_size += 4;
+                unsigned int style_ref = cell_style ? cell_style : zero;
+                memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
                 memcpy(buf + buf_size, &rk_val, 4); buf_size += 4;
             }
             else
             {
                 buf[buf_size++] = 0x05; buf[buf_size++] = 0x10;
                 memcpy(buf + buf_size, &ci, 4); buf_size += 4;
-                memcpy(buf + buf_size, &zero, 4); buf_size += 4;
+                unsigned int style_ref = cell_style ? cell_style : zero;
+                memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
                 double fval = (double)val;
                 memcpy(buf + buf_size, &fval, 8); buf_size += 8;
             }
@@ -560,7 +638,8 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
         {
             buf[buf_size++] = 0x05; buf[buf_size++] = 0x10;
             memcpy(buf + buf_size, &ci, 4); buf_size += 4;
-            memcpy(buf + buf_size, &zero, 4); buf_size += 4;
+            unsigned int style_ref = cell_style ? cell_style : zero;
+            memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
             double fval = PyFloat_AS_DOUBLE(cell);
             memcpy(buf + buf_size, &fval, 8); buf_size += 8;
         }
@@ -571,7 +650,8 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
             double fval = PyFloat_AsDouble(f); Py_DECREF(f);
             buf[buf_size++] = 0x05; buf[buf_size++] = 0x10;
             memcpy(buf + buf_size, &ci, 4); buf_size += 4;
-            memcpy(buf + buf_size, &zero, 4); buf_size += 4;
+            unsigned int style_ref = cell_style ? cell_style : zero;
+            memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
             memcpy(buf + buf_size, &fval, 8); buf_size += 8;
         }
         else if (datetime_type && PyObject_IsInstance(cell, datetime_type) == 1)
@@ -581,7 +661,8 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
             unsigned int sv = 1;
             buf[buf_size++] = 0x05; buf[buf_size++] = 0x10;
             memcpy(buf + buf_size, &ci, 4); buf_size += 4;
-            memcpy(buf + buf_size, &sv, 4); buf_size += 4;
+            unsigned int style_ref = cell_style ? cell_style : sv;
+            memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
             memcpy(buf + buf_size, &serial, 8); buf_size += 8;
         }
         else if (date_type && PyObject_IsInstance(cell, date_type) == 1)
@@ -591,7 +672,8 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
             unsigned int sv = 2;
             buf[buf_size++] = 0x05; buf[buf_size++] = 0x10;
             memcpy(buf + buf_size, &ci, 4); buf_size += 4;
-            memcpy(buf + buf_size, &sv, 4); buf_size += 4;
+            unsigned int style_ref = cell_style ? cell_style : sv;
+            memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
             memcpy(buf + buf_size, &serial, 8); buf_size += 8;
         }
         else
@@ -600,7 +682,7 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
             {
                 PyObject *str_cell = PyObject_Str(cell);
                 if (!str_cell) { PyErr_Clear(); continue; }
-                if (_write_str_cell(&buf, &buf_size, &buf_cap, str_cell, ss_dict, ss_list, ci, row_idx, &sst_uniq, &sst_all) < 0)
+                if (_write_str_cell(&buf, &buf_size, &buf_cap, str_cell, ss_dict, ss_list, ci, row_idx, cell_style, &sst_uniq, &sst_all) < 0)
                 { Py_DECREF(str_cell); err = 1; break; }
                 Py_DECREF(str_cell);
             }

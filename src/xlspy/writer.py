@@ -9,6 +9,7 @@ import itertools
 from ._accel import encode_xlsb_row, calc_column_widths as accel_calc_column_widths
 from .formats import _is_formatted_cell, _unwrap_cell, _get_format
 from .excel_dates import datetime_to_serial
+from .styles import Style, merge_styles, normalize_style_ranges, styles_for_row
 
 
 @dataclass
@@ -36,6 +37,10 @@ class XlsbWriter:
 
         self._format_registry: dict[str, int] = {}
         self._format_xf_map: dict[str, int] = {}
+        self._style_xf_map: dict[Style, int] = {}
+        self._style_components: dict[int, tuple[int, int, int, Style]] = {}
+        self._font_registry: dict[tuple, int] = {(None, True, None, None): 1}
+        self._fill_registry: dict[str, int] = {}
         self._next_numfmt_id = 167
         self._next_xf_index = 4
 
@@ -62,15 +67,65 @@ class XlsbWriter:
     def _register_format(self, fmt_string: str) -> int:
         if fmt_string in self._format_xf_map:
             return self._format_xf_map[fmt_string]
-        numfmt_id = self._next_numfmt_id
-        self._next_numfmt_id += 1
-        self._format_registry[fmt_string] = numfmt_id
+        # A style may already have registered this number format; reuse its id
+        # so the style XF keeps referencing a format that is still emitted.
+        numfmt_id = self._format_registry.get(fmt_string)
+        if numfmt_id is None:
+            numfmt_id = self._next_numfmt_id
+            self._next_numfmt_id += 1
+            self._format_registry[fmt_string] = numfmt_id
         xf_index = self._next_xf_index
         self._next_xf_index += 1
         self._format_xf_map[fmt_string] = xf_index
         return xf_index
 
-    def write_sheet(self, data: Iterable[list[any]]):
+    def _register_style(self, style: Style) -> int:
+        if style in self._style_xf_map:
+            return self._style_xf_map[style]
+        if any(value is not None for value in (style.horizontal, style.vertical, style.wrap)):
+            raise NotImplementedError(
+                "horizontal/vertical alignment and wrapping are not yet supported for XLSB output"
+            )
+        font_key = (style.font_color, style.bold, style.italic, style.underline)
+        if font_key == (None, None, None, None):
+            font_id = 0
+        elif font_key not in self._font_registry:
+            self._font_registry[font_key] = max(self._font_registry.values(), default=1) + 1
+            font_id = self._font_registry[font_key]
+        else:
+            font_id = self._font_registry[font_key]
+        fill_id = 0
+        if style.fill is not None:
+            if style.fill not in self._fill_registry:
+                self._fill_registry[style.fill] = 2 + len(self._fill_registry)
+            fill_id = self._fill_registry[style.fill]
+        numfmt_id = 0
+        if style.number_format is not None:
+            if style.number_format not in self._format_registry:
+                self._format_registry[style.number_format] = self._next_numfmt_id
+                self._next_numfmt_id += 1
+            numfmt_id = self._format_registry[style.number_format]
+        xf_index = self._next_xf_index
+        self._next_xf_index += 1
+        self._style_xf_map[style] = xf_index
+        self._style_components[xf_index] = (font_id, fill_id, numfmt_id, style)
+        return xf_index
+
+    def write_sheet(
+        self,
+        data: Iterable[list[any]],
+        *,
+        header_style: Style | None = None,
+        styles: dict[str, Style] | None = None,
+    ):
+        if header_style is not None and not isinstance(header_style, Style):
+            raise TypeError("header_style must be a Style instance")
+        style_ranges = normalize_style_ranges(styles)
+        for candidate in ([header_style] if header_style is not None else []) + [item[-1] for item in style_ranges]:
+            if any(value is not None for value in (candidate.horizontal, candidate.vertical, candidate.wrap)):
+                raise NotImplementedError(
+                    "horizontal/vertical alignment and wrapping are not yet supported for XLSB output"
+                )
         if not self._worksheet_data:
             self.add_sheet("Sheet1")
         
@@ -79,12 +134,18 @@ class XlsbWriter:
 
         sheet_id = self._sheet_count
         with self._zf.open(f"xl/worksheets/sheet{sheet_id}.bin", 'w') as sheet_file:
-            self._write_worksheet_bin(sheet_file, data, self._sheet_count - 1)
+            self._write_worksheet_bin(
+                sheet_file, data, self._sheet_count - 1,
+                style_ranges=style_ranges, header_style=header_style,
+            )
         
         self._zf.writestr(f"xl/worksheets/_rels/sheet{sheet_id}.bin.rels", self._create_worksheet_rels(sheet_id))
         self._zf.writestr(f"xl/worksheets/binaryIndex{sheet_id}.bin", self._binaryIndexBin)
 
-    def write_dataframe(self, df, include_index: bool = False, na_rep=None, formats: dict = None):
+    def write_dataframe(
+        self, df, include_index: bool = False, na_rep=None, formats: dict = None,
+        *, header_style: Style | None = None, styles: dict[str, Style] | None = None,
+    ):
         """Write a pandas or polars DataFrame to the current sheet.
 
         pandas and polars are optional: they are imported lazily only when a
@@ -104,7 +165,9 @@ class XlsbWriter:
         from .dataframe import dataframe_to_rows
 
         self.write_sheet(
-            dataframe_to_rows(df, include_index=include_index, na_rep=na_rep, formats=formats)
+            dataframe_to_rows(df, include_index=include_index, na_rep=na_rep, formats=formats),
+            header_style=header_style,
+            styles=styles,
         )
 
     def save(self):
@@ -264,20 +327,62 @@ class XlsbWriter:
         buf.extend(encoded)
         return bytes(buf)
 
-    def _build_style_record(self, ifmt: int, flags: int, byte6_extra: int = 0) -> bytes:
+    def _build_style_record(
+        self, ifmt: int, flags: int, font_id: int = 0, fill_id: int = 0,
+    ) -> bytes:
         buf = bytearray()
         buf.extend(b'\x2F\x10')
         buf.extend(b'\x00\x00')
         buf.extend(struct.pack('<H', ifmt))
-        buf.append(byte6_extra)
-        buf.extend(b'\x00\x00\x00\x00\x00')
+        buf.extend(struct.pack('<H', font_id))
+        buf.extend(struct.pack('<H', fill_id))
+        buf.extend(b'\x00\x00')
         buf.extend(b'\x00\x00')
         buf.extend(b'\x10\x10')
         buf.extend(struct.pack('<H', flags))
         return bytes(buf)
 
+    @staticmethod
+    def _xlsb_record(record_id: bytes, payload: bytes) -> bytes:
+        """Encode a record using the compact identifiers used in styles.bin."""
+        return record_id + bytes((len(payload),)) + payload
+
+    @staticmethod
+    def _xlsb_color(color: str | None) -> bytes:
+        if color is None:
+            # Automatic color, no explicit RGB value.
+            return bytes(8)
+        red, green, blue = bytes.fromhex(color)
+        # fValidRGB=1, xColorType=2 (RGB), followed by index/tint/RGBA.
+        return bytes((0x05, 0, 0, 0, red, green, blue, 0xFF))
+
+    def _xlsb_font_record(self, key: tuple) -> bytes:
+        color, bold, italic, underline = key
+        payload = bytearray()
+        payload.extend(struct.pack('<H', 220))  # 11pt in twips
+        flags = (1 if bold else 0) | (2 if italic else 0)
+        payload.extend(struct.pack('<H', flags))
+        payload.extend(struct.pack('<H', 700 if bold else 400))
+        payload.extend(struct.pack('<H', 0))  # baseline, not sub/superscript
+        payload.extend((1 if underline else 0, 2, 0, 0))  # underline/family/charset/reserved
+        payload.extend(self._xlsb_color(color))
+        payload.append(2)  # minor theme font
+        name = 'Calibri'.encode('utf-16-le')
+        payload.extend(struct.pack('<I', len(name) // 2))
+        payload.extend(name)
+        return self._xlsb_record(b'\x2B', bytes(payload))
+
+    def _xlsb_fill_record(self, color: str) -> bytes:
+        payload = bytearray(struct.pack('<I', 1))  # solid fill
+        payload.extend(self._xlsb_color(color))
+        payload.extend(self._xlsb_color(None))
+        payload.extend(struct.pack('<I', 0))  # gradient fields (unused)
+        payload.extend(bytes(40))
+        payload.extend(struct.pack('<I', 0))
+        return self._xlsb_record(b'\x2D', bytes(payload))
+
     def _build_styles_bin(self) -> bytes:
-        if not self._format_registry:
+        if not self._format_registry and not self._style_components:
             return self._stylesBin
 
         buf = bytearray()
@@ -303,15 +408,37 @@ class XlsbWriter:
         # BrtEndFonts
         buf.extend(self._stylesBin[88:91])
 
-        # ── Static sections from default styles ──
-        # BrtBeginFills + 2 fills + borders + cellStyleXFs
-        buf.extend(self._stylesBin[91:409])
+        # ── Static sections from default styles, with custom font/fill records ──
+        static_styles = bytearray(self._stylesBin[91:409])
+        custom_font_keys = [
+            key for key, font_id in sorted(self._font_registry.items(), key=lambda item: item[1])
+            if font_id >= 2
+        ]
+        font_records = b''.join(self._xlsb_font_record(key) for key in custom_font_keys)
+        if font_records:
+            # Add font records immediately before BrtEndFonts.
+            struct.pack_into('<I', static_styles, 3, 2 + len(custom_font_keys))
+            static_styles[193 - 91:193 - 91] = font_records
+
+        fill_records = b''.join(self._xlsb_fill_record(color) for color in self._fill_registry)
+        if fill_records:
+            fill_begin = 196 - 91 + len(font_records)
+            fill_count = struct.unpack_from('<I', static_styles, fill_begin + 3)[0]
+            struct.pack_into('<I', static_styles, fill_begin + 3, fill_count + len(self._fill_registry))
+            # The inserted font bytes shift this boundary; locate BrtEndFills
+            # by its complete encoded marker (record id 0x25C, empty payload).
+            end_fills = b'\xDC\x04\x00'
+            end_offset = static_styles.find(end_fills, fill_begin + 7)
+            if end_offset < 0:
+                raise RuntimeError('Could not locate BrtEndFills in the XLSB style template')
+            static_styles[end_offset:end_offset] = fill_records
+        buf.extend(static_styles)
 
         # ── CellXFs section (BrtBeginCellXFs + XF + BrtEndCellXFs) ──
         buf.extend(self._stylesBin[409:437])
 
         # ── NumFmts section (style records) ──
-        total_styles = 4 + len(self._format_registry)
+        total_styles = 4 + len(self._format_xf_map) + len(self._style_components)
         buf.extend(b'\xE9\x04\x04')
         buf.extend(struct.pack('<H', total_styles))
         buf.extend(struct.pack('<H', 0))
@@ -325,10 +452,16 @@ class XlsbWriter:
         # Style 3: bold header (fontId=1, ifmt=256, byte6=0x01)
         buf.extend(self._build_style_record(256, 0x0000, 0x01))
 
-        # Custom format style records
-        for fmt_string, xf_index in sorted(self._format_xf_map.items(), key=lambda x: x[1]):
-            numfmt_id = self._format_registry[fmt_string]
-            buf.extend(self._build_style_record(numfmt_id, 0x0001, 0x00))
+        # Custom format/style records follow the XF indices assigned while
+        # streaming cells, so preserve that exact order.
+        custom_xfs = {index: (self._format_registry[fmt], 0, 0, 0x0001)
+                      for fmt, index in self._format_xf_map.items()}
+        custom_xfs.update({
+            index: (numfmt_id, font_id, fill_id, 0x0001 if numfmt_id else 0x0000)
+            for index, (font_id, fill_id, numfmt_id, _style) in self._style_components.items()
+        })
+        for _index, (numfmt_id, font_id, fill_id, flags) in sorted(custom_xfs.items()):
+            buf.extend(self._build_style_record(numfmt_id, flags, font_id, fill_id))
 
         # BrtEndNumFmts
         buf.extend(b'\xEA\x04\x00')
@@ -354,7 +487,10 @@ class XlsbWriter:
 
         buffer.write(b'\x00\x87\x03\x00')
 
-    def _write_worksheet_bin(self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[any]], worksheet_index:int):
+    def _write_worksheet_bin(
+        self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[any]],
+        worksheet_index: int, *, style_ranges=(), header_style: Style | None = None,
+    ):
         buffer = io.BytesIO()
         BUFFER_SIZE = 65536
 
@@ -437,11 +573,23 @@ class XlsbWriter:
         row_idx = -1  
         for row_idx, row in enumerate(data_iterator):
             has_formatted = any(_is_formatted_cell(c) for c in row if c is not None)
+            row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
 
             if not has_formatted:
+                style_ids = None
+                if row_styles:
+                    first_style = next(iter(row_styles.values()))
+                    if (len(row_styles) == len(row)
+                            and all(style is first_style for style in row_styles.values())):
+                        style_ids = self._register_style(first_style)
+                    else:
+                        style_ids = tuple(
+                            (col, self._register_style(row_styles[col]))
+                            for col in sorted(row_styles)
+                        )
                 c_result = encode_xlsb_row(
                     row, self._shared_strings_dict, self._shared_strings,
-                    self._sst_unique_count, self._sst_all_count, row_idx
+                    self._sst_unique_count, self._sst_all_count, row_idx, style_ids
                 )
                 if c_result is not None:
                     cell_data, self._sst_unique_count, self._sst_all_count = c_result
@@ -463,16 +611,30 @@ class XlsbWriter:
 
             for col_idx, cell in enumerate(row):
                 if cell is None:
+                    cell_style = row_styles.get(col_idx)
+                    if cell_style is not None:
+                        xf_index = self._register_style(cell_style)
+                        buffer.write(b'\x01\x08')
+                        buffer.write(struct.pack('<II', col_idx, xf_index))
                     continue
 
                 fmt_string = _get_format(cell)
                 if fmt_string is not None:
-                    xf_index = self._register_format(fmt_string)
                     cell = _unwrap_cell(cell)
+                    cell_style = row_styles.get(col_idx)
+                    if cell_style is not None:
+                        cell_style = merge_styles(cell_style, Style(number_format=fmt_string))
+                else:
+                    cell_style = row_styles.get(col_idx)
+                if cell_style is not None:
+                    xf_index = self._register_style(cell_style)
+                    has_custom_fmt = True
+                elif fmt_string is not None:
+                    xf_index = self._register_format(fmt_string)
                     has_custom_fmt = True
                 else:
-                    has_custom_fmt = False
                     xf_index = 0
+                    has_custom_fmt = False
 
                 if isinstance(cell, str):
                     if has_custom_fmt:
@@ -498,7 +660,8 @@ class XlsbWriter:
                     buffer.write(struct.pack('<IId', col_idx, style_ref, float(cell)))
                 elif isinstance(cell, datetime.datetime):
                     if cell.year < 1900 or cell.year > 9999:
-                        self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx)
+                        self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx,
+                                        xf_index if has_custom_fmt else None)
                     else:
                         excel_date = datetime_to_serial(cell)
                         style_ref = xf_index if has_custom_fmt else 1
@@ -506,14 +669,16 @@ class XlsbWriter:
                         buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
                 elif isinstance(cell, datetime.date):
                     if cell.year < 1900 or cell.year > 9999:
-                        self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx)
+                        self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx,
+                                        xf_index if has_custom_fmt else None)
                     else:
                         excel_date = datetime_to_serial(cell)
                         style_ref = xf_index if has_custom_fmt else 2
                         buffer.write(b'\x05\x10')
                         buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
                 else:
-                    self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx)
+                    self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx,
+                                    xf_index if has_custom_fmt else None)
 
             if buffer.tell() > BUFFER_SIZE:
                 sheet_file.write(buffer.getvalue())

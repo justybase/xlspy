@@ -17,8 +17,12 @@ if _os.environ.get('XLSPY_DISABLE_C_EXT', '0') != '1':
         pass
 
 
-def encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx):
+def encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx, style_ids=None):
     if HAVE_C_EXT:
+        if style_ids is not None:
+            return _c_encode_xlsb_row(
+                row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx, style_ids
+            )
         return _c_encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx)
     return None
 

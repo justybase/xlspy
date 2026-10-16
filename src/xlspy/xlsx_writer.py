@@ -8,6 +8,7 @@ import io
 import itertools
 from .formats import _is_formatted_cell, _unwrap_cell, _get_format
 from .excel_dates import datetime_to_serial
+from .styles import Style, merge_styles, normalize_style_ranges, styles_for_row
 
 
 @dataclass
@@ -37,6 +38,10 @@ class XlsxWriter:
 
         self._format_registry: dict[str, int] = {}
         self._format_xf_map: dict[str, int] = {}
+        self._style_xf_map: dict[Style, int] = {}
+        self._font_registry: dict[tuple, int] = {(None, True, None, None): 1}
+        self._fill_registry: dict[str, int] = {}
+        self._style_components: dict[int, tuple[int, int, int, Style]] = {}
         self._next_numfmt_id = 164
         self._next_xf_index = 4
 
@@ -79,9 +84,13 @@ class XlsxWriter:
         if fmt_string in self._format_xf_map:
             return self._format_xf_map[fmt_string]
 
-        numfmt_id = self._next_numfmt_id
-        self._next_numfmt_id += 1
-        self._format_registry[fmt_string] = numfmt_id
+        # A style may already have registered this number format; reuse its id
+        # so the style XF keeps referencing a format that is still emitted.
+        numfmt_id = self._format_registry.get(fmt_string)
+        if numfmt_id is None:
+            numfmt_id = self._next_numfmt_id
+            self._next_numfmt_id += 1
+            self._format_registry[fmt_string] = numfmt_id
 
         xf_index = self._next_xf_index
         self._next_xf_index += 1
@@ -89,7 +98,16 @@ class XlsxWriter:
 
         return xf_index
 
-    def write_sheet(self, data: Iterable[list[any]]):
+    def write_sheet(
+        self,
+        data: Iterable[list[any]],
+        *,
+        header_style: Style | None = None,
+        styles: dict[str, Style] | None = None,
+    ):
+        if header_style is not None and not isinstance(header_style, Style):
+            raise TypeError("header_style must be a Style instance")
+        style_ranges = normalize_style_ranges(styles)
         if not self._worksheet_data:
             self.add_sheet("Sheet1")
         
@@ -98,9 +116,43 @@ class XlsxWriter:
 
         sheet_id = self._sheet_count
         with self._zf.open(f"xl/worksheets/sheet{sheet_id}.xml", 'w') as sheet_file:
-            self._write_worksheet_xml(sheet_file, data, self._sheet_count - 1)
+            self._write_worksheet_xml(
+                sheet_file, data, self._sheet_count - 1,
+                style_ranges=style_ranges, header_style=header_style,
+            )
 
-    def write_dataframe(self, df, include_index: bool = False, na_rep=None, formats: dict = None):
+    def _register_style(self, style: Style) -> int:
+        if style in self._style_xf_map:
+            return self._style_xf_map[style]
+        font_key = (style.font_color, style.bold, style.italic, style.underline)
+        if font_key == (None, None, None, None):
+            font_id = 0
+        elif font_key not in self._font_registry:
+            self._font_registry[font_key] = max(self._font_registry.values(), default=1) + 1
+            font_id = self._font_registry[font_key]
+        else:
+            font_id = self._font_registry[font_key]
+        fill_id = 0
+        if style.fill is not None:
+            if style.fill not in self._fill_registry:
+                self._fill_registry[style.fill] = 2 + len(self._fill_registry)
+            fill_id = self._fill_registry[style.fill]
+        numfmt_id = 0
+        if style.number_format is not None:
+            if style.number_format not in self._format_registry:
+                self._format_registry[style.number_format] = self._next_numfmt_id
+                self._next_numfmt_id += 1
+            numfmt_id = self._format_registry[style.number_format]
+        xf_index = self._next_xf_index
+        self._next_xf_index += 1
+        self._style_xf_map[style] = xf_index
+        self._style_components[xf_index] = (font_id, fill_id, numfmt_id, style)
+        return xf_index
+
+    def write_dataframe(
+        self, df, include_index: bool = False, na_rep=None, formats: dict = None,
+        *, header_style: Style | None = None, styles: dict[str, Style] | None = None,
+    ):
         """Write a pandas or polars DataFrame to the current sheet.
 
         pandas and polars are optional: they are imported lazily only when a
@@ -120,7 +172,9 @@ class XlsxWriter:
         from .dataframe import dataframe_to_rows
 
         self.write_sheet(
-            dataframe_to_rows(df, include_index=include_index, na_rep=na_rep, formats=formats)
+            dataframe_to_rows(df, include_index=include_index, na_rep=na_rep, formats=formats),
+            header_style=header_style,
+            styles=styles,
         )
 
     def save(self):
@@ -218,8 +272,6 @@ class XlsxWriter:
         numfmts = ""
         xf_entries = []
 
-        base_xf_count = 4
-
         numfmt_count = len(self._format_registry)
         if numfmt_count > 0:
             numfmts_parts = []
@@ -233,23 +285,73 @@ class XlsxWriter:
         xf_entries.append('<xf numFmtId="22" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>')
         xf_entries.append('<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>')
 
-        for fmt_string, xf_index in sorted(self._format_xf_map.items(), key=lambda x: x[1]):
-            numfmt_id = self._format_registry[fmt_string]
-            xf_entries.append(f'<xf numFmtId="{numfmt_id}" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>')
+        # Format XFs and style XFs share one index space, so they must be
+        # emitted in index order: the position in cellXfs is the value a cell
+        # references through its s= attribute.
+        custom_xfs = {
+            xf_index: f'<xf numFmtId="{self._format_registry[fmt_string]}" fontId="0" '
+                      f'fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+            for fmt_string, xf_index in self._format_xf_map.items()
+        }
+        for xf_index, (font_id, fill_id, numfmt_id, style) in self._style_components.items():
+            attrs = [f'numFmtId="{numfmt_id}"', f'fontId="{font_id}"',
+                     f'fillId="{fill_id}"', 'borderId="0"', 'xfId="0"']
+            if style.number_format is not None:
+                attrs.append('applyNumberFormat="1"')
+            if any(value is not None for value in
+                   (style.font_color, style.bold, style.italic, style.underline)):
+                attrs.append('applyFont="1"')
+            if style.fill is not None:
+                attrs.append('applyFill="1"')
+            alignment = []
+            if style.horizontal is not None:
+                alignment.append(f'horizontal="{style.horizontal}"')
+            if style.vertical is not None:
+                alignment.append(f'vertical="{style.vertical}"')
+            if style.wrap is not None:
+                alignment.append(f'wrapText="{1 if style.wrap else 0}"')
+            align_xml = f'<alignment {" ".join(alignment)}/>' if alignment else ''
+            if alignment:
+                attrs.append('applyAlignment="1"')
+            custom_xfs[xf_index] = f'<xf {" ".join(attrs)}>{align_xml}</xf>'
+
+        for xf_index in sorted(custom_xfs):
+            xf_entries.append(custom_xfs[xf_index])
 
         total_xf = len(xf_entries)
+
+        fonts = [
+            '<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>',
+            '<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/><b/></font>',
+        ]
+        for key, font_id in sorted(self._font_registry.items(), key=lambda item: item[1]):
+            if font_id < 2:
+                continue
+            color, bold, italic, underline = key
+            elements = ['<sz val="11"/>']
+            elements.append(f'<color rgb="FF{color}"/>' if color else '<color theme="1"/>')
+            elements.append('<name val="Calibri"/><family val="2"/><scheme val="minor"/>')
+            if bold:
+                elements.append('<b/>')
+            if italic:
+                elements.append('<i/>')
+            if underline:
+                elements.append('<u/>')
+            fonts.append(f'<font>{"".join(elements)}</font>')
+        fills = [
+            '<fill><patternFill patternType="none"/></fill>',
+            '<fill><patternFill patternType="gray125"/></fill>',
+        ]
+        fills.extend(
+            f'<fill><patternFill patternType="solid"><fgColor rgb="FF{color}"/><bgColor indexed="64"/></patternFill></fill>'
+            for color in self._fill_registry
+        )
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 {numfmts}
-<fonts count="2">
-<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>
-<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/><b/></font>
-</fonts>
-<fills count="2">
-<fill><patternFill patternType="none"/></fill>
-<fill><patternFill patternType="gray125"/></fill>
-</fills>
+<fonts count="{len(fonts)}">{"".join(fonts)}</fonts>
+<fills count="{len(fills)}">{"".join(fills)}</fills>
 <borders count="1">
 <border><left/><right/><top/><bottom/><diagonal/></border>
 </borders>
@@ -307,7 +409,10 @@ class XlsxWriter:
         
         return col_widths
 
-    def _write_worksheet_xml(self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[any]], worksheet_index: int):
+    def _write_worksheet_xml(
+        self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[any]],
+        worksheet_index: int, *, style_ranges=(), header_style: Style | None = None,
+    ):
         buffer = io.StringIO()
         
         buffer.write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
@@ -340,20 +445,40 @@ class XlsxWriter:
         last_row_idx = 0
         for row_idx, row in enumerate(data_list):
             last_row_idx = row_idx
-            buffer.write('<row>')
+            buffer.write(f'<row r="{row_idx + 1}">')
+            row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
+            uniform_style = None
+            uniform_xf = None
+            if row_styles and len(row_styles) == len(row):
+                first_style = next(iter(row_styles.values()))
+                if all(style is first_style for style in row_styles.values()):
+                    uniform_style = first_style
+                    uniform_xf = self._register_style(first_style)
             
             for col_idx, cell in enumerate(row):
+                cell_style = uniform_style if uniform_style is not None else row_styles.get(col_idx)
                 if cell is None:
-                    buffer.write('<c/>')
+                    if cell_style is None:
+                        buffer.write('<c/>')
+                    else:
+                        xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
+                        cell_ref = f'{self._letters[col_idx]}{row_idx + 1}'
+                        buffer.write(f'<c r="{cell_ref}" s="{xf_index}"/>')
                     continue
 
                 fmt_string = _get_format(cell)
                 if fmt_string is not None:
-                    xf_index = self._register_format(fmt_string)
                     cell = _unwrap_cell(cell)
-                    has_custom_fmt = True
-                else:
-                    has_custom_fmt = False
+                    if cell_style is not None:
+                        cell_style = merge_styles(cell_style, Style(number_format=fmt_string))
+                has_custom_fmt = cell_style is not None or fmt_string is not None
+                if cell_style is not None:
+                    if cell_style is uniform_style and fmt_string is None:
+                        xf_index = uniform_xf
+                    else:
+                        xf_index = self._register_style(cell_style)
+                elif fmt_string is not None:
+                    xf_index = self._register_format(fmt_string)
 
                 if isinstance(cell, str):
                     if has_custom_fmt:
@@ -366,19 +491,19 @@ class XlsxWriter:
                 elif isinstance(cell, (int, float, Decimal)):
                     if isinstance(cell, float):
                         if cell != cell:
-                            self._write_string_cell(buffer, "NaN", row_idx == 0)
+                            self._write_string_cell(buffer, "NaN", row_idx == 0, xf_index if has_custom_fmt else None)
                             continue
                         elif cell == float('inf'):
-                            self._write_string_cell(buffer, "\u221e", row_idx == 0)
+                            self._write_string_cell(buffer, "\u221e", row_idx == 0, xf_index if has_custom_fmt else None)
                             continue
                         elif cell == float('-inf'):
-                            self._write_string_cell(buffer, "-\u221e", row_idx == 0)
+                            self._write_string_cell(buffer, "-\u221e", row_idx == 0, xf_index if has_custom_fmt else None)
                             continue
                     s_attr = f' s="{xf_index}"' if has_custom_fmt else ''
                     buffer.write(f'<c{s_attr}><v>{float(cell)}</v></c>')
                 elif isinstance(cell, datetime.datetime):
                     if cell.year < 1900 or cell.year > 9999:
-                        self._write_string_cell(buffer, str(cell), row_idx == 0)
+                        self._write_string_cell(buffer, str(cell), row_idx == 0, xf_index if has_custom_fmt else None)
                     else:
                         if cell.tzinfo is not None:
                             cell = cell.replace(tzinfo=None)
@@ -389,7 +514,7 @@ class XlsxWriter:
                             buffer.write(f'<c s="2"><v>{excel_date}</v></c>')
                 elif isinstance(cell, datetime.date):
                     if cell.year < 1900 or cell.year > 9999:
-                        self._write_string_cell(buffer, str(cell), row_idx == 0)
+                        self._write_string_cell(buffer, str(cell), row_idx == 0, xf_index if has_custom_fmt else None)
                     else:
                         excel_date = datetime_to_serial(cell)
                         if has_custom_fmt:
@@ -397,7 +522,8 @@ class XlsxWriter:
                         else:
                             buffer.write(f'<c s="1"><v>{excel_date}</v></c>')
                 else:
-                    self._write_string_cell(buffer, str(cell), row_idx == 0)
+                    self._write_string_cell(buffer, str(cell), row_idx == 0,
+                                            xf_index if has_custom_fmt else None)
             
             buffer.write('</row>')
         
