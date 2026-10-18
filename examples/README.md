@@ -1,5 +1,8 @@
 # Examples
 
+Start with the [quick start](../README.md#quick-start) or the
+[usage guide](../docs/usage.md) for a walkthrough of the API.
+
 Runnable scripts demonstrating `xlspy`. Each script inserts `../src` on
 `sys.path`, so you can run them straight from a clone without installing the
 package. Scripts that create workbooks write them to the current directory
@@ -36,6 +39,9 @@ pip install xlspy[pandas]   # or: pip install xlspy[polars]
 | [`polars_to_xlsx_xlsb.py`](polars_to_xlsx_xlsb.py) | The same API with a polars DataFrame, including durations and nulls. |
 
 ## Benchmarks
+
+See [benchmark results and methodology](../docs/benchmarks.md) for the recorded
+comparisons and the environment used to measure them.
 
 | Script | What it shows |
 |--------|---------------|

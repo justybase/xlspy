@@ -35,7 +35,7 @@
   <circle cx="883" cy="217" r="5" fill="#67e8b5"/>
   <circle cx="1041" cy="212" r="5" fill="#62c8f2"/>
   <text x="72" y="139" fill="#f3fbff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="68" font-weight="750" letter-spacing="-2">xlspy</text>
-  <text x="75" y="181" fill="#b8d2df" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="21" font-weight="500">Fast spreadsheet I/O for Python</text>
+  <text x="75" y="181" fill="#b8d2df" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="21" font-weight="500">Excel reports, made with Python</text>
   <g font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13" font-weight="700" letter-spacing="1">
     <rect x="75" y="211" width="77" height="30" rx="15" fill="#ffffff" opacity=".1"/><text x="97" y="231" fill="#b9f5df">XLSB</text>
     <rect x="162" y="211" width="77" height="30" rx="15" fill="#ffffff" opacity=".1"/><text x="184" y="231" fill="#c4eafa">XLSX</text>

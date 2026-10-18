@@ -1,5 +1,8 @@
 # Test suite
 
+For recorded platform runs and compatibility checks, see
+[Validation and test results](../docs/validation.md).
+
 ## Install and run
 
 The test dependencies are optional and do not become runtime dependencies:
