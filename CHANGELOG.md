@@ -89,3 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   categories are referenced through `numRef`, which split a single-series line
   over a vertical range into one series per row (legend showing the category
   names). The rendered result now matches the XLSX output.
+- XLSB chart axes are now explicit (`delete="0"`, `axPos`, `tickLblPos`), like
+  real Excel-generated XLSB files. Without those attributes Excel's XLSB
+  loader did not draw the category/value axis tick labels (Q1–Q4, 0–180),
+  although the XLSX loader applies the defaults and showed them.

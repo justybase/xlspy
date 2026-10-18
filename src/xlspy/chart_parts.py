@@ -33,6 +33,22 @@ _CHART_AXES_XML = (
     "<minorTickMark val=\"none\"/><crossAx val=\"10\"/></valAx>"
 )
 
+# The XLSB loader in Excel does not apply the same attribute defaults as the
+# XLSX one: without explicit delete/axPos/tickLblPos the axis (and therefore
+# its tick labels) is not drawn. Real Excel-generated XLSB charts spell these
+# out, so the XLSB path mirrors them. The XLSX path stays byte-identical to
+# the openpyxl oracle, which renders correctly without them.
+_XLSB_CHART_AXES_XML = (
+    "<catAx><axId val=\"10\"/><scaling><orientation val=\"minMax\"/></scaling>"
+    "<delete val=\"0\"/><axPos val=\"b\"/>"
+    "<majorTickMark val=\"none\"/><minorTickMark val=\"none\"/>"
+    "<tickLblPos val=\"nextTo\"/><crossAx val=\"100\"/><lblOffset val=\"100\"/></catAx>"
+    "<valAx><axId val=\"100\"/><scaling><orientation val=\"minMax\"/></scaling>"
+    "<delete val=\"0\"/><axPos val=\"l\"/><majorGridlines/>"
+    "<majorTickMark val=\"none\"/><minorTickMark val=\"none\"/>"
+    "<tickLblPos val=\"nextTo\"/><crossAx val=\"10\"/></valAx>"
+)
+
 
 def column_letters() -> list[str]:
     """Column labels ``A`` … ``XFD`` (shared with the writers)."""
@@ -260,20 +276,21 @@ def chart_xml(letters: list[str], chart, sheet_name: str, rows=None,
         for index, item in enumerate(chart.series)
     )
     vary = "<varyColors val=\"0\"/>" if xlsb else ""
+    axes = _XLSB_CHART_AXES_XML if xlsb else _CHART_AXES_XML
     parts.append("<plotArea>")
     if chart.chart_type == "bar":
         parts.append(
             "<barChart><barDir val=\"col\"/><grouping val=\"clustered\"/>"
             f"{vary}{series_xml}"
             "<gapWidth val=\"150\"/><axId val=\"10\"/><axId val=\"100\"/></barChart>"
-            f"{_CHART_AXES_XML}"
+            f"{axes}"
         )
     elif chart.chart_type == "line":
         parts.append(
             "<lineChart><grouping val=\"standard\"/>"
             f"{vary}{series_xml}"
             "<axId val=\"10\"/><axId val=\"100\"/></lineChart>"
-            f"{_CHART_AXES_XML}"
+            f"{axes}"
         )
     else:
         parts.append(

@@ -110,6 +110,10 @@ def test_xlsb_chart_caches_carry_cell_values(tmp_path):
         # Explicit single-series colors, matching Excel-generated files.
         assert "<barChart><barDir val=\"col\"/><grouping val=\"clustered\"/>" in bar
         assert "<varyColors val=\"0\"/>" in bar
+        # Explicit axis attributes: the XLSB loader hides labels without them.
+        assert "<delete val=\"0\"/><axPos val=\"b\"/>" in bar
+        assert "<delete val=\"0\"/><axPos val=\"l\"/><majorGridlines/>" in bar
+        assert "<tickLblPos val=\"nextTo\"/>" in bar
         pie = archive.read("xl/charts/chart2.xml").decode()
         assert "<pieChart><varyColors val=\"1\"/>" in pie
 
