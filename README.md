@@ -568,6 +568,18 @@ The legacy in-process COM tests pass but emit `0x80010108` shutdown diagnostics
 from Excel/pywin32 on this host; the separate PowerShell COM validation passed
 without that diagnostic.
 
+### Local test run (WSL2)
+
+Run on **2026-10-18** in WSL2 (Linux x86_64, Python 3.14.4, pytest 9.1.1):
+
+- With the C extension built: **257 passed, 13 skipped**.
+- Pure-Python fallback (without the C extension): **239 passed, 31 skipped**.
+- The skips were for optional `nzpy_extended`/`psutil` dependencies and
+  Windows Excel COM tests, which cannot run in this WSL2 environment.
+
+These results are for WSL2/Linux; the CI workflow separately includes native
+Windows runners in its operating-system matrix.
+
 ## Repository
 
 <https://github.com/justybase/xlspy/>
