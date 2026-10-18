@@ -100,3 +100,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   legacy `style` element the way the XLSX loader does, so a styled chart
   (e.g. `style=10`) rendered with the default style in XLSB while XLSX
   showed the styled one. Charts without an explicit style are unchanged.
+- XLSB charts now pin the classic Office 2007 accent palette (`4F81BD`,
+  `C0504D`, `9BBB59`, …) and the legacy 18 pt bold title, so they render
+  like the XLSX output. The XLSB loader only knows the modern style engine:
+  it painted series with the theme accents (Office 2013 palette) and used
+  14 pt titles, while the XLSX loader draws legacy styles with their
+  built-in classic colours and larger titles.

@@ -155,6 +155,49 @@ def test_xlsb_chart_style_uses_c14_extension(tmp_path):
         assert "AlternateContent" not in pie
 
 
+def test_xlsb_chart_pins_the_legacy_palette_and_title(tmp_path):
+    """Colours and title size match how Excel draws legacy-styled XLSX charts."""
+    charts = [
+        Chart(
+            "bar",
+            [
+                ChartSeries("B2:B4", categories="A2:A4"),
+                ChartSeries("C2:C4", categories="A2:A4"),
+            ],
+            title="Revenue",
+            anchor="E2",
+            style=10,
+        ),
+        Chart("line", [ChartSeries("B2:B4", categories="A2:A4")], anchor="E18"),
+        Chart("pie", [ChartSeries("C2:C4")], anchor="E34"),
+    ]
+    path = tmp_path / "palette.xlsb"
+    with XlsbWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(_sample_data(), charts=charts)
+
+    with zipfile.ZipFile(path) as archive:
+        bar = archive.read("xl/charts/chart1.xml").decode()
+        # One classic Office 2007 accent per series...
+        assert "<a:srgbClr val=\"4F81BD\"/>" in bar
+        assert "<a:srgbClr val=\"C0504D\"/>" in bar
+        # ...and the legacy 18 pt bold title instead of the modern 14 pt one.
+        assert "<a:rPr lang=\"en-US\" sz=\"1800\" b=\"1\"/>" in bar
+        line = archive.read("xl/charts/chart2.xml").decode()
+        assert (
+            "<a:ln><a:solidFill><a:srgbClr val=\"4F81BD\"/></a:solidFill>"
+            "<a:prstDash val=\"solid\"/></a:ln>"
+        ) in line
+        pie = archive.read("xl/charts/chart3.xml").decode()
+        for point, color in enumerate(("4F81BD", "C0504D", "9BBB59")):
+            assert (
+                f"<dPt><idx val=\"{point}\"/><spPr><a:solidFill>"
+                f"<a:srgbClr val=\"{color}\"/></a:solidFill>"
+            ) in pie
+        for name in ("chart1", "chart2", "chart3"):
+            ET.fromstring(archive.read(f"xl/charts/{name}.xml"))
+
+
 def test_xlsb_brt_drawing_record(tmp_path):
     from xlspy.writer import XlsbWriter as W
 

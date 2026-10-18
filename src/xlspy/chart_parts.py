@@ -12,8 +12,12 @@ chart styles spelled out through the ``c14:style`` extension. Excel's XLSB
 loader evidently depends on the caches for series structure; without them
 single-series charts over vertical ranges render transposed (one series per
 row, category names as legend), and it does not apply a bare legacy
-``style`` element the way the XLSX loader does. The XLSX path stays
-byte-identical to the openpyxl oracle and is intentionally left cache-free.
+``style`` element the way the XLSX loader does. The XLSB path also pins the
+classic Office 2007 accent palette and 18 pt titles: the loader's modern
+style engine would otherwise paint series with the theme accents and use
+14 pt titles, visibly unlike the legacy-style rendering of the XLSX loader.
+The XLSX path stays byte-identical to the openpyxl oracle and is
+intentionally left cache-free.
 """
 
 from __future__ import annotations
@@ -60,6 +64,14 @@ _XLSB_CHART_AXES_XML = (
 # the openpyxl oracle.
 _MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 _C14_NS = "http://schemas.microsoft.com/office/drawing/2007/8/2/chart"
+
+# Excel's XLSX loader draws charts that carry a legacy ``style`` element with
+# the classic Office 2007 accent palette and 18 pt titles. The XLSB loader
+# only knows the modern style engine: its colours come from the theme (the
+# Office 2013 accents of our theme) and titles default to 14 pt. Pinning the
+# classic palette and title size in the XLSB path keeps a chart visually
+# identical in both formats, whatever style engine Excel applies on top.
+_LEGACY_ACCENTS = ("4F81BD", "C0504D", "9BBB59", "8064A2", "4BACC6", "F79646")
 
 
 def column_letters() -> list[str]:
@@ -261,10 +273,33 @@ def chart_series_xml(letters: list[str], series, sheet_name: str,
             f"{values_formula}"
             "</f></numRef></val>"
         )
+    if xlsb:
+        color = _LEGACY_ACCENTS[index % len(_LEGACY_ACCENTS)]
+        if chart_type == "line":
+            sp_pr = (
+                "<spPr><a:ln>"
+                f"<a:solidFill><a:srgbClr val=\"{color}\"/></a:solidFill>"
+                "<a:prstDash val=\"solid\"/></a:ln></spPr>"
+            )
+        else:
+            sp_pr = (
+                f"<spPr><a:solidFill><a:srgbClr val=\"{color}\"/></a:solidFill>"
+                "<a:ln><a:prstDash val=\"solid\"/></a:ln></spPr>"
+            )
+    else:
+        sp_pr = "<spPr><a:ln><a:prstDash val=\"solid\"/></a:ln></spPr>"
+    points = ""
+    if xlsb and chart_type == "pie":
+        value_count = len(_range_values(rows, series.values))
+        points = "".join(
+            f"<dPt><idx val=\"{point}\"/><spPr><a:solidFill>"
+            f"<a:srgbClr val=\"{_LEGACY_ACCENTS[point % len(_LEGACY_ACCENTS)]}\"/>"
+            "</a:solidFill><a:ln><a:prstDash val=\"solid\"/></a:ln></spPr></dPt>"
+            for point in range(value_count)
+        )
     return (
         f"<ser><idx val=\"{index}\"/><order val=\"{index}\"/>{title}"
-        "<spPr><a:ln><a:prstDash val=\"solid\"/></a:ln></spPr>"
-        f"{marker}{categories}"
+        f"{sp_pr}{points}{marker}{categories}"
         f"{values_xml}</ser>"
     )
 
@@ -285,10 +320,20 @@ def chart_xml(letters: list[str], chart, sheet_name: str, rows=None,
             parts.append(f"<style val=\"{chart.style}\"/>")
     parts.append("<chart>")
     if chart.title is not None:
-        parts.append(
-            "<title><tx><rich><a:bodyPr/><a:p><a:pPr><a:defRPr/></a:pPr>"
-            f"<a:r><a:t>{saxutils.escape(chart.title)}</a:t></a:r></a:p></rich></tx></title>"
-        )
+        title_text = saxutils.escape(chart.title)
+        if xlsb:
+            parts.append(
+                "<title><tx><rich><a:bodyPr/><a:p>"
+                "<a:pPr><a:defRPr sz=\"1800\" b=\"1\"/></a:pPr>"
+                "<a:r><a:rPr lang=\"en-US\" sz=\"1800\" b=\"1\"/>"
+                f"<a:t>{title_text}</a:t></a:r>"
+                "</a:p></rich></tx></title>"
+            )
+        else:
+            parts.append(
+                "<title><tx><rich><a:bodyPr/><a:p><a:pPr><a:defRPr/></a:pPr>"
+                f"<a:r><a:t>{title_text}</a:t></a:r></a:p></rich></tx></title>"
+            )
     series_xml = "".join(
         chart_series_xml(
             letters, item, sheet_name, index, chart.chart_type,
