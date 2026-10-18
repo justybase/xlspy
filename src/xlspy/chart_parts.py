@@ -7,11 +7,13 @@ record). Keeping the XML generation in one place keeps the writers in sync.
 
 The XLSB path (``xlsb=True``) additionally mirrors what real Excel files
 contain: cached values (``strCache``/``numCache``) inside every reference,
-text categories via ``strRef``, and an explicit ``varyColors`` flag. Excel's
-XLSB loader evidently depends on the caches for series structure; without
-them single-series charts over vertical ranges render transposed (one series
-per row, category names as legend). The XLSX path stays byte-identical to
-the openpyxl oracle and is intentionally left cache-free.
+text categories via ``strRef``, an explicit ``varyColors`` flag, and numeric
+chart styles spelled out through the ``c14:style`` extension. Excel's XLSB
+loader evidently depends on the caches for series structure; without them
+single-series charts over vertical ranges render transposed (one series per
+row, category names as legend), and it does not apply a bare legacy
+``style`` element the way the XLSX loader does. The XLSX path stays
+byte-identical to the openpyxl oracle and is intentionally left cache-free.
 """
 
 from __future__ import annotations
@@ -48,6 +50,16 @@ _XLSB_CHART_AXES_XML = (
     "<majorTickMark val=\"none\"/><minorTickMark val=\"none\"/>"
     "<tickLblPos val=\"nextTo\"/><crossAx val=\"10\"/></valAx>"
 )
+
+# [MS-ODRAWXML] 2.7.3.5: the modern c14 style value is the legacy value plus
+# 100 (Excel writes style 10 as 110 and the default style 2 as 102). A bare
+# legacy ``style`` element is enough for the XLSX loader, but the XLSB loader
+# renders the chart with the default style unless the extension is spelled
+# out, so Excel-written XLSB files use the mc:AlternateContent form with the
+# legacy element as fallback. The XLSX path keeps the plain element, matching
+# the openpyxl oracle.
+_MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+_C14_NS = "http://schemas.microsoft.com/office/drawing/2007/8/2/chart"
 
 
 def column_letters() -> list[str]:
@@ -261,7 +273,16 @@ def chart_xml(letters: list[str], chart, sheet_name: str, rows=None,
               xlsb: bool = False) -> str:
     parts = []
     if chart.style is not None:
-        parts.append(f"<style val=\"{chart.style}\"/>")
+        if xlsb:
+            parts.append(
+                f"<mc:AlternateContent xmlns:mc=\"{_MC_NS}\">"
+                f"<mc:Choice Requires=\"c14\" xmlns:c14=\"{_C14_NS}\">"
+                f"<c14:style val=\"{chart.style + 100}\"/></mc:Choice>"
+                f"<mc:Fallback><style val=\"{chart.style}\"/></mc:Fallback>"
+                "</mc:AlternateContent>"
+            )
+        else:
+            parts.append(f"<style val=\"{chart.style}\"/>")
     parts.append("<chart>")
     if chart.title is not None:
         parts.append(

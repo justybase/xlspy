@@ -118,6 +118,43 @@ def test_xlsb_chart_caches_carry_cell_values(tmp_path):
         assert "<pieChart><varyColors val=\"1\"/>" in pie
 
 
+def test_xlsb_chart_style_uses_c14_extension(tmp_path):
+    """Numeric styles go through mc:AlternateContent, like Excel's own files."""
+    path = tmp_path / "styled.xlsb"
+    with XlsbWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(_sample_data(), charts=_sample_charts())
+        writer.add_sheet("Second")
+        writer.write_sheet([["x", 1]], charts=[
+            Chart("bar", [ChartSeries("B1:B1")], style=2, anchor="C3"),
+        ])
+
+    with zipfile.ZipFile(path) as archive:
+        bar = archive.read("xl/charts/chart1.xml").decode()
+        # Style 10 becomes c14:style 110 (legacy + 100, [MS-ODRAWXML]
+        # 2.7.3.5) with the legacy element as fallback; a bare legacy
+        # element alone is not applied by Excel's XLSB loader.
+        expected = (
+            "<mc:AlternateContent"
+            " xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\">"
+            "<mc:Choice Requires=\"c14\""
+            " xmlns:c14=\"http://schemas.microsoft.com/office/drawing/2007/8/2/chart\">"
+            "<c14:style val=\"110\"/></mc:Choice>"
+            "<mc:Fallback><style val=\"10\"/></mc:Fallback>"
+            "</mc:AlternateContent>"
+        )
+        assert expected in bar
+        assert "<style val=\"10\"/><chart>" not in bar
+        ET.fromstring(bar)
+        # The lowest style follows the same rule (2 -> 102)...
+        second = archive.read("xl/charts/chart3.xml").decode()
+        assert "<c14:style val=\"102\"/>" in second
+        assert "<mc:Fallback><style val=\"2\"/></mc:Fallback>" in second
+        # ...and charts without a style keep the implicit default: no block.
+        pie = archive.read("xl/charts/chart2.xml").decode()
+        assert "AlternateContent" not in pie
+
+
 def test_xlsb_brt_drawing_record(tmp_path):
     from xlspy.writer import XlsbWriter as W
 

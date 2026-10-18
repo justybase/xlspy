@@ -93,3 +93,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   real Excel-generated XLSB files. Without those attributes Excel's XLSB
   loader did not draw the category/value axis tick labels (Q1–Q4, 0–180),
   although the XLSX loader applies the defaults and showed them.
+- XLSB charts now spell numeric styles out through the modern `c14:style`
+  extension (`mc:AlternateContent` with `c14:style` = style + 100 and the
+  legacy element as fallback, [MS-ODRAWXML] 2.7.3.5), like real
+  Excel-generated XLSB files. Excel's XLSB loader did not apply the bare
+  legacy `style` element the way the XLSX loader does, so a styled chart
+  (e.g. `style=10`) rendered with the default style in XLSB while XLSX
+  showed the styled one. Charts without an explicit style are unchanged.
