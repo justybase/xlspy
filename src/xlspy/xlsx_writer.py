@@ -9,6 +9,7 @@ import itertools
 from . import chart_parts
 from .formats import _is_formatted_cell, _unwrap_cell, _get_format
 from .excel_dates import datetime_to_serial
+from ._accel import encode_xlsx_row as accel_encode_xlsx_row
 from .styles import (
     CellIsRule,
     Chart,
@@ -1293,6 +1294,15 @@ class XlsxWriter:
         last_row_idx = 0
         for row_idx, row in enumerate(data_list):
             last_row_idx = row_idx
+            c_row = accel_encode_xlsx_row(
+                row, self._shared_strings_dict, self._shared_strings,
+                self._sst_unique_count, self._sst_all_count,
+                row_idx, self._useSharedStrings,
+            )
+            if c_row is not None:
+                row_xml, self._sst_unique_count, self._sst_all_count = c_row
+                buffer.write(row_xml)
+                continue
             buffer.write(f'<row r="{row_idx + 1}">')
 
             for col_idx, cell in enumerate(row):

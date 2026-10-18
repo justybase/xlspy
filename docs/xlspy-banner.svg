@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
+  <title id="title">xlspy — Python spreadsheet toolkit</title>
+  <desc id="desc">A clean spreadsheet grid with flowing data lines, representing XLSB, XLSX, and XLSM support.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101d32"/>
+      <stop offset="1" stop-color="#183c52"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#67e8b5"/>
+      <stop offset="1" stop-color="#62c8f2"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="320" rx="26" fill="url(#bg)"/>
+  <circle cx="1090" cy="45" r="190" fill="#2d7890" opacity=".13"/>
+  <circle cx="1050" cy="320" r="175" fill="#48c99a" opacity=".08"/>
+  <g transform="translate(735 54) rotate(-7 190 110)" opacity=".95">
+    <rect x="0" y="0" width="375" height="218" rx="15" fill="#f4fbfa"/>
+    <rect x="0" y="0" width="375" height="38" rx="15" fill="#dcefeb"/>
+    <rect x="0" y="24" width="375" height="14" fill="#dcefeb"/>
+    <rect x="18" y="13" width="8" height="8" rx="4" fill="#5bc99d"/>
+    <rect x="34" y="13" width="8" height="8" rx="4" fill="#86d8bd"/>
+    <rect x="50" y="13" width="8" height="8" rx="4" fill="#b4e9d9"/>
+    <g stroke="#d5e5e5" stroke-width="1">
+      <path d="M0 74H375M0 110H375M0 146H375M0 182H375"/>
+      <path d="M75 38V218M150 38V218M225 38V218M300 38V218"/>
+    </g>
+    <rect x="76" y="75" width="73" height="34" rx="5" fill="#b6f0d7"/>
+    <rect x="226" y="111" width="73" height="34" rx="5" fill="#c6eafa"/>
+    <rect x="151" y="147" width="73" height="34" rx="5" fill="#d9f3e9"/>
+    <path d="M94 92h37M244 128h37M169 164h37" stroke="#22866d" stroke-width="4" stroke-linecap="round" opacity=".7"/>
+  </g>
+  <path d="M705 244c73-45 120 5 178-27s104-36 158-5" fill="none" stroke="url(#flow)" stroke-width="3" stroke-linecap="round" opacity=".75"/>
+  <circle cx="705" cy="244" r="5" fill="#67e8b5"/>
+  <circle cx="883" cy="217" r="5" fill="#67e8b5"/>
+  <circle cx="1041" cy="212" r="5" fill="#62c8f2"/>
+  <text x="72" y="139" fill="#f3fbff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="68" font-weight="750" letter-spacing="-2">xlspy</text>
+  <text x="75" y="181" fill="#b8d2df" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="21" font-weight="500">Fast spreadsheet I/O for Python</text>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13" font-weight="700" letter-spacing="1">
+    <rect x="75" y="211" width="77" height="30" rx="15" fill="#ffffff" opacity=".1"/><text x="97" y="231" fill="#b9f5df">XLSB</text>
+    <rect x="162" y="211" width="77" height="30" rx="15" fill="#ffffff" opacity=".1"/><text x="184" y="231" fill="#c4eafa">XLSX</text>
+    <rect x="249" y="211" width="77" height="30" rx="15" fill="#ffffff" opacity=".1"/><text x="271" y="231" fill="#d5e8ef">XLSM</text>
+  </g>
+</svg>

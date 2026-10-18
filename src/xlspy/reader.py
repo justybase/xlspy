@@ -8,6 +8,7 @@ from .biff_reader import BiffReader, CellType
 from .biff_utils import iter_records as _iter_biff_records
 from .excel_dates import serial_to_datetime as _serial_to_datetime
 from ._accel import HAVE_C_EXT, read_xlsb_worksheet as _c_read_xlsb_worksheet
+from ._accel import read_xlsb_shared_strings as _accel_read_sst
 
 
 class ExcelDataType(IntEnum):
@@ -336,6 +337,10 @@ class ExcelReader:
         entry_path = self._resolve_path(self._shared_strings_location)
         with self._archive.open(entry_path) as f:
             raw = f.read()
+        sst = _accel_read_sst(raw)
+        if sst is not None:
+            self._shared_string_array = sst
+            return
         stream = _MemoryStream(raw)
         reader = BiffReader(stream)
         reader.read_shared_strings()

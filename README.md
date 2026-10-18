@@ -1,3 +1,5 @@
+![xlspy — Fast spreadsheet I/O for Python](docs/xlspy-banner.svg)
+
 # Python XLSB/XLSX/XLSM Reader & Writer
 
 A Python library for reading and writing XLSB and XLSX files efficiently, with
@@ -207,6 +209,9 @@ grouped by range; priorities are assigned automatically or taken from the
 rule's `priority`. A `DifferentialStyle` (Excel `dxf`) can style the matched
 cells with a font, number format, fill, alignment, border, and protection:
 
+XLSB supports `ColorScaleRule`, `DataBarRule`, and `IconSetRule`; XLSB
+`CellIsRule` and `FormulaRule` currently raise `NotImplementedError`.
+
 ```python
 from xlspy import (
     CellIsRule, DifferentialStyle, Font, IconSetRule, PatternFill,
@@ -225,7 +230,7 @@ formats = [
 #### Tables
 
 `write_sheet(..., tables=[ExcelTable("Sales", "A1:C5", columns=["Qty", "Price", "Total"])])`
-adds an Excel ListObject table (XLSX only).
+adds an Excel ListObject table to XLSX and XLSB workbooks.
 
 #### Charts
 
@@ -262,8 +267,7 @@ as well as `merges`, `column_widths`, `hidden_columns`, `row_heights`,
 `hidden_rows`, `freeze_panes`, and `auto_filter`. A few properties have no
 BIFF12 representation and raise `NotImplementedError` instead of being
 silently ignored: `relative_indent`, the `vertical`/`horizontal`/`start`/`end`
-border sides, and `outline=False`. Still XLSX-only: `conditional_formats`
-and `tables` (`write_sheet` on `XlsbWriter` does not accept them).
+  border sides, and `outline=False`.
 
 ### Writing pandas / polars DataFrames (optional)
 
@@ -511,37 +515,59 @@ except Exception as e:
 
 ## Performance
 
-`xlspy` is designed for high performance. Since version 0.1.0, the library includes a **C extension** (`_c_core`) that accelerates XLSB read and write. The C extension is **enabled by default** (compiled automatically on install). Set `XLSPY_DISABLE_C_EXT=1` to force the pure Python fallback.
+`xlspy` is designed for high performance. Since version 0.1.0, the library includes a **C extension** (`_c_core`) that accelerates XLSB read and write as well as the plain XLSX write path. The C extension is **enabled by default** (compiled automatically on install). Set `XLSPY_DISABLE_C_EXT=1` to force the pure Python fallback.
 
-All benchmarks: **50000 × 50** dataset (2.5M cells). Tests performed on **Windows 11** (Python 3.14, AMD64).
+All benchmarks: **50000 × 50** dataset (2.5M cells); times below are the **median of three runs**. Tests performed on **Windows** (AMD64, AMD Ryzen 7 7840HS, Python 3.14.6; xlspy 0.7.0, openpyxl 3.1.5, xlsxwriter 3.2.9).
 
 ### Write
 
 | Library | Format | Time | Size |
 |---------|--------|------|------|
-| **xlspy (C_EXT)** | XLSB | **1.02 s** | 7.25 MB |
-| xlspy (Python) | XLSB | 2.54 s | 7.25 MB |
-| xlspy | XLSX | 5.35 s | 6.34 MB |
-| [xlsxwriter](https://pypi.org/project/xlsxwriter/) | XLSX | 9.80 s | 11.57 MB |
+| **xlspy (C_EXT)** | XLSB | **1.46 s** | 7.25 MB |
+| xlspy (Python) | XLSB | 3.21 s | 7.25 MB |
+| xlspy | XLSX | 4.56 s | 6.43 MB |
+| [xlsxwriter](https://pypi.org/project/xlsxwriter/) | XLSX | 9.85 s | 11.57 MB |
+| [openpyxl](https://pypi.org/project/openpyxl/) | XLSX | 17.77 s | 11.71 MB |
 
 ### Read
 
 | Library | Format | Time | Notes |
 |---------|--------|------|-------|
-| **xlspy (C_EXT)** | XLSB | **1.39 s** | default, compiled C |
-| xlspy | XLSX | 4.72 s | uses expat XML parser (C) |
-| xlspy (Python) | XLSB | 6.41 s | pure Python fallback |
-| [openpyxl](https://pypi.org/project/openpyxl/) | XLSX | 7.85 s | read-only mode |
+| **xlspy (C_EXT)** | XLSB | **0.60 s** | default, compiled C |
+| xlspy | XLSX | 4.96 s | uses expat XML parser (C) |
+| xlspy (Python) | XLSB | 6.33 s | pure Python fallback |
+| [openpyxl](https://pypi.org/project/openpyxl/) | XLSX | 11.06 s | read-only mode |
 
 
 ### Analysis
 
-The **4.6× read speedup** comes from two factors:
+The **10.6× read speedup** comes from two factors:
 - **~60–70%** — native C compilation, no interpreter overhead per record
 - **~30–40%** — algorithm simplification: flat array indexed by `col − first_col` instead of `Dict[int, Any]`, no `isinstance` per cell, no `BiffReader.read_worksheet()` method call per record
 
 Run the benchmarks yourself with `examples/performance_test.py`.
 
+### Correctness validation
+
+Validation on the same Windows/Python 3.14.6 environment:
+
+- C-extension test run: **268 passed, 2 skipped**; the three direct Excel COM
+  tests were run separately and passed. The skips were the optional real-data
+  dependency and the opt-in COM updater test.
+- Pure-Python fallback test run (`XLSPY_DISABLE_C_EXT=1`): **242 passed,
+  28 skipped**; C-only tests are expected to skip in this mode.
+- Cross-validation against **openpyxl** and **xlsxwriter**: **11 passed**.
+- Excel COM validation: direct XLSB/XLSX open/readback tests **3 passed**;
+  PowerShell validation of updated XLSB/XLSX files **1 passed**.
+- Additional differential gates compared C and Python writer payloads and
+  reader grids, including seeded mixed-value cases, a 50000 × 50 workbook,
+  malformed BIFF records, date-system edge cases, and shared-string truncation
+  and corruption cases.
+
+The legacy in-process COM tests pass but emit `0x80010108` shutdown diagnostics
+from Excel/pywin32 on this host; the separate PowerShell COM validation passed
+without that diagnostic.
+
 ## Repository
 
-<https://github.com/KrzysztofDusko/xlspy/>
+<https://github.com/justybase/xlspy/>

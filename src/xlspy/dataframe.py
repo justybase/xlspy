@@ -305,6 +305,8 @@ def to_xlsb(
     freeze_panes: str | None = None,
     auto_filter: bool | None = None,
     charts=None,
+    tables=None,
+    conditional_formats=None,
     **writer_kwargs,
 ):
     """Write a DataFrame straight to an ``.xlsb`` file and return ``path``.
@@ -322,7 +324,8 @@ def to_xlsb(
                 merges=merges, column_widths=column_widths,
                 hidden_columns=hidden_columns, row_heights=row_heights,
                 hidden_rows=hidden_rows, freeze_panes=freeze_panes,
-                auto_filter=auto_filter, charts=charts,
+                auto_filter=auto_filter, charts=charts, tables=tables,
+                conditional_formats=conditional_formats,
             )
     except Exception:
         _remove_partial_file(path)

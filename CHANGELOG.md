@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tests/test_c_memleaks.py`: RSS / tracemalloc / GC-population regression
+  tests over all C entry points, including error paths (note: refcount
+  assertions are avoided -- `sys.getrefcount` reads one less than expected
+  for GC-tracked objects under pytest on Python 3.14).
+- `tests/test_c_read_correctness.py`: C-vs-Python XLSB reader regressions for
+  left-ragged cells, unordered first-row columns, short/overrunning records,
+  1904 date overflow parity, and wide-layout fallback.
+- XLSB tables (`ExcelTable`) and conditional formatting for color scales,
+  data bars, and icon sets; formula and cell-is rules remain XLSX-only.
+
+### Fixed
+
+- XLSB writer C extension now matches the pure-Python reference exactly:
+  integers beyond the int64 range are stored as doubles (were strings),
+  `int`/`float`/`str` subclasses take the numeric/string path, and column
+  autofit unwraps `(value, format)` tuples and measures `Decimal` as
+  `float` (were `str(tuple)` / `str(Decimal)`).
+- Fixed a latent heap buffer overrun in the C row encoder: the per-cell
+  buffer reservation (16 bytes) was smaller than the largest cell record
+  (`BrtCellReal`, 18 bytes).
+- Fixed a per-call reference leak in the C XLSB row encoder: the result
+  bytes leaked one reference per encoded row.
+- XLSB reader now parses the shared-strings table in the C extension with
+  behavior identical to the pure-Python reference, quirks included
+  (50k×50 read 1.32 s → 0.74 s).
+- C XLSB worksheet reader now matches the reference on first-row column
+  ordering, left-of-layout cells, short/overrunning cell records, and date
+  conversion errors. Unusually wide layouts delegate to the Python reader
+  instead of using a C-specific memory limit. Hostile SST lengths no longer
+  produce a `SystemError` from a negative Unicode allocation size.
+
+### Changed
+
+- Faster XLSB writes: shared-strings table serialization and the
+  formatted-row pre-scan moved to the C extension (50k×50 write
+  1.92 s → 1.43 s with byte-identical output).
+- Faster XLSX writes: the plain (unstyled) row encoder moved to the C
+  extension, with byte-identical output including shared-strings dedup,
+  float formatting, datetimes, and XML escaping (50k×50 write
+  5.18 s → 4.12 s; rows with `(value, format)` tuples still use the
+  Python path, which owns format registration).
+
+### Added
+
 - Structured cell styling for XLSX: `Font`, `PatternFill`, `GradientFill`
   (linear and path, with `Stop` colors/positions), `Border`/`Side`,
   `Alignment`, and `Protection`, usable via `Style(font=..., fill=...,

@@ -40,4 +40,4 @@ pip install xlspy[pandas]   # or: pip install xlspy[polars]
 | Script | What it shows |
 |--------|---------------|
 | [`benchmark.py`](benchmark.py) | Timing/size comparison against `xlsxwriter`. |
-| [`performance_test.py`](performance_test.py) | Larger benchmark with optional memory profiling. |
+| [`performance_test.py`](performance_test.py) | Larger write/read benchmark against `xlsxwriter` and `openpyxl`. |

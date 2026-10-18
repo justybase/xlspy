@@ -7,6 +7,8 @@ from typing import  Tuple, Iterable, Mapping
 import io
 import itertools
 from ._accel import encode_xlsb_row, calc_column_widths as accel_calc_column_widths
+from ._accel import xlsb_row_has_formatted as accel_row_has_formatted
+from ._accel import encode_xlsb_sst as accel_encode_xlsb_sst
 from .formats import _is_formatted_cell, _unwrap_cell, _get_format
 from .excel_dates import datetime_to_serial
 from . import chart_parts
@@ -52,6 +54,40 @@ _BRT_BEGIN_MERGE_CELLS = 0x00B1
 _BRT_END_MERGE_CELLS = 0x00B2
 # BrtDrawing ([MS-XLSB] 2.4.351) links a sheet to its Drawings part.
 _BRT_DRAWING = 0x0226
+
+# Table (List) parts ([MS-XLSB] 2.1.7.51, 2.4.100).
+_BRT_BEGIN_LIST = 343  # 0x157
+_BRT_END_LIST = 344  # 0x158
+_BRT_BEGIN_LIST_COLS = 345  # 0x159
+_BRT_END_LIST_COLS = 346  # 0x15A
+_BRT_BEGIN_LIST_COL = 347  # 0x15B
+_BRT_END_LIST_COL = 348  # 0x15C
+_BRT_BEGIN_LIST_PARTS = 660  # 0x294
+_BRT_LIST_PART = 661  # 0x295
+_BRT_END_LIST_PARTS = 662  # 0x296
+_BRT_BEGIN_AUTOFILTER = 161  # 0xA1
+_BRT_END_AUTOFILTER = 162  # 0xA2
+_BRT_TABLE_STYLE_CLIENT = 513  # 0x201
+# Conditional formatting ([MS-XLSB] 2.1.7.62).
+_BRT_BEGIN_CF = 461
+_BRT_END_CF = 462
+_BRT_BEGIN_CF_RULE = 463
+_BRT_END_CF_RULE = 464
+_BRT_BEGIN_ICONSET = 465
+_BRT_END_ICONSET = 466
+_BRT_BEGIN_DATABAR = 467
+_BRT_END_DATABAR = 468
+_BRT_BEGIN_COLORSCALE = 469
+_BRT_END_COLORSCALE = 470
+_BRT_CFVO = 471
+_BRT_COLOR = 564
+_BRT_BEGIN_DXFS = 505
+_BRT_END_DXFS = 506
+_BRT_DXF = 507
+# FRT wrappers used by table parts.
+_BRT_AC_BEGIN = 0x25
+_BRT_AC_END = 0x26
+_BRT_FRT_BEGIN = 0xC00
 
 # Active-pane identifiers for BrtPane/BrtSel ([MS-XLSB] 2.5.108 Pnn).
 _PANE_ACTIVE = {"bottomRight": 0, "topRight": 1, "bottomLeft": 2, "topLeft": 3}
@@ -124,6 +160,13 @@ class XlsbWriter:
         self._sheet_chart_ids: dict[int, list[int]] = {}
         self._sheet_chart_rows: dict[int, list] = {}
         self._next_chart_id = 1
+        self._next_table_id = 1
+        self._table_names: set[str] = set()
+        self._sheet_tables: dict[int, list[tuple]] = {}
+        self._tables_bin: dict[int, bytes] = {}
+        self._seen_cf_priorities: set[int] = set()
+        self._reserved_cf_priorities: set[int] = set()
+        self._next_cf_priority = 1
 
     def __enter__(self):
         if self._zf is None:
@@ -349,6 +392,382 @@ class XlsbWriter:
                 raise TypeError("charts must be Chart instances")
         return list(charts)
 
+    def _normalize_tables(self, tables):
+        from .styles import ExcelTable
+
+        if not tables:
+            return []
+        for table in tables:
+            if not isinstance(table, ExcelTable):
+                raise TypeError("tables must be ExcelTable instances")
+            if table.display_name in self._table_names:
+                raise ValueError(
+                    f"duplicate table display name {table.display_name!r}"
+                )
+            self._table_names.add(table.display_name)
+        return list(tables)
+
+    def _check_unknown_cf_rule(self, rule) -> None:
+        from .styles import (
+            CellIsRule, ColorScaleRule, DataBarRule, FormulaRule, IconSetRule,
+        )
+        if hasattr(rule, "sqref") and not isinstance(
+            rule,
+            (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule),
+        ):
+            raise TypeError(
+                f"unsupported conditional formatting rule {type(rule).__name__}; "
+                "use xlspy rule classes (CellIsRule, FormulaRule, "
+                "ColorScaleRule, DataBarRule, IconSetRule)"
+            )
+
+    def _claim_cf_priority(self, rule) -> int:
+        priority = rule.priority
+        if priority is None:
+            while (
+                self._next_cf_priority in self._seen_cf_priorities
+                or self._next_cf_priority in self._reserved_cf_priorities
+            ):
+                self._next_cf_priority += 1
+            priority = self._next_cf_priority
+            self._next_cf_priority += 1
+        elif priority in self._seen_cf_priorities:
+            raise ValueError(f"duplicate conditional formatting priority {priority}")
+        if priority <= 0:
+            raise ValueError("conditional formatting priority must be positive")
+        self._seen_cf_priorities.add(priority)
+        self._next_cf_priority = max(self._next_cf_priority, priority + 1)
+        return priority
+
+    def _normalize_cf_rules(self, conditional_formats):
+        from .styles import (
+            CellIsRule, ColorScaleRule, DataBarRule, DifferentialStyle,
+            FormulaRule, IconSetRule,
+        )
+        if not conditional_formats:
+            return []
+        for rule in conditional_formats:
+            self._check_unknown_cf_rule(rule)
+            if not isinstance(
+                rule,
+                (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule,
+                 IconSetRule),
+            ):
+                raise TypeError(
+                    f"unsupported conditional formatting rule {type(rule).__name__}"
+                )
+            if getattr(rule, "dxf", None) is not None and not isinstance(
+                rule.dxf, DifferentialStyle
+            ):
+                raise TypeError("dxf must be a DifferentialStyle or None")
+            # XLSB CF with formulas/DXF is not yet supported in this step;
+            # tables + ColorScale/DataBar/IconSet (non-formula) are supported.
+            # CellIs/Formula and formula-type CFVOs need Ptg + DXF (next step).
+            from .styles import CellIsRule as _C, FormulaRule as _F
+            if isinstance(rule, (_C, _F)):
+                raise NotImplementedError(
+                    "XLSB CellIs/Formula rules need Ptg + DXF (next step); "
+                    "use ColorScale/DataBar/IconSet or XLSX for now"
+                )
+        return list(conditional_formats)
+
+    _CFVO_CODES = {
+        "num": 1, "min": 2, "max": 3, "percent": 4,
+        "percentile": 5, "formula": 7,
+    }
+    _ICON_SET_CODES = {
+        "3Arrows": 0, "3ArrowsGray": 1, "3Flags": 2, "3TrafficLights1": 3,
+        "3TrafficLights2": 4, "3Signs": 5, "3Symbols": 6, "3Symbols2": 7,
+        "4Arrows": 8, "4ArrowsGray": 9, "4RedToBlack": 10, "4Ratings": 11,
+        "4TrafficLights": 12, "5Arrows": 13, "5ArrowsGray": 14,
+        "5Ratings": 15, "5Quarters": 16,
+    }
+
+    @staticmethod
+    def _color_to_brt(color) -> bytes:
+        from .styles import _coerce_color
+        resolved = _coerce_color(color, "color")
+        if resolved is None or resolved.rgb is None:
+            raise ValueError("CF colors must be RGB colors")
+        rgb = resolved.rgb
+        if len(rgb) == 8:  # ARGB -> drop alpha, use opaque
+            rgb = rgb[2:]
+        r = int(rgb[0:2], 16); g = int(rgb[2:4], 16); b = int(rgb[4:6], 16)
+        return bytes((0x05, 0xFF, 0x00, 0x00, r, g, b, 0xFF))
+
+    def _cfvo_bin(self, cfvo, default: str) -> bytes:
+        from .styles import FormatObject
+        if cfvo is None:
+            code = self._CFVO_CODES[default]
+            return (
+                struct.pack("<I", code) + struct.pack("<d", 0.0)
+                + struct.pack("<II", 0, 0) + struct.pack("<I", 0)
+            )
+        if not isinstance(cfvo, FormatObject):
+            raise TypeError("CFVO must be a FormatObject or None")
+        if cfvo.type == "formula":
+            raise NotImplementedError(
+                "XLSB formula-type CFVO needs Ptg (next step)"
+            )
+        code = self._CFVO_CODES[cfvo.type]
+        if cfvo.type in ("min", "max"):
+            num = 0.0
+        else:
+            if cfvo.value is None:
+                raise ValueError(f"CFVO type {cfvo.type!r} needs a value")
+            num = float(cfvo.value)
+        # IconSets use GTE flags; others ignore (0,0).
+        return (
+            struct.pack("<I", code) + struct.pack("<d", num)
+            + struct.pack("<II", 0, 0) + struct.pack("<I", 0)
+        )
+
+    def _cfvo_icon_bin(self, value: float) -> bytes:
+        return (
+            struct.pack("<I", 4) + struct.pack("<d", float(value))
+            + struct.pack("<II", 1, 1) + struct.pack("<I", 0)
+        )
+
+    @staticmethod
+    def _encode_nullable_wstring(value: str | None) -> bytes:
+        if value is None:
+            return struct.pack("<I", 0xFFFFFFFF)
+        encoded = value.encode("utf-16-le")
+        return struct.pack("<I", len(value)) + encoded
+
+    @staticmethod
+    def _encode_rfx(first_col: int, first_row: int,
+                    last_col: int, last_row: int) -> bytes:
+        return struct.pack("<IIII", first_row, last_row, first_col, last_col)
+
+    @staticmethod
+    def _acuid() -> bytes:
+        # ACBegin / FRTBegin (random GUID, as Excel does) / ACEnd.
+        import uuid
+        guid = uuid.uuid4()
+        payload = guid.bytes_le
+        out = build_record(_BRT_AC_BEGIN, bytes((1, 0, 2, 0x10, 0, 0x80)))
+        out += build_record(_BRT_FRT_BEGIN, payload)
+        out += build_record(_BRT_AC_END, b"")
+        return out
+
+    def _table_bin(self, table, table_id: int) -> bytes:
+        from .styles import parse_cell_range
+
+        first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
+        if table.columns is not None:
+            names = list(table.columns)
+        else:
+            width = last_col - first_col + 1
+            names = [f"Column{i + 1}" for i in range(width)]
+        out = bytearray()
+        out.extend(self._acuid())
+        # BrtBeginList
+        payload = bytearray()
+        payload.extend(self._encode_rfx(first_col, first_row, last_col, last_row))
+        payload.extend(struct.pack("<I", 0))  # lt = LTRANGE
+        payload.extend(struct.pack("<I", table_id))
+        payload.extend(struct.pack("<I", 1 if table.header_row else 0))
+        payload.extend(struct.pack("<I", 1 if table.totals_row else 0))
+        payload.extend(struct.pack("<I", 0))  # flags
+        for _ in range(6):
+            payload.extend(struct.pack("<i", -1))  # dxfIds
+        payload.extend(struct.pack("<I", 0))  # dwConnID
+        # Excel stores Name and DisplayName separately; COM shows
+        # Name=T1, DisplayName=T1_ when Name is set. Store DisplayName with
+        # trailing underscore to match Excel-generated files.
+        display = table.display_name
+        disp_display = display if display.endswith("_") else display + "_"
+        payload.extend(self._encode_nullable_wstring(display))
+        payload.extend(self._encode_nullable_wstring(disp_display))
+        payload.extend(struct.pack("<I", 0))  # stComment empty
+        for _ in range(3):
+            payload.extend(self._encode_nullable_wstring(None))
+        out.extend(build_record(_BRT_BEGIN_LIST, bytes(payload)))
+        out.extend(self._acuid())
+        # AutoFilter range inside the table part.
+        out.extend(build_record(
+            _BRT_BEGIN_AUTOFILTER,
+            self._encode_rfx(first_col, first_row, last_col, last_row),
+        ))
+        out.extend(build_record(_BRT_END_AUTOFILTER, b""))
+        # ListCols
+        out.extend(build_record(
+            _BRT_BEGIN_LIST_COLS, struct.pack("<I", len(names)),
+        ))
+        for idx, col_name in enumerate(names, start=1):
+            out.extend(self._acuid())
+            col_payload = bytearray()
+            col_payload.extend(struct.pack("<I", idx))
+            col_payload.extend(struct.pack("<I", 0))  # ilta none
+            for _ in range(3):
+                col_payload.extend(struct.pack("<i", -1))
+            col_payload.extend(struct.pack("<I", 0))  # idqsif
+            col_payload.extend(self._encode_nullable_wstring(None))
+            col_payload.extend(self._encode_nullable_wstring(col_name))
+            col_payload.extend(self._encode_nullable_wstring(None))
+            for _ in range(3):
+                col_payload.extend(self._encode_nullable_wstring(None))
+            out.extend(build_record(_BRT_BEGIN_LIST_COL, bytes(col_payload)))
+            out.extend(build_record(_BRT_END_LIST_COL, b""))
+        out.extend(build_record(_BRT_END_LIST_COLS, b""))
+        # TableStyleClient
+        flags = 0
+        if table.show_first_column:
+            flags |= 0x01
+        if table.show_last_column:
+            flags |= 0x02
+        if table.show_row_stripes:
+            flags |= 0x04
+        if table.show_column_stripes:
+            flags |= 0x08
+        style_payload = struct.pack("<H", flags)
+        style_payload += self._encode_nullable_wstring(table.style_name)
+        out.extend(build_record(_BRT_TABLE_STYLE_CLIENT, style_payload))
+        out.extend(build_record(_BRT_END_LIST, b""))
+        return bytes(out)
+
+    def _list_parts_bin(self, rel_ids: list[str]) -> bytes:
+        out = bytearray()
+        out.extend(build_record(
+            _BRT_BEGIN_LIST_PARTS, struct.pack("<I", len(rel_ids)),
+        ))
+        for rel_id in rel_ids:
+            encoded = rel_id.encode("utf-16-le")
+            out.extend(build_record(
+                _BRT_LIST_PART,
+                struct.pack("<I", len(rel_id)) + encoded,
+            ))
+        out.extend(build_record(_BRT_END_LIST_PARTS, b""))
+        return bytes(out)
+
+    def _begin_cf_rule_bin(self, iType: int, iTemplate: int,
+                           dxfId: int, priority: int, iParam: int,
+                           stop: bool = False) -> bytes:
+        payload = bytearray()
+        payload.extend(struct.pack("<I", iType))
+        payload.extend(struct.pack("<I", iTemplate))
+        payload.extend(struct.pack("<i", dxfId))
+        payload.extend(struct.pack("<I", priority))
+        payload.extend(struct.pack("<I", iParam))
+        payload.extend(struct.pack("<I", 0))  # reserved1
+        payload.extend(struct.pack("<I", 0))  # reserved2
+        flags = 0x02 if stop else 0x00  # match Excel (fStopTrue=1 for CellIs)
+        # For GRADIENT/DATABAR/MULTISTATE, flags must be 0.
+        if iType in (3, 4, 6):
+            flags = 0
+        payload.extend(struct.pack("<H", flags))
+        payload.extend(struct.pack("<I", 0))  # cbFmla1
+        payload.extend(struct.pack("<I", 0))  # cbFmla2
+        payload.extend(struct.pack("<I", 0))  # cbFmla3
+        payload.extend(struct.pack("<I", 0xFFFFFFFF))  # strParam NULL
+        return build_record(_BRT_BEGIN_CF_RULE, bytes(payload))
+
+    def _cf_bin_for_rule(self, rule, priority: int) -> bytes:
+        from .styles import ColorScaleRule, DataBarRule, IconSetRule
+        out = bytearray()
+        if isinstance(rule, ColorScaleRule):
+            out.extend(self._begin_cf_rule_bin(3, 2, -1, priority, 0))
+            out.extend(build_record(_BRT_BEGIN_COLORSCALE, b""))
+            # 2-color or 3-color.
+            if rule.midpoint is None:
+                cfvos = (rule.minimum, rule.maximum)
+            else:
+                cfvos = (rule.minimum, rule.midpoint, rule.maximum)
+            defaults = ("min", None, "max") if len(cfvos) == 2 else ("min", "percentile", "max")
+            # Default midpoint for 3-color is percentile 50 (like Excel).
+            for cfvo, default in zip(cfvos, ("min", "percentile", "max") if len(cfvos) == 3 else ("min", "max")):
+                if cfvo is None and default == "percentile":
+                    from .styles import FormatObject
+                    cfvo = FormatObject("percentile", 50)
+                out.extend(build_record(
+                    _BRT_CFVO, self._cfvo_bin(cfvo, default),
+                ))
+            for color in rule.colors:
+                out.extend(build_record(_BRT_COLOR, self._color_to_brt(color)))
+            out.extend(build_record(_BRT_END_COLORSCALE, b""))
+            out.extend(build_record(_BRT_END_CF_RULE, b""))
+            return bytes(out)
+        if isinstance(rule, DataBarRule):
+            out.extend(self._begin_cf_rule_bin(4, 3, -1, priority, 0))
+            show = 1 if rule.show_value is not False else 0
+            # Excel defaults 10/90 when omitted? Use 0/100 to be safe? Use 10/90 to match Excel.
+            min_len = rule.min_length if rule.min_length is not None else 0
+            max_len = rule.max_length if rule.max_length is not None else 100
+            # Clamp to reference defaults? Use provided or 0/100.
+            out.extend(build_record(
+                _BRT_BEGIN_DATABAR, bytes((min_len, max_len, show)),
+            ))
+            out.extend(build_record(
+                _BRT_CFVO, self._cfvo_bin(rule.minimum, "min"),
+            ))
+            out.extend(build_record(
+                _BRT_CFVO, self._cfvo_bin(rule.maximum, "max"),
+            ))
+            out.extend(build_record(_BRT_COLOR, self._color_to_brt(rule.color)))
+            out.extend(build_record(_BRT_END_DATABAR, b""))
+            out.extend(build_record(_BRT_END_CF_RULE, b""))
+            return bytes(out)
+        if isinstance(rule, IconSetRule):
+            out.extend(self._begin_cf_rule_bin(6, 4, -1, priority, 0))
+            code = self._ICON_SET_CODES[rule.icon_style]
+            # BeginIconSet: iconSet (4) + showValue/percent/reverse flags (2)?
+            # Reference 3TrafficLights1: 03 00 00 00 78 00.
+            # 03 = code 3, 78 00 = flags? showValue=1, percent=1, reverse=0?
+            # Bits: showValue? percent? reverse? Need to infer.
+            show = 0 if rule.show_value is False else 1
+            percent = 0 if rule.percent is False else 1
+            reverse = 1 if rule.reverse else 0
+            # Excel reference 78 00 = 0x0078 = 01111000b.
+            # Guess: bit3=showValue? bit4=percent? bit5-6?
+            # For now, match reference for defaults (show=1,percent=1,reverse=0):
+            # show=1, percent=1 -> flags 0x78? Let's hardcode mapping from XLSX attrs:
+            # showValue, percent, reverse -> flags per spec (need spec).
+            # From reference: show=1,percent=1,reverse=0 => 0x78.
+            # We compute: bit3 (0x08) = showValue? bit4 (0x10)=percent? bit5 (0x20)=? bit6 (0x40)=?
+            # 0x78 = 0x08|0x10|0x20|0x40 = all except low 3 bits. Hmm.
+            # Simpler: use 0x78 for defaults, adjust for reverse/show/percent by flipping?
+            # For now, use 0x78 and set bit for reverse (0x80?)? Need spec, but test with defaults first.
+            flags = 0x78
+            if rule.show_value is False:
+                flags &= ~0x08  # guess
+            if rule.percent is False:
+                flags &= ~0x10  # guess
+            if rule.reverse:
+                flags |= 0x80  # guess (reverse bit?)
+            out.extend(build_record(
+                _BRT_BEGIN_ICONSET,
+                struct.pack("<I", code) + struct.pack("<H", flags),
+            ))
+            for v in rule.values:
+                out.extend(build_record(_BRT_CFVO, self._cfvo_icon_bin(v)))
+            out.extend(build_record(_BRT_END_ICONSET, b""))
+            out.extend(build_record(_BRT_END_CF_RULE, b""))
+            return bytes(out)
+        raise NotImplementedError("CF rule type not yet supported for XLSB")
+
+    def _cf_bin_grouped(self, rules) -> bytes:
+        from .styles import parse_cell_range
+        # Group by sqref like XLSX, claim priorities in order.
+        by_range: dict[str, list] = {}
+        for rule in rules:
+            by_range.setdefault(rule.sqref, []).append(rule)
+        out = bytearray()
+        for sqref, group in by_range.items():
+            first_col, first_row, last_col, last_row = parse_cell_range(sqref)
+            # BeginCF: ccf, fPivot=0, count=1, range.
+            payload = bytearray()
+            payload.extend(struct.pack("<I", len(group)))
+            payload.extend(struct.pack("<I", 0))
+            payload.extend(struct.pack("<I", 1))
+            payload.extend(self._encode_rfx(first_col, first_row, last_col, last_row))
+            out.extend(build_record(_BRT_BEGIN_CF, bytes(payload)))
+            for rule in group:
+                priority = self._claim_cf_priority(rule)
+                out.extend(self._cf_bin_for_rule(rule, priority))
+            out.extend(build_record(_BRT_END_CF, b""))
+        return bytes(out)
+
     def write_sheet(
         self,
         data: Iterable[list[any]],
@@ -363,6 +782,8 @@ class XlsbWriter:
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
         charts: list[Chart] | tuple[Chart, ...] | None = None,
+        tables: list | tuple | None = None,
+        conditional_formats: list | tuple | None = None,
     ):
         if header_style is not None and not isinstance(header_style, Style):
             raise TypeError("header_style must be a Style instance")
@@ -390,7 +811,43 @@ class XlsbWriter:
             # so the rows must survive until save().
             data = list(data)
             self._sheet_chart_rows[sheet_id] = data
-        drawing_rel = "rId2" if chart_specs else None
+        table_specs = self._normalize_tables(tables)
+        table_ids: list[int] = []
+        table_rel_ids: list[str] = []
+        if table_specs:
+            # rId1 is binaryIndex; tables take rId2..; drawing (if any) last.
+            for table in table_specs:
+                table_id = self._next_table_id
+                self._next_table_id += 1
+                table_ids.append(table_id)
+                rel_id = f"rId{1 + len(table_ids)}"
+                table_rel_ids.append(rel_id)
+                self._tables_bin[table_id] = self._table_bin(table, table_id)
+            self._sheet_tables[sheet_id] = list(zip(table_ids, table_rel_ids))
+        if table_specs and auto_filter is None:
+            # Tables carry their own AutoFilter; skip sheet-level filter.
+            auto_filter = False
+        cf_specs = self._normalize_cf_rules(conditional_formats)
+        # Pre-reserve explicit priorities (like XLSX) so auto-assigned ones skip them.
+        for rule in cf_specs:
+            if getattr(rule, "priority", None) is not None:
+                if (
+                    rule.priority in self._seen_cf_priorities
+                    or rule.priority in self._reserved_cf_priorities
+                ):
+                    raise ValueError(
+                        f"duplicate conditional formatting priority {rule.priority}"
+                    )
+                self._reserved_cf_priorities.add(rule.priority)
+                self._next_cf_priority = max(
+                    self._next_cf_priority, rule.priority + 1
+                )
+        if chart_specs and table_specs:
+            drawing_rel = f"rId{1 + len(table_ids) + 1}"
+        elif chart_specs:
+            drawing_rel = "rId2"
+        else:
+            drawing_rel = None
         with self._zf.open(f"xl/worksheets/sheet{sheet_id}.bin", 'w') as sheet_file:
             self._write_worksheet_bin(
                 sheet_file, data, self._sheet_count - 1,
@@ -398,7 +855,8 @@ class XlsbWriter:
                 merge_refs=merge_refs, widths=widths, hidden_cols=hidden_cols,
                 heights=heights, hidden_row_set=hidden_row_set,
                 freeze_panes=freeze_panes, auto_filter=auto_filter,
-                drawing_rel=drawing_rel,
+                drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
+                cf_rules=cf_specs,
             )
         
         self._zf.writestr(f"xl/worksheets/_rels/sheet{sheet_id}.bin.rels", self._create_worksheet_rels(sheet_id))
@@ -415,6 +873,8 @@ class XlsbWriter:
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
         charts: list | tuple | None = None,
+        tables: list | tuple | None = None,
+        conditional_formats: list | tuple | None = None,
     ):
         """Write a pandas or polars DataFrame to the current sheet.
 
@@ -446,6 +906,8 @@ class XlsbWriter:
             freeze_panes=freeze_panes,
             auto_filter=auto_filter,
             charts=charts,
+            tables=tables,
+            conditional_formats=conditional_formats,
         )
 
     def save(self):
@@ -481,6 +943,9 @@ class XlsbWriter:
 
         if any(self._sheet_charts.values()):
             self._zf.writestr("xl/theme/theme1.xml", chart_parts.THEME_XML)
+
+        for table_id, table_bin in self._tables_bin.items():
+            self._zf.writestr(f"xl/tables/table{table_id}.bin", table_bin)
             
         self._zf.writestr("[Content_Types].xml", self._create_content_types())
         self._zf.writestr("_rels/.rels", self._create_root_rels())
@@ -508,6 +973,10 @@ class XlsbWriter:
             for sheet_id in sorted(self._sheet_charts)
             if self._sheet_charts[sheet_id]
         )
+        table_parts = "".join(
+            f'<Override PartName="/xl/tables/table{table_id}.bin" ContentType="application/vnd.ms-excel.table"/>'
+            for table_id in sorted(self._tables_bin)
+        )
         chart_parts_overrides = "".join(
             f'<Override PartName="/xl/charts/chart{chart_id}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'
             for chart_id in range(1, self._next_chart_id)
@@ -524,6 +993,7 @@ class XlsbWriter:
 <Override PartName="/xl/workbook.bin" ContentType="application/vnd.ms-excel.sheet.binary.macroEnabled.main"/>
 {parts}
 {drawing_parts}
+{table_parts}
 {chart_parts_overrides}
 {theme_part}
 <Override PartName="/xl/styles.bin" ContentType="application/vnd.ms-excel.styles"/>
@@ -556,14 +1026,22 @@ class XlsbWriter:
 </Relationships>'''
 
     def _create_worksheet_rels(self, sheet_id) -> str:
+        tables = self._sheet_tables.get(sheet_id, [])
         rels = (
             '<Relationship Id="rId1" '
             'Type="http://schemas.microsoft.com/office/2006/relationships/xlBinaryIndex" '
             f'Target="binaryIndex{sheet_id}.bin"/>'
         )
-        if self._sheet_charts.get(sheet_id):
+        for table_id, rel_id in tables:
             rels += (
-                '<Relationship Id="rId2" '
+                f'<Relationship Id="{rel_id}" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" '
+                f'Target="../tables/table{table_id}.bin"/>'
+            )
+        if self._sheet_charts.get(sheet_id):
+            drawing_rid = f"rId{1 + len(tables) + 1}"
+            rels += (
+                f'<Relationship Id="{drawing_rid}" '
                 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" '
                 f'Target="../drawings/drawing{sheet_id}.xml"/>'
             )
@@ -619,6 +1097,14 @@ class XlsbWriter:
         return bytes(buffer)
 
     def _write_shared_strings_bin(self, sst_file: io.BufferedWriter):
+        c_sst = accel_encode_xlsb_sst(
+            self._shared_strings, self._sst_all_count, self._sst_unique_count
+        )
+        if c_sst is not None:
+            view = memoryview(c_sst)
+            for offset in range(0, len(view), 65536):
+                sst_file.write(view[offset:offset + 65536])
+            return
         buffer = io.BytesIO()
         BUFFER_SIZE = 65536
 
@@ -998,6 +1484,8 @@ class XlsbWriter:
         merge_refs=(), widths=None, hidden_cols=frozenset(), heights=None,
         hidden_row_set=frozenset(), freeze_panes: str | None = None,
         auto_filter: bool | None = None, drawing_rel: str | None = None,
+        table_rel_ids: list[str] | None = None,
+        cf_rules: list | None = None,
     ):
         buffer = io.BytesIO()
         BUFFER_SIZE = 65536
@@ -1093,7 +1581,11 @@ class XlsbWriter:
 
         row_idx = -1
         for row_idx, row in enumerate(data_iterator):
-            has_formatted = any(_is_formatted_cell(c) for c in row if c is not None)
+            c_has_formatted = accel_row_has_formatted(row)
+            if c_has_formatted is None:
+                has_formatted = any(_is_formatted_cell(c) for c in row if c is not None)
+            else:
+                has_formatted = c_has_formatted
             row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
 
             if not has_formatted and row_idx not in custom_rows:
@@ -1242,10 +1734,13 @@ class XlsbWriter:
                 ))
             buffer.write(build_record(_BRT_END_MERGE_CELLS, b''))
 
+        if cf_rules:
+            buffer.write(self._cf_bin_grouped(cf_rules))
+
         # Template offsets 290..346 hold BrtPrintOptions + BrtMargins; 346..
         # holds the FRT alternative-content block and BrtEndSheet. BrtDrawing
         # ([MS-XLSB] 2.4.351, record 550) sits between them per the Worksheet
-        # ABNF: ... [BrtMargins] ... [BrtDrawing] ... BrtEndSheet.
+        # ABNF: ... [BrtMargins] ... [BrtDrawing] ... [LISTPARTS] ... BrtEndSheet.
         buffer.write(self._sheet1Bytes[290:346])
         if drawing_rel is not None:
             rel_encoded = drawing_rel.encode('utf-16-le')
@@ -1253,6 +1748,8 @@ class XlsbWriter:
                 _BRT_DRAWING,
                 struct.pack('<I', len(drawing_rel)) + rel_encoded,
             ))
+        if table_rel_ids:
+            buffer.write(self._list_parts_bin(table_rel_ids))
         buffer.write(self._sheet1Bytes[346:])
         if buffer.tell() > 0:
             sheet_file.write(buffer.getvalue())

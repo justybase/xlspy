@@ -3,6 +3,7 @@
 #include <structmember.h>
 #include <datetime.h>
 #include <math.h>
+#include <pystrtod.h>
 
 /* ===== Types cache (imported from Python) ===== */
 static PyObject *decimal_type = NULL;
@@ -135,16 +136,31 @@ static PyObject *_utf16le_to_pystr(const unsigned char *data, Py_ssize_t data_le
     );
 }
 
+/* Date-conversion failure: keep a real error (OverflowError for
+   out-of-range serials, ValueError for NaN, ...) pending so the caller
+   aborts iteration exactly like the Python reference, which lets
+   serial_to_datetime() raise.  A failure with no error set (paranoia)
+   falls back to the numeric value.  Returns 1 when fatal. */
+static int _date_failed(int *fatal, int *is_date)
+{
+    if (PyErr_Occurred()) { *fatal = 1; return 1; }
+    PyErr_Clear();
+    *is_date = 0;
+    return 0;
+}
+
 /* ===== Read a single cell's value from a worksheet cell record ===== */
 static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_len,
                                     Py_ssize_t body_start, long rec_id, long rec_len,
                                     PyObject *shared_strings, Py_ssize_t ss_len,
                                     PyObject *styles_list, Py_ssize_t styles_len,
                                     PyObject *date_num_fmts, long xf_idx, int *has_cell,
-                                    int date_1904)
+                                    int date_1904, int *fatal, int *skip)
 {
     PyObject *cell_val = NULL;
     int is_date = 0;
+    *fatal = 0;
+    *skip = 0;
 
     if (rec_id == 0x01 || rec_id == 0x03 || rec_id == 0x0B)
     {
@@ -152,6 +168,8 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
     }
     else if (rec_id == 0x02)
     {
+        /* The reference ignores number records shorter than 12 bytes. */
+        if (rec_len < 12) { *skip = 1; return NULL; }
         double dval = _read_rk(data, data_len, body_start + 8);
         if (xf_idx > 0 && xf_idx < styles_len)
         {
@@ -173,24 +191,24 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
             PyObject *epoch = date_1904
                 ? PyDateTime_FromDateAndTime(1904, 1, 1, 0, 0, 0, 0)
                 : PyDateTime_FromDateAndTime(1899, 12, 30, 0, 0, 0, 0);
-            if (!epoch) { PyErr_Clear(); is_date = 0; }
+            if (!epoch) { if (_date_failed(fatal, &is_date)) return NULL; }
             else
             {
                 PyObject *td_kw = Py_BuildValue("{s:d}", "days", serial);
-                if (!td_kw) { PyErr_Clear(); Py_DECREF(epoch); is_date = 0; }
+                if (!td_kw) { Py_DECREF(epoch); if (_date_failed(fatal, &is_date)) return NULL; }
                 else
                 {
                     PyObject *noargs = PyTuple_New(0);
                     PyObject *td = PyObject_Call(timedelta_type, noargs, td_kw);
                     Py_DECREF(noargs);
                     Py_DECREF(td_kw);
-                    if (!td) { PyErr_Clear(); Py_DECREF(epoch); is_date = 0; }
+                    if (!td) { Py_DECREF(epoch); if (_date_failed(fatal, &is_date)) return NULL; }
                     else
                     {
                         cell_val = PyNumber_Add(epoch, td);
                         Py_DECREF(td);
                         Py_DECREF(epoch);
-                        if (!cell_val) { PyErr_Clear(); is_date = 0; }
+                        if (!cell_val) { if (_date_failed(fatal, &is_date)) return NULL; }
                     }
                 }
             }
@@ -202,13 +220,15 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
     }
     else if (rec_id == 0x04 || rec_id == 0x0A)
     {
-        if (rec_len >= 9)
-            cell_val = (data[body_start + 8] != 0) ? Py_True : Py_False;
-        else
-            cell_val = Py_False;
+        /* The reference ignores bool records shorter than 9 bytes, and
+           only byte value 1 reads as True. */
+        if (rec_len < 9) { *skip = 1; return NULL; }
+        cell_val = (data[body_start + 8] == 1) ? Py_True : Py_False;
     }
     else if (rec_id == 0x05 || rec_id == 0x09)
     {
+        /* The reference ignores float records shorter than 16 bytes. */
+        if (rec_len < 16) { *skip = 1; return NULL; }
         double dval = _read_double(data, data_len, body_start + 8);
         if (xf_idx > 0 && xf_idx < styles_len)
         {
@@ -230,24 +250,24 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
             PyObject *epoch = date_1904
                 ? PyDateTime_FromDateAndTime(1904, 1, 1, 0, 0, 0, 0)
                 : PyDateTime_FromDateAndTime(1899, 12, 30, 0, 0, 0, 0);
-            if (!epoch) { PyErr_Clear(); is_date = 0; }
+            if (!epoch) { if (_date_failed(fatal, &is_date)) return NULL; }
             else
             {
                 PyObject *td_kw = Py_BuildValue("{s:d}", "days", serial);
-                if (!td_kw) { PyErr_Clear(); Py_DECREF(epoch); is_date = 0; }
+                if (!td_kw) { Py_DECREF(epoch); if (_date_failed(fatal, &is_date)) return NULL; }
                 else
                 {
                     PyObject *noargs = PyTuple_New(0);
                     PyObject *td = PyObject_Call(timedelta_type, noargs, td_kw);
                     Py_DECREF(noargs);
                     Py_DECREF(td_kw);
-                    if (!td) { PyErr_Clear(); Py_DECREF(epoch); is_date = 0; }
+                    if (!td) { Py_DECREF(epoch); if (_date_failed(fatal, &is_date)) return NULL; }
                     else
                     {
                         cell_val = PyNumber_Add(epoch, td);
                         Py_DECREF(td);
                         Py_DECREF(epoch);
-                        if (!cell_val) { PyErr_Clear(); is_date = 0; }
+                        if (!cell_val) { if (_date_failed(fatal, &is_date)) return NULL; }
                     }
                 }
             }
@@ -259,31 +279,42 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
     }
     else if (rec_id == 0x06 || rec_id == 0x08)
     {
-        if (rec_len >= 12)
+        /* Mirror the reference: records shorter than 12 bytes, or whose
+           claimed length overruns the record, are ignored (not stored as
+           empty strings, and never clobbering an earlier duplicate). */
+        if (rec_len < 12) { *skip = 1; return NULL; }
+        unsigned long str_len =
+            (unsigned long)_read_uint32(data, data_len, body_start + 8);
+        if ((Py_ssize_t)str_len * 2 + 12 > (Py_ssize_t)rec_len)
+        { *skip = 1; return NULL; }
+        cell_val = _utf16le_to_pystr(data, data_len, body_start + 12,
+                                     (long)str_len);
+        if (!cell_val)
         {
-            long str_len = _read_uint32(data, data_len, body_start + 8);
-            cell_val = _utf16le_to_pystr(data, data_len, body_start + 12, str_len);
-        }
-        else
-        {
+            if (PyErr_Occurred()) { *fatal = 1; return NULL; }
             cell_val = PyUnicode_FromStringAndSize("", 0);
         }
     }
     else if (rec_id == 0x07)
     {
-        if (rec_len >= 12)
+        /* Records shorter than 12 bytes are ignored by the reference. */
+        if (rec_len < 12) { *skip = 1; return NULL; }
+        long idx = _read_uint32(data, data_len, body_start + 8);
+        if (idx >= 0 && idx < ss_len)
         {
-            long idx = _read_uint32(data, data_len, body_start + 8);
-            if (idx >= 0 && idx < ss_len)
-            {
-                cell_val = PyList_GetItem(shared_strings, (Py_ssize_t)idx);
-                if (cell_val) Py_INCREF(cell_val);
-            }
+            cell_val = PyList_GetItem(shared_strings, (Py_ssize_t)idx);
+            if (cell_val) Py_INCREF(cell_val);
         }
         if (!cell_val) cell_val = Py_None;
     }
 
-    if (!cell_val) cell_val = Py_None;
+    if (!cell_val)
+    {
+        /* A real error (e.g. string decode failure) propagates like the
+           reference; a plain miss (OOB shared-string index) becomes None. */
+        if (PyErr_Occurred()) { *fatal = 1; return NULL; }
+        cell_val = Py_None;
+    }
     if (cell_val == Py_None || cell_val == Py_True || cell_val == Py_False)
         *has_cell = 0;
     else
@@ -296,11 +327,7 @@ static void _free_cur_cells(PyObject **cur_cells, long cur_cells_len)
 {
     if (!cur_cells) return;
     for (long c = 0; c < cur_cells_len; c++)
-    {
-        PyObject *v = cur_cells[c];
-        if (v && v != Py_None && v != Py_True && v != Py_False)
-            Py_DECREF(v);
-    }
+        Py_XDECREF(cur_cells[c]);
     free(cur_cells);
 }
 
@@ -401,6 +428,38 @@ static PyObject *C_calc_column_widths(PyObject *self, PyObject *args)
             PyObject *cell = PyList_GetItem(row, i);
             if (!cell || cell == Py_None) continue;
 
+            /* Mirror the Python fallback: unwrap (value, format) tuples,
+               then measure Decimal as float(cell). */
+            PyObject *owned = NULL;
+            if (PyTuple_Check(cell))
+            {
+                Py_ssize_t tlen = PyObject_Length(cell);
+                if (tlen < 0) { PyErr_Clear(); continue; }
+                if (tlen == 2)
+                {
+                    PyObject *fmt = PySequence_GetItem(cell, 1);
+                    if (!fmt) { PyErr_Clear(); continue; }
+                    int is_fmt = PyUnicode_Check(fmt);
+                    Py_DECREF(fmt);
+                    if (is_fmt)
+                    {
+                        owned = PySequence_GetItem(cell, 0);
+                        if (!owned) { PyErr_Clear(); continue; }
+                        cell = owned;
+                        if (cell == Py_None) { Py_DECREF(owned); continue; }
+                    }
+                }
+            }
+            if (decimal_type && PyObject_IsInstance(cell, decimal_type) == 1)
+            {
+                PyObject *f = PyNumber_Float(cell);
+                Py_XDECREF(owned);
+                owned = NULL;
+                if (!f) { PyErr_Clear(); continue; }
+                owned = f;
+                cell = f;
+            }
+
             double temp_width;
             int is_dt = datetime_type ? PyObject_IsInstance(cell, datetime_type) : 0;
             if (is_dt == 1)
@@ -408,14 +467,15 @@ static PyObject *C_calc_column_widths(PyObject *self, PyObject *args)
             else
             {
                 PyObject *str_cell = PyObject_Str(cell);
-                if (!str_cell) { PyErr_Clear(); continue; }
+                if (!str_cell) { PyErr_Clear(); Py_XDECREF(owned); continue; }
                 const char *str_data = PyUnicode_AsUTF8(str_cell);
-                if (!str_data) { Py_DECREF(str_cell); PyErr_Clear(); continue; }
+                if (!str_data) { Py_DECREF(str_cell); PyErr_Clear(); Py_XDECREF(owned); continue; }
                 const char *nl = strchr(str_data, '\n');
                 Py_ssize_t lenn = nl ? (nl - str_data) : (Py_ssize_t)strlen(str_data);
                 temp_width = 1.25 * (double)lenn + 4.0;
                 Py_DECREF(str_cell);
             }
+            Py_XDECREF(owned);
             if (temp_width > max_width) max_width = temp_width;
         }
         if (max_width == 0.0) max_width = 4.0;
@@ -424,6 +484,365 @@ static PyObject *C_calc_column_widths(PyObject *self, PyObject *args)
         if (!wv) { Py_DECREF(result); return NULL; }
         PyList_SET_ITEM(result, i, wv);
     }
+    return result;
+}
+
+/* ===== Fast pre-scan: does a row contain any (value, format) tuple? =====
+   Mirrors `_is_formatted_cell` (formats.py): a non-None cell that is a
+   tuple of length 2 whose second item is a str.  Returns 1/0, or None when
+   the row cannot be scanned here (caller falls back to the Python check,
+   which raises the same errors for non-iterable rows). */
+static PyObject *C_xlsb_row_has_formatted(PyObject *self, PyObject *args)
+{
+    PyObject *row;
+    if (!PyArg_ParseTuple(args, "O", &row))
+        return NULL;
+
+    PyObject *seq = PySequence_Fast(row, "row must be a sequence");
+    if (!seq) { PyErr_Clear(); Py_RETURN_NONE; }
+
+    Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
+    PyObject **items = PySequence_Fast_ITEMS(seq);
+    int found = 0;
+    for (Py_ssize_t i = 0; i < n; i++)
+    {
+        PyObject *cell = items[i];
+        if (cell == Py_None)
+            continue;
+        if (PyTuple_Check(cell))
+        {
+            /* PyObject_Length honors __len__ overrides, exactly like len(). */
+            Py_ssize_t tlen = PyObject_Length(cell);
+            if (tlen < 0) { PyErr_Clear(); Py_DECREF(seq); Py_RETURN_NONE; }
+            if (tlen == 2)
+            {
+                /* PySequence_GetItem honors __getitem__ overrides, like cell[1]. */
+                PyObject *fmt = PySequence_GetItem(cell, 1);
+                if (!fmt) { PyErr_Clear(); Py_DECREF(seq); Py_RETURN_NONE; }
+                int is_str = PyUnicode_Check(fmt);
+                Py_DECREF(fmt);
+                if (is_str) { found = 1; break; }
+            }
+        }
+    }
+    Py_DECREF(seq);
+    if (found) Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+/* ===== XLSB shared-strings table encoder ===== */
+
+static unsigned char *_write_varint_bytes(unsigned char *p, unsigned long value)
+{
+    while (1)
+    {
+        unsigned char b = (unsigned char)(value & 0x7F);
+        value >>= 7;
+        if (value) { *p++ = (unsigned char)(b | 0x80); }
+        else { *p++ = b; break; }
+    }
+    return p;
+}
+
+static size_t _varint_len(unsigned long value)
+{
+    size_t n = 1;
+    while (value >>= 7) n++;
+    return n;
+}
+
+/* Validate surrogate pairing over the whole string, replicating the
+   `str.encode('utf-16-le')` error behavior (which runs before any
+   truncation).  CPython's UTF-16 encoder rejects every surrogate code
+   point -- even a high+low pair written as two escapes -- so any
+   0xD800..0xDFFF unit is an error at its own index.  Returns 0 when valid,
+   -1 with *err_pos set to the offending index otherwise. */
+static int _sst_check_surrogates(int kind, const void *data, Py_ssize_t slen,
+                                 Py_ssize_t *err_pos)
+{
+    for (Py_ssize_t k = 0; k < slen; k++)
+    {
+        Py_UCS4 ch = PyUnicode_READ(kind, data, k);
+        if (ch >= 0xD800 && ch <= 0xDFFF) { *err_pos = k; return -1; }
+    }
+    return 0;
+}
+
+static PyObject *_sst_surrogate_error(PyObject *s, Py_ssize_t pos)
+{
+    PyObject *exc = PyObject_CallFunction(
+        PyExc_UnicodeEncodeError, "sOnns",
+        "utf-16-le", s, pos, pos + 1, "surrogates not allowed");
+    if (!exc) return NULL;
+    PyErr_SetObject(PyExc_UnicodeEncodeError, exc);
+    Py_DECREF(exc);
+    return NULL;
+}
+
+/* Truncated UTF-16 unit count for one shared string, replicating the Python
+   behavior byte-for-byte: units are cut at 32767 and a single trailing high
+   surrogate left by the cut is dropped.  Short strings keep everything,
+   including a trailing lone high surrogate. */
+static Py_ssize_t _sst_truncated_units(int kind, const void *data, Py_ssize_t slen)
+{
+    Py_ssize_t ulen = 0;
+    int cut = 0;
+    int last_high = 0;
+    for (Py_ssize_t k = 0; k < slen; k++)
+    {
+        if (ulen >= 32767) { cut = 1; break; }
+        Py_UCS4 ch = PyUnicode_READ(kind, data, k);
+        if (ch < 0x10000)
+        {
+            ulen++;
+            last_high = (ch >= 0xD800 && ch <= 0xDBFF);
+        }
+        else
+        {
+            ulen++;              /* high surrogate unit */
+            last_high = 1;
+            if (ulen >= 32767) { cut = 1; break; }  /* low unit cut off */
+            ulen++;              /* low surrogate unit */
+            last_high = 0;
+        }
+    }
+    if (cut && last_high) ulen--;
+    return ulen;
+}
+
+static unsigned char *_write_utf16_unit(unsigned char *p, unsigned int unit)
+{
+    *p++ = (unsigned char)(unit & 0xFF);
+    *p++ = (unsigned char)((unit >> 8) & 0xFF);
+    return p;
+}
+
+/* Encode at most `budget` UTF-16LE units (budget comes from
+   _sst_truncated_units, so encoding is exact). */
+static unsigned char *_write_sst_string(unsigned char *p, int kind,
+                                        const void *data, Py_ssize_t slen,
+                                        Py_ssize_t budget)
+{
+    Py_ssize_t emitted = 0;
+    for (Py_ssize_t k = 0; k < slen && emitted < budget; k++)
+    {
+        Py_UCS4 ch = PyUnicode_READ(kind, data, k);
+        if (ch < 0x10000)
+        {
+            p = _write_utf16_unit(p, (unsigned int)ch);
+            emitted++;
+        }
+        else
+        {
+            ch -= 0x10000;
+            p = _write_utf16_unit(p, 0xD800u | (unsigned int)(ch >> 10));
+            emitted++;
+            if (emitted < budget)
+            {
+                p = _write_utf16_unit(p, 0xDC00u | (unsigned int)(ch & 0x3FF));
+                emitted++;
+            }
+        }
+    }
+    return p;
+}
+
+/* Encode the complete sharedStrings.bin part (book + SST records).
+   Two passes: first measure the exact size (single allocation, no
+   realloc loop), then fill.  Returns bytes, or None on error. */
+static PyObject *C_encode_xlsb_sst(PyObject *self, PyObject *args)
+{
+    PyObject *ss_list;
+    unsigned int sst_all, sst_unique;
+
+    if (!PyArg_ParseTuple(args, "OII", &ss_list, &sst_all, &sst_unique))
+        return NULL;
+    if (!PyList_Check(ss_list))
+    {
+        PyErr_SetString(PyExc_TypeError, "ss_list must be a list");
+        return NULL;
+    }
+
+    Py_ssize_t n = PyList_GET_SIZE(ss_list);
+
+    /* Pass 1: measure. */
+    size_t total = 3 + 8;  /* BrtBeginSst header + counts */
+    for (Py_ssize_t i = 0; i < n; i++)
+    {
+        PyObject *s = PyList_GET_ITEM(ss_list, i);
+        if (!PyUnicode_Check(s))
+        {
+            PyErr_SetString(PyExc_TypeError, "SST entries must be str");
+            return NULL;
+        }
+        Py_ssize_t slen = PyUnicode_GET_LENGTH(s);
+        Py_ssize_t ulen = 0;
+        if (slen > 0)
+        {
+            int kind = PyUnicode_KIND(s);
+            const void *data = PyUnicode_DATA(s);
+            Py_ssize_t err_pos = 0;
+            if (_sst_check_surrogates(kind, data, slen, &err_pos) < 0)
+                return _sst_surrogate_error(s, err_pos);
+            ulen = _sst_truncated_units(kind, data, slen);
+        }
+        unsigned long rec_len = 5UL + 2UL * (unsigned long)ulen;
+        total += 1 + _varint_len(rec_len) + 1 + 4 + 2 * (size_t)ulen;
+    }
+    total += 3;  /* BrtEndSst */
+
+    if (total > (size_t)PY_SSIZE_T_MAX)
+    {
+        PyErr_NoMemory();
+        return NULL;
+    }
+    PyObject *result = PyBytes_FromStringAndSize(NULL, (Py_ssize_t)total);
+    if (!result) return NULL;
+    unsigned char *p = (unsigned char *)PyBytes_AS_STRING(result);
+
+    /* Pass 2: fill. */
+    *p++ = 0x9F; *p++ = 0x01; *p++ = 0x08;
+    memcpy(p, &sst_all, 4); p += 4;
+    memcpy(p, &sst_unique, 4); p += 4;
+    for (Py_ssize_t i = 0; i < n; i++)
+    {
+        PyObject *s = PyList_GET_ITEM(ss_list, i);
+        Py_ssize_t slen = PyUnicode_GET_LENGTH(s);
+        Py_ssize_t ulen = 0;
+        int kind = 0;
+        const void *data = NULL;
+        if (slen > 0)
+        {
+            kind = PyUnicode_KIND(s);
+            data = PyUnicode_DATA(s);
+            ulen = _sst_truncated_units(kind, data, slen);
+        }
+        unsigned long rec_len = 5UL + 2UL * (unsigned long)ulen;
+        *p++ = 0x13;
+        p = _write_varint_bytes(p, rec_len);
+        *p++ = 0x00;
+        {
+            unsigned int ul = (unsigned int)ulen;
+            memcpy(p, &ul, 4); p += 4;
+        }
+        if (ulen > 0)
+            p = _write_sst_string(p, kind, data, slen, ulen);
+    }
+    *p++ = 0xA0; *p++ = 0x01; *p++ = 0x00;
+
+    return result;
+}
+
+/* ===== XLSB shared-strings table reader =====
+   Parses a sharedStrings.bin part into a list of strings.  Observable
+   behavior mirrors `_fill_bin_shared_strings` + `BiffReader` exactly,
+   quirks included:
+   - every BrtSSTItem (0x13) appends its string in record order, EXCEPT
+     the value of the very first parsed record, which the Python loop
+     consumes for the unique-count lookup and discards (so a part that
+     does not start with BrtBeginSst loses its first item);
+   - BrtBeginSst (159) and unknown records are skipped (the unique-count
+     preallocation is unobservable: missing slots are truncated away and
+     surplus items are appended);
+   - clean EOF (including a truncated varint or a record whose payload
+     runs past the end) stops silently, like the short reads of the
+     Python path;
+   - a short BrtSSTItem/BrtBeginSst record raises IndexError, mirroring
+     the out-of-range buffer access of the Python path;
+   - when the claimed string length overruns the record, the available
+     bytes are decoded (raising UnicodeDecodeError on odd length),
+     mirroring the slice-then-decode of `_get_string`.
+   All length arithmetic uses Py_ssize_t so hostile record lengths cannot
+   overflow into out-of-bounds reads. */
+static PyObject *C_read_xlsb_shared_strings(PyObject *self, PyObject *args)
+{
+    Py_buffer view;
+    if (!PyArg_ParseTuple(args, "y*", &view))
+        return NULL;
+    const unsigned char *data = (const unsigned char *)view.buf;
+    Py_ssize_t data_len = view.len;
+
+    PyObject *result = PyList_New(0);
+    if (!result) { PyBuffer_Release(&view); return NULL; }
+
+    Py_ssize_t pos = 0;
+    int first_record = 1;
+    while (pos < data_len)
+    {
+        long rec_id = _read_varint(data, data_len, &pos);
+        if (rec_id < 0) break;  /* truncated varint: silent stop */
+        long rec_len = _read_varint(data, data_len, &pos);
+        if (rec_len < 0) break;  /* truncated varint: silent stop */
+        if ((Py_ssize_t)rec_len > data_len - pos)
+            break;  /* payload runs past the end: silent stop */
+        Py_ssize_t body = pos;
+        pos += (Py_ssize_t)rec_len;
+        /* The Python loop consumes the first parsed record for the
+           unique-count lookup and discards its value -- even when that
+           record is unknown or inconsistent. */
+        int is_first = first_record;
+        first_record = 0;
+
+        if (rec_id == 159)
+        {
+            /* BrtBeginSst: the Python path reads the count dword. */
+            if ((Py_ssize_t)rec_len < 5)
+            {
+                Py_DECREF(result);
+                PyBuffer_Release(&view);
+                PyErr_SetString(PyExc_IndexError, "truncated BrtBeginSst record");
+                return NULL;
+            }
+            continue;
+        }
+        if (rec_id != 0x13)
+            continue;
+        /* BrtSSTItem: dword length at +1, UTF-16LE chars at +5. */
+        if ((Py_ssize_t)rec_len < 5)
+        {
+            Py_DECREF(result);
+            PyBuffer_Release(&view);
+            PyErr_SetString(PyExc_IndexError, "truncated BrtSSTItem record");
+            return NULL;
+        }
+        long slen_raw = _read_uint32(data, data_len, body + 1);
+        /* Unsigned: hostile lengths (>= 2^31) must clamp to the available
+           bytes like Python's slice, not go negative into PyUnicode_New. */
+        unsigned long slen = (unsigned long)slen_raw;
+        /* Mirror _get_string's slice-then-decode: only the bytes present
+           in the record are decoded (odd length raises UnicodeDecodeError,
+           like bytes.decode). */
+        Py_ssize_t avail = (Py_ssize_t)rec_len - 5;
+        if (avail < 0) avail = 0;
+        Py_ssize_t want = (Py_ssize_t)slen * 2;
+        Py_ssize_t have = (want <= avail) ? want : avail;
+        int byteorder = -1;  /* UTF-16LE */
+        PyObject *s = PyUnicode_DecodeUTF16(
+            (const char *)(data + body + 5), have,
+            "surrogatepass", &byteorder);
+        if (!s)
+        {
+            Py_DECREF(result);
+            PyBuffer_Release(&view);
+            return NULL;
+        }
+        if (is_first)
+        {
+            /* First record's value is discarded by the Python loop. */
+            Py_DECREF(s);
+            continue;
+        }
+        if (PyList_Append(result, s) < 0)
+        {
+            Py_DECREF(s);
+            Py_DECREF(result);
+            PyBuffer_Release(&view);
+            return NULL;
+        }
+        Py_DECREF(s);
+    }
+
+    PyBuffer_Release(&view);
     return result;
 }
 
@@ -587,7 +1006,7 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
             continue;
         }
 
-        size_t need = buf_size + 16;
+        size_t need = buf_size + 32;
         if (need > buf_cap)
         {
             buf_cap = need + 4096;
@@ -599,7 +1018,7 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
         unsigned int ci = (unsigned int)col_idx;
         unsigned int zero = 0;
 
-        if (PyUnicode_CheckExact(cell))
+        if (PyUnicode_Check(cell))
         {
             if (_write_str_cell(&buf, &buf_size, &buf_cap, cell, ss_dict, ss_list, ci, row_idx, cell_style, &sst_uniq, &sst_all) < 0) { err = 1; break; }
         }
@@ -611,11 +1030,25 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
             memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
             buf[buf_size++] = (cell == Py_True) ? 1 : 0;
         }
-        else if (PyLong_CheckExact(cell))
+        else if (PyLong_Check(cell))
         {
             long long val = PyLong_AsLongLong(cell);
-            if (val == -1 && PyErr_Occurred()) { PyErr_Clear(); goto fallback; }
-            if (val >= -536870912LL && val <= 536870911LL)
+            if (val == -1 && PyErr_Occurred())
+            {
+                /* Beyond int64 range: store a double, exactly like the
+                   Python path (float(cell) never raises for ints). */
+                PyErr_Clear();
+                PyObject *f = PyNumber_Float(cell);
+                if (!f) { PyErr_Clear(); goto fallback; }
+                double fval = PyFloat_AsDouble(f);
+                Py_DECREF(f);
+                buf[buf_size++] = 0x05; buf[buf_size++] = 0x10;
+                memcpy(buf + buf_size, &ci, 4); buf_size += 4;
+                unsigned int style_ref = cell_style ? cell_style : zero;
+                memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
+                memcpy(buf + buf_size, &fval, 8); buf_size += 8;
+            }
+            else if (val >= -536870912LL && val <= 536870911LL)
             {
                 int rk_val = ((int)val << 2) | 2;
                 buf[buf_size++] = 0x02; buf[buf_size++] = 0x0C;
@@ -634,13 +1067,13 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
                 memcpy(buf + buf_size, &fval, 8); buf_size += 8;
             }
         }
-        else if (PyFloat_CheckExact(cell))
+        else if (PyFloat_Check(cell))
         {
             buf[buf_size++] = 0x05; buf[buf_size++] = 0x10;
             memcpy(buf + buf_size, &ci, 4); buf_size += 4;
             unsigned int style_ref = cell_style ? cell_style : zero;
             memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
-            double fval = PyFloat_AS_DOUBLE(cell);
+            double fval = PyFloat_AsDouble(cell);
             memcpy(buf + buf_size, &fval, 8); buf_size += 8;
         }
         else if (decimal_type && PyObject_IsInstance(cell, decimal_type) == 1)
@@ -695,7 +1128,478 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
     PyMem_Free(buf);
     if (!result_bytes) return NULL;
 
-    return Py_BuildValue("OII", result_bytes, sst_uniq, sst_all);
+    /* "O" in Py_BuildValue creates a new (incref'd) reference, so the
+       local one must be released -- otherwise every call leaks it. */
+    PyObject *res = Py_BuildValue("OII", result_bytes, sst_uniq, sst_all);
+    Py_DECREF(result_bytes);
+    return res;
+}
+
+/* ===== XLSX row encoder =====
+   Encodes one worksheet row (`<row><c/>...</row>`) for the plain (unstyled)
+   XLSX path.  Mirrors `_write_worksheet_xml` cell-by-cell:
+   - None -> `<c/>`; bool -> `<c t="b">`; numbers (int/float/Decimal, with
+     int converted via float() first, exactly like the Python path) ->
+     `<c><v>repr</v></c>` using the same shortest-repr routine as
+     `repr()`; datetimes/dates -> date serials with `s="1"`/`s="2"`;
+   - strings go through shared-strings dedup (or inline-escaped cells when
+     shared strings are off), with `s="3"` on the header row, like
+     `_write_string_cell`;
+   - `float('nan')`/`inf` become the strings "NaN"/"\u221e"/"-\u221e"
+     (Decimal NaN stays a numeric NaN, like the Python path, which only
+     special-cases float instances);
+   - out-of-range years become strings; any other object becomes
+     `str(cell)`;
+   - a row containing a `(value, format)` tuple returns None (no error) so
+     the caller falls back to the Python row writer, which owns format
+     registration.  Other unencodable rows (non-sequences, lone
+     surrogates in inline mode) also fall back, letting the Python path
+     raise exactly what it always raised.
+   Returns (row_xml_str, sst_uniq, sst_all), None for row fallback, or
+   NULL+error only on allocation failure. */
+
+/* Growable UTF-8 byte buffer (doubling). */
+typedef struct { unsigned char *data; size_t size; size_t cap; } _XBuf;
+
+static int _xbuf_reserve(_XBuf *b, size_t extra)
+{
+    if (b->size + extra <= b->cap) return 1;
+    size_t ncap = b->cap ? b->cap : 1024;
+    while (ncap < b->size + extra) ncap *= 2;
+    unsigned char *nb = (unsigned char *)PyMem_Realloc(b->data, ncap);
+    if (!nb) return 0;
+    b->data = nb;
+    b->cap = ncap;
+    return 1;
+}
+
+static int _xbuf_put(_XBuf *b, const void *src, size_t n)
+{
+    if (n == 0) return 1;
+    if (!_xbuf_reserve(b, n)) return 0;
+    memcpy(b->data + b->size, src, n);
+    b->size += n;
+    return 1;
+}
+
+static int _xbuf_byte(_XBuf *b, unsigned char c)
+{
+    return _xbuf_put(b, &c, 1);
+}
+
+static int _xbuf_cstr(_XBuf *b, const char *s)
+{
+    return _xbuf_put(b, s, strlen(s));
+}
+
+static int _xbuf_uint(_XBuf *b, unsigned int v)
+{
+    char tmp[16];
+    int n = snprintf(tmp, sizeof(tmp), "%u", v);
+    return (n > 0) ? _xbuf_put(b, tmp, (size_t)n) : 0;
+}
+
+/* Identical to repr(): the same routine CPython's float repr uses. */
+static int _xbuf_double(_XBuf *b, double v)
+{
+    char *s = PyOS_double_to_string(v, 'r', 0, Py_DTSF_ADD_DOT_0, NULL);
+    if (!s) return 0;
+    int ok = _xbuf_cstr(b, s);
+    PyMem_Free(s);
+    return ok;
+}
+
+/* XML-escape & < > over UTF-8 bytes (multibyte units never collide). */
+static int _xbuf_escaped(_XBuf *b, const char *s, Py_ssize_t n)
+{
+    for (Py_ssize_t i = 0; i < n; i++)
+    {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '&') { if (!_xbuf_cstr(b, "&amp;")) return 0; }
+        else if (c == '<') { if (!_xbuf_cstr(b, "&lt;")) return 0; }
+        else if (c == '>') { if (!_xbuf_cstr(b, "&gt;")) return 0; }
+        else if (!_xbuf_byte(b, c)) return 0;
+    }
+    return 1;
+}
+
+static int _long_attr(PyObject *obj, const char *name, long *out)
+{
+    PyObject *a = PyObject_GetAttrString(obj, name);
+    if (!a) { PyErr_Clear(); return 0; }
+    long v = PyLong_AsLong(a);
+    Py_DECREF(a);
+    if (v == -1 && PyErr_Occurred()) { PyErr_Clear(); return 0; }
+    *out = v;
+    return 1;
+}
+
+/* Howard Hinnant's days_from_civil (days since 1970-01-01). */
+static long long _days_from_civil(long long y, long long m, long long d)
+{
+    long long yy = (m <= 2) ? y - 1 : y;
+    const long long era = (yy >= 0 ? yy : yy - 399) / 400;
+    const long long yoe = yy - era * 400;
+    const long long mp = (m > 2) ? m - 3 : m + 9;
+    const long long doy = (153 * mp + 2) / 5 + d - 1;
+    const long long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+
+/* Excel serial bit-identical to `datetime_to_serial` (which computes
+   `(moment - epoch).total_seconds() / 86400.0` with exact integer
+   microseconds, i.e. a single rounding per division).
+   Returns 1 + serial; 2 = year out of range (caller stringifies);
+   0 = row fallback (unreadable/defensive ranges). */
+static int _xlsx_serial(PyObject *cell, int is_datetime, double *serial)
+{
+    long y, mo, d, hh = 0, mi = 0, ss = 0, us = 0;
+    if (!_long_attr(cell, "year", &y) || !_long_attr(cell, "month", &mo) ||
+        !_long_attr(cell, "day", &d))
+        return 0;
+    if (is_datetime &&
+        (!_long_attr(cell, "hour", &hh) || !_long_attr(cell, "minute", &mi) ||
+         !_long_attr(cell, "second", &ss) || !_long_attr(cell, "microsecond", &us)))
+        return 0;
+    if (y < 1900 || y > 9999)
+        return 2;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31)
+        return 0;
+    if (is_datetime &&
+        (hh < 0 || hh > 23 || mi < 0 || mi > 59 || ss < 0 || ss > 61 ||
+         us < 0 || us > 999999))
+        return 0;
+    long long ord = _days_from_civil(y, mo, d) + 719163;
+    long long epoch_ord = (y == 1900 && mo < 3) ? 693595 : 693594;
+    long long whole = (ord - epoch_ord) * 86400LL
+        + hh * 3600LL + (long long)mi * 60LL + ss;
+    long long total_us = whole * 1000000LL + us;
+    if (total_us > 9007199254740992LL || total_us < -9007199254740992LL)
+        return 0;  /* beyond exact-double range: slow path stays correct */
+    *serial = (double)total_us / 1000000.0 / 86400.0;
+    return 1;
+}
+
+/* Shared-string index, mirroring `_write_string_cell` dedup. */
+static int _xlsx_sst_index(PyObject *ss_dict, PyObject *ss_list, PyObject *s,
+                           unsigned int *uniq, unsigned int *all,
+                           unsigned int *out_idx)
+{
+    PyObject *idx = PyDict_GetItem(ss_dict, s);
+    if (idx)
+    {
+        *out_idx = (unsigned int)PyLong_AsLong(idx);
+    }
+    else
+    {
+        *out_idx = *uniq;
+        PyObject *si = PyLong_FromLong((long)*uniq);
+        if (!si) return 0;
+        if (PyDict_SetItem(ss_dict, s, si) < 0) { Py_DECREF(si); return 0; }
+        Py_DECREF(si);
+        if (PyList_Append(ss_list, s) < 0) return 0;
+        (*uniq)++;
+    }
+    (*all)++;
+    return 1;
+}
+
+/* String cell, mirroring `_write_string_cell` (1 ok, 0 row fallback, -1 OOM). */
+static int _xlsx_string_cell(_XBuf *b, PyObject *s, int is_header, int use_sst,
+                             PyObject *ss_dict, PyObject *ss_list,
+                             unsigned int *uniq, unsigned int *all)
+{
+    if (use_sst)
+    {
+        unsigned int idx;
+        if (!_xlsx_sst_index(ss_dict, ss_list, s, uniq, all, &idx))
+            return -1;
+        if (!_xbuf_cstr(b, "<c t=\"s\"")) return -1;
+        if (is_header && !_xbuf_cstr(b, " s=\"3\"")) return -1;
+        if (!_xbuf_cstr(b, "><v>")) return -1;
+        if (!_xbuf_uint(b, idx)) return -1;
+        if (!_xbuf_cstr(b, "</v></c>")) return -1;
+        return 1;
+    }
+    Py_ssize_t n = 0;
+    const char *utf8 = PyUnicode_AsUTF8AndSize(s, &n);
+    if (!utf8) { PyErr_Clear(); return 0; }  /* e.g. lone surrogates */
+    int preserve = (n > 0 && (utf8[0] == ' ' || utf8[0] == '\t'));
+    if (!_xbuf_cstr(b, "<c t=\"inlineStr\"")) return -1;
+    if (is_header && !_xbuf_cstr(b, " s=\"3\"")) return -1;
+    if (!_xbuf_cstr(b, "><is><t")) return -1;
+    if (preserve && !_xbuf_cstr(b, " xml:space=\"preserve\"")) return -1;
+    if (!_xbuf_byte(b, '>')) return -1;
+    if (!_xbuf_escaped(b, utf8, n)) return -1;
+    if (!_xbuf_cstr(b, "</t></is></c>")) return -1;
+    return 1;
+}
+
+/* Exact `_is_formatted_cell`: tuple + len 2 + str second item. */
+static int _is_fmt_tuple(PyObject *cell, int *out)
+{
+    *out = 0;
+    if (!PyTuple_Check(cell))
+        return 1;
+    Py_ssize_t tlen = PyObject_Length(cell);
+    if (tlen < 0) { PyErr_Clear(); return 1; }
+    if (tlen != 2)
+        return 1;
+    PyObject *fmt = PySequence_GetItem(cell, 1);
+    if (!fmt) { PyErr_Clear(); return 1; }
+    *out = PyUnicode_Check(fmt);
+    Py_DECREF(fmt);
+    return 1;
+}
+
+/* Encode one cell (1 ok, 0 row fallback, -1 OOM). */
+static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header, int use_sst,
+                      PyObject *ss_dict, PyObject *ss_list,
+                      unsigned int *uniq, unsigned int *all)
+{
+    if (!cell || cell == Py_None)
+    {
+        return _xbuf_cstr(b, "<c/>") ? 1 : -1;
+    }
+    if (PyUnicode_Check(cell))
+        return _xlsx_string_cell(b, cell, is_header, use_sst,
+                                 ss_dict, ss_list, uniq, all);
+    if (cell == Py_True || cell == Py_False)
+    {
+        if (!_xbuf_cstr(b, cell == Py_True ? "<c t=\"b\"><v>1</v></c>"
+                                           : "<c t=\"b\"><v>0</v></c>"))
+            return -1;
+        return 1;
+    }
+    if (PyLong_Check(cell))
+    {
+        double d;
+        if (PyLong_CheckExact(cell))
+        {
+            long long v = PyLong_AsLongLong(cell);
+            if (v == -1 && PyErr_Occurred())
+            {
+                /* Beyond int64: float(cell), which yields inf and never
+                   raises for ints (PyLong_AsDouble alone would leave
+                   OverflowError set). */
+                PyErr_Clear();
+                PyObject *f = PyNumber_Float(cell);
+                if (!f) { PyErr_Clear(); return 0; }
+                d = PyFloat_AsDouble(f);
+                Py_DECREF(f);
+            }
+            else
+                d = (double)v;
+        }
+        else
+        {
+            PyObject *f = PyNumber_Float(cell);
+            if (!f) { PyErr_Clear(); return 0; }
+            d = PyFloat_AsDouble(f);
+            Py_DECREF(f);
+        }
+        if (!_xbuf_cstr(b, "<c><v>")) return -1;
+        if (!_xbuf_double(b, d)) return -1;
+        if (!_xbuf_cstr(b, "</v></c>")) return -1;
+        return 1;
+    }
+    if (PyFloat_Check(cell))
+    {
+        double d;
+        int nan_like = 0, pos_inf = 0, neg_inf = 0;
+        if (PyFloat_CheckExact(cell))
+        {
+            d = PyFloat_AS_DOUBLE(cell);
+            nan_like = (d != d);
+            pos_inf = (d == Py_HUGE_VAL);
+            neg_inf = (d == -Py_HUGE_VAL);
+        }
+        else
+        {
+            PyObject *f = PyNumber_Float(cell);
+            if (!f) { PyErr_Clear(); return 0; }
+            d = PyFloat_AsDouble(f);
+            Py_DECREF(f);
+            /* Exact routing for subclasses (mirrors ==/!= dispatch). */
+            int rb = PyObject_RichCompareBool(cell, cell, Py_NE);
+            if (rb < 0) { PyErr_Clear(); return 0; }
+            nan_like = rb;
+            if (!nan_like)
+            {
+                PyObject *pinf = PyFloat_FromDouble(Py_HUGE_VAL);
+                PyObject *ninf = pinf ? PyFloat_FromDouble(-Py_HUGE_VAL) : NULL;
+                if (!pinf || !ninf)
+                {
+                    Py_XDECREF(pinf);
+                    Py_XDECREF(ninf);
+                    return -1;
+                }
+                int e1 = PyObject_RichCompareBool(cell, pinf, Py_EQ);
+                int e2 = (e1 == 0) ? PyObject_RichCompareBool(cell, ninf, Py_EQ) : 0;
+                Py_DECREF(pinf);
+                Py_DECREF(ninf);
+                if (e1 < 0 || e2 < 0) { PyErr_Clear(); return 0; }
+                pos_inf = (e1 == 1);
+                neg_inf = (e2 == 1);
+            }
+        }
+        if (nan_like || pos_inf || neg_inf)
+        {
+            PyObject *s = PyUnicode_FromString(
+                nan_like ? "NaN" : (pos_inf ? "\xe2\x88\x9e" : "-\xe2\x88\x9e"));
+            if (!s) return -1;
+            int rc = _xlsx_string_cell(b, s, is_header, use_sst,
+                                       ss_dict, ss_list, uniq, all);
+            Py_DECREF(s);
+            return rc;
+        }
+        if (!_xbuf_cstr(b, "<c><v>")) return -1;
+        if (!_xbuf_double(b, d)) return -1;
+        if (!_xbuf_cstr(b, "</v></c>")) return -1;
+        return 1;
+    }
+    if (decimal_type && PyObject_IsInstance(cell, decimal_type) == 1)
+    {
+        PyObject *f = PyNumber_Float(cell);
+        if (!f) { PyErr_Clear(); return 0; }
+        double d = PyFloat_AsDouble(f);
+        Py_DECREF(f);
+        if (!_xbuf_cstr(b, "<c><v>")) return -1;
+        if (!_xbuf_double(b, d)) return -1;
+        if (!_xbuf_cstr(b, "</v></c>")) return -1;
+        return 1;
+    }
+    int is_dt = (datetime_type && PyObject_IsInstance(cell, datetime_type) == 1);
+    if (is_dt || (date_type && PyObject_IsInstance(cell, date_type) == 1))
+    {
+        double serial = 0.0;
+        int sr = _xlsx_serial(cell, is_dt, &serial);
+        if (sr == 0)
+            return 0;  /* row fallback (unreadable/defensive ranges) */
+        if (sr == 2)
+        {
+            /* Year out of range: str(cell), like the Python path. */
+            PyObject *s = PyObject_Str(cell);
+            if (!s) { PyErr_Clear(); return 0; }
+            int rc = _xlsx_string_cell(b, s, is_header, use_sst,
+                                       ss_dict, ss_list, uniq, all);
+            Py_DECREF(s);
+            return rc;
+        }
+        if (!_xbuf_cstr(b, is_dt ? "<c s=\"2\"><v>" : "<c s=\"1\"><v>")) return -1;
+        if (!_xbuf_double(b, serial)) return -1;
+        if (!_xbuf_cstr(b, "</v></c>")) return -1;
+        return 1;
+    }
+    {
+        /* Anything else becomes str(cell), like the Python path. */
+        PyObject *s = PyObject_Str(cell);
+        if (!s) { PyErr_Clear(); return 0; }
+        int rc = _xlsx_string_cell(b, s, is_header, use_sst,
+                                   ss_dict, ss_list, uniq, all);
+        Py_DECREF(s);
+        return rc;
+    }
+}
+
+/* Remove SST entries appended during an aborted row encode, so a row
+   fallback leaves caller-visible structures untouched (the caller keeps
+   its old counters and reprocesses the row in Python).  Only entries
+   added after len_before are removed; pre-existing ones are never
+   touched. */
+static int _xlsx_rollback(PyObject *ss_dict, PyObject *ss_list,
+                          Py_ssize_t len_before)
+{
+    Py_ssize_t n = PyList_GET_SIZE(ss_list);
+    for (Py_ssize_t i = len_before; i < n; i++)
+    {
+        PyObject *key = PyList_GET_ITEM(ss_list, i);  /* borrowed */
+        if (PyDict_DelItem(ss_dict, key) < 0)
+            PyErr_Clear();  /* practically impossible; best effort */
+    }
+    if (n > len_before &&
+        PySequence_DelSlice(ss_list, len_before, PY_SSIZE_T_MAX) < 0)
+        PyErr_Clear();
+    return 0;
+}
+
+static PyObject *C_encode_xlsx_row(PyObject *self, PyObject *args)
+{
+    PyObject *row, *ss_dict, *ss_list;
+    unsigned int sst_uniq, sst_all, row_idx;
+    int use_sst;
+
+    if (!PyArg_ParseTuple(args, "OOOIIIp", &row, &ss_dict, &ss_list,
+                          &sst_uniq, &sst_all, &row_idx, &use_sst))
+        return NULL;
+    if (!PyDict_Check(ss_dict) || !PyList_Check(ss_list))
+    {
+        PyErr_SetString(PyExc_TypeError, "ss_dict must be a dict, ss_list a list");
+        return NULL;
+    }
+
+    _ensure_types();
+
+    PyObject *seq = PySequence_Fast(row, "row must be a sequence");
+    if (!seq) { PyErr_Clear(); Py_RETURN_NONE; }
+    Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
+    PyObject **items = PySequence_Fast_ITEMS(seq);
+    Py_ssize_t list_before = PyList_GET_SIZE(ss_list);
+
+    _XBuf b = {NULL, 0, 0};
+    /* <row r="{n}"> */
+    {
+        char head[64];
+        int hn = snprintf(head, sizeof(head), "<row r=\"%u\">", row_idx + 1);
+        if (hn <= 0 || !_xbuf_cstr(&b, head)) goto oom;
+    }
+    for (Py_ssize_t i = 0; i < n; i++)
+    {
+        PyObject *cell = items[i];
+        if (cell != Py_None)
+        {
+            int fmt = 0;
+            if (PyTuple_Check(cell))
+            {
+                if (!_is_fmt_tuple(cell, &fmt)) goto oom;
+                if (fmt)  /* (value, format): Python slow path owns formats */
+                {
+                    Py_DECREF(seq);
+                    PyMem_Free(b.data);
+                    _xlsx_rollback(ss_dict, ss_list, list_before);
+                    Py_RETURN_NONE;
+                }
+            }
+        }
+        int rc = _xlsx_cell(&b, cell, row_idx == 0, use_sst,
+                            ss_dict, ss_list, &sst_uniq, &sst_all);
+        if (rc == 0)
+        {
+            Py_DECREF(seq);
+            PyMem_Free(b.data);
+            _xlsx_rollback(ss_dict, ss_list, list_before);
+            Py_RETURN_NONE;
+        }
+        if (rc < 0) goto oom;
+    }
+    if (!_xbuf_cstr(&b, "</row>")) goto oom;
+    Py_DECREF(seq);
+
+    {
+        PyObject *s = PyUnicode_DecodeUTF8((const char *)b.data, (Py_ssize_t)b.size, "strict");
+        PyMem_Free(b.data);
+        if (!s) return NULL;
+        /* "O" creates a new reference: release the local one (no leaks). */
+        PyObject *res = Py_BuildValue("OII", s, sst_uniq, sst_all);
+        Py_DECREF(s);
+        return res;
+    }
+
+oom:
+    Py_DECREF(seq);
+    PyMem_Free(b.data);
+    PyErr_NoMemory();
+    return NULL;
 }
 
 /* ===== Streaming XLSB worksheet reader (iterator type) ===== */
@@ -721,24 +1625,36 @@ typedef struct {
 
     /* Per-row cell buffer */
     PyObject **cur_cells;
-    long cur_cells_len;
+    Py_ssize_t cur_cells_len;
 
     /* State tracking */
     long cur_row_num;          /* row number of currently accumulating row */
     long gap_rows_remaining;   /* number of empty rows to emit before next data row */
-    long first_col;            /* first column of the first row that has cells */
-    long cols_per_row;         /* width of the first row that has cells */
+    /* first_col/cols_per_row: layout frozen from the first row with cells.
+       first_col == -1 means unset (no prescan layout); then the first
+       streamed cell freezes it, exactly like the reference, which latches
+       the first cell's column. */
+    Py_ssize_t first_col;      /* first column of the first row that has cells */
+    Py_ssize_t cols_per_row;   /* width of the first row that has cells */
     int is_initialized;        /* 1 after first Row record consumed */
+    int seen_row_record;       /* 1 after the first Row record was consumed */
+    int fallback_to_python;    /* prescan found a layout too wide for C storage */
     int date_1904;             /* 1 when the workbook uses the 1904 date system */
 } XlsbReader;
+
+/* Bound C's dense per-row cell array. The XLSB format maximum is 16384
+   columns; wider nonstandard layouts are delegated to the Python reference
+   rather than assigning them a C-specific result or risking huge allocation. */
+#define _XLSB_MAX_COL_SPAN 1048576L
 
 static void XlsbReader_dealloc(XlsbReader *self)
 {
     if (self->cur_cells)
     {
-        /* Cells have been stolen by PyList_SET_ITEM when rows were emitted,
-           OR haven't been emitted yet. We only need to free the array itself;
-           any remaining cells are owned by the row list or are stale pointers. */
+        /* Uniform ownership: every slot holds an owned reference (singletons
+           are incref'd on store), so a mid-row abandonment frees cleanly. */
+        for (Py_ssize_t c = 0; c < self->cur_cells_len; c++)
+            Py_XDECREF(self->cur_cells[c]);
         free(self->cur_cells);
     }
     if (self->view.buf)
@@ -762,8 +1678,22 @@ static PyTypeObject XlsbReader_Type = {
 
 static PyObject *_build_row_and_free_cells(XlsbReader *self)
 {
-    long out_cols = (self->cols_per_row > 0) ? self->cols_per_row :
-                    (self->cur_cells_len > 0 ? self->cur_cells_len : 1);
+    /* Unset layout (-1) falls back to the accumulated width; a frozen
+       degenerate layout (<= 0, from an unordered first row) yields empty
+       rows, exactly like the reference's range(<=0). */
+    Py_ssize_t out_cols;
+    if (self->cols_per_row == -1)
+        out_cols = (self->cur_cells_len > 0 ? self->cur_cells_len : 1);
+    else
+        out_cols = (self->cols_per_row > 0) ? self->cols_per_row : 0;
+    if (out_cols > _XLSB_MAX_COL_SPAN)
+    {
+        /* Absurd width: the reference dies building range(huge). */
+        _free_cur_cells(self->cur_cells, self->cur_cells_len);
+        self->cur_cells = NULL; self->cur_cells_len = 0;
+        PyErr_NoMemory();
+        return NULL;
+    }
     PyObject *row_list = PyList_New(out_cols);
     if (!row_list)
     {
@@ -771,13 +1701,20 @@ static PyObject *_build_row_and_free_cells(XlsbReader *self)
         self->cur_cells = NULL; self->cur_cells_len = 0;
         return NULL;
     }
-    for (long c = 0; c < out_cols; c++)
+    for (Py_ssize_t c = 0; c < out_cols; c++)
     {
         if (c < self->cur_cells_len && self->cur_cells[c])
             PyList_SET_ITEM(row_list, c, self->cur_cells[c]);
         else
+        {
+            Py_INCREF(Py_None);
             PyList_SET_ITEM(row_list, c, Py_None);
+        }
     }
+    /* Cells past the output width are dropped like the reference's
+       range(width); they are owned, so release them. */
+    for (Py_ssize_t c = out_cols < 0 ? 0 : out_cols; c < self->cur_cells_len; c++)
+        Py_XDECREF(self->cur_cells[c]);
     /* Cells stolen by PyList_SET_ITEM - just free the array */
     free(self->cur_cells);
     self->cur_cells = NULL;
@@ -787,12 +1724,51 @@ static PyObject *_build_row_and_free_cells(XlsbReader *self)
 
 static PyObject *_make_empty_row(XlsbReader *self)
 {
-    long cols = (self->cols_per_row > 0) ? self->cols_per_row : 1;
+    Py_ssize_t cols;
+    if (self->cols_per_row == -1)
+        cols = 1;
+    else
+        cols = (self->cols_per_row > 0) ? self->cols_per_row : 0;
+    if (cols > _XLSB_MAX_COL_SPAN)
+    {
+        /* Absurd width: the reference dies building [None] * huge. */
+        PyErr_NoMemory();
+        return NULL;
+    }
     PyObject *row = PyList_New(cols);
     if (!row) return NULL;
-    for (long c = 0; c < cols; c++)
+    for (Py_ssize_t c = 0; c < cols; c++)
+    {
+        Py_INCREF(Py_None);
         PyList_SET_ITEM(row, c, Py_None);
+    }
     return row;
+}
+
+/* Whether a cell record counts as a cell for layout purposes: mirrors the
+   reference, which ignores undersized bodies and overrunning string lengths
+   (the streaming pass skips them too, so the prescan must not freeze the
+   layout on records the stream pass will drop). */
+static int _counts_for_layout(long rec_id, long rec_len,
+                              const unsigned char *data, Py_ssize_t data_len,
+                              Py_ssize_t body_start)
+{
+    if (rec_len < 8) return 0;
+    if (body_start + (Py_ssize_t)rec_len > data_len) return 0;
+    if (rec_id == 0x02 && rec_len < 12) return 0;
+    if ((rec_id == 0x04 || rec_id == 0x0A) && rec_len < 9) return 0;
+    if ((rec_id == 0x05 || rec_id == 0x09) && rec_len < 16) return 0;
+    if (rec_id == 0x07 && rec_len < 12) return 0;
+    if (rec_id == 0x06 || rec_id == 0x08)
+    {
+        if (rec_len < 12) return 0;
+        long len_raw;
+        if (!_read_uint32_safe(data, data_len, body_start + 8, &len_raw))
+            return 0;
+        Py_ssize_t need = (Py_ssize_t)(unsigned long)len_raw * 2 + 12;
+        if (need > (Py_ssize_t)rec_len) return 0;
+    }
+    return 1;
 }
 
 /* Pre-scan worksheet records to determine the column layout (first_col,
@@ -807,7 +1783,9 @@ static void _prescan_first_data_row(XlsbReader *self)
     Py_ssize_t pos = 0;
     long cur_row = -1;
     long span_row = -2;        /* row of the first row with cells (-2 = none) */
-    long min_col = 0, max_col = -1;
+    /* First/last cell column in record order (unsigned 64-bit: dword columns
+       >= 2^31 are huge positive indices to the reference). */
+    Py_ssize_t first_c = -1, last_c = -1;
 
     while (pos < data_len)
     {
@@ -821,31 +1799,34 @@ static void _prescan_first_data_row(XlsbReader *self)
 
         if (rec_id == 0x00)
         {
-            /* The next row header marks the end of the first data row. */
+            /* The next row header marks the end of the first data row.
+               Short bodies read as row -1, like the reference. */
             if (span_row != -2 && cur_row != span_row)
                 break;
-            long new_row;
-            if (_read_uint32_safe(data, data_len, body_start, &new_row))
-                cur_row = new_row;
+            long new_row = -1;
+            _read_uint32_safe(data, data_len, body_start, &new_row);
+            cur_row = new_row;
         }
         else if (rec_id >= 0x01 && rec_id <= 0x0B)
         {
+            /* Skipped records (undersized/overrunning bodies) are not cells
+               to the reference: they must neither open the span nor feed it,
+               or leading empty rows would freeze a wrong width. */
+            if (!_counts_for_layout(rec_id, rec_len, data, data_len, body_start))
+                continue;
             if (span_row == -2) span_row = cur_row;
             if (cur_row == span_row)
             {
-                long col;
-                if (_read_uint32_safe(data, data_len, body_start, &col))
+                /* First/last cell column in record order, exactly like the
+                   reference (which remembers the first cell's column and
+                   overwrites the last column per cell).  Full unsigned range:
+                   dword columns >= 2^31 are huge positive indices there. */
+                long col_raw;
+                if (_read_uint32_safe(data, data_len, body_start, &col_raw))
                 {
-                    if (max_col < 0)
-                    {
-                        min_col = col;
-                        max_col = col;
-                    }
-                    else
-                    {
-                        if (col < min_col) min_col = col;
-                        if (col > max_col) max_col = col;
-                    }
+                    Py_ssize_t col = (Py_ssize_t)(unsigned long)col_raw;
+                    if (first_c < 0) first_c = col;
+                    last_c = col;
                 }
             }
         }
@@ -855,10 +1836,14 @@ static void _prescan_first_data_row(XlsbReader *self)
         }
     }
 
-    if (span_row != -2 && max_col >= 0)
+    if (span_row != -2 && first_c >= 0)
     {
-        self->first_col = min_col;
-        self->cols_per_row = max_col - min_col + 1;
+        self->first_col = first_c;
+        /* May be <= 0 for unordered first rows; the reference then emits
+           empty rows, which the builders below reproduce. */
+        self->cols_per_row = last_c - first_c + 1;
+        if (self->cols_per_row > _XLSB_MAX_COL_SPAN)
+            self->fallback_to_python = 1;
     }
     else
     {
@@ -867,44 +1852,86 @@ static void _prescan_first_data_row(XlsbReader *self)
     }
 }
 
-/* Helper: read a cell record and store in cur_cells */
+/* Helper: read a cell record and store in cur_cells.
+   Returns 1 (stored or reference-identical skip), -1 (fatal error pending),
+   0 (out of memory, PyErr set). */
 static int _process_cell_record(XlsbReader *self, const unsigned char *data,
                                  Py_ssize_t data_len, Py_ssize_t body_start,
                                  long rec_id, long rec_len)
 {
-    long col, xf_idx;
-    if (!_read_uint32_safe(data, data_len, body_start, &col)) return 1;
+    /* BiffReader first rejects every cell record shorter than the 8-byte
+       column/style header, regardless of record type. */
+    if (rec_len < 8) return 1;
+    long col_raw, xf_idx;
+    if (!_read_uint32_safe(data, data_len, body_start, &col_raw)) return 1;
     if (!_read_uint32_safe(data, data_len, body_start + 4, &xf_idx)) return 1;
     xf_idx &= 0xFFFFFF;
+    /* Truncated framing (the record claims more bytes than the stream
+       holds) kills the record, exactly like the reference, whose exact-size
+       body read fails and stops.  Length checks below mirror the reference's
+       per-type minimums against the real bytes, not the claim. */
+    if (body_start + (Py_ssize_t)rec_len > data_len) return 1;
+    /* Bit-preserving conversion: dword columns >= 2^31 read negative into
+       a 32-bit long but are huge positive indices to the reference. */
+    Py_ssize_t col = (Py_ssize_t)(unsigned long)col_raw;
 
     int has_cell_alloc;
+    int fatal = 0, skip = 0;
     PyObject *cell_val = _parse_cell_value(data, data_len, body_start,
                                              rec_id, rec_len,
                                              self->shared_strings, self->ss_len,
                                              self->styles_list, self->styles_len,
                                              self->date_num_fmts, xf_idx, &has_cell_alloc,
-                                             self->date_1904);
-    if (!cell_val) return 1;
+                                             self->date_1904, &fatal, &skip);
+    if (fatal) return -1;  /* exception pending: abort like the reference */
+    if (skip || !cell_val) return 1;
 
-    /* Index relative to frozen first_col (if first_col < 0, default to col itself) */
-    long fc = self->first_col;
-    if (fc < 0) fc = col;
-    long idx = col - fc;
-    if (idx < 0) idx = 0;
+    /* Frozen layout bounds the visible window, exactly like the reference's
+       range(width): degenerate layouts (width <= 0) show nothing, absurd
+       ones (> cap) die at build time like the reference's range(huge). */
+    if (self->cols_per_row != -1)
+    {
+        if (self->cols_per_row <= 0 ||
+            self->cols_per_row > _XLSB_MAX_COL_SPAN ||
+            col < self->first_col ||
+            col - self->first_col >= self->cols_per_row)
+        {
+            if (has_cell_alloc) Py_DECREF(cell_val);
+            return 1;
+        }
+    }
+    else
+    {
+        /* Unset layout: freeze on the first stored cell; absurd spans are
+           corrupt-input noise the reference never shows. */
+        if (self->first_col < 0)
+            self->first_col = col;
+        if (col < self->first_col ||
+            col - self->first_col > _XLSB_MAX_COL_SPAN)
+        {
+            if (has_cell_alloc) Py_DECREF(cell_val);
+            return 1;
+        }
+    }
+    Py_ssize_t idx = col - self->first_col;
 
     if (idx >= self->cur_cells_len)
     {
-        PyObject **new_cells = realloc(self->cur_cells, sizeof(PyObject*) * (idx + 1));
+        PyObject **new_cells = realloc(self->cur_cells,
+                                       sizeof(PyObject*) * (size_t)(idx + 1));
         if (!new_cells)
         {
             if (has_cell_alloc) Py_DECREF(cell_val);
+            PyErr_NoMemory();
             return 0;
         }
-        for (long c = self->cur_cells_len; c <= idx; c++)
+        for (Py_ssize_t c = self->cur_cells_len; c <= idx; c++)
             new_cells[c] = NULL;
         self->cur_cells = new_cells;
         self->cur_cells_len = idx + 1;
     }
+    /* Uniform array ownership: own a reference on borrowed singletons. */
+    if (!has_cell_alloc) Py_INCREF(cell_val);
     Py_XDECREF(self->cur_cells[idx]);
     self->cur_cells[idx] = cell_val;
     return 1;
@@ -927,11 +1954,14 @@ static PyObject *XlsbReader_iternext(PyObject *self_ptr)
         return row;
     }
 
-    /* Phase 1: On first call, skip past metadata to first Row record */
+    /* Phase 1: On first call, skip past metadata to the first Row record
+       or the first cell record.  Cells before any Row record form a phantom
+       row, exactly like the reference, which latches its first cell. */
     if (!self->is_initialized)
     {
         while (self->pos < data_len)
         {
+            Py_ssize_t rec_start = self->pos;
             long rec_id = _read_varint(data, data_len, &self->pos);
             if (rec_id < 0) { self->done = 1; return NULL; }
             long rec_len = _read_varint(data, data_len, &self->pos);
@@ -940,9 +1970,18 @@ static PyObject *XlsbReader_iternext(PyObject *self_ptr)
             self->pos += rec_len;
             if (rec_id == 0x00)
             {
-                long new_row;
+                /* Short bodies read as row -1, like the reference. */
+                long new_row = -1;
                 _read_uint32_safe(data, data_len, body_start, &new_row);
                 self->cur_row_num = new_row;
+                self->seen_row_record = 1;
+                self->is_initialized = 1;
+                break;
+            }
+            else if (rec_id >= 0x01 && rec_id <= 0x0B)
+            {
+                /* Phantom row: rewind so Phase 2 consumes this cell. */
+                self->pos = rec_start;
                 self->is_initialized = 1;
                 break;
             }
@@ -967,19 +2006,27 @@ static PyObject *XlsbReader_iternext(PyObject *self_ptr)
             PyObject *row = _build_row_and_free_cells(self);
             if (!row) { self->done = 1; return NULL; }
 
-            long new_row;
+            /* Short bodies read as row -1, like the reference. */
+            long new_row = -1;
             _read_uint32_safe(data, data_len, body_start, &new_row);
 
-            /* Calculate gap rows between previous and new row */
-            self->gap_rows_remaining = new_row - self->cur_row_num - 1;
+            /* Gap rows only once a Row record was seen: the reference
+               suppresses gaps while its previous-row tracker is still -1
+               (cells before the first Row record). */
+            if (self->seen_row_record)
+                self->gap_rows_remaining = new_row - self->cur_row_num - 1;
+            else
+                self->gap_rows_remaining = 0;
 
             self->cur_row_num = new_row;
+            self->seen_row_record = 1;
             return row;
         }
         else if (rec_id >= 0x01 && rec_id <= 0x0B)
         {
-            if (!_process_cell_record(self, data, data_len, body_start, rec_id, rec_len))
-            { self->done = 1; return NULL; }
+            int pr = _process_cell_record(self, data, data_len, body_start, rec_id, rec_len);
+            if (pr < 0) { self->done = 1; return NULL; }  /* ref error pending */
+            if (!pr) { self->done = 1; return NULL; }
         }
         else if (rec_id == 0x92)
         {
@@ -1036,6 +2083,8 @@ static PyObject *C_read_xlsb_worksheet(PyObject *self_mod, PyObject *args)
     reader->first_col = -1;
     reader->cols_per_row = -1;
     reader->is_initialized = 0;
+    reader->seen_row_record = 0;
+    reader->fallback_to_python = 0;
     reader->date_1904 = date_1904;
 
     _prescan_first_data_row(reader);
@@ -1043,6 +2092,14 @@ static PyObject *C_read_xlsb_worksheet(PyObject *self_mod, PyObject *args)
     Py_INCREF(shared_strings);
     Py_INCREF(styles_list);
     Py_INCREF(date_num_fmts);
+
+    if (reader->fallback_to_python)
+    {
+        /* Keep behavior exact for unusually wide layouts; the high-level
+           reader already treats None as a signal to use BiffReader. */
+        Py_DECREF(reader);
+        Py_RETURN_NONE;
+    }
 
     return (PyObject *)reader;
 }
@@ -1057,6 +2114,14 @@ static PyMethodDef CMethods[] = {
      "Encode a single XLSB row. Returns (bytes, sst_uniq, sst_all)."},
     {"calc_column_widths", C_calc_column_widths, METH_VARARGS,
      "Calculate column widths from row data."},
+    {"xlsb_row_has_formatted", C_xlsb_row_has_formatted, METH_VARARGS,
+     "Return True if a row contains any (value, format) tuple cell."},
+    {"encode_xlsb_sst", C_encode_xlsb_sst, METH_VARARGS,
+     "Encode the sharedStrings.bin part. Returns bytes."},
+    {"read_xlsb_shared_strings", C_read_xlsb_shared_strings, METH_VARARGS,
+     "Parse a sharedStrings.bin part. Returns a list of strings."},
+    {"encode_xlsx_row", C_encode_xlsx_row, METH_VARARGS,
+     "Encode one XLSX sheet row. Returns (row_xml, sst_uniq, sst_all)."},
     {NULL, NULL, 0, NULL}
 };
 
