@@ -12,11 +12,16 @@ Style the result with charts, tables, and formatting — all from Python.
 
 ## Built for speed
 
-**2.5 million cells: write XLSB in 1.46 s, read it in 0.60 s.**
+**2.5 million cells. Ready in seconds.**
 
-In that benchmark, C acceleration delivered **10.6× faster XLSB reads** than
-xlspy's pure-Python fallback. Measurements use a 50,000 × 50 dataset and the
-median of three runs on Windows with Python 3.14.6.
+| XLSB with C acceleration | Windows | WSL2 |
+| :--- | ---: | ---: |
+| Write | **1.46 s** | **1.17 s** |
+| Read | **0.60 s** | **0.43 s** |
+
+C acceleration delivered **over 10× faster XLSB reads** than xlspy's
+pure-Python fallback in both environments. Figures are medians of three runs
+on a 50,000 × 50 dataset (Windows: Python 3.14.6; WSL2: Python 3.14.4).
 [See the full comparisons, hardware, and methodology →](docs/benchmarks.md)
 
 ## Made for the work behind the workbook

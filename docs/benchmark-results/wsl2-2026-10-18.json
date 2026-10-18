@@ -1,0 +1,272 @@
+{
+  "date": "2026-10-18",
+  "source_revision": "9600b00a44dbfa5b409f57273fc86d7789aa71dd",
+  "command": "python3 examples/performance_test.py --rows 50000 --cols 50",
+  "environment": {
+    "platform": "WSL2 Linux x86_64",
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "cpu": "AMD Ryzen 7 7840HS",
+    "logical_cpus": 16,
+    "filesystem": "ext4",
+    "python": "3.14.4",
+    "xlspy": "0.7.0",
+    "openpyxl": "3.1.5",
+    "xlsxwriter": "3.2.9",
+    "c_extension": true,
+    "compiler": "GCC 15.2.0 -O2",
+    "openpyxl_lxml": false
+  },
+  "dataset": {
+    "rows_including_header": 50000,
+    "columns": 50,
+    "cells": 2500000
+  },
+  "aggregation": "Median of three sequential runs per operation; script timings rounded to 0.01 seconds.",
+  "size_unit": "MiB (1024 ** 2 bytes); benchmark console labels this MB.",
+  "os_caches_flushed": false,
+  "runs": [
+    {
+      "run": 1,
+      "write": [
+        {
+          "library": "xlspy (C_EXT)",
+          "format": "XLSB",
+          "seconds": 1.16,
+          "size_mib": 7.52
+        },
+        {
+          "library": "xlspy (Python)",
+          "format": "XLSB",
+          "seconds": 2.4,
+          "size_mib": 7.52
+        },
+        {
+          "library": "xlspy",
+          "format": "XLSX",
+          "seconds": 1.96,
+          "size_mib": 6.71
+        },
+        {
+          "library": "openpyxl (write_only)",
+          "format": "XLSX",
+          "seconds": 14.58,
+          "size_mib": 11.48
+        },
+        {
+          "library": "xlsxwriter (constant_memory)",
+          "format": "XLSX",
+          "seconds": 7.87,
+          "size_mib": 11.35
+        }
+      ],
+      "read": [
+        {
+          "library": "xlspy (C_EXT)",
+          "format": "XLSB",
+          "seconds": 0.42,
+          "rows_read": 50000
+        },
+        {
+          "library": "xlspy",
+          "format": "XLSX",
+          "seconds": 4.13,
+          "rows_read": 50000
+        },
+        {
+          "library": "xlspy (Python)",
+          "format": "XLSB",
+          "seconds": 5.1,
+          "rows_read": 50000
+        },
+        {
+          "library": "openpyxl (read_only)",
+          "format": "XLSX",
+          "seconds": 9.67,
+          "rows_read": 50000
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "write": [
+        {
+          "library": "xlspy (C_EXT)",
+          "format": "XLSB",
+          "seconds": 1.17,
+          "size_mib": 7.52
+        },
+        {
+          "library": "xlspy (Python)",
+          "format": "XLSB",
+          "seconds": 2.41,
+          "size_mib": 7.52
+        },
+        {
+          "library": "xlspy",
+          "format": "XLSX",
+          "seconds": 2.01,
+          "size_mib": 6.71
+        },
+        {
+          "library": "openpyxl (write_only)",
+          "format": "XLSX",
+          "seconds": 14.53,
+          "size_mib": 11.48
+        },
+        {
+          "library": "xlsxwriter (constant_memory)",
+          "format": "XLSX",
+          "seconds": 8.12,
+          "size_mib": 11.35
+        }
+      ],
+      "read": [
+        {
+          "library": "xlspy (C_EXT)",
+          "format": "XLSB",
+          "seconds": 0.43,
+          "rows_read": 50000
+        },
+        {
+          "library": "xlspy",
+          "format": "XLSX",
+          "seconds": 3.8,
+          "rows_read": 50000
+        },
+        {
+          "library": "xlspy (Python)",
+          "format": "XLSB",
+          "seconds": 4.57,
+          "rows_read": 50000
+        },
+        {
+          "library": "openpyxl (read_only)",
+          "format": "XLSX",
+          "seconds": 9.23,
+          "rows_read": 50000
+        }
+      ]
+    },
+    {
+      "run": 3,
+      "write": [
+        {
+          "library": "xlspy (C_EXT)",
+          "format": "XLSB",
+          "seconds": 1.23,
+          "size_mib": 7.52
+        },
+        {
+          "library": "xlspy (Python)",
+          "format": "XLSB",
+          "seconds": 2.46,
+          "size_mib": 7.52
+        },
+        {
+          "library": "xlspy",
+          "format": "XLSX",
+          "seconds": 1.94,
+          "size_mib": 6.71
+        },
+        {
+          "library": "openpyxl (write_only)",
+          "format": "XLSX",
+          "seconds": 14.84,
+          "size_mib": 11.48
+        },
+        {
+          "library": "xlsxwriter (constant_memory)",
+          "format": "XLSX",
+          "seconds": 7.9,
+          "size_mib": 11.35
+        }
+      ],
+      "read": [
+        {
+          "library": "xlspy (C_EXT)",
+          "format": "XLSB",
+          "seconds": 0.47,
+          "rows_read": 50000
+        },
+        {
+          "library": "xlspy",
+          "format": "XLSX",
+          "seconds": 3.87,
+          "rows_read": 50000
+        },
+        {
+          "library": "xlspy (Python)",
+          "format": "XLSB",
+          "seconds": 4.64,
+          "rows_read": 50000
+        },
+        {
+          "library": "openpyxl (read_only)",
+          "format": "XLSX",
+          "seconds": 9.14,
+          "rows_read": 50000
+        }
+      ]
+    }
+  ],
+  "medians": {
+    "write": [
+      {
+        "library": "xlspy (C_EXT)",
+        "format": "XLSB",
+        "seconds": 1.17,
+        "size_mib": 7.52
+      },
+      {
+        "library": "xlspy (Python)",
+        "format": "XLSB",
+        "seconds": 2.41,
+        "size_mib": 7.52
+      },
+      {
+        "library": "xlspy",
+        "format": "XLSX",
+        "seconds": 1.96,
+        "size_mib": 6.71
+      },
+      {
+        "library": "openpyxl (write_only)",
+        "format": "XLSX",
+        "seconds": 14.58,
+        "size_mib": 11.48
+      },
+      {
+        "library": "xlsxwriter (constant_memory)",
+        "format": "XLSX",
+        "seconds": 7.9,
+        "size_mib": 11.35
+      }
+    ],
+    "read": [
+      {
+        "library": "xlspy (C_EXT)",
+        "format": "XLSB",
+        "seconds": 0.43,
+        "rows_read": 50000
+      },
+      {
+        "library": "xlspy",
+        "format": "XLSX",
+        "seconds": 3.87,
+        "rows_read": 50000
+      },
+      {
+        "library": "xlspy (Python)",
+        "format": "XLSB",
+        "seconds": 4.64,
+        "rows_read": 50000
+      },
+      {
+        "library": "openpyxl (read_only)",
+        "format": "XLSX",
+        "seconds": 9.23,
+        "rows_read": 50000
+      }
+    ]
+  }
+}
