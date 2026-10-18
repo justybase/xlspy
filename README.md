@@ -125,12 +125,12 @@ The formatting works transparently on both `XlsxWriter` and `XlsbWriter`.
 
 ### Cell Styles (colors, fonts, alignment)
 
-`Style` can be used on the header or on arbitrary A1 cell ranges in both
-writers. Styles are deduplicated in the workbook, so cells with the same style
-share one Excel style record.
+`Style` can be used on the header or on arbitrary A1 cell ranges. Styles are
+deduplicated in the workbook, so cells with the same style share one Excel
+style record.
 
 ```python
-from xlspy import F, Style, XlsxWriter  # XlsbWriter has the same API
+from xlspy import F, Style, XlsxWriter  # XlsbWriter supports the flat fields below
 
 header = Style(fill="#008000", font_color="#FFFFFF", bold=True)
 warning = Style(fill="FFF2CC", italic=True, horizontal="center", wrap=True)
@@ -147,21 +147,123 @@ with XlsxWriter("report.xlsx") as writer:
     )
 ```
 
-Supported `Style` properties: `fill`, `font_color`, `bold`, `italic`,
-`underline`, `number_format`, `horizontal`, `vertical`, and `wrap`. Colors are
-six-digit RGB strings with or without `#`. Alignment and wrapping currently
-apply to XLSX output; XLSB raises `NotImplementedError` for those properties
-rather than silently ignoring them. Use `header_style` to style all
-cells in the first row (including numeric cells); use `styles` to provide an
-ordered mapping of A1 cell/range references to styles. When ranges overlap,
-later ranges override only the properties they specify. A cell's existing
-`(value, number_format)` tuple remains supported and its number format takes
-precedence over a range style's `number_format`.
+Flat `Style` properties: `fill`, `font_color`, `bold`, `italic`, `underline`,
+`number_format`, `horizontal`, `vertical`, and `wrap`. Colors are six-digit RGB
+strings with or without `#`. Use `header_style` to style all cells in the first
+row (including numeric cells); use `styles` to provide an ordered mapping of A1
+cell/range references to styles. When ranges overlap, later ranges override
+only the properties they specify. A cell's existing `(value, number_format)`
+tuple remains supported and its number format takes precedence over a range
+style's `number_format`.
 
 `write_dataframe()` accepts the same `header_style` and `styles` arguments.
 Unstyled rows continue to use the XLSB C acceleration path. The C encoder also
 accepts compact row style IDs, avoiding the old tuple-based fallback for
 styled rows.
+
+#### Structured styles (openpyxl-like)
+
+For full Excel styling, `Style` also accepts openpyxl-style objects. Each
+sub-property left as `None` falls back to the corresponding flat shorthand,
+and the structured object wins on conflict:
+
+```python
+from xlspy import (
+    Alignment, Border, Color, Font, GradientFill, PatternFill, Side, Style,
+)
+
+style = Style(
+    font=Font(name="Arial", size=12, bold=True, color=Color(theme=1),
+              scheme="major", shadow=True),
+    fill=GradientFill("linear", degree=90, stop=["#4472C4", "#FFFFFF"]),
+    border=Border(left=Side("thin", "000000"), bottom=Side("double")),
+    alignment=Alignment(horizontal="center", wrap_text=True, reading_order=2),
+    number_format="#,##0.00",
+)
+```
+
+- `fill` accepts a color string (solid fill), a `PatternFill` (`fill_type`,
+  `start_color`, `end_color`) or a `GradientFill` (`linear`/`path` with `Stop`
+  objects or plain colors spread evenly between position 0 and 1). When both
+  `fill` and `pattern` are given, `pattern` wins.
+- `Color` takes exactly one of `rgb`, `indexed`, `theme` (optionally with
+  `tint`) or `auto=True`.
+- `Font` covers `name`, `size`, `bold`, `italic`, `strike`, `underline`,
+  `vertAlign`, `color`, `charset`, `family`, `scheme`, `outline`, `shadow`,
+  `condense`, and `extend`.
+- `Border` covers all nine sides (`left`, `right`, `top`, `bottom`,
+  `diagonal`, `vertical`, `horizontal`, `start`, `end`) plus
+  `diagonal_direction`/`diagonal_up`/`diagonal_down` and `outline`.
+- `Alignment` covers `horizontal`, `vertical`, `wrap_text`, `shrink_to_fit`,
+  `indent`, `relative_indent`, `text_rotation`, `justify_last_line`, and
+  `reading_order`.
+- `Protection(locked=..., hidden=...)` for cell locking.
+
+#### Conditional formatting
+
+`write_sheet(..., conditional_formats=[...])` accepts `CellIsRule`,
+`FormulaRule`, `ColorScaleRule`, `DataBarRule`, and `IconSetRule`. Rules are
+grouped by range; priorities are assigned automatically or taken from the
+rule's `priority`. A `DifferentialStyle` (Excel `dxf`) can style the matched
+cells with a font, number format, fill, alignment, border, and protection:
+
+```python
+from xlspy import (
+    CellIsRule, DifferentialStyle, Font, IconSetRule, PatternFill,
+)
+
+formats = [
+    CellIsRule("B2:B5", "lessThan", ["5"], dxf=DifferentialStyle(
+        font=Font(bold=True, color="9C0006"),
+        number_format="0.00",
+        fill=PatternFill("solid", start_color="FFC7CE"),
+    )),
+    IconSetRule("C2:C5", "5Arrows", [0, 20, 40, 60, 80], show_value=True),
+]
+```
+
+#### Tables
+
+`write_sheet(..., tables=[ExcelTable("Sales", "A1:C5", columns=["Qty", "Price", "Total"])])`
+adds an Excel ListObject table (XLSX only).
+
+#### Charts
+
+`write_sheet(..., charts=[...])` adds charts (XLSX and XLSB):
+
+```python
+from xlspy import Chart, ChartSeries
+
+writer.write_sheet(
+    [["Q", "A"], ["Q1", 10], ["Q2", 30]],
+    charts=[
+        Chart("bar", [ChartSeries("B2:B3", title_cell="B1")],
+              title="Sales", anchor="D2"),
+        Chart("line", [ChartSeries("B2:B3", title="Series 1")],
+              title="Trend", anchor="D18"),
+    ],
+)
+```
+
+`Chart(chart_type="bar"|"line"|"pie", series=[...], title=None, anchor="E2",
+width=15.0, height=7.5, style=None)` anchors the chart at a cell; dimensions
+are in centimeters (openpyxl defaults: 15 × 7.5). Each `ChartSeries` takes an
+A1 `values` range on the same sheet, an optional legend label (`title` literal
+or `title_cell` reference) and, except for pie charts, optional `categories`.
+Both writers emit the same DrawingML parts (`drawings/drawingN.xml`,
+`charts/chartN.xml`); the XLSX writer links them with a `<drawing>` sheet
+element, the XLSB writer with a `BrtDrawing` record. XLSB chart parts also
+mirror real Excel files: cached values inside every reference, text
+categories via `strRef`, and an explicit `varyColors` flag.
+
+**XLSB parity:** `XlsbWriter` supports the same `Style` object model
+(`Font`, `PatternFill`, `GradientFill`, `Border`, `Alignment`, `Protection`)
+as well as `merges`, `column_widths`, `hidden_columns`, `row_heights`,
+`hidden_rows`, `freeze_panes`, and `auto_filter`. A few properties have no
+BIFF12 representation and raise `NotImplementedError` instead of being
+silently ignored: `relative_indent`, the `vertical`/`horizontal`/`start`/`end`
+border sides, and `outline=False`. Still XLSX-only: `conditional_formats`
+and `tables` (`write_sheet` on `XlsbWriter` does not accept them).
 
 ### Writing pandas / polars DataFrames (optional)
 

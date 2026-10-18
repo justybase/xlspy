@@ -250,6 +250,18 @@ def to_xlsx(
     include_index: bool = False,
     na_rep=None,
     formats: dict[str, str] | None = None,
+    header_style=None,
+    styles: dict | None = None,
+    merges: list[str] | tuple[str, ...] | None = None,
+    conditional_formats: list | tuple | None = None,
+    tables=None,
+    column_widths: dict | None = None,
+    hidden_columns=None,
+    row_heights: dict | None = None,
+    hidden_rows=None,
+    freeze_panes: str | None = None,
+    auto_filter: bool | None = None,
+    charts=None,
     **writer_kwargs,
 ):
     """Write a DataFrame straight to an ``.xlsx`` file and return ``path``.
@@ -262,13 +274,18 @@ def to_xlsx(
         with XlsxWriter(path, **writer_kwargs) as writer:
             writer.add_sheet(sheet_name)
             writer.write_dataframe(
-                df, include_index=include_index, na_rep=na_rep, formats=formats
+                df, include_index=include_index, na_rep=na_rep, formats=formats,
+                header_style=header_style, styles=styles,
+                merges=merges, conditional_formats=conditional_formats,
+                tables=tables, column_widths=column_widths,
+                hidden_columns=hidden_columns, row_heights=row_heights,
+                hidden_rows=hidden_rows, freeze_panes=freeze_panes,
+                auto_filter=auto_filter, charts=charts,
             )
     except Exception:
         _remove_partial_file(path)
         raise
     return path
-
 
 def to_xlsb(
     df,
@@ -278,6 +295,16 @@ def to_xlsb(
     include_index: bool = False,
     na_rep=None,
     formats: dict[str, str] | None = None,
+    header_style=None,
+    styles: dict | None = None,
+    merges: list[str] | tuple[str, ...] | None = None,
+    column_widths: dict | None = None,
+    hidden_columns=None,
+    row_heights: dict | None = None,
+    hidden_rows=None,
+    freeze_panes: str | None = None,
+    auto_filter: bool | None = None,
+    charts=None,
     **writer_kwargs,
 ):
     """Write a DataFrame straight to an ``.xlsb`` file and return ``path``.
@@ -290,7 +317,12 @@ def to_xlsb(
         with XlsbWriter(path, **writer_kwargs) as writer:
             writer.add_sheet(sheet_name)
             writer.write_dataframe(
-                df, include_index=include_index, na_rep=na_rep, formats=formats
+                df, include_index=include_index, na_rep=na_rep, formats=formats,
+                header_style=header_style, styles=styles,
+                merges=merges, column_widths=column_widths,
+                hidden_columns=hidden_columns, row_heights=row_heights,
+                hidden_rows=hidden_rows, freeze_panes=freeze_panes,
+                auto_filter=auto_filter, charts=charts,
             )
     except Exception:
         _remove_partial_file(path)
