@@ -33,6 +33,7 @@ from ._text import check_cell_text
 from .formulas import Formula
 from .hyperlinks import Hyperlink
 from .outline import build_outline
+from .refs import check_sheet_name
 
 
 # BIFF12 record identifiers used in xl/styles.bin ([MS-XLSB] section 2.1.4).
@@ -200,6 +201,7 @@ class XlsbWriter(StagedWriter):
         self._next_cf_priority = 1
 
     def add_sheet(self, sheet_name: str, hidden : bool = False):
+        check_sheet_name(sheet_name, (name for name, _data, _hidden in self._worksheet_data))
         self._sheet_count += 1
         self._worksheet_data.append((sheet_name, iter([]),hidden))
 

@@ -26,7 +26,7 @@ from .printing import (
     print_area_name,
     print_titles_name,
 )
-from .refs import quote_sheet_name
+from .refs import check_sheet_name, quote_sheet_name
 from .styles import (
     CellIsRule,
     ColorScaleRule,
@@ -225,6 +225,7 @@ class XlsxWriter(StagedWriter):
         return letters
 
     def add_sheet(self, sheet_name: str, hidden: bool = False):
+        check_sheet_name(sheet_name, (name for name, _data, _hidden in self._worksheet_data))
         self._sheet_count += 1
         self._worksheet_data.append((sheet_name, iter([]), hidden))
 

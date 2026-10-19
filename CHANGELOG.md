@@ -155,6 +155,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rows are read. A `Hyperlink` header cell names its column by its text.
 - `hidden_columns` with a negative index was accepted by `XlsxWriter`. Both
   writers now share one validation for hidden rows and columns.
+- The XLSB readers (C and Python) padded the gap before a row record with
+  empty rows up to whatever index it held, so a corrupt index such as
+  530,579,456 produced hundreds of millions of rows and never finished (this
+  hung `tests/test_c_fuzz.py`). A row index past 1,048,575 now raises
+  `ValueError`; row `0xFFFFFFFF` still reads as -1 on every platform.
+- `add_sheet` accepted sheet names Excel refuses to open: empty or longer than
+  31 characters, containing `: \ / ? * [ ]`, starting or ending with an
+  apostrophe, the reserved `History`, or repeating another name ignoring case.
+  Both writers now raise `ValueError` (`TypeError` for a non-string).
+- `Formula` named `bool` as an allowed cached value in the error raised for a
+  `bool`; the message now says a bool is refused.
 
 ## [0.7.0] - 2026-10-18
 

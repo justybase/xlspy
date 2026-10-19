@@ -87,6 +87,29 @@ static int _read_uint32_safe(const unsigned char *data, Py_ssize_t data_len, Py_
     return 1;
 }
 
+#define XLSB_MAX_ROW_INDEX 1048575UL
+
+/* Row index of a BrtRowHdr body, like the reference: a short body and row
+   0xFFFFFFFF both read as -1 (on every platform, whatever the width of long).
+   A row past Excel's last would be padded with billions of empty rows, so it
+   raises ValueError and returns 0; otherwise returns 1. */
+static int _read_row_index(const unsigned char *data, Py_ssize_t data_len, Py_ssize_t pos, long *out)
+{
+    *out = -1;
+    if (pos + 4 > data_len) return 1;
+    unsigned long raw = _le_uint32(data + pos);
+    if (raw == 0xFFFFFFFFUL) return 1;
+    if (raw > XLSB_MAX_ROW_INDEX)
+    {
+        PyErr_Format(PyExc_ValueError,
+                     "XLSB row record has row index %lu, past the last row (%lu)",
+                     raw, XLSB_MAX_ROW_INDEX);
+        return 0;
+    }
+    *out = (long)raw;
+    return 1;
+}
+
 static double _read_double(const unsigned char *data, Py_ssize_t data_len, Py_ssize_t pos)
 {
     if (pos + 8 > data_len) return 0.0;
@@ -1981,8 +2004,13 @@ static void _prescan_first_data_row(XlsbReader *self)
                Short bodies read as row -1, like the reference. */
             if (span_row != -2 && cur_row != span_row)
                 break;
-            long new_row = -1;
-            _read_uint32_safe(data, data_len, body_start, &new_row);
+            long new_row;
+            if (!_read_row_index(data, data_len, body_start, &new_row))
+            {
+                /* Iteration reaches this record too and raises there. */
+                PyErr_Clear();
+                break;
+            }
             cur_row = new_row;
         }
         else if (rec_id >= 0x01 && rec_id <= 0x0B)
@@ -2148,9 +2176,9 @@ static PyObject *XlsbReader_iternext(PyObject *self_ptr)
             self->pos += rec_len;
             if (rec_id == 0x00)
             {
-                /* Short bodies read as row -1, like the reference. */
-                long new_row = -1;
-                _read_uint32_safe(data, data_len, body_start, &new_row);
+                long new_row;
+                if (!_read_row_index(data, data_len, body_start, &new_row))
+                { self->done = 1; return NULL; }
                 self->cur_row_num = new_row;
                 self->seen_row_record = 1;
                 self->is_initialized = 1;
@@ -2184,9 +2212,13 @@ static PyObject *XlsbReader_iternext(PyObject *self_ptr)
             PyObject *row = _build_row_and_free_cells(self);
             if (!row) { self->done = 1; return NULL; }
 
-            /* Short bodies read as row -1, like the reference. */
-            long new_row = -1;
-            _read_uint32_safe(data, data_len, body_start, &new_row);
+            long new_row;
+            if (!_read_row_index(data, data_len, body_start, &new_row))
+            {
+                Py_DECREF(row);
+                self->done = 1;
+                return NULL;
+            }
 
             /* Gap rows only once a Row record was seen: the reference
                suppresses gaps while its previous-row tracker is still -1

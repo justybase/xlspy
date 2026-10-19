@@ -2,6 +2,10 @@ import struct
 from enum import IntEnum
 from typing import Optional
 
+# Last zero-based row Excel can hold. Row 0xFFFFFFFF reads as -1, the same as
+# a row record too short to hold an index.
+MAX_ROW_INDEX = 1048575
+
 
 class CellType(IntEnum):
     doubleVal = 0
@@ -239,6 +243,13 @@ class BiffReader:
         if record_id == self._row:
             if len(buffer) >= 4:
                 self.row_index = self._get_int32(buffer, 0)
+                # A row past Excel's last would be padded with billions of
+                # empty rows by the readers, so the record is corrupt.
+                if not -1 <= self.row_index <= MAX_ROW_INDEX:
+                    raise ValueError(
+                        f"XLSB row record has row index {self.row_index & 0xFFFFFFFF}, "
+                        f"past the last row ({MAX_ROW_INDEX})"
+                    )
             else:
                 self.row_index = -1
         elif len(buffer) < 8:

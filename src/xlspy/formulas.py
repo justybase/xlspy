@@ -162,7 +162,7 @@ class Formula:
             isinstance(self.value, bool)
             or not isinstance(self.value, (int, float, str, Decimal))
         ):
-            raise TypeError("formula cached value must be a number, string, bool or None")
+            raise TypeError("formula cached value must be a number, a string or None (not a bool)")
         # A cached <v> must be a finite xsd:double; NaN and infinities are not.
         if isinstance(self.value, (float, Decimal)) and not math.isfinite(self.value):
             raise ValueError("formula cached value must be finite (not NaN or infinity)")

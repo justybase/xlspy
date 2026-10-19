@@ -52,3 +52,30 @@ def parse_cell_range(reference: str) -> tuple[int, int, int, int]:
 def quote_sheet_name(sheet_name: str) -> str:
     """Quote a sheet name for use in a formula or defined name."""
     return "'" + sheet_name.replace("'", "''") + "'"
+
+
+_SHEET_NAME_FORBIDDEN = frozenset(r':\/?*[]')
+
+
+def check_sheet_name(sheet_name, existing=()) -> None:
+    """Raise unless Excel accepts ``sheet_name`` beside the ``existing`` names.
+
+    Excel refuses to open a workbook with a sheet name that is empty, longer
+    than 31 characters, holds ``: \\ / ? * [ ]``, starts or ends with an
+    apostrophe, is the reserved name ``History``, or repeats another sheet's
+    name ignoring case.
+    """
+    if not isinstance(sheet_name, str):
+        raise TypeError("sheet name must be a string")
+    if not 1 <= len(sheet_name) <= 31:
+        raise ValueError(f"sheet name must be 1 to 31 characters, got {sheet_name!r}")
+    bad = sorted(set(sheet_name) & _SHEET_NAME_FORBIDDEN)
+    if bad:
+        raise ValueError(f"sheet name {sheet_name!r} contains {''.join(bad)!r}, which Excel forbids")
+    if sheet_name[0] == "'" or sheet_name[-1] == "'":
+        raise ValueError(f"sheet name {sheet_name!r} must not start or end with an apostrophe")
+    if sheet_name.casefold() == "history":
+        raise ValueError("'History' is a sheet name Excel reserves")
+    folded = sheet_name.casefold()
+    if any(name.casefold() == folded for name in existing):
+        raise ValueError(f"duplicate sheet name {sheet_name!r} (Excel ignores case)")

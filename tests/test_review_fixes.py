@@ -511,3 +511,119 @@ def test_table_over_the_whole_data_gets_no_sheet_autofilter(tmp_path):
     assert "<autoFilter" not in _zip_text(path, "xl/worksheets/sheet1.xml")
     assert "<autoFilter" in _zip_text(path, "xl/tables/table1.xml")
 
+
+
+# ------------------------- 11. corrupt XLSB row index past the last row
+
+
+def _xlsb_with_row_index(tmp_path, new_index):
+    """A three-row XLSB whose second BrtRowHdr is rewritten to ``new_index``."""
+    source = tmp_path / "rows.xlsb"
+    with XlsbWriter(source) as writer:
+        writer.add_sheet("S")
+        writer.write_sheet([["a"], ["b"], ["c"]])
+    part = "xl/worksheets/sheet1.bin"
+    with zipfile.ZipFile(source) as archive:
+        items = {name: archive.read(name) for name in archive.namelist()}
+    blob = bytearray(items[part])
+    row_records = [r for r in iter_records(bytes(blob)) if r.record_id == 0x0000]
+    struct.pack_into("<I", blob, row_records[1].data_start, new_index)
+    items[part] = bytes(blob)
+    target = tmp_path / "patched.xlsb"
+    with zipfile.ZipFile(target, "w") as archive:
+        for name, data in items.items():
+            archive.writestr(name, data)
+    return target
+
+
+@pytest.fixture(params=["c", "python"])
+def xlsb_reader_impl(request, monkeypatch):
+    import xlspy.reader as reader_module
+
+    if request.param == "c" and not reader_module.HAVE_C_EXT:
+        pytest.skip("C extension not built")
+    if request.param == "python":
+        monkeypatch.setattr(reader_module, "HAVE_C_EXT", False)
+    return request.param
+
+
+@pytest.mark.parametrize("bad_index", [1048576, 530579456, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFE])
+def test_row_index_past_the_last_row_is_refused(tmp_path, xlsb_reader_impl, bad_index):
+    path = _xlsb_with_row_index(tmp_path, bad_index)
+    with ExcelReader(str(path)) as reader:
+        with pytest.raises(ValueError, match="past the last row"):
+            list(reader.get_rows("S"))
+
+
+@pytest.mark.parametrize("index,expected_rows", [(1, 3), (5, 7)])
+def test_row_index_inside_the_sheet_still_reads(tmp_path, xlsb_reader_impl, index, expected_rows):
+    path = _xlsb_with_row_index(tmp_path, index)
+    with ExcelReader(str(path)) as reader:
+        rows = list(reader.get_rows("S"))
+    assert len(rows) == expected_rows
+    assert rows[0] == ["a"] and rows[-1] == ["c"]
+
+
+def test_row_index_ffffffff_reads_like_a_short_row_record(tmp_path, xlsb_reader_impl):
+    # 0xFFFFFFFF is -1 to the readers, the same as a row record with no index.
+    path = _xlsb_with_row_index(tmp_path, 0xFFFFFFFF)
+    with ExcelReader(str(path)) as reader:
+        rows = list(reader.get_rows("S"))
+    assert rows[0] == ["a"]
+
+
+# -------------------------------- 12. sheet names Excel refuses to open
+
+
+@pytest.mark.parametrize("writer_cls", [XlsxWriter, XlsbWriter])
+@pytest.mark.parametrize(
+    "name,message",
+    [
+        ("", "1 to 31 characters"),
+        ("x" * 32, "1 to 31 characters"),
+        ("'x", "apostrophe"),
+        ("x'", "apostrophe"),
+        ("a:b", "forbids"),
+        ("a/b", "forbids"),
+        (r"a\b", "forbids"),
+        ("a?b", "forbids"),
+        ("a*b", "forbids"),
+        ("[a]", "forbids"),
+        ("History", "reserves"),
+        ("history", "reserves"),
+    ],
+)
+def test_sheet_names_excel_refuses_are_rejected(tmp_path, writer_cls, name, message):
+    with writer_cls(tmp_path / "names.bin") as writer:
+        with pytest.raises(ValueError, match=message):
+            writer.add_sheet(name)
+        writer.add_sheet("Ok")
+
+
+@pytest.mark.parametrize("writer_cls", [XlsxWriter, XlsbWriter])
+def test_duplicate_sheet_names_ignore_case(tmp_path, writer_cls):
+    with writer_cls(tmp_path / "dupes.bin") as writer:
+        writer.add_sheet("Data")
+        with pytest.raises(ValueError, match="duplicate sheet name"):
+            writer.add_sheet("DATA")
+
+
+@pytest.mark.parametrize("writer_cls", [XlsxWriter, XlsbWriter])
+def test_sheet_names_excel_accepts_are_kept(tmp_path, writer_cls):
+    names = ["it's", "x" * 31, "Q1 & Q2 <draft>", "Żółć", "History 2024", "a.b,c;d"]
+    with writer_cls(tmp_path / "ok.bin") as writer:
+        for name in names:
+            writer.add_sheet(name)
+            writer.write_sheet([[name]])
+
+
+def test_sheet_name_must_be_a_string(tmp_path):
+    with XlsxWriter(tmp_path / "x.xlsx") as writer:
+        with pytest.raises(TypeError, match="sheet name must be a string"):
+            writer.add_sheet(5)
+        writer.add_sheet("Ok")
+
+
+def test_formula_bool_value_message_says_bool_is_refused():
+    with pytest.raises(TypeError, match="not a bool"):
+        Formula("A1", value=True)
