@@ -192,7 +192,8 @@ def test_row_encode_no_growth():
     def run():
         for idx, row in enumerate(rows):
             res = encode_xlsb_row(row, ss_dict, ss_list, state["uniq"], state["all"], idx)
-            state["uniq"], state["all"] = res[1], res[2]
+            if res is not None:  # None: the row goes to the Python encoder (here, the format tuple)
+                state["uniq"], state["all"] = res[1], res[2]
 
     assert_no_tracemalloc_growth(run, iters=20, allowance_kb=512.0)
     assert_no_rss_growth(run, iters=20, allowance_mb=5.0)

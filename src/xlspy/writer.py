@@ -6,7 +6,7 @@ import struct
 from typing import  Tuple, Iterable, Mapping
 import io
 import itertools
-from ._accel import encode_xlsb_row, calc_column_widths as accel_calc_column_widths
+from ._accel import encode_xlsb_row, encode_xlsb_row_inline, calc_column_widths as accel_calc_column_widths
 from ._accel import xlsb_row_has_formatted as accel_row_has_formatted
 from ._accel import encode_xlsb_sst as accel_encode_xlsb_sst
 from .formats import _is_formatted_cell, _unwrap_cell, _get_format
@@ -16,13 +16,23 @@ from .styles import (
     Chart,
     Style,
     _column_index,
+    capture_table_headers,
+    explicit_cf_priorities,
     merge_styles,
+    normalize_hidden_columns,
+    normalize_hidden_rows,
     normalize_style_ranges,
     parse_cell_range,
     split_style,
     styles_for_row,
+    table_column_names,
 )
 from .biff_utils import build_record
+from ._output import StagedWriter
+from ._text import check_cell_text
+from .formulas import Formula
+from .hyperlinks import Hyperlink
+from .outline import build_outline
 
 
 # BIFF12 record identifiers used in xl/styles.bin ([MS-XLSB] section 2.1.4).
@@ -132,9 +142,30 @@ class FilterData:
     end_row: int = 0
 
 
-class XlsbWriter:
-    def __init__(self, file: str | io.IOBase, compressionLevel:int = 4):
+# XLSB has no encoding here for formulas and hyperlinks. The C row encoder
+# hands rows with such objects to the Python encoder, which refuses them.
+_XLSB_REJECTED_TYPES = frozenset({Formula, Hyperlink})
+
+
+def _capture_cells(rows, store: dict):
+    """Yield rows unchanged, filling the chart-cache slots they cover."""
+    columns = [(col_idx, first_row, slots) for col_idx, (first_row, slots) in store.items()]
+    for row_idx, row in enumerate(rows):
+        for col_idx, first_row, slots in columns:
+            offset = row_idx - first_row
+            if 0 <= offset < len(slots) and col_idx < len(row):
+                slots[offset] = row[col_idx]
+        yield row
+
+
+class XlsbWriter(StagedWriter):
+    def __init__(self, file: str | io.IOBase, compressionLevel:int = 4,
+                 useSharedStrings: bool = True):
         self._file = file
+        self._useSharedStrings = useSharedStrings
+        self._aborted = False
+        self._saved = False
+        self._output = None  # StagedOutput while open
         self._worksheet_data: list[Tuple[str, Iterable[list[any]],bool]] = []
         self._shared_strings: list[str] = []
         self._shared_strings_dict: dict[str, int] = {}
@@ -158,7 +189,7 @@ class XlsbWriter:
         self._next_xf_index = 4
         self._sheet_charts: dict[int, list] = {}
         self._sheet_chart_ids: dict[int, list[int]] = {}
-        self._sheet_chart_rows: dict[int, list] = {}
+        self._sheet_chart_cells: dict[int, dict] = {}
         self._next_chart_id = 1
         self._next_table_id = 1
         self._table_names: set[str] = set()
@@ -167,22 +198,6 @@ class XlsbWriter:
         self._seen_cf_priorities: set[int] = set()
         self._reserved_cf_priorities: set[int] = set()
         self._next_cf_priority = 1
-
-    def __enter__(self):
-        if self._zf is None:
-            self._zf = zipfile.ZipFile(self._file, 'w', zipfile.ZIP_DEFLATED, compresslevel=self._compressionLevel)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        try:
-            if self._zf is not None:
-                self.save()
-        finally:
-            if self._zf is not None:
-                self._zf.close()
-                self._zf = None
-        
-        return False
 
     def add_sheet(self, sheet_name: str, hidden : bool = False):
         self._sheet_count += 1
@@ -322,27 +337,6 @@ class XlsbWriter:
         return result
 
     @staticmethod
-    def _normalize_hidden(items, kind):
-        if items is None:
-            return set()
-        if isinstance(items, (str, bytes)):
-            raise TypeError(f"{kind} must be a collection of columns/rows, not a string")
-        try:
-            values = list(items)
-        except TypeError:
-            raise TypeError(f"{kind} must be a collection or None")
-        result = set()
-        for key in values:
-            if isinstance(key, str):
-                col = _column_index(key)
-            elif isinstance(key, int) and not isinstance(key, bool):
-                col = key
-            else:
-                raise TypeError(f"{kind} keys must be column letters or 0-based ints")
-            result.add(col)
-        return result
-
-    @staticmethod
     def _normalize_row_heights(mapping):
         if mapping is None:
             return {}
@@ -357,21 +351,6 @@ class XlsbWriter:
             if value <= 0:
                 raise ValueError("row height must be > 0")
             result[key] = float(value)
-        return result
-
-    @staticmethod
-    def _normalize_hidden_rows(items):
-        if items is None:
-            return set()
-        try:
-            candidates = list(items)
-        except TypeError:
-            raise TypeError("hidden_rows must be a collection or None")
-        result = set()
-        for key in candidates:
-            if not isinstance(key, int) or isinstance(key, bool) or key < 0:
-                raise TypeError("hidden_rows entries must be 0-based row ints")
-            result.add(key)
         return result
 
     @staticmethod
@@ -397,14 +376,17 @@ class XlsbWriter:
 
         if not tables:
             return []
+        # Names are only checked here; write_sheet registers them once every
+        # option is valid, so a rejected call leaves no name behind.
+        names = set(self._table_names)
         for table in tables:
             if not isinstance(table, ExcelTable):
                 raise TypeError("tables must be ExcelTable instances")
-            if table.display_name in self._table_names:
+            if table.display_name in names:
                 raise ValueError(
                     f"duplicate table display name {table.display_name!r}"
                 )
-            self._table_names.add(table.display_name)
+            names.add(table.display_name)
         return list(tables)
 
     def _check_unknown_cf_rule(self, rule) -> None:
@@ -551,15 +533,8 @@ class XlsbWriter:
         out += build_record(_BRT_AC_END, b"")
         return out
 
-    def _table_bin(self, table, table_id: int) -> bytes:
-        from .styles import parse_cell_range
-
+    def _table_bin(self, table, table_id: int, names: list[str]) -> bytes:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
-        if table.columns is not None:
-            names = list(table.columns)
-        else:
-            width = last_col - first_col + 1
-            names = [f"Column{i + 1}" for i in range(width)]
         out = bytearray()
         out.extend(self._acuid())
         # BrtBeginList
@@ -779,12 +754,15 @@ class XlsbWriter:
         hidden_columns: list | tuple | set | None = None,
         row_heights: dict | None = None,
         hidden_rows: list | tuple | set | None = None,
+        row_groups: list | tuple | None = None,
+        column_groups: list | tuple | None = None,
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
         charts: list[Chart] | tuple[Chart, ...] | None = None,
         tables: list | tuple | None = None,
         conditional_formats: list | tuple | None = None,
     ):
+        self._require_writable()
         if header_style is not None and not isinstance(header_style, Style):
             raise TypeError("header_style must be a Style instance")
         style_ranges = normalize_style_ranges(styles)
@@ -792,29 +770,49 @@ class XlsbWriter:
             self._reject_rich_style(candidate)
         merge_refs = self._normalize_merges(merges)
         widths = self._normalize_widths(column_widths, "column_widths")
-        hidden_cols = self._normalize_hidden(hidden_columns, "hidden_columns")
+        hidden_cols = normalize_hidden_columns(hidden_columns)
         heights = self._normalize_row_heights(row_heights)
-        hidden_row_set = self._normalize_hidden_rows(hidden_rows)
+        hidden_row_set = normalize_hidden_rows(hidden_rows)
+        row_outline = build_outline(row_groups, "row")
+        col_outline = build_outline(column_groups, "column")
+        if col_outline is not None:
+            hidden_cols = hidden_cols | col_outline.hidden_indices()
         if freeze_panes is not None and freeze_panes != "":
             self._split_freeze_cell(freeze_panes)
+        chart_specs = self._normalize_charts(charts)
+        for chart in chart_specs:
+            if chart.uses_extended_features:
+                raise ValueError(
+                    "XlsbWriter supports only the original chart options "
+                    "(bar, line and pie with no axis, legend, label, colour or marker settings); "
+                    "use XlsxWriter for these charts"
+                )
+        table_specs = self._normalize_tables(tables)
+        cf_specs = self._normalize_cf_rules(conditional_formats)
+        # Pre-reserve explicit priorities (like XLSX) so auto-assigned ones skip them.
+        cf_priorities = explicit_cf_priorities(
+            cf_specs, self._seen_cf_priorities, self._reserved_cf_priorities,
+        )
+
+        # Every option is valid; only now record what this sheet claims, so a
+        # rejected call leaves the writer as it was.
         if not self._worksheet_data:
             self.add_sheet("Sheet1")
-
         sheet_name,_, hidden = self._worksheet_data[self._sheet_count - 1]
         self._worksheet_data[self._sheet_count - 1] = (sheet_name, data, hidden)
-
         sheet_id = self._sheet_count
-        chart_specs = self._normalize_charts(charts)
         if chart_specs:
             self._sheet_charts[sheet_id] = chart_specs
-            # Chart caches materialize the referenced cells at write time,
-            # so the rows must survive until save().
-            data = list(data)
-            self._sheet_chart_rows[sheet_id] = data
-        table_specs = self._normalize_tables(tables)
+            # Chart caches need only the cells the charts read. Capture those
+            # while the rows stream past instead of holding the whole sheet.
+            store = chart_parts.new_cell_store(chart_parts.chart_cell_spans(chart_specs))
+            data = _capture_cells(data, store)
+            self._sheet_chart_cells[sheet_id] = store
         table_ids: list[int] = []
         table_rel_ids: list[str] = []
+        header_rows: dict = {}
         if table_specs:
+            self._table_names.update(table.display_name for table in table_specs)
             # rId1 is binaryIndex; tables take rId2..; drawing (if any) last.
             for table in table_specs:
                 table_id = self._next_table_id
@@ -822,45 +820,42 @@ class XlsbWriter:
                 table_ids.append(table_id)
                 rel_id = f"rId{1 + len(table_ids)}"
                 table_rel_ids.append(rel_id)
-                self._tables_bin[table_id] = self._table_bin(table, table_id)
             self._sheet_tables[sheet_id] = list(zip(table_ids, table_rel_ids))
+            # Column names must match the header cells, which stream past with
+            # the rows; a mismatch fails as soon as the header row is read.
+            data = capture_table_headers(data, table_specs, header_rows)
         if table_specs and auto_filter is None:
             # Tables carry their own AutoFilter; skip sheet-level filter.
             auto_filter = False
-        cf_specs = self._normalize_cf_rules(conditional_formats)
-        # Pre-reserve explicit priorities (like XLSX) so auto-assigned ones skip them.
-        for rule in cf_specs:
-            if getattr(rule, "priority", None) is not None:
-                if (
-                    rule.priority in self._seen_cf_priorities
-                    or rule.priority in self._reserved_cf_priorities
-                ):
-                    raise ValueError(
-                        f"duplicate conditional formatting priority {rule.priority}"
-                    )
-                self._reserved_cf_priorities.add(rule.priority)
-                self._next_cf_priority = max(
-                    self._next_cf_priority, rule.priority + 1
-                )
+        for priority in cf_priorities:
+            self._reserved_cf_priorities.add(priority)
+            self._next_cf_priority = max(self._next_cf_priority, priority + 1)
         if chart_specs and table_specs:
             drawing_rel = f"rId{1 + len(table_ids) + 1}"
         elif chart_specs:
             drawing_rel = "rId2"
         else:
             drawing_rel = None
-        with self._zf.open(f"xl/worksheets/sheet{sheet_id}.bin", 'w') as sheet_file:
-            self._write_worksheet_bin(
-                sheet_file, data, self._sheet_count - 1,
-                style_ranges=style_ranges, header_style=header_style,
-                merge_refs=merge_refs, widths=widths, hidden_cols=hidden_cols,
-                heights=heights, hidden_row_set=hidden_row_set,
-                freeze_panes=freeze_panes, auto_filter=auto_filter,
-                drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
-                cf_rules=cf_specs,
-            )
-        
-        self._zf.writestr(f"xl/worksheets/_rels/sheet{sheet_id}.bin.rels", self._create_worksheet_rels(sheet_id))
-        self._zf.writestr(f"xl/worksheets/binaryIndex{sheet_id}.bin", self._binaryIndexBin)
+        try:
+            with self._zf.open(f"xl/worksheets/sheet{sheet_id}.bin", 'w') as sheet_file:
+                self._write_worksheet_bin(
+                    sheet_file, data, self._sheet_count - 1,
+                    style_ranges=style_ranges, header_style=header_style,
+                    merge_refs=merge_refs, widths=widths, hidden_cols=hidden_cols,
+                    heights=heights, hidden_row_set=hidden_row_set,
+                    freeze_panes=freeze_panes, auto_filter=auto_filter,
+                    drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
+                    cf_rules=cf_specs, row_outline=row_outline, col_outline=col_outline,
+                )
+            for table, table_id in zip(table_specs, table_ids):
+                names = table_column_names(table, header_rows.get(parse_cell_range(table.ref)[1]))
+                self._tables_bin[table_id] = self._table_bin(table, table_id, names)
+            self._zf.writestr(f"xl/worksheets/_rels/sheet{sheet_id}.bin.rels", self._create_worksheet_rels(sheet_id))
+            self._zf.writestr(f"xl/worksheets/binaryIndex{sheet_id}.bin", self._binaryIndexBin)
+        except BaseException:
+            # The sheet part is incomplete, so the workbook cannot be saved.
+            self._aborted = True
+            raise
 
     def write_dataframe(
         self, df, include_index: bool = False, na_rep=None, formats: dict = None,
@@ -870,6 +865,8 @@ class XlsbWriter:
         hidden_columns: list | tuple | set | None = None,
         row_heights: dict | None = None,
         hidden_rows: list | tuple | set | None = None,
+        row_groups: list | tuple | None = None,
+        column_groups: list | tuple | None = None,
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
         charts: list | tuple | None = None,
@@ -903,6 +900,8 @@ class XlsbWriter:
             hidden_columns=hidden_columns,
             row_heights=row_heights,
             hidden_rows=hidden_rows,
+            row_groups=row_groups,
+            column_groups=column_groups,
             freeze_panes=freeze_panes,
             auto_filter=auto_filter,
             charts=charts,
@@ -910,15 +909,12 @@ class XlsbWriter:
             conditional_formats=conditional_formats,
         )
 
-    def save(self):
-        if self._zf is None:
-            raise RuntimeError("Zip file not initialized. Use context manager or initialize manually.")
-
+    def _write_workbook_parts(self):
         for sheet_id, charts in self._sheet_charts.items():
             if not charts or sheet_id in self._sheet_chart_ids:
                 continue
             sheet_name = self._worksheet_data[sheet_id - 1][0]
-            rows = self._sheet_chart_rows.get(sheet_id)
+            cells = self._sheet_chart_cells.get(sheet_id)
             chart_ids = []
             for chart in charts:
                 chart_id = self._next_chart_id
@@ -928,7 +924,7 @@ class XlsbWriter:
                     f"xl/charts/chart{chart_id}.xml",
                     chart_parts.chart_xml(
                         self._letters, chart, sheet_name,
-                        rows=rows, xlsb=True,
+                        cells=cells, xlsb=True,
                     ),
                 )
             self._sheet_chart_ids[sheet_id] = chart_ids
@@ -955,11 +951,6 @@ class XlsbWriter:
 
         with self._zf.open("xl/sharedStrings.bin", 'w') as sst_file:
             self._write_shared_strings_bin(sst_file)
-        
-    def close(self):
-        if self._zf is not None:
-            self._zf.close()
-            self._zf = None
 
     def _create_content_types(self) -> str:
         parts = "".join(
@@ -1112,15 +1103,12 @@ class XlsbWriter:
         buffer.write(struct.pack('<II', self._sst_all_count, self._sst_unique_count))
         
         for s in self._shared_strings:
+            # An over-limit string is an error, never a cut: the cell writers
+            # check every value before it reaches this table.
+            check_cell_text(s)
             encoded = s.encode('utf-16-le')
             str_len = len(encoded) // 2
-            if str_len > 32767:
-                encoded = encoded[: 32767 * 2]
-                # Do not leave a dangling high surrogate at the truncation edge.
-                if len(encoded) >= 2 and 0xD800 <= struct.unpack_from('<H', encoded, len(encoded) - 2)[0] <= 0xDBFF:
-                    encoded = encoded[:-2]
-                str_len = len(encoded) // 2
-            
+
             record_length = 1 + 4 + 2 * str_len
             
             buffer.write(b'\x13')
@@ -1389,19 +1377,32 @@ class XlsbWriter:
         return bytes(buf)
 
     @staticmethod
+    def _row_height_twips(points: float) -> int:
+        height_twips = int(round(points * 20))
+        if height_twips > 0x2000:
+            raise ValueError("row height must be at most 409.6 points for XLSB output")
+        return height_twips
+
+    @staticmethod
     def _row_header_record(
         row_idx: int, last_col: int, height_twips: int | None = None,
-        hidden: bool = False,
+        hidden: bool = False, outline_level: int = 0, collapsed: bool = False,
     ) -> bytes:
         """Build a BrtRowHdr record ([MS-XLSB] 2.4.761).
 
         The default record (300 twips = 15 pt, no flags) is byte-identical
-        to the row headers the writer historically emitted.
+        to the row headers the writer historically emitted. The flags byte
+        holds the outline level in bits 0-2, then collapsed (0x08), hidden
+        (0x10) and unsynced (0x20, a custom height). Excel-written files show
+        this layout.
         """
-        flags = (0x20 if height_twips is not None else 0) | (0x10 if hidden else 0)
+        flags = (
+            (0x20 if height_twips is not None else 0) | (0x10 if hidden else 0)
+            | (0x08 if collapsed else 0) | outline_level
+        )
         payload = struct.pack('<II', row_idx, 0)  # rw, ixfe
         payload += struct.pack('<H', 300 if height_twips is None else height_twips)
-        payload += bytes((0, flags, 0))  # fExtraAsc/fExtraDsc, outline+hidden+unsynced, phonetic
+        payload += bytes((0, flags, 0))  # fExtraAsc/fExtraDsc, outline+collapsed+hidden+unsynced, phonetic
         payload += struct.pack('<I', 1)  # ccolspan
         payload += struct.pack('<II', 0, last_col)
         return build_record(_BRT_ROW_HDR, payload)
@@ -1456,22 +1457,31 @@ class XlsbWriter:
         self, buffer: io.BytesIO, start_col: int, end_col: int,
         col_widths_array: list[float], widths: dict | None = None,
         hidden_cols: set | frozenset = frozenset(),
+        col_outline=None,
     ):
-        for hidden in sorted(hidden_cols):
-            if hidden < 0 or hidden >= 16384:
-                raise ValueError(f"hidden column out of range: {hidden}")
         widths = widths or {}
         buffer.write(build_record(_BRT_BEGIN_COL_INFOS, b''))
 
-        for i in range(start_col, end_col):
+        columns = range(start_col, end_col)
+        if col_outline is not None:
+            # Grouped columns past the data still need a BrtColInfo.
+            columns = sorted(set(columns) | col_outline.indices())
+        for i in columns:
             explicit = widths.get(i)
             if explicit is not None:
                 coldx = int(round(explicit * 256))
-            else:
+            elif i - start_col < len(col_widths_array):
                 # Historical encoding: the auto width truncated to whole
                 # characters, i.e. coldx = int(width) * 256.
                 coldx = int(col_widths_array[i - start_col]) * 256
+            else:
+                coldx = 8 * 256  # the default width, 8.43 characters, truncated
             flags = 0x02 | (0x01 if i in hidden_cols else 0)
+            if col_outline is not None:
+                # BrtColInfo: outline level in bits 8-10, collapsed in bit 12.
+                flags |= col_outline.state_at(i)[0] << 8
+                if col_outline.collapsed_at(i):
+                    flags |= 0x1000
             buffer.write(build_record(
                 _BRT_COL_INFO, struct.pack('<IIIIH', i, i, coldx, 0, flags),
             ))
@@ -1486,6 +1496,7 @@ class XlsbWriter:
         auto_filter: bool | None = None, drawing_rel: str | None = None,
         table_rel_ids: list[str] | None = None,
         cf_rules: list | None = None,
+        row_outline=None, col_outline=None,
     ):
         buffer = io.BytesIO()
         BUFFER_SIZE = 65536
@@ -1552,15 +1563,23 @@ class XlsbWriter:
                     max_width = 255
                 col_widths_array.append(max_width)
 
+        # The last two bytes of BrtWsFmtInfo are the maximum row and column
+        # outline levels; the template holds zeros.
+        outline_levels = bytes((
+            row_outline.max_level if row_outline is not None else 0,
+            col_outline.max_level if col_outline is not None else 0,
+        ))
         if freeze_panes is None:
-            buffer.write(self._sheet1Bytes[84:159])
+            buffer.write(self._sheet1Bytes[84:157])
         else:
             buffer.write(self._selection_record(freeze_panes))
             # Template offsets 84..123 hold the default BrtSel record; the
             # remainder (EndWsView .. BrtWsFmtInfo) is layout-independent.
-            buffer.write(self._sheet1Bytes[123:159])
+            buffer.write(self._sheet1Bytes[123:157])
+        buffer.write(outline_levels)
         self._write_cols_width(
             buffer, start_col, end_col, col_widths_array, widths, hidden_cols,
+            col_outline,
         )
         # Template offsets 159..177 hold BrtBeginSheetData plus the complete
         # ACCELLTABLE block (ACBegin/RwDescent/ACEnd); rows follow directly.
@@ -1588,7 +1607,13 @@ class XlsbWriter:
                 has_formatted = c_has_formatted
             row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
 
-            if not has_formatted and row_idx not in custom_rows:
+            if row_outline is None:
+                outline_level, outline_hidden, outline_collapsed = 0, False, False
+            else:
+                outline_level, outline_hidden = row_outline.state_at(row_idx)
+                outline_collapsed = row_outline.collapsed_at(row_idx)
+            if (not has_formatted and row_idx not in custom_rows
+                    and not outline_level and not outline_collapsed):
                 style_ids = None
                 if row_styles:
                     first_style = next(iter(row_styles.values()))
@@ -1600,12 +1625,17 @@ class XlsbWriter:
                             (col, self._register_style(row_styles[col]))
                             for col in sorted(row_styles)
                         )
-                c_result = encode_xlsb_row(
-                    row, self._shared_strings_dict, self._shared_strings,
-                    self._sst_unique_count, self._sst_all_count, row_idx, style_ids
-                )
-                if c_result is not None:
-                    cell_data, self._sst_unique_count, self._sst_all_count = c_result
+                cell_data = None
+                if self._useSharedStrings:
+                    c_result = encode_xlsb_row(
+                        row, self._shared_strings_dict, self._shared_strings,
+                        self._sst_unique_count, self._sst_all_count, row_idx, style_ids
+                    )
+                    if c_result is not None:
+                        cell_data, self._sst_unique_count, self._sst_all_count = c_result
+                else:
+                    cell_data = encode_xlsb_row_inline(row, row_idx, style_ids)
+                if cell_data is not None:
                     buffer.write(cell_data)
                     if buffer.tell() > BUFFER_SIZE:
                         sheet_file.write(buffer.getvalue())
@@ -1617,13 +1647,11 @@ class XlsbWriter:
 
             height_twips = None
             if row_idx in heights:
-                height_twips = int(round(heights[row_idx] * 20))
-                if height_twips > 0x2000:
-                    raise ValueError(
-                        "row height must be at most 409.6 points for XLSB output"
-                    )
+                height_twips = self._row_height_twips(heights[row_idx])
             buffer.write(self._row_header_record(
-                row_idx, last_col, height_twips, row_idx in hidden_row_set,
+                row_idx, last_col, height_twips,
+                row_idx in hidden_row_set or outline_hidden,
+                outline_level, outline_collapsed,
             ))
 
             for col_idx, cell in enumerate(row):
@@ -1694,6 +1722,11 @@ class XlsbWriter:
                         buffer.write(b'\x05\x10')
                         buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
                 else:
+                    # The C encoder hands rows with other objects to this path.
+                    if type(cell) in _XLSB_REJECTED_TYPES:
+                        raise TypeError(
+                            "XlsbWriter does not support Formula or Hyperlink cells; use XlsxWriter"
+                        )
                     self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx,
                                     xf_index if has_custom_fmt else None)
 
@@ -1701,6 +1734,23 @@ class XlsbWriter:
                 sheet_file.write(buffer.getvalue())
                 buffer.seek(0)
                 buffer.truncate()
+
+        if row_outline is not None:
+            # Grouped rows and summary rows past the data get an empty BrtRowHdr.
+            for extra_idx in row_outline.indices_from(row_idx + 1):
+                height_twips = None
+                if extra_idx in heights:
+                    height_twips = self._row_height_twips(heights[extra_idx])
+                outline_level, outline_hidden = row_outline.state_at(extra_idx)
+                buffer.write(self._row_header_record(
+                    extra_idx, 0, height_twips,
+                    extra_idx in hidden_row_set or outline_hidden,
+                    outline_level, row_outline.collapsed_at(extra_idx),
+                ))
+                if buffer.tell() > BUFFER_SIZE:
+                    sheet_file.write(buffer.getvalue())
+                    buffer.seek(0)
+                    buffer.truncate()
 
         buffer.write(self._sheet1Bytes[218:290])
 
@@ -1754,7 +1804,26 @@ class XlsbWriter:
         if buffer.tell() > 0:
             sheet_file.write(buffer.getvalue())
 
+    @staticmethod
+    def _write_inline_str(buffer, text: str, col_idx: int, style_ref: int):
+        """BrtCellSt: the text is stored in the cell, so no shared-string table grows.
+
+        The count is in UTF-16 code units, so a non-BMP character counts as two.
+        Lone surrogates raise UnicodeEncodeError here, as they do in the shared table.
+        """
+        check_cell_text(text)
+        encoded = text.encode('utf-16-le')
+        units = len(encoded) // 2
+        buffer.write(build_record(
+            0x06, struct.pack('<IIi', col_idx, style_ref, units) + encoded,
+        ))
+
     def _write_str(self, buffer, cell, shared_strings_dict, shared_strings_append, row_idx, col_idx, style_override=None):
+        if not self._useSharedStrings:
+            style_ref = style_override if style_override is not None else (3 if row_idx == 0 else 0)
+            self._write_inline_str(buffer, cell, col_idx, style_ref)
+            return
+        check_cell_text(cell)
         self._sst_all_count += 1
         if cell not in shared_strings_dict:
             string_index = self._sst_unique_count

@@ -18,7 +18,7 @@ def _chart_parts(path):
 
 def test_chart_model_rejects_invalid_input():
     with pytest.raises(ValueError, match="invalid chart type"):
-        Chart("scatter", [ChartSeries("B2:B4")])
+        Chart("funnel", [ChartSeries("B2:B4")])
     with pytest.raises(ValueError, match="at least one series"):
         Chart("bar", [])
     with pytest.raises(TypeError, match="ChartSeries"):
@@ -175,7 +175,7 @@ def test_drawing_element_follows_tables_and_plain_sheets(tmp_path):
         writer.add_sheet("Rich")
         writer.write_sheet(
             _sample_data(),
-            tables=[__import__("xlspy").ExcelTable("T1", "A1:C4")],
+            tables=[__import__("xlspy").ExcelTable("Tbl", "A1:C4")],
             charts=_sample_charts()[:1],
         )
         writer.add_sheet("Plain")

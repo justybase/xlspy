@@ -8,6 +8,7 @@ _c_row_has_formatted = None
 _c_encode_xlsb_sst = None
 _c_read_sst = None
 _c_encode_xlsx_row = None
+_c_encode_xlsb_row_inline = None
 
 if _os.environ.get('XLSPY_DISABLE_C_EXT', '0') != '1':
     try:
@@ -28,6 +29,20 @@ if _os.environ.get('XLSPY_DISABLE_C_EXT', '0') != '1':
         )
     except ImportError:
         pass
+    try:
+        from xlspy._c_core import encode_xlsb_row_inline as _c_encode_xlsb_row_inline
+    except ImportError:
+        pass
+
+
+def encode_xlsb_row_inline(row, row_idx, style_ids=None):
+    """Row bytes with inline text cells via C, or None to use the Python
+    writer (over-long or unpaired-surrogate text, tuple-formatted rows)."""
+    if _c_encode_xlsb_row_inline is not None:
+        if style_ids is not None:
+            return _c_encode_xlsb_row_inline(row, row_idx, style_ids)
+        return _c_encode_xlsb_row_inline(row, row_idx)
+    return None
 
 
 def encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx, style_ids=None):

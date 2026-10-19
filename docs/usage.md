@@ -233,6 +233,15 @@ formats = [
 `write_sheet(..., tables=[ExcelTable("Sales", "A1:C5", columns=["Qty", "Price", "Total"])])`
 adds an Excel ListObject table to XLSX and XLSB workbooks.
 
+Excel opens a table only when every cell of its header row holds text equal to
+that column's name (case aside) and the names are unique. Without `columns`, the
+names are taken from the header row of the data; with `columns`, they must match
+it. A header cell that is empty or not text, a name that differs from its cell,
+or a repeated name raises `ValueError`, and the workbook is not written. Table
+names that read as cell references (`T1`, `AB12`, `R1C1`, `C`) are refused when
+the `ExcelTable` is created. A table with `header_row=False` has no header cells
+and gets the names `Column1`, `Column2`, and so on.
+
 ### Charts
 
 `write_sheet(..., charts=[...])` adds charts (XLSX and XLSB):
@@ -265,10 +274,306 @@ categories via `strRef`, and an explicit `varyColors` flag.
 **XLSB parity:** `XlsbWriter` supports the same `Style` object model
 (`Font`, `PatternFill`, `GradientFill`, `Border`, `Alignment`, `Protection`)
 as well as `merges`, `column_widths`, `hidden_columns`, `row_heights`,
-`hidden_rows`, `freeze_panes`, and `auto_filter`. A few properties have no
-BIFF12 representation and raise `NotImplementedError` instead of being
-silently ignored: `relative_indent`, the `vertical`/`horizontal`/`start`/`end`
-  border sides, and `outline=False`.
+`hidden_rows`, `row_groups`, `column_groups`, `freeze_panes`, and
+`auto_filter`. A few properties have no BIFF12 representation and raise
+`NotImplementedError` instead of being silently ignored: `relative_indent`,
+the `vertical`/`horizontal`/`start`/`end` border sides, and `outline=False`.
+
+## Row and column groups (outline)
+
+`row_groups` and `column_groups` give Excel's grouping: the `+`/`−` buttons
+beside the rows or above the columns, and the level buttons (`1`, `2`, `3`) in
+the corner. Both writers support them, as do `write_dataframe`, `to_xlsx`, and
+`to_xlsb`.
+
+```python
+from xlspy import Group, XlsxWriter
+
+with XlsxWriter("grouped.xlsx") as writer:
+    writer.add_sheet("Sales")
+    writer.write_sheet(
+        rows,
+        # Rows 3-8 form one group; rows 3-4 and 6-7 are nested inside it.
+        row_groups=[Group(2, 7), Group(2, 3), Group(5, 6, collapsed=True)],
+        # Columns D-K, with D-F and H-J nested inside.
+        column_groups=[Group("D", "K"), Group("D", "F"), Group("H", "J")],
+    )
+```
+
+- `Group(first, last, collapsed=False)` covers rows or columns `first` to
+  `last`, both included. Rows are 0-based ints. Columns are letters or 0-based
+  ints. A `(first, last)` or `(first, last, collapsed)` tuple works as well.
+- The level comes from nesting: a group inside another is one level deeper.
+  Groups may nest or sit side by side, but a partial overlap raises
+  `ValueError`, as does a duplicate group or more than seven levels (Excel's
+  limit).
+- The summary row is the row just below a group, and the summary column is the
+  column just to the right of it (Excel's default). Write your totals there.
+- `collapsed=True` hides the group's rows or columns and marks its summary row
+  or column, so Excel shows the `+` button. The summary row must be among the
+  rows you write. Hidden rows and columns from `hidden_rows` and
+  `hidden_columns` still apply.
+- Grouped rows are written by the Python row encoder rather than the C one,
+  like rows with a custom height. Sheets without groups are unchanged and keep
+  the fast path.
+- Updaters (`XlsxUpdater`, `XlsbUpdater`) do not create or change groups.
+
+[`xlsx_grouping.py`](../examples/xlsx_grouping.py) builds a two-level report
+with region subtotals and quarter columns (pass `--out grouping.xlsb` for XLSB).
+
+## Formulas, validation, hyperlinks, images, and printing (XLSX)
+
+These features are written by `XlsxWriter`. `XlsbWriter` refuses them with a
+`TypeError` (or a `ValueError` for chart options), so an unsupported option is
+never dropped silently. See [feature support](#feature-support) for the full
+matrix.
+
+### Formulas
+
+Wrap formula text in `Formula`. A plain string is always text, so a string
+that starts with `=` is never turned into a formula, and exporting untrusted
+data cannot inject one.
+
+```python
+from xlspy import Formula, XlsxWriter
+
+with XlsxWriter("report.xlsx") as writer:
+    writer.add_sheet("Report")
+    writer.write_sheet([
+        ["Revenue", "Cost", "Profit"],
+        [1000, 700, Formula("A2-B2")],
+        [2000, 900, Formula("A3-B3", value=1100)],   # cached result for readers that do not recalculate
+        ["Total", None, Formula("SUM(C2:C3)")],
+        [Formula("XLOOKUP(\"Pear\",A2:A3,C2:C3)"), None, None],
+    ])
+```
+
+- `Formula(text, value=..., array_ref=...)`: the text may start with `=`; `value`
+  (number or string) is written as the cached result; `array_ref="C2:C5"` writes a
+  legacy array (CSE) formula over that range.
+- Excel recalculates formulas on open. Cells without a cached value read as
+  `None` in data-only readers until Excel saves the file.
+- Functions added after Excel 2007 (`XLOOKUP`, `IFS`, `STDEV.S`, `CONCAT`, ...)
+  are written with the `_xlfn.` prefix the file format requires; otherwise Excel
+  shows `#NAME?`. Quoted sheet names and string literals are left as written.
+- Formulas work in styled cells, in table body rows, and with number formats
+  (`(Formula(...), F.THOUSANDS_SEP)`). A pandas or polars column of `Formula`
+  objects is written as formulas too.
+- Not supported: dynamic-array spill formulas (`FILTER`, `UNIQUE`, `SORT`,
+  `SEQUENCE` returning arrays), which need cell metadata xlspy does not write, and
+  `LET`/`LAMBDA`-family functions, which need `_xlpm.` parameter names. These
+  raise a `ValueError` where detectable. Wrap array functions so they return one
+  value (for example `COUNTA(UNIQUE(A:A))`).
+- xlspy does not evaluate formulas. Its syntax check only verifies balanced
+  parentheses and quotes, and length; Excel reports any other error on open.
+
+### Data validation
+
+```python
+from xlspy import DataValidation
+
+DataValidation("list", "B2:B1000", formula1='"New,Active,Closed"')           # literal dropdown
+DataValidation("list", "C2:C1000", formula1="Lists!$A$2:$A$9")               # dropdown from a range
+DataValidation("whole", ["D2:D50", "F2"], formula1=1, formula2=100,
+               error="Enter a whole number from 1 to 100.")                  # operator defaults to between
+DataValidation("decimal", "E2:E50", formula1=0, operator="greater_than")
+DataValidation("date", "G2:G50", formula1=datetime.date(2026, 1, 1), operator="greater_than_or_equal")
+DataValidation("text_length", "H2:H50", formula1=20, operator="less_than_or_equal")
+DataValidation("time", "I2:I50", formula1=datetime.time(8), formula2=datetime.time(17), operator="between")
+DataValidation("custom", "J2:J50", formula1="ISNUMBER(J2)")
+```
+
+Pass the rules as `data_validations=[...]` to `write_sheet` or `write_dataframe`.
+Options: `allow_blank`, `show_dropdown` (list rules only; `False` hides the arrow),
+`show_input_message` with `prompt_title` and `prompt`, `show_error_message` with
+`error_title`, `error`, and `error_style` (`"stop"`, `"warning"`, `"information"`).
+Invalid combinations (an operator on a list rule, a missing `formula2`, a prompt
+without `show_input_message`, a literal list over 255 characters) raise a
+`ValueError` when the rule is created.
+
+### Hyperlinks
+
+A `Hyperlink` is the cell's value. Its text is the label, which defaults to the
+target.
+
+```python
+from xlspy import Hyperlink
+
+writer.write_sheet([
+    ["Report", Hyperlink("https://example.com/report", text="Open report", tooltip="Q3")],
+    ["Sales", Hyperlink("#'Sales Data'!B2", text="Go to sales")],    # cell in this workbook
+    ["Contact", Hyperlink("mailto:team@example.com")],
+])
+```
+
+Allowed targets are `http`, `https`, `mailto` and `ftp` URLs, and internal
+`#Sheet!A1` locations. Other schemes (such as `javascript:` or `file:`) and
+relative file paths raise `ValueError`. An internal link to a sheet that is not in
+the workbook fails when the workbook is saved. Linked cells use a built-in
+hyperlink look unless the cell has its own style.
+
+### Images
+
+```python
+from xlspy import Image
+
+writer.write_sheet(rows, images=[
+    Image("company_logo.png", anchor="A1", width=180, height=60, description="Company logo"),
+    Image("photo.jpg", anchor="H2"),          # size taken from the file
+])
+```
+
+PNG and JPEG only, embedded byte-for-byte; no re-encoding or Pillow dependency.
+`width` and `height` are pixels. Give one and the other keeps the aspect ratio;
+give neither and the file's own size is used. Pictures and charts can share a
+sheet. Identical files are stored once.
+
+### Printing
+
+```python
+from xlspy import PageMargins, PrintSettings
+
+PrintSettings(
+    orientation="landscape",              # or "portrait"
+    paper_size="A4",                      # names (A4, letter, legal, A3, ...) or OOXML codes
+    margins=PageMargins(left=0.5, right=0.5, top=0.75, bottom=0.75),
+    print_area="A1:H100",                 # several ranges: "A1:H100,J1:K5"
+    repeat_rows="1:2",                    # rows repeated on each page
+    repeat_columns="A:B",
+    fit_to_width=1, fit_to_height=0,      # fit to page; 0 = as many pages as needed
+    # scale=80,                           # or a fixed percentage (10-400), not with fit_to_*
+    center_horizontally=True,
+    header="&LSales report&RPage &P of &N",   # raw Excel header/footer codes, max 255 characters
+    footer="&CDraft && confidential",         # a literal ampersand is written as &&
+    row_breaks=[25, 50],                  # page break after row 25 and row 50 (1-based)
+    col_breaks=[4],
+)
+```
+
+### Charts
+
+The original chart options still work: `Chart("bar", ...)` is a column chart,
+`"line"` and `"pie"` are unchanged. New in XLSX:
+
+- `"barh"`: horizontal bars. The category axis is vertical.
+- `"scatter"`: XY charts. Series take `x_values` (a numeric range); markers are
+  shown by default and `line=True` joins the points.
+- `x_axis` (the category or X axis) and `y_axis` (the value axis) are
+  `ChartAxis(title=, minimum=, maximum=, major_unit=, number_format=, gridlines=, reverse=, visible=)`.
+  In a horizontal bar chart `x_axis` still means the category axis, drawn vertically.
+- `legend`: `ChartLegend("bottom")` (positions `right`, `left`, `top`,
+  `bottom`, `top_right`, `overlay=True`), or `False` to hide it.
+- `show_data_labels=True` or `data_labels=DataLabels(number_format=, position=, show_category=, show_series_name=)`.
+- `ChartSeries(color="#C00000", marker=ChartMarker("diamond", 8), line=True)`:
+  the series colour fills bars and sets the line or marker colour.
+- `title_size=16` (points) for the chart title.
+
+```python
+from xlspy import Chart, ChartAxis, ChartLegend, ChartMarker, ChartSeries
+
+Chart(
+    "scatter",
+    [ChartSeries("D2:D20", x_values="B2:B20", title="Revenue", color="#C00000",
+                 marker=ChartMarker("circle", 7))],
+    title="Revenue against units", anchor="H2",
+    x_axis=ChartAxis(title="Units sold", minimum=0),
+    y_axis=ChartAxis(title="Revenue", minimum=0, number_format="#,##0"),
+    legend=ChartLegend("bottom"),
+    show_data_labels=True,
+)
+```
+
+Pie charts have no axes. Options that a chart type cannot use (a marker on a bar
+chart, a colour on a pie) are rejected with a `ValueError`.
+
+### Streaming large exports
+
+`write_sheet` consumes its input exactly once, row by row:
+
+- **XLSX** encodes rows into a temporary spool (kept in memory up to
+  `spool_max_bytes`, 8 MiB by default, then on disk). The sheet is assembled once
+  the last row is known, so the dimension and autofilter are exact. Writes are
+  bounded by the spool setting and the 100-row width sample, not by the row count.
+- **XLSB** writes each row to the archive as it is produced.
+- **Shared strings** (the default) keep one table of every distinct string in
+  memory until save. For high-cardinality exports pass `useSharedStrings=False`:
+  text is then stored inline in each cell, so memory no longer grows with the
+  number of distinct strings. Files are somewhat larger. The C extension encodes
+  inline XLSB rows too; rows it cannot handle (formatted cells, or text it
+  refuses) go to the Python encoder (see the benchmarks).
+
+```python
+with XlsbWriter("sales.xlsb", useSharedStrings=False) as writer:
+    writer.add_sheet("Sales")
+    writer.write_sheet(cursor_rows(cursor))      # a generator over a DB cursor
+```
+
+Examples: [`xlsx_streaming_export.py`](../examples/xlsx_streaming_export.py) (DB-API cursor, XLSX or XLSB).
+
+### Cell text
+
+- **Length limit.** Excel stores at most 32,767 characters in a cell, counted in
+  UTF-16 code units: a character outside the Basic Multilingual Plane (such as
+  most emoji) counts as two, and a combining accent counts as one. Every writer
+  path (XLSX and XLSB, shared and inline strings, styled cells, DataFrames,
+  hyperlink text and cached formula results) raises `ValueError` for a longer
+  value. Nothing is truncated, and the workbook is not published (see
+  *Failure handling* below). Excel 16.0 refuses to open XLSX and inline-XLSB
+  files whose cells exceed the limit, which is why it is enforced.
+- **Invalid Unicode.** Text with a lone surrogate (for example `"\ud800"`) raises
+  `UnicodeEncodeError`.
+- **Characters XML cannot hold.** In XLSX, control characters, carriage returns
+  and U+FFFE/U+FFFF are written in OOXML's `_xHHHH_` form (`"\x07"` becomes
+  `_x0007_`), and literal text that already looks like `_xHHHH_` has its
+  underscore escaped as `_x005F_`. Excel and xlspy's reader turn these back into
+  the original text. Some other readers (openpyxl among them) show the escapes
+  as written. XLSB stores text as UTF-16 and needs no escaping.
+
+### Failure handling
+
+A workbook reaches its target only after it has been written completely. If the
+input raises, a value is refused, or anything fails while saving, the exception
+leaves the `with` block and the target is left as it was:
+
+- **A file path** is written to a temporary file in the same directory (named
+  `.<name>.<random>.tmp`) and moved into place with `os.replace` when the
+  workbook is complete. A failed write creates no file and keeps an existing
+  file at that path unchanged. The final step is a rename, not a forced write to
+  disk: xlspy does not call `fsync`.
+- **A file object** (`io.BytesIO`, an open file, a socket stream) is written to
+  a temporary spool, in memory up to `spool_max_bytes` (8 MiB for `XlsbWriter`)
+  and on disk beyond that, and copied into the stream on success. A failed write
+  leaves the stream untouched. The copy itself cannot be undone: if the stream
+  raises part-way through it (a full disk, for example), the error reaches the
+  caller and the stream holds only part of the workbook, which must be
+  discarded. The workbook is appended at the stream's current position.
+
+After a failure the writer refuses further `write_sheet` and `save` calls.
+`save()` writes the workbook parts; the file is published when the writer
+closes, so a writer that is closed without a successful save publishes
+nothing. The context manager calls both.
+
+### Combined example
+
+[`xlsx_report_features.py`](../examples/xlsx_report_features.py) combines formulas,
+a table, styles, validation, hyperlinks, a logo, print settings, and two charts in one
+report.
+
+### Feature support
+
+| Feature | XLSX | XLSB |
+|---|---|---|
+| Formulas (`Formula`), cached values, array formulas | Yes | No (`TypeError`) |
+| Data validation (all seven types, prompts, errors) | Yes | No (`TypeError`) |
+| Hyperlinks (external, internal, tooltip, styled) | Yes | No (`TypeError`) |
+| Images (PNG, JPEG) | Yes | No (`TypeError`) |
+| Print settings, print area, titles, breaks, headers | Yes | No (`TypeError`) |
+| Row and column groups (`row_groups`, `column_groups`) | Yes | Yes |
+| Column, bar, line, pie charts (original options) | Yes | Yes |
+| Horizontal bar, scatter, axes, legend, labels, markers, colours | Yes | No (`ValueError`) |
+| Streaming: one-pass input, spooled rows | Yes | Yes (rows written as produced) |
+| Inline strings (`useSharedStrings=False`) | Yes | Yes (C row encoder; Python fallback) |
+| Chart caches from streamed rows | n/a (no caches) | Yes (only chart cells are kept) |
 
 ## Writing pandas / polars DataFrames (optional)
 

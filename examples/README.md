@@ -21,6 +21,14 @@ python examples/simple_usage.py
 | [`format_demo.py`](format_demo.py) | All cell number/date/datetime formats from `xlspy.F`. |
 | [`update_existing.py`](update_existing.py) | Updating the data region of existing `.xlsx` / `.xlsm` / `.xlsb` workbooks. |
 
+## Reports and large exports (no extra dependencies)
+
+| Script | What it shows |
+|--------|---------------|
+| [`xlsx_report_features.py`](xlsx_report_features.py) | Formulas, a table, dropdown validation, hyperlinks, an optional logo (`--logo`), print settings, and horizontal bar and scatter charts in one report. |
+| [`xlsx_grouping.py`](xlsx_grouping.py) | Two-level row and column groups (`row_groups`, `column_groups`) with region subtotals and quarter columns; `--out grouping.xlsb` writes XLSB. |
+| [`xlsx_streaming_export.py`](xlsx_streaming_export.py) | Streams rows from a DB-API cursor (sqlite3 here) into XLSX or XLSB with `useSharedStrings=False` and reports the peak Python allocations. |
+
 ## DataFrames (optional pandas / polars)
 
 These require an extra install:
@@ -47,3 +55,4 @@ comparisons and the environment used to measure them.
 |--------|---------------|
 | [`benchmark.py`](benchmark.py) | Timing/size comparison against `xlsxwriter`. |
 | [`performance_test.py`](performance_test.py) | Larger write/read benchmark against `xlsxwriter` and `openpyxl`. |
+| [`write_benchmark.py`](write_benchmark.py) | Reproducible write benchmark: isolated processes, medians, peak memory, file size, JSON/CSV output; xlspy (C and Python), `openpyxl` and `xlsxwriter`. |

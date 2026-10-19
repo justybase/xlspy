@@ -9,6 +9,7 @@ from .biff_utils import iter_records as _iter_biff_records
 from .excel_dates import serial_to_datetime as _serial_to_datetime
 from ._accel import HAVE_C_EXT, read_xlsb_worksheet as _c_read_xlsb_worksheet
 from ._accel import read_xlsb_shared_strings as _accel_read_sst
+from ._text import xstring_unescape
 
 
 class ExcelDataType(IntEnum):
@@ -317,7 +318,7 @@ class ExcelReader:
                     self.in_t = False
                 elif local == 'si':
                     if self.in_si:
-                        self.strings.append(self.buf)
+                        self.strings.append(xstring_unescape(self.buf))
                         self.in_si = False
                         self.buf = ""
 
@@ -572,7 +573,7 @@ class ExcelReader:
                     self.current_row.append(None)
 
                 if is_inline:
-                    self.current_row[col_num] = val
+                    self.current_row[col_num] = xstring_unescape(val)
                     return
 
                 if t_attr == 's':
@@ -586,7 +587,7 @@ class ExcelReader:
                 elif t_attr == 'e':
                     self.current_row[col_num] = f"error:{val}"
                 elif t_attr == 'str' or t_attr == 'inlineStr':
-                    self.current_row[col_num] = val
+                    self.current_row[col_num] = xstring_unescape(val)
                 else:
                     if val == '' or val is None:
                         self.current_row[col_num] = None

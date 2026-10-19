@@ -1,18 +1,34 @@
-from dataclasses import dataclass
 import datetime
+from dataclasses import dataclass, field
 from decimal import Decimal
+import io
+import shutil
+import tempfile
 import zipfile
 import xml.sax.saxutils as saxutils
-import io
 from typing import Iterable, Mapping, Tuple
-import itertools
 from . import chart_parts
-from .formats import _is_formatted_cell, _unwrap_cell, _get_format
-from .excel_dates import datetime_to_serial
 from ._accel import encode_xlsx_row as accel_encode_xlsx_row
+from ._output import StagedWriter
+from ._text import check_cell_text, xstring_escape
+from .charts import Chart
+from .data_validation import DataValidation, data_validation_xml
+from .excel_dates import datetime_to_serial
+from .formats import _get_format, _unwrap_cell
+from .formulas import Formula
+from .hyperlinks import Hyperlink
+from .images import Image
+from .outline import build_outline
+from .printing import (
+    PageMargins,
+    PrintSettings,
+    _paper_code,
+    print_area_name,
+    print_titles_name,
+)
+from .refs import quote_sheet_name
 from .styles import (
     CellIsRule,
-    Chart,
     ColorScaleRule,
     DataBarRule,
     DifferentialStyle,
@@ -28,28 +44,73 @@ from .styles import (
     _font_is_empty,
     _font_key_from,
     _protection_key_from,
+    capture_table_headers,
+    explicit_cf_priorities,
     merge_styles,
+    normalize_hidden_columns,
+    normalize_hidden_rows,
     normalize_style_ranges,
     parse_cell_range,
     split_style,
+    table_column_names,
     styles_for_row,
 )
+
+# Rows sampled for automatic column widths (the historical limit).
+_WIDTH_SAMPLE_ROWS = 100
+# Encoded row text is handed to the spool once it grows past this size.
+_FLUSH_CHARS = 1 << 20
+# Shared-string entries written per chunk of sharedStrings.xml.
+_SST_CHUNK_STRINGS = 4096
+DEFAULT_SPOOL_BYTES = 8 << 20
+_EMPTY_ROW_STYLES: dict = {}
+# Built-in look for a hyperlink cell that has no style of its own.
+_HYPERLINK_STYLE = Style(font_color="#0563C1", underline=True)
+_REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table"
+_REL_DRAWING = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"
+_REL_HYPERLINK = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+_REL_WORKSHEET = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
+
+_DEFAULT_MARGINS = PageMargins()
+
+
+@dataclass
+class _SheetBody:
+    """What the row pass learned: sizes and the cells that need trailer entries."""
+
+    num_rows: int
+    max_cols: int
+    head: list
+    hyperlinks: list
+    table_refs: set = field(default_factory=set)
+    tables: list = field(default_factory=list)
+    header_rows: dict = field(default_factory=dict)  # row index -> cells, for table headers
 
 
 @dataclass
 class FilterData:
     sheet_index: int = 0
     start_column: int = 0
-    end_column: int = 0  
+    end_column: int = 0
     start_row: int = 0
     end_row: int = 0
-
 
 def _format_number(value) -> str:
     """Shortest numeric literal: ``1.0`` -> ``"1"``, ``0.5`` -> ``"0.5"``."""
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value)
+
+
+def _outline_col_attr(col_outline, index: int) -> str:
+    """``<col>`` attributes for a column's outline level and collapsed flag."""
+    if col_outline is None:
+        return ""
+    level, _ = col_outline.state_at(index)
+    attrs = f' outlineLevel="{level}"' if level else ""
+    if col_outline.collapsed_at(index):
+        attrs += ' collapsed="1"'
+    return attrs
 
 
 def _alignment_xml(align) -> str:
@@ -86,8 +147,9 @@ def _protection_xml(prot) -> str:
     return f'<protection {" ".join(attrs)}/>' if attrs else ""
 
 
-class XlsxWriter:
-    def __init__(self, file: str | io.IOBase, compressionLevel: int = 4, useSharedStrings: bool = True):
+class XlsxWriter(StagedWriter):
+    def __init__(self, file: str | io.IOBase, compressionLevel: int = 4, useSharedStrings: bool = True,
+                 spool_max_bytes: int = DEFAULT_SPOOL_BYTES):
         self._file = file
         self._worksheet_data: list[Tuple[str, Iterable[list[any]], bool]] = []
         self._shared_strings: list[str] = []
@@ -99,8 +161,12 @@ class XlsxWriter:
         self._sheetCnt = 1
         self._compressionLevel = compressionLevel
         self._useSharedStrings = useSharedStrings
+        self._spool_max_bytes = spool_max_bytes
         self._zf: zipfile.ZipFile = None
+        self._output = None  # StagedOutput while open
         self._letters = self._generate_column_letters()
+        self._aborted = False
+        self._saved = False
 
         self._format_registry: dict[str, int] = {}
         self._format_xf_map: dict[str, int] = {}
@@ -121,30 +187,27 @@ class XlsxWriter:
         self._next_cf_priority = 1
         self._next_table_id = 1
         self._table_names: set[str] = set()
-        self._sheet_tables: dict[int, list[tuple]] = {}
         self._tables_xml: dict[int, str] = {}
         self._sheet_charts: dict[int, list] = {}
         self._sheet_chart_ids: dict[int, list[int]] = {}
+        self._sheet_drawings: set[int] = set()
+        self._sheet_images: dict[int, list[Image]] = {}
+        self._sheet_image_media: dict[int, list[str]] = {}
+        self._media_names: dict[str, str] = {}
+        self._media_parts: list[tuple[str, bytes]] = []
+        self._sheet_written: set[int] = set()
+        self._sheet_rels: dict[int, list[tuple[str, str, str, bool]]] = {}
+        self._sheet_print: dict[int, PrintSettings] = {}
+        self._internal_links: list[tuple[int, str]] = []
         self._charts_xml: dict[int, tuple[int, int, str]] = {}
         self._next_chart_id = 1
         self._next_numfmt_id = 164
         self._next_xf_index = 4
 
-    def __enter__(self):
-        if self._zf is None:
-            self._zf = zipfile.ZipFile(self._file, 'w', zipfile.ZIP_DEFLATED, compresslevel=self._compressionLevel)
-        return self
+    def _staging_bytes(self):
+        # File-object targets are staged under the same in-memory limit as the rows.
+        return self._spool_max_bytes
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        try:
-            if self._zf is not None:
-                self.save()
-        finally:
-            if self._zf is not None:
-                self._zf.close()
-                self._zf = None
-        
-        return False
 
     def _generate_column_letters(self) -> list[str]:
         letters = []
@@ -251,14 +314,17 @@ class XlsxWriter:
     def _normalize_tables(self, tables):
         if not tables:
             return []
+        # Names are only checked here; write_sheet registers them once every
+        # option is valid, so a rejected call leaves no name behind.
+        names = set(self._table_names)
         for table in tables:
             if not isinstance(table, ExcelTable):
                 raise TypeError("tables must be ExcelTable instances")
-            if table.display_name in self._table_names:
+            if table.display_name in names:
                 raise ValueError(
                     f"duplicate table display name {table.display_name!r}"
                 )
-            self._table_names.add(table.display_name)
+            names.add(table.display_name)
         return list(tables)
 
     @staticmethod
@@ -282,27 +348,6 @@ class XlsxWriter:
             if not 0.5 <= value <= 255:
                 raise ValueError(f"{kind} width must be 0.5..255")
             result[col] = float(value)
-        return result
-
-    @staticmethod
-    def _normalize_hidden(items, kind):
-        if items is None:
-            return set()
-        if isinstance(items, (str, bytes)):
-            raise TypeError(f"{kind} must be a collection of columns/rows, not a string")
-        try:
-            values = list(items)
-        except TypeError:
-            raise TypeError(f"{kind} must be a collection or None")
-        result = set()
-        for key in values:
-            if isinstance(key, str):
-                col = _column_index(key)
-            elif isinstance(key, int) and not isinstance(key, bool):
-                col = key
-            else:
-                raise TypeError(f"{kind} keys must be column letters or 0-based ints")
-            result.add(col)
         return result
 
     @staticmethod
@@ -342,6 +387,41 @@ class XlsxWriter:
                 raise TypeError("charts must be Chart instances")
         return list(charts)
 
+    @staticmethod
+    def _normalize_validations(validations):
+        if not validations:
+            return []
+        for rule in validations:
+            if not isinstance(rule, DataValidation):
+                raise TypeError("data_validations must be DataValidation instances")
+        return list(validations)
+
+    @staticmethod
+    def _normalize_images(images):
+        if not images:
+            return []
+        for image in images:
+            if not isinstance(image, Image):
+                raise TypeError("images must be Image instances")
+        return list(images)
+
+    @staticmethod
+    def _normalize_print(settings):
+        if settings is None:
+            return None
+        if not isinstance(settings, PrintSettings):
+            raise TypeError("print_settings must be a PrintSettings or None")
+        return settings
+
+    def _media_name(self, image: Image) -> str:
+        """Name of the media part holding ``image``; identical pictures share one part."""
+        name = self._media_names.get(image.digest)
+        if name is None:
+            name = f"image{len(self._media_names) + 1}.{image.extension}"
+            self._media_names[image.digest] = name
+            self._media_parts.append((name, image.data))
+        return name
+
     def write_sheet(
         self,
         data: Iterable[list[any]],
@@ -355,10 +435,23 @@ class XlsxWriter:
         hidden_columns: list | tuple | set | None = None,
         row_heights: dict | None = None,
         hidden_rows: list | tuple | set | None = None,
+        row_groups: list | tuple | None = None,
+        column_groups: list | tuple | None = None,
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
         charts: list[Chart] | tuple[Chart, ...] | None = None,
+        data_validations: list[DataValidation] | tuple[DataValidation, ...] | None = None,
+        images: list[Image] | tuple[Image, ...] | None = None,
+        print_settings: PrintSettings | None = None,
     ):
+        """Write rows to the current sheet.
+
+        ``data`` is consumed once, row by row. The rows are encoded into a
+        temporary spool (kept in memory up to ``spool_max_bytes``, then on
+        disk), so memory does not grow with the number of rows. Hyperlinks,
+        formulas and the other options are described in the documentation.
+        """
+        self._require_writable()
         if header_style is not None and not isinstance(header_style, Style):
             raise TypeError("header_style must be a Style instance")
         style_ranges = normalize_style_ranges(styles)
@@ -366,26 +459,92 @@ class XlsxWriter:
         cf_rules = self._normalize_cf_rules(conditional_formats)
         table_specs = self._normalize_tables(tables)
         chart_specs = self._normalize_charts(charts)
+        validations = self._normalize_validations(data_validations)
+        image_specs = self._normalize_images(images)
+        print_spec = self._normalize_print(print_settings)
+        widths = self._normalize_widths(column_widths, "column_widths")
+        hidden_cols = normalize_hidden_columns(hidden_columns)
+        heights = self._normalize_row_heights(row_heights)
+        hidden_row_set = normalize_hidden_rows(hidden_rows)
+        row_outline = build_outline(row_groups, "row")
+        col_outline = build_outline(column_groups, "column")
+        if col_outline is not None:
+            hidden_cols = hidden_cols | col_outline.hidden_indices()
+        split_freeze = None
+        if freeze_panes is not None and freeze_panes != "":
+            split_freeze = self._split_freeze_cell(freeze_panes)
+        cf_priorities = explicit_cf_priorities(
+            cf_rules, self._seen_cf_priorities, self._reserved_cf_priorities,
+        )
+        # Every option is valid; only now record what this sheet claims.
+        self._table_names.update(table.display_name for table in table_specs)
+        for priority in cf_priorities:
+            self._reserved_cf_priorities.add(priority)
+            self._next_cf_priority = max(self._next_cf_priority, priority + 1)
         if not self._worksheet_data:
             self.add_sheet("Sheet1")
 
-        sheet_name, _, hidden = self._worksheet_data[self._sheet_count - 1]
-        self._worksheet_data[self._sheet_count - 1] = (sheet_name, data, hidden)
-        if chart_specs:
-            self._sheet_charts[self._sheet_count] = chart_specs
-
+        sheet_index = self._sheet_count - 1
+        sheet_name, _, hidden = self._worksheet_data[sheet_index]
+        self._worksheet_data[sheet_index] = (sheet_name, None, hidden)
         sheet_id = self._sheet_count
-        drawing_rid = len(table_specs) + 1 if chart_specs else None
-        with self._zf.open(f"xl/worksheets/sheet{sheet_id}.xml", 'w') as sheet_file:
-            self._write_worksheet_xml(
-                sheet_file, data, self._sheet_count - 1,
-                style_ranges=style_ranges, header_style=header_style,
-                merges=merge_refs, conditional_formats=cf_rules,
-                tables=table_specs, column_widths=column_widths,
-                hidden_columns=hidden_columns, row_heights=row_heights,
-                hidden_rows=hidden_rows, freeze_panes=freeze_panes,
-                auto_filter=auto_filter, drawing_rid=drawing_rid,
+        has_styles = bool(style_ranges) or header_style is not None
+
+        spool = tempfile.SpooledTemporaryFile(max_size=self._spool_max_bytes, mode="w+b")
+        try:
+            body = self._write_body(
+                data, spool, style_ranges, header_style if has_styles else None,
+                heights, hidden_row_set, has_styles,
+                table_specs,
+                row_outline=row_outline,
             )
+            table_rels, table_bounds = self._register_tables(table_specs, sheet_id, body)
+            rels = list(table_rels)
+            link_rels = self._link_relationships(body.hyperlinks, rels)
+            rels.extend(link_rels)
+            drawing_rid = None
+            if chart_specs or image_specs:
+                drawing_rid = f"rId{len(rels) + 1}"
+                rels.append((drawing_rid, _REL_DRAWING,
+                             f"../drawings/drawing{sheet_id}.xml", False))
+                self._sheet_drawings.add(sheet_id)
+            if chart_specs:
+                self._sheet_charts[sheet_id] = chart_specs
+            if image_specs:
+                self._sheet_images[sheet_id] = image_specs
+                self._sheet_image_media[sheet_id] = [
+                    self._media_name(image) for image in image_specs
+                ]
+            if print_spec is not None:
+                self._sheet_print[sheet_index] = print_spec
+            for row_idx, col_idx, link in body.hyperlinks:
+                if link.is_internal:
+                    self._internal_links.append((sheet_index, link.location))
+            if auto_filter is None and table_specs:
+                auto_filter = False
+            head = self._sheet_head(
+                body, sheet_index, split_freeze, freeze_panes, widths, hidden_cols,
+                print_spec, row_outline=row_outline, col_outline=col_outline,
+            )
+            tail = self._sheet_tail(
+                body, sheet_index, merge_refs, cf_rules, table_specs, table_bounds,
+                validations, link_rels, auto_filter, drawing_rid, print_spec,
+            )
+            if rels:
+                self._sheet_rels[sheet_id] = rels
+            with self._zf.open(f"xl/worksheets/sheet{sheet_id}.xml", 'w') as sheet_file:
+                sheet_file.write(head.encode('utf-8'))
+                spool.seek(0)
+                shutil.copyfileobj(spool, sheet_file, 1 << 20)
+                sheet_file.write(tail.encode('utf-8'))
+            self._sheet_written.add(sheet_index)
+        except BaseException:
+            # The sheet part is incomplete, so the workbook cannot be saved.
+            self._aborted = True
+            raise
+        finally:
+            spool.close()
+
     def _intern_font(self, font_key) -> int:
         if _font_is_empty(font_key):
             return 0
@@ -513,9 +672,14 @@ class XlsxWriter:
         hidden_columns: list | tuple | set | None = None,
         row_heights: dict | None = None,
         hidden_rows: list | tuple | set | None = None,
+        row_groups: list | tuple | None = None,
+        column_groups: list | tuple | None = None,
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
         charts: list | tuple | None = None,
+        data_validations: list | tuple | None = None,
+        images: list | tuple | None = None,
+        print_settings: PrintSettings | None = None,
     ):
         """Write a pandas or polars DataFrame to the current sheet.
 
@@ -546,19 +710,35 @@ class XlsxWriter:
             hidden_columns=hidden_columns,
             row_heights=row_heights,
             hidden_rows=hidden_rows,
+            row_groups=row_groups,
+            column_groups=column_groups,
             freeze_panes=freeze_panes,
             auto_filter=auto_filter,
             charts=charts,
+            data_validations=data_validations,
+            images=images,
+            print_settings=print_settings,
         )
 
-    def save(self):
-        if self._zf is None:
-            raise RuntimeError("Zip file not initialized. Use context manager or initialize manually.")
+    def _write_workbook_parts(self):
+        # Excel compares sheet names without regard to case.
+        sheet_names = {name.casefold() for name, _data, _hidden in self._worksheet_data}
+        for sheet_index, location in self._internal_links:
+            target = location.rpartition("!")[0]
+            if len(target) >= 2 and target[0] == target[-1] == "'":
+                target = target[1:-1].replace("''", "'")
+            if target.casefold() not in sheet_names:
+                raise ValueError(f"hyperlink points to unknown sheet {target!r}")
 
-        for sheet_id, charts in self._sheet_charts.items():
-            if not charts or sheet_id in self._sheet_chart_ids:
-                continue
+        for sheet_index in range(self._sheet_count):
+            if sheet_index not in self._sheet_written:
+                self._write_empty_sheet(sheet_index)
+
+        for sheet_id in sorted(self._sheet_drawings):
             sheet_name = self._worksheet_data[sheet_id - 1][0]
+            charts = self._sheet_charts.get(sheet_id, [])
+            images = self._sheet_images.get(sheet_id, [])
+            media = self._sheet_image_media.get(sheet_id, [])
             chart_ids = []
             for chart in charts:
                 chart_id = self._next_chart_id
@@ -571,35 +751,32 @@ class XlsxWriter:
             self._sheet_chart_ids[sheet_id] = chart_ids
             self._zf.writestr(
                 f"xl/drawings/drawing{sheet_id}.xml",
-                self._drawing_xml(charts, chart_ids),
+                chart_parts.drawing_xml(charts, chart_ids, images=images),
             )
             self._zf.writestr(
                 f"xl/drawings/_rels/drawing{sheet_id}.xml.rels",
-                self._drawing_rels_xml(chart_ids),
+                chart_parts.drawing_rels_xml(chart_ids, image_names=media),
             )
-            if sheet_id not in self._sheet_tables:
-                self._zf.writestr(
-                    f"xl/worksheets/_rels/sheet{sheet_id}.xml.rels",
-                    self._create_worksheet_rels(sheet_id),
-                )
 
-        if any(self._sheet_charts.values()):
+        for name, data in self._media_parts:
+            self._zf.writestr(f"xl/media/{name}", data)
+
+        if self._sheet_drawings:
             self._zf.writestr("xl/theme/theme1.xml", chart_parts.THEME_XML)
+
+        for sheet_id, rels in self._sheet_rels.items():
+            self._zf.writestr(
+                f"xl/worksheets/_rels/sheet{sheet_id}.xml.rels",
+                self._create_worksheet_rels(sheet_id),
+            )
+        for table_id, table_xml in self._tables_xml.items():
+            self._zf.writestr(f"xl/tables/table{table_id}.xml", table_xml)
 
         self._zf.writestr("[Content_Types].xml", self._create_content_types())
         self._zf.writestr("_rels/.rels", self._create_root_rels())
         self._zf.writestr("xl/workbook.xml", self._create_workbook_xml())
         self._zf.writestr("xl/styles.xml", self._create_styles_xml())
         self._zf.writestr("xl/_rels/workbook.xml.rels", self._create_workbook_rels())
-
-        for sheet_id, tables in self._sheet_tables.items():
-            if tables:
-                self._zf.writestr(
-                    f"xl/worksheets/_rels/sheet{sheet_id}.xml.rels",
-                    self._create_worksheet_rels(sheet_id),
-                )
-        for table_id, table_xml in self._tables_xml.items():
-            self._zf.writestr(f"xl/tables/table{table_id}.xml", table_xml)
 
         if self._useSharedStrings and self._shared_strings:
             with self._zf.open("xl/sharedStrings.xml", 'w') as sst_file:
@@ -630,27 +807,17 @@ class XlsxWriter:
         return chart_parts.drawing_rels_xml(chart_ids)
 
     def _create_worksheet_rels(self, sheet_id: int) -> str:
-        tables = self._sheet_tables.get(sheet_id, [])
-        parts = "".join(
-            f'<Relationship Id="rId{i + 1}" '
-            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" '
-            f'Target="../tables/table{table_id}.xml"/>'
-            for i, (table_id, _ref) in enumerate(tables)
-        )
-        if sheet_id in self._sheet_charts:
-            parts += (
-                f'<Relationship Id="rId{len(tables) + 1}" '
-                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" '
-                f'Target="../drawings/drawing{sheet_id}.xml"/>'
+        parts = []
+        for rid, rel_type, target, external in self._sheet_rels.get(sheet_id, []):
+            mode = ' TargetMode="External"' if external else ""
+            parts.append(
+                f'<Relationship Id="{rid}" Type="{rel_type}" '
+                f'Target="{saxutils.escape(target, {chr(34): "&quot;"})}"{mode}/>'
             )
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-{parts}
+{"".join(parts)}
 </Relationships>'''
-    def close(self):
-        if self._zf is not None:
-            self._zf.close()
-            self._zf = None
 
     def _create_content_types(self) -> str:
         parts = "".join(
@@ -665,15 +832,18 @@ class XlsxWriter:
 
         drawing_parts = "".join(
             f'<Override PartName="/xl/drawings/drawing{sheet_id}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>'
-            for sheet_id in sorted(self._sheet_charts)
-            if self._sheet_charts[sheet_id]
+            for sheet_id in sorted(self._sheet_drawings)
         )
         chart_overrides = "".join(
             f'<Override PartName="/xl/charts/chart{chart_id}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'
             for chart_id in range(1, self._next_chart_id)
         )
+        image_defaults = "".join(
+            f'<Default Extension="{ext}" ContentType="image/{ext}"/>'
+            for ext in sorted({name.rsplit(".", 1)[1] for name, _data in self._media_parts})
+        )
         theme_part = ""
-        if any(self._sheet_charts.values()):
+        if self._sheet_drawings:
             theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
 
         shared_strings_part = ""
@@ -684,6 +854,7 @@ class XlsxWriter:
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
+{image_defaults}
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
 {parts}
 <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
@@ -713,7 +884,7 @@ class XlsxWriter:
             shared_strings_rid = self._sheet_count + 2
             relationships.append(f'<Relationship Id="rId{shared_strings_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>')
 
-        if any(self._sheet_charts.values()):
+        if self._sheet_drawings:
             theme_rid = len(relationships) + 1
             relationships.append(f'<Relationship Id="rId{theme_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>')
 
@@ -729,16 +900,34 @@ class XlsxWriter:
             hidden_attr = ' state="hidden"' if hidden else ''
             sheets += f'<sheet name="{saxutils.escape(sheet_name)}" sheetId="{sheet_id}"{hidden_attr} r:id="rId{sheet_id}"/>'
 
-        defined_names = ""
-        if self._filtered_data_list:
-            defined_names = "<definedNames>"
-            for filter_data in self._filtered_data_list:
-                sheet_name = self._worksheet_data[filter_data.sheet_index][0]
-                start_col = self._letters[filter_data.start_column]
-                end_col = self._letters[filter_data.end_column]
-                range_ref = f"{sheet_name}!${start_col}${filter_data.start_row + 1}:${end_col}${filter_data.end_row + 1}"
-                defined_names += f'<definedName name="_xlnm._FilterDatabase" localSheetId="{filter_data.sheet_index}" hidden="1">{range_ref}</definedName>'
-            defined_names += "</definedNames>"
+        names = []
+        for filter_data in self._filtered_data_list:
+            sheet_name = self._worksheet_data[filter_data.sheet_index][0]
+            start_col = self._letters[filter_data.start_column]
+            end_col = self._letters[filter_data.end_column]
+            range_ref = (
+                f"{quote_sheet_name(sheet_name)}!${start_col}${filter_data.start_row + 1}"
+                f":${end_col}${filter_data.end_row + 1}"
+            )
+            names.append(
+                f'<definedName name="_xlnm._FilterDatabase" localSheetId="{filter_data.sheet_index}" hidden="1">'
+                f'{saxutils.escape(range_ref)}</definedName>'
+            )
+        for sheet_index in sorted(self._sheet_print):
+            settings = self._sheet_print[sheet_index]
+            sheet_name = self._worksheet_data[sheet_index][0]
+            if settings.print_area is not None:
+                names.append(
+                    f'<definedName name="_xlnm.Print_Area" localSheetId="{sheet_index}">'
+                    f'{saxutils.escape(print_area_name(sheet_name, settings.print_area))}</definedName>'
+                )
+            titles = print_titles_name(sheet_name, settings)
+            if titles is not None:
+                names.append(
+                    f'<definedName name="_xlnm.Print_Titles" localSheetId="{sheet_index}">'
+                    f'{saxutils.escape(titles)}</definedName>'
+                )
+        defined_names = f"<definedNames>{''.join(names)}</definedNames>" if names else ""
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -1026,32 +1215,44 @@ class XlsxWriter:
 </styleSheet>'''
 
     def _write_shared_strings_xml(self, sst_file: io.BufferedWriter):
-        content = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="{self._sst_all_count}" uniqueCount="{self._sst_unique_count}">'''
-        
+        # Written in chunks: the table can hold millions of strings, and one
+        # growing string would keep the whole encoded part in memory.
+        header = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                  f'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                  f'count="{self._sst_all_count}" uniqueCount="{self._sst_unique_count}">')
+        sst_file.write(header.encode('utf-8'))
+        parts: list[str] = []
         for s in self._shared_strings:
-            escaped_string = saxutils.escape(s)
+            # The same three replacements as xml.sax.saxutils.escape, minus its call overhead.
+            text = s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             if s and (s[0] == ' ' or s[0] == '\t'):
-                content += f'<si><t xml:space="preserve">{escaped_string}</t></si>'
+                parts.append(f'<si><t xml:space="preserve">{text}</t></si>')
             else:
-                content += f'<si><t>{escaped_string}</t></si>'
-        
-        content += '</sst>'
-        sst_file.write(content.encode('utf-8'))
+                parts.append(f'<si><t>{text}</t></si>')
+            if len(parts) >= _SST_CHUNK_STRINGS:
+                # The markup holds no escapable characters, so a chunk is escaped at once.
+                sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))
+                parts.clear()
+        parts.append('</sst>')
+        sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))
 
     def _calculate_column_widths(self, data_iterator, max_cols: int) -> list[float]:
         col_widths = [8.43] * max_cols
-        
+
         rows_analyzed = 0
         for row in data_iterator:
-            if rows_analyzed >= 100:
+            if rows_analyzed >= _WIDTH_SAMPLE_ROWS:
                 break
-            
+
             for col_idx, cell in enumerate(row):
                 if col_idx >= max_cols:
                     break
-                    
+
                 cell_val = _unwrap_cell(cell) if cell is not None else None
+                if isinstance(cell_val, Hyperlink):
+                    cell_val = cell_val.display_text
+                elif isinstance(cell_val, Formula):
+                    cell_val = cell_val.value
                 if cell_val is not None:
                     if isinstance(cell_val, datetime.datetime):
                         width = 18.0
@@ -1059,11 +1260,11 @@ class XlsxWriter:
                         width = 10.14
                     else:
                         width = max(8.43, len(str(cell_val)) * 1.25 + 2)
-                    
+
                     col_widths[col_idx] = max(col_widths[col_idx], min(width, 255))
-            
+
             rows_analyzed += 1
-        
+
         return col_widths
 
     @staticmethod
@@ -1167,21 +1368,19 @@ class XlsxWriter:
             raise ValueError("CF colorScale/dataBar colors must be RGB colors")
         return resolved.rgb
 
-    def _table_xml(self, table: ExcelTable, table_id: int) -> str:
-        from .styles import _column_index as col_index
+    def _table_xml(self, table: ExcelTable, table_id: int, names: list[str]) -> str:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
         ref = (
             f"{self._letters[first_col]}{first_row + 1}:"
             f"{self._letters[last_col]}{last_row + 1}"
         )
         name = saxutils.escape(table.display_name, {'"': '&quot;'})
-        if table.columns is not None:
-            names = list(table.columns)
-        else:
-            width = last_col - first_col + 1
-            names = [f"Column{i + 1}" for i in range(width)]
+        # Names must equal the header cells as Excel reads them, so they get the
+        # same _xHHHH_ escapes; line feeds and tabs need character references
+        # in an attribute, where XML would read them as spaces.
+        attr_entities = {'"': '&quot;', '\n': '&#10;', '\t': '&#9;'}
         columns_xml = "".join(
-            f'<tableColumn id="{i + 1}" name="{saxutils.escape(nm, {"\"": "&quot;"})}"/>'
+            f'<tableColumn id="{i + 1}" name="{xstring_escape(saxutils.escape(nm, attr_entities))}"/>'
             for i, nm in enumerate(names)
         )
         totals = ' totalsRowShown="1"' if table.totals_row else ""
@@ -1206,423 +1405,450 @@ class XlsxWriter:
             f"{style_xml}</table>"
         )
 
-    def _write_worksheet_xml(
-        self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[any]],
-        worksheet_index: int, *, style_ranges=(), header_style: Style | None = None,
-        merges=(), conditional_formats=(), tables=(),
-        column_widths=None, hidden_columns=None,
-        row_heights=None, hidden_rows=None,
-        freeze_panes: str | None = None, auto_filter=None,
-        drawing_rid: int | None = None,
-    ):
-        rich_sheet = (
-            header_style is not None or bool(style_ranges) or bool(merges)
-            or bool(conditional_formats) or bool(tables)
-            or column_widths is not None or hidden_columns is not None
-            or row_heights is not None or hidden_rows is not None
-            or freeze_panes is not None or auto_filter is not None
-        )
-        widths = self._normalize_widths(column_widths, "column_widths")
-        hidden_cols = self._normalize_hidden(hidden_columns or (), "hidden_columns")
-        if hidden_columns is not None:
-            hidden_cols = self._normalize_hidden(hidden_columns, "hidden_columns")
-        heights = self._normalize_row_heights(row_heights)
-        hidden_row_set: set[int] = set()
-        if hidden_rows is not None:
-            try:
-                candidates = list(hidden_rows)
-            except TypeError:
-                raise TypeError("hidden_rows must be a collection or None")
-            for key in candidates:
-                if not isinstance(key, int) or isinstance(key, bool) or key < 0:
-                    raise TypeError("hidden_rows entries must be 0-based row ints")
-                hidden_row_set.add(key)
-        if freeze_panes is not None and freeze_panes != "":
-            self._split_freeze_cell(freeze_panes)
-        for rule in conditional_formats:
-            if getattr(rule, "priority", None) is not None:
-                if (
-                    rule.priority in self._seen_cf_priorities
-                    or rule.priority in self._reserved_cf_priorities
-                ):
-                    raise ValueError(
-                        f"duplicate conditional formatting priority {rule.priority}"
-                    )
-                self._reserved_cf_priorities.add(rule.priority)
-                self._next_cf_priority = max(
-                    self._next_cf_priority, rule.priority + 1
+    def _write_body(self, data, spool, style_ranges, header_style, heights,
+                    hidden_row_set, has_styles, table_headers=(),
+                    row_outline=None):
+        """Encode every row into ``spool`` and return a ``_SheetBody``.
+
+        Only the first ``_WIDTH_SAMPLE_ROWS`` rows are kept, for automatic
+        column widths, plus the header rows of ``table_headers``, which are
+        checked as soon as they stream past.
+        Hyperlink cells are recorded so the trailer can link them.
+        """
+        head: list = []
+        hyperlinks: list = []
+        header_rows: dict = {}
+        num_rows = 0
+        max_cols = 0
+        buf = io.StringIO()
+        if table_headers:
+            data = capture_table_headers(data, table_headers, header_rows)
+        for row_idx, row in enumerate(data):
+            if row_idx < _WIDTH_SAMPLE_ROWS:
+                head.append(row)
+            num_rows = row_idx + 1
+            if len(row) > max_cols:
+                max_cols = len(row)
+            row_attrs = self._row_attrs(row_idx, heights, hidden_row_set, row_outline)
+            # The C encoder hands back rows it cannot write (formulas,
+            # hyperlinks, other objects, text needing escapes) as None.
+            if not has_styles and not row_attrs:
+                c_row = accel_encode_xlsx_row(
+                    row, self._shared_strings_dict, self._shared_strings,
+                    self._sst_unique_count, self._sst_all_count,
+                    row_idx, self._useSharedStrings,
                 )
-        table_bounds = [parse_cell_range(table.ref) for table in tables]
-        buffer = io.StringIO()
-
-        buffer.write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
-        buffer.write('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">')
-
-        data_list = list(worksheet_data)
-        max_cols = max(len(row) for row in data_list) if data_list else 1
-        num_rows = len(data_list)
-
-        if rich_sheet:
-            self._write_rich_sheet(
-                buffer, sheet_file, data_list, worksheet_index, max_cols, num_rows,
-                style_ranges, header_style, merges, conditional_formats, tables,
-                table_bounds, widths, hidden_cols, heights, hidden_row_set,
-                freeze_panes, auto_filter, drawing_rid,
+                if c_row is not None:
+                    row_xml, self._sst_unique_count, self._sst_all_count = c_row
+                    buf.write(row_xml)
+                    if buf.tell() >= _FLUSH_CHARS:
+                        spool.write(buf.getvalue().encode('utf-8'))
+                        buf = io.StringIO()
+                    continue
+            row_styles = (
+                styles_for_row(row_idx, len(row), style_ranges, header_style)
+                if has_styles else _EMPTY_ROW_STYLES
             )
-            return
+            buf.write(f'<row r="{row_idx + 1}"{row_attrs}>')
+            self._write_row_cells(buf, row, row_idx, row_styles, hyperlinks)
+            buf.write('</row>')
+            if buf.tell() >= _FLUSH_CHARS:
+                spool.write(buf.getvalue().encode('utf-8'))
+                buf = io.StringIO()
+        if row_outline is not None:
+            # Grouped rows and summary rows past the data are written empty.
+            for row_idx in row_outline.indices_from(num_rows):
+                row_attrs = self._row_attrs(row_idx, heights, hidden_row_set, row_outline)
+                buf.write(f'<row r="{row_idx + 1}"{row_attrs}/>')
+                if buf.tell() >= _FLUSH_CHARS:
+                    spool.write(buf.getvalue().encode('utf-8'))
+                    buf = io.StringIO()
+        spool.write(buf.getvalue().encode('utf-8'))
+        if num_rows == 0:
+            max_cols = 1
+        return _SheetBody(num_rows, max_cols, head, hyperlinks, header_rows=header_rows)
 
-        if num_rows > 0 and max_cols > 0:
-            end_cell = f"{self._letters[max_cols - 1]}{num_rows}"
-            buffer.write(f'<dimension ref="A1:{end_cell}"/>')
+    @staticmethod
+    def _row_attrs(row_idx, heights, hidden_row_set, row_outline) -> str:
+        """``<row>`` attributes for height, outline level, collapsed and hidden flags."""
+        row_attrs = ""
+        if row_idx in heights:
+            row_attrs += f' ht="{heights[row_idx]}" customHeight="1"'
+        outline_hidden = False
+        if row_outline is not None:
+            outline_level, outline_hidden = row_outline.state_at(row_idx)
+            if outline_level:
+                row_attrs += f' outlineLevel="{outline_level}"'
+            if row_outline.collapsed_at(row_idx):
+                row_attrs += ' collapsed="1"'
+        if row_idx in hidden_row_set or outline_hidden:
+            row_attrs += ' hidden="1"'
+        return row_attrs
 
-        if worksheet_index == 0:
-            buffer.write('<sheetViews><sheetView tabSelected="1" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>')
-        else:
-            buffer.write('<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>')
+    def _write_row_cells(self, buf, row, row_idx, row_styles, hyperlinks):
+        uniform_style = None
+        uniform_xf = None
+        if row_styles and len(row_styles) == len(row):
+            first_style = next(iter(row_styles.values()))
+            if all(style is first_style for style in row_styles.values()):
+                uniform_style = first_style
+                uniform_xf = self._register_style(first_style)
 
-        col_widths = self._calculate_column_widths(iter(data_list), max_cols)
-
-        if any(width != 8.43 for width in col_widths):
-            buffer.write('<cols>')
-            for i, width in enumerate(col_widths):
-                if width != 8.43:
-                    buffer.write(f'<col min="{i + 1}" max="{i + 1}" width="{width:.2f}" bestFit="1" customWidth="1"/>')
-            buffer.write('</cols>')
-
-        buffer.write('<sheetData>')
-
-        last_row_idx = 0
-        for row_idx, row in enumerate(data_list):
-            last_row_idx = row_idx
-            c_row = accel_encode_xlsx_row(
-                row, self._shared_strings_dict, self._shared_strings,
-                self._sst_unique_count, self._sst_all_count,
-                row_idx, self._useSharedStrings,
-            )
-            if c_row is not None:
-                row_xml, self._sst_unique_count, self._sst_all_count = c_row
-                buffer.write(row_xml)
+        for col_idx, cell in enumerate(row):
+            cell_style = uniform_style if uniform_style is not None else row_styles.get(col_idx)
+            if cell is None:
+                if cell_style is None:
+                    buf.write('<c/>')
+                else:
+                    xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
+                    cell_ref = f'{self._letters[col_idx]}{row_idx + 1}'
+                    buf.write(f'<c r="{cell_ref}" s="{xf_index}"/>')
                 continue
-            buffer.write(f'<row r="{row_idx + 1}">')
 
-            for col_idx, cell in enumerate(row):
-                if cell is None:
-                    buffer.write('<c/>')
-                    continue
-
-                fmt_string = _get_format(cell)
-                if fmt_string is not None:
-                    cell = _unwrap_cell(cell)
-                    xf_index = self._register_format(fmt_string)
-                    has_custom_fmt = True
-                else:
-                    has_custom_fmt = False
-                    xf_index = None
-
-                if isinstance(cell, str):
-                    if has_custom_fmt:
-                        self._write_string_cell(buffer, cell, row_idx == 0, xf_index)
-                    else:
-                        self._write_string_cell(buffer, cell, row_idx == 0)
-                elif isinstance(cell, bool):
-                    s_attr = f' s="{xf_index}"' if has_custom_fmt else ''
-                    buffer.write(f'<c t="b"{s_attr}><v>{"1" if cell else "0"}</v></c>')
-                elif isinstance(cell, (int, float, Decimal)):
-                    if isinstance(cell, float):
-                        if cell != cell:
-                            self._write_string_cell(buffer, "NaN", row_idx == 0, xf_index if has_custom_fmt else None)
-                            continue
-                        elif cell == float('inf'):
-                            self._write_string_cell(buffer, "\u221e", row_idx == 0, xf_index if has_custom_fmt else None)
-                            continue
-                        elif cell == float('-inf'):
-                            self._write_string_cell(buffer, "-\u221e", row_idx == 0, xf_index if has_custom_fmt else None)
-                            continue
-                    s_attr = f' s="{xf_index}"' if has_custom_fmt else ''
-                    buffer.write(f'<c{s_attr}><v>{float(cell)}</v></c>')
-                elif isinstance(cell, datetime.datetime):
-                    if cell.year < 1900 or cell.year > 9999:
-                        self._write_string_cell(buffer, str(cell), row_idx == 0, xf_index if has_custom_fmt else None)
-                    else:
-                        if cell.tzinfo is not None:
-                            cell = cell.replace(tzinfo=None)
-                        excel_date = datetime_to_serial(cell)
-                        if has_custom_fmt:
-                            buffer.write(f'<c s="{xf_index}"><v>{excel_date}</v></c>')
-                        else:
-                            buffer.write(f'<c s="2"><v>{excel_date}</v></c>')
-                elif isinstance(cell, datetime.date):
-                    if cell.year < 1900 or cell.year > 9999:
-                        self._write_string_cell(buffer, str(cell), row_idx == 0, xf_index if has_custom_fmt else None)
-                    else:
-                        excel_date = datetime_to_serial(cell)
-                        if has_custom_fmt:
-                            buffer.write(f'<c s="{xf_index}"><v>{excel_date}</v></c>')
-                        else:
-                            buffer.write(f'<c s="1"><v>{excel_date}</v></c>')
-                else:
-                    self._write_string_cell(buffer, str(cell), row_idx == 0,
-                                            xf_index if has_custom_fmt else None)
-
-            buffer.write('</row>')
-
-        buffer.write('</sheetData>')
-
-        if last_row_idx > 0:
-            start_col = self._letters[0]
-            end_col = self._letters[max_cols - 1]
-            buffer.write(f'<autoFilter ref="{start_col}1:{end_col}{last_row_idx + 1}"/>')
-
-            self._filtered_data_list.append(FilterData(
-                sheet_index=worksheet_index,
-                start_column=0,
-                end_column=max_cols - 1,
-                start_row=0,
-                end_row=last_row_idx
-            ))
-
-        buffer.write('<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>')
-        if drawing_rid is not None:
-            buffer.write(f'<drawing r:id="rId{drawing_rid}"/>')
-        buffer.write('</worksheet>')
-
-        sheet_file.write(buffer.getvalue().encode('utf-8'))
-
-    def _write_rich_sheet(
-        self, buffer, sheet_file, data_list, worksheet_index, max_cols, num_rows,
-        style_ranges, header_style, merges, conditional_formats, tables,
-        table_bounds, widths, hidden_cols, heights, hidden_row_set,
-        freeze_panes, auto_filter, drawing_rid=None,
-    ):
-        if num_rows > 0 and max_cols > 0:
-            end_cell = f"{self._letters[max_cols - 1]}{num_rows}"
-            buffer.write(f'<dimension ref="A1:{end_cell}"/>')
-
-        if freeze_panes is None:
-            if worksheet_index == 0:
-                buffer.write('<sheetViews><sheetView tabSelected="1" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>')
-            else:
-                buffer.write('<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>')
-        elif freeze_panes == "":
-            if worksheet_index == 0:
-                buffer.write('<sheetViews><sheetView tabSelected="1" workbookViewId="0"/></sheetViews>')
-            else:
-                buffer.write('<sheetViews><sheetView workbookViewId="0"/></sheetViews>')
-        else:
-            split_col, split_row = self._split_freeze_cell(freeze_panes)
-            top_left = f"{self._letters[split_col]}{split_row + 1}"
-            parts = []
-            if split_col > 0:
-                parts.append(f'xSplit="{split_col}"')
-            if split_row > 0:
-                parts.append(f'ySplit="{split_row}"')
-            parts.append(f'topLeftCell="{top_left}"')
-            if split_col > 0 and split_row > 0:
-                active = "bottomRight"
-            elif split_col > 0:
-                active = "topRight"
-            else:
-                active = "bottomLeft"
-            parts.append(f'activePane="{active}"')
-            parts.append('state="frozen"')
-            tab = " tabSelected=\"1\"" if worksheet_index == 0 else ""
-            buffer.write(
-                f'<sheetViews><sheetView{tab} workbookViewId="0">'
-                f'<pane {" ".join(parts)}/>'
-                f'<selection pane="{active}" activeCell="{top_left}" sqref="{top_left}"/>'
-                "</sheetView></sheetViews>"
-            )
-
-        col_widths = self._calculate_column_widths(iter(data_list), max_cols)
-        for col, width in widths.items():
-            if 0 <= col < max_cols:
-                col_widths[col] = width
-        covered = set(widths) | set(hidden_cols)
-        if any(width != 8.43 for width in col_widths) or covered:
-            buffer.write('<cols>')
-            emitted = set()
-            for i, width in enumerate(col_widths):
-                explicit = widths.get(i)
-                hidden_attr = ' hidden="1"' if i in hidden_cols else ""
-                if explicit is not None:
-                    buffer.write(f'<col min="{i + 1}" max="{i + 1}" width="{explicit:.2f}" bestFit="1" customWidth="1"{hidden_attr}/>')
-                    emitted.add(i)
-                elif width != 8.43:
-                    buffer.write(f'<col min="{i + 1}" max="{i + 1}" width="{width:.2f}" bestFit="1" customWidth="1"{hidden_attr}/>')
-                    emitted.add(i)
-                elif hidden_attr:
-                    buffer.write(f'<col min="{i + 1}" max="{i + 1}" width="8.43" customWidth="0"{hidden_attr}/>')
-                    emitted.add(i)
-            for i in sorted(covered):
-                if i in emitted or i >= max_cols:
-                    continue
-                explicit = widths.get(i)
-                hidden_attr = ' hidden="1"' if i in hidden_cols else ""
-                width_attr = f"{explicit:.2f}" if explicit is not None else "8.43"
-                custom = "1" if explicit is not None else "0"
-                buffer.write(f'<col min="{i + 1}" max="{i + 1}" width="{width_attr}" customWidth="{custom}"{hidden_attr}/>')
-            for i in sorted(hidden_cols):
-                if i >= 16384:
-                    raise ValueError(f"hidden column out of range: {i}")
-            buffer.write('</cols>')
-
-        buffer.write('<sheetData>')
-
-        last_row_idx = 0
-        for row_idx, row in enumerate(data_list):
-            last_row_idx = row_idx
-            row_attrs = f' r="{row_idx + 1}"'
-            if row_idx in heights:
-                row_attrs += f' ht="{heights[row_idx]}" customHeight="1"'
-            if row_idx in hidden_row_set:
-                row_attrs += ' hidden="1"'
-            buffer.write(f"<row{row_attrs}>")
-            row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
-            uniform_style = None
-            uniform_xf = None
-            if row_styles and len(row_styles) == len(row):
-                first_style = next(iter(row_styles.values()))
-                if all(style is first_style for style in row_styles.values()):
-                    uniform_style = first_style
-                    uniform_xf = self._register_style(first_style)
-
-            for col_idx, cell in enumerate(row):
-                cell_style = uniform_style if uniform_style is not None else row_styles.get(col_idx)
-                if cell is None:
-                    if cell_style is None:
-                        buffer.write('<c/>')
-                    else:
-                        xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
-                        cell_ref = f'{self._letters[col_idx]}{row_idx + 1}'
-                        buffer.write(f'<c r="{cell_ref}" s="{xf_index}"/>')
-                    continue
-
-                fmt_string = _get_format(cell)
-                if fmt_string is not None:
-                    cell = _unwrap_cell(cell)
-                    if cell_style is not None:
-                        cell_style = merge_styles(cell_style, Style(number_format=fmt_string))
-                has_custom_fmt = cell_style is not None or fmt_string is not None
+            fmt_string = _get_format(cell)
+            if fmt_string is not None:
+                cell = _unwrap_cell(cell)
+                if isinstance(cell, Hyperlink):
+                    raise TypeError("a hyperlink cell cannot carry a number format; style the cell instead")
                 if cell_style is not None:
-                    if cell_style is uniform_style and fmt_string is None:
-                        xf_index = uniform_xf
-                    else:
-                        xf_index = self._register_style(cell_style)
-                elif fmt_string is not None:
-                    xf_index = self._register_format(fmt_string)
+                    cell_style = merge_styles(cell_style, Style(number_format=fmt_string))
+            if isinstance(cell, Hyperlink):
+                hyperlinks.append((row_idx, col_idx, cell))
+                cell = cell.display_text
+                cell_style = _HYPERLINK_STYLE if cell_style is None else merge_styles(_HYPERLINK_STYLE, cell_style)
 
-                if isinstance(cell, str):
-                    if has_custom_fmt:
-                        self._write_string_cell(buffer, cell, row_idx == 0, xf_index)
-                    else:
-                        self._write_string_cell(buffer, cell, row_idx == 0)
-                elif isinstance(cell, bool):
-                    s_attr = f' s="{xf_index}"' if has_custom_fmt else ''
-                    buffer.write(f'<c t="b"{s_attr}><v>{"1" if cell else "0"}</v></c>')
-                elif isinstance(cell, (int, float, Decimal)):
-                    if isinstance(cell, float):
-                        if cell != cell:
-                            self._write_string_cell(buffer, "NaN", row_idx == 0, xf_index if has_custom_fmt else None)
-                            continue
-                        elif cell == float('inf'):
-                            self._write_string_cell(buffer, "\u221e", row_idx == 0, xf_index if has_custom_fmt else None)
-                            continue
-                        elif cell == float('-inf'):
-                            self._write_string_cell(buffer, "-\u221e", row_idx == 0, xf_index if has_custom_fmt else None)
-                            continue
-                    s_attr = f' s="{xf_index}"' if has_custom_fmt else ''
-                    buffer.write(f'<c{s_attr}><v>{float(cell)}</v></c>')
-                elif isinstance(cell, datetime.datetime):
-                    if cell.year < 1900 or cell.year > 9999:
-                        self._write_string_cell(buffer, str(cell), row_idx == 0, xf_index if has_custom_fmt else None)
-                    else:
-                        if cell.tzinfo is not None:
-                            cell = cell.replace(tzinfo=None)
-                        excel_date = datetime_to_serial(cell)
-                        if has_custom_fmt:
-                            buffer.write(f'<c s="{xf_index}"><v>{excel_date}</v></c>')
-                        else:
-                            buffer.write(f'<c s="2"><v>{excel_date}</v></c>')
-                elif isinstance(cell, datetime.date):
-                    if cell.year < 1900 or cell.year > 9999:
-                        self._write_string_cell(buffer, str(cell), row_idx == 0, xf_index if has_custom_fmt else None)
-                    else:
-                        excel_date = datetime_to_serial(cell)
-                        if has_custom_fmt:
-                            buffer.write(f'<c s="{xf_index}"><v>{excel_date}</v></c>')
-                        else:
-                            buffer.write(f'<c s="1"><v>{excel_date}</v></c>')
+            if cell_style is not None:
+                if cell_style is uniform_style:
+                    xf_index = uniform_xf
                 else:
-                    self._write_string_cell(buffer, str(cell), row_idx == 0,
-                                            xf_index if has_custom_fmt else None)
+                    xf_index = self._register_style(cell_style)
+            elif fmt_string is not None:
+                xf_index = self._register_format(fmt_string)
+            else:
+                xf_index = None
 
-            buffer.write('</row>')
+            if isinstance(cell, Formula):
+                self._write_formula_cell(buf, cell, xf_index)
+            elif isinstance(cell, str):
+                self._write_string_cell(buf, cell, row_idx == 0, xf_index)
+            elif isinstance(cell, bool):
+                s_attr = f' s="{xf_index}"' if xf_index is not None else ''
+                buf.write(f'<c t="b"{s_attr}><v>{"1" if cell else "0"}</v></c>')
+            elif isinstance(cell, (int, float, Decimal)):
+                if isinstance(cell, float):
+                    if cell != cell:
+                        self._write_string_cell(buf, "NaN", row_idx == 0, xf_index)
+                        continue
+                    elif cell == float('inf'):
+                        self._write_string_cell(buf, "∞", row_idx == 0, xf_index)
+                        continue
+                    elif cell == float('-inf'):
+                        self._write_string_cell(buf, "-∞", row_idx == 0, xf_index)
+                        continue
+                s_attr = f' s="{xf_index}"' if xf_index is not None else ''
+                buf.write(f'<c{s_attr}><v>{float(cell)}</v></c>')
+            elif isinstance(cell, datetime.datetime):
+                if cell.year < 1900 or cell.year > 9999:
+                    self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
+                else:
+                    if cell.tzinfo is not None:
+                        cell = cell.replace(tzinfo=None)
+                    excel_date = datetime_to_serial(cell)
+                    style_ref = xf_index if xf_index is not None else 2
+                    buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
+            elif isinstance(cell, datetime.date):
+                if cell.year < 1900 or cell.year > 9999:
+                    self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
+                else:
+                    excel_date = datetime_to_serial(cell)
+                    style_ref = xf_index if xf_index is not None else 1
+                    buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
+            else:
+                self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
 
-        buffer.write('</sheetData>')
+    def _write_formula_cell(self, buf, formula: Formula, xf_index):
+        s_attr = f' s="{xf_index}"' if xf_index is not None else ''
+        value = formula.value
+        t_attr = ''
+        v_xml = ''
+        if isinstance(value, str):
+            check_cell_text(value)
+            t_attr = ' t="str"'
+            v_xml = f'<v>{xstring_escape(saxutils.escape(value))}</v>'
+        elif value is not None:
+            v_xml = f'<v>{_format_number(float(value) if isinstance(value, Decimal) else value)}</v>'
+        f_attr = f' t="array" ref="{formula.array_ref}"' if formula.array_ref is not None else ''
+        buf.write(
+            f'<c{s_attr}{t_attr}><f{f_attr}>{saxutils.escape(formula.text)}</f>{v_xml}</c>'
+        )
 
+    def _register_tables(self, table_specs, sheet_id, body):
+        """Assign table ids and relationships; returns ``(rels, bounds)``."""
+        rels = []
+        bounds = [parse_cell_range(table.ref) for table in table_specs]
+        sheet_tables = []
+        for position, (table, (c1, r1, c2, r2)) in enumerate(zip(table_specs, bounds), start=1):
+            table_id = self._next_table_id
+            self._next_table_id += 1
+            body.table_refs.add(f"{self._letters[c1]}{r1 + 1}:{self._letters[c2]}{r2 + 1}")
+            names = table_column_names(table, body.header_rows.get(r1))
+            self._tables_xml[table_id] = self._table_xml(table, table_id, names)
+            rid = f"rId{position}"
+            rels.append((rid, _REL_TABLE, f"../tables/table{table_id}.xml", False))
+            sheet_tables.append((rid, table_id))
+        body.tables = sheet_tables
+        return rels, bounds
+
+    def _link_relationships(self, hyperlinks, rels):
+        """External hyperlink relationships; ``rels`` supplies the next free ids."""
+        link_rels = []
+        seen: dict[str, str] = {}
+        next_index = len(rels) + 1
+        for _row, _col, link in hyperlinks:
+            if link.is_internal or link.target in seen:
+                continue
+            rid = f"rId{next_index}"
+            next_index += 1
+            seen[link.target] = rid
+            link_rels.append((rid, _REL_HYPERLINK, link.target, True))
+        return link_rels
+
+    def _sheet_head(self, body, sheet_index, split_freeze, freeze_panes, widths,
+                    hidden_cols, print_spec, row_outline=None, col_outline=None):
+        """Everything before ``<sheetData>`` content: properties, views, widths."""
+        sheet_id = sheet_index + 1
+        parts = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                 '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">']
+        if print_spec is not None and print_spec.fit_to_page:
+            parts.append('<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>')
+        if body.num_rows > 0 and body.max_cols > 0:
+            parts.append(f'<dimension ref="A1:{self._letters[body.max_cols - 1]}{body.num_rows}"/>')
+        parts.append(self._sheet_views_xml(sheet_index, split_freeze, freeze_panes))
+        max_row_level = row_outline.max_level if row_outline is not None else 0
+        max_col_level = col_outline.max_level if col_outline is not None else 0
+        if max_row_level or max_col_level:
+            level_attrs = ""
+            if max_row_level:
+                level_attrs += f' outlineLevelRow="{max_row_level}"'
+            if max_col_level:
+                level_attrs += f' outlineLevelCol="{max_col_level}"'
+            parts.append(f'<sheetFormatPr defaultRowHeight="15"{level_attrs}/>')
+        col_widths = self._calculate_column_widths(iter(body.head), body.max_cols)
+        for col, width in widths.items():
+            if 0 <= col < body.max_cols:
+                col_widths[col] = width
+        parts.append(self._cols_xml(col_widths, widths, hidden_cols, body.max_cols, col_outline))
+        parts.append('<sheetData>')
+        return "".join(parts)
+
+    def _sheet_views_xml(self, sheet_index, split_freeze, freeze_panes) -> str:
+        tab = ' tabSelected="1"' if sheet_index == 0 else ""
+        if split_freeze is None and freeze_panes is None:
+            return (
+                f'<sheetViews><sheetView{tab} workbookViewId="0">'
+                '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
+                '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>'
+            )
+        if split_freeze is None:
+            return f'<sheetViews><sheetView{tab} workbookViewId="0"/></sheetViews>'
+        split_col, split_row = split_freeze
+        top_left = f"{self._letters[split_col]}{split_row + 1}"
+        parts = []
+        if split_col > 0:
+            parts.append(f'xSplit="{split_col}"')
+        if split_row > 0:
+            parts.append(f'ySplit="{split_row}"')
+        parts.append(f'topLeftCell="{top_left}"')
+        if split_col > 0 and split_row > 0:
+            active = "bottomRight"
+        elif split_col > 0:
+            active = "topRight"
+        else:
+            active = "bottomLeft"
+        parts.append(f'activePane="{active}"')
+        parts.append('state="frozen"')
+        return (
+            f'<sheetViews><sheetView{tab} workbookViewId="0">'
+            f'<pane {" ".join(parts)}/>'
+            f'<selection pane="{active}" activeCell="{top_left}" sqref="{top_left}"/>'
+            "</sheetView></sheetViews>"
+        )
+
+    def _cols_xml(self, col_widths, widths, hidden_cols, max_cols, col_outline=None) -> str:
+        covered = set(widths) | set(hidden_cols)
+        if col_outline is not None:
+            covered |= col_outline.indices()
+        if not (any(width != 8.43 for width in col_widths) or covered):
+            return ""
+        parts = ['<cols>']
+        emitted = set()
+        for i, width in enumerate(col_widths):
+            explicit = widths.get(i)
+            hidden_attr = ' hidden="1"' if i in hidden_cols else ""
+            outline_attr = _outline_col_attr(col_outline, i)
+            if explicit is not None:
+                parts.append(f'<col min="{i + 1}" max="{i + 1}" width="{explicit:.2f}" bestFit="1" customWidth="1"{hidden_attr}{outline_attr}/>')
+                emitted.add(i)
+            elif width != 8.43:
+                parts.append(f'<col min="{i + 1}" max="{i + 1}" width="{width:.2f}" bestFit="1" customWidth="1"{hidden_attr}{outline_attr}/>')
+                emitted.add(i)
+            elif hidden_attr or outline_attr:
+                parts.append(f'<col min="{i + 1}" max="{i + 1}" width="8.43" customWidth="0"{hidden_attr}{outline_attr}/>')
+                emitted.add(i)
+        # Columns past the data (explicit widths, hidden flags or groups) come
+        # last, which keeps the <col> entries in ascending order.
+        for i in sorted(covered):
+            if i in emitted:
+                continue
+            explicit = widths.get(i)
+            hidden_attr = ' hidden="1"' if i in hidden_cols else ""
+            outline_attr = _outline_col_attr(col_outline, i)
+            width_attr = f"{explicit:.2f}" if explicit is not None else "8.43"
+            custom = "1" if explicit is not None else "0"
+            parts.append(f'<col min="{i + 1}" max="{i + 1}" width="{width_attr}" customWidth="{custom}"{hidden_attr}{outline_attr}/>')
+        parts.append('</cols>')
+        return "".join(parts)
+
+    def _sheet_tail(self, body, sheet_index, merge_refs, cf_rules, table_specs,
+                    table_bounds, validations, link_rels, auto_filter, drawing_rid,
+                    print_spec):
+        """Everything after the row data, in schema order."""
+        parts = ['</sheetData>']
         data_filter = None
-        if num_rows > 1 and max_cols > 0:
-            data_filter = (
-                f"{self._letters[0]}1:{self._letters[max_cols - 1]}{num_rows}"
-            )
-        table_refs = {
-            (
-                f"{self._letters[c1]}{r1 + 1}:"
-                f"{self._letters[c2]}{r2 + 1}"
-            )
-            for c1, r1, c2, r2 in table_bounds
-        }
-        if data_filter is not None and auto_filter is not False:
-            if data_filter not in table_refs:
-                buffer.write(f'<autoFilter ref="{data_filter}"/>')
-                self._filtered_data_list.append(FilterData(
-                    sheet_index=worksheet_index,
-                    start_column=0,
-                    end_column=max_cols - 1,
-                    start_row=0,
-                    end_row=num_rows - 1
-                ))
-        if merges:
-            buffer.write(f'<mergeCells count="{len(merges)}">')
-            for ref in merges:
-                buffer.write(f'<mergeCell ref="{ref}"/>')
-            buffer.write('</mergeCells>')
-        if conditional_formats:
+        if body.num_rows > 1 and body.max_cols > 0:
+            data_filter = f"{self._letters[0]}1:{self._letters[body.max_cols - 1]}{body.num_rows}"
+        if data_filter is not None and auto_filter is not False and data_filter not in body.table_refs:
+            parts.append(f'<autoFilter ref="{data_filter}"/>')
+            self._filtered_data_list.append(FilterData(
+                sheet_index=sheet_index,
+                start_column=0,
+                end_column=body.max_cols - 1,
+                start_row=0,
+                end_row=body.num_rows - 1,
+            ))
+        if merge_refs:
+            parts.append(f'<mergeCells count="{len(merge_refs)}">')
+            for ref in merge_refs:
+                parts.append(f'<mergeCell ref="{ref}"/>')
+            parts.append('</mergeCells>')
+        if cf_rules:
             by_range: dict[str, list] = {}
-            for rule in conditional_formats:
+            for rule in cf_rules:
                 by_range.setdefault(rule.sqref, []).append(rule)
             for sqref, rules in by_range.items():
-                buffer.write(f'<conditionalFormatting sqref="{sqref}">')
+                parts.append(f'<conditionalFormatting sqref="{sqref}">')
                 for rule in rules:
-                    buffer.write(self._cf_rule_xml(rule, set(table_bounds)))
-                buffer.write('</conditionalFormatting>')
-        if tables:
-            sheet_tables = []
-            for table, bounds in zip(tables, table_bounds):
-                table_id = self._next_table_id
-                self._next_table_id += 1
-                c1, r1, c2, r2 = bounds
-                ref = (
-                    f"{self._letters[c1]}{r1 + 1}:"
-                    f"{self._letters[c2]}{r2 + 1}"
-                )
-                self._tables_xml[table_id] = self._table_xml(table, table_id)
-                sheet_tables.append((table_id, ref))
-            self._sheet_tables[worksheet_index + 1] = sheet_tables
-
-        buffer.write('<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>')
+                    parts.append(self._cf_rule_xml(rule, set(table_bounds)))
+                parts.append('</conditionalFormatting>')
+        if validations:
+            parts.append(f'<dataValidations count="{len(validations)}">')
+            parts.extend(data_validation_xml(rule) for rule in validations)
+            parts.append('</dataValidations>')
+        if body.hyperlinks:
+            parts.append(self._hyperlinks_xml(body.hyperlinks, link_rels))
+        if print_spec is not None:
+            if print_spec.center_horizontally or print_spec.center_vertically:
+                attrs = ""
+                if print_spec.center_horizontally:
+                    attrs += ' horizontalCentered="1"'
+                if print_spec.center_vertically:
+                    attrs += ' verticalCentered="1"'
+                parts.append(f"<printOptions{attrs}/>")
+        parts.append(self._page_margins_xml(print_spec))
+        if print_spec is not None:
+            setup = self._page_setup_xml(print_spec)
+            if setup:
+                parts.append(setup)
+            header_footer = self._header_footer_xml(print_spec)
+            if header_footer:
+                parts.append(header_footer)
+            if print_spec.row_breaks:
+                parts.append(self._breaks_xml("rowBreaks", print_spec.row_breaks, 16383))
+            if print_spec.col_breaks:
+                parts.append(self._breaks_xml("colBreaks", print_spec.col_breaks, 1048575))
         if drawing_rid is not None:
-            buffer.write(f'<drawing r:id="rId{drawing_rid}"/>')
-        if tables:
-            buffer.write(f'<tableParts count="{len(sheet_tables)}">')
-            for position, (table_id, _ref) in enumerate(sheet_tables, start=1):
-                buffer.write(f'<tablePart r:id="rId{position}"/>')
-            buffer.write('</tableParts>')
-        buffer.write('</worksheet>')
+            parts.append(f'<drawing r:id="{drawing_rid}"/>')
+        if table_specs:
+            table_rels = body.tables
+            parts.append(f'<tableParts count="{len(table_rels)}">')
+            for rid, _table_id in table_rels:
+                parts.append(f'<tablePart r:id="{rid}"/>')
+            parts.append('</tableParts>')
+        parts.append('</worksheet>')
+        return "".join(parts)
 
-        sheet_file.write(buffer.getvalue().encode('utf-8'))
+    def _hyperlinks_xml(self, hyperlinks, link_rels) -> str:
+        rid_by_target = {target: rid for rid, _type, target, _ext in link_rels}
+        parts = [f'<hyperlinks>']
+        for row_idx, col_idx, link in hyperlinks:
+            ref = f"{self._letters[col_idx]}{row_idx + 1}"
+            attrs = f'ref="{ref}"'
+            if link.is_internal:
+                attrs += f' location="{saxutils.escape(link.location, {chr(34): "&quot;"})}"'
+            else:
+                attrs += f' r:id="{rid_by_target[link.target]}"'
+            if link.tooltip:
+                attrs += f' tooltip="{saxutils.escape(link.tooltip, {chr(34): "&quot;"})}"'
+            parts.append(f"<hyperlink {attrs}/>")
+        parts.append('</hyperlinks>')
+        return "".join(parts)
+
+    @staticmethod
+    def _page_margins_xml(print_spec) -> str:
+        margins = _DEFAULT_MARGINS
+        if print_spec is not None and print_spec.margins is not None:
+            margins = print_spec.margins
+        return (
+            f'<pageMargins left="{_format_number(margins.left)}" right="{_format_number(margins.right)}" '
+            f'top="{_format_number(margins.top)}" bottom="{_format_number(margins.bottom)}" '
+            f'header="{_format_number(margins.header)}" footer="{_format_number(margins.footer)}"/>'
+        )
+
+    @staticmethod
+    def _page_setup_xml(print_spec) -> str:
+        attrs = []
+        if print_spec.paper_size is not None:
+            attrs.append(f'paperSize="{_paper_code(print_spec.paper_size)}"')
+        if print_spec.fit_to_page:
+            width = print_spec.fit_to_width if print_spec.fit_to_width is not None else 1
+            height = print_spec.fit_to_height if print_spec.fit_to_height is not None else 1
+            attrs.append(f'fitToWidth="{width}" fitToHeight="{height}"')
+        elif print_spec.scale is not None:
+            attrs.append(f'scale="{print_spec.scale}"')
+        if print_spec.orientation is not None:
+            attrs.append(f'orientation="{print_spec.orientation}"')
+        if not attrs:
+            return ""
+        return f'<pageSetup {" ".join(attrs)}/>'
+
+    @staticmethod
+    def _header_footer_xml(print_spec) -> str:
+        parts = []
+        if print_spec.header is not None:
+            parts.append(f"<oddHeader>{saxutils.escape(print_spec.header)}</oddHeader>")
+        if print_spec.footer is not None:
+            parts.append(f"<oddFooter>{saxutils.escape(print_spec.footer)}</oddFooter>")
+        if not parts:
+            return ""
+        return f"<headerFooter>{''.join(parts)}</headerFooter>"
+
+    @staticmethod
+    def _breaks_xml(tag: str, breaks, max_value: int) -> str:
+        items = "".join(f'<brk id="{value}" max="{max_value}" man="1"/>' for value in breaks)
+        return f'<{tag} count="{len(breaks)}" manualBreakCount="{len(breaks)}">{items}</{tag}>'
+
+    def _write_empty_sheet(self, sheet_index: int) -> None:
+        """A sheet that was added but never written holds no rows."""
+        self._zf.writestr(
+            f"xl/worksheets/sheet{sheet_index + 1}.xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<sheetData/></worksheet>',
+        )
 
     def _write_string_cell(self, buffer: io.StringIO, cell_value: str, is_header: bool = False, xf_index: int = None):
+        check_cell_text(cell_value)
         if self._useSharedStrings:
             self._sst_all_count += 1
             if cell_value not in self._shared_strings_dict:
@@ -1639,7 +1865,7 @@ class XlsxWriter:
                 style_ref = ' s="3"' if is_header else ''
             buffer.write(f'<c t="s"{style_ref}><v>{string_index}</v></c>')
         else:
-            escaped_value = saxutils.escape(cell_value)
+            escaped_value = xstring_escape(saxutils.escape(cell_value))
             if xf_index is not None:
                 style_ref = f' s="{xf_index}"'
             else:

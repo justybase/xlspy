@@ -5,6 +5,157 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Row and column groups (Excel's outline `+`/`−` buttons) in `XlsxWriter` and
+  `XlsbWriter`: `row_groups` and `column_groups` take `Group(first, last,
+  collapsed=False)` ranges on `write_sheet`, `write_dataframe`, `to_xlsx` and
+  `to_xlsb`. Nesting sets the level (up to seven), summaries go below and to
+  the right, and collapsed groups are hidden. Sheets without groups are written
+  as before.
+- XLSX formulas: `Formula(text, value=..., array_ref=...)` writes formula
+  cells with optional cached results and legacy array formulas. Post-2007
+  functions get the `_xlfn.` prefix the file format requires; `LET` and the
+  `LAMBDA` family are refused.
+- XLSX data validation: `DataValidation` for list (literal or range source),
+  whole, decimal, date, time, text length and custom rules, with operators,
+  prompts, error messages and dropdown visibility.
+- XLSX hyperlinks: `Hyperlink` as a cell value, for external web and mail
+  addresses or `#Sheet!A1` locations, with text, tooltip and a built-in link style.
+  Unsafe or unsupported schemes are refused.
+- XLSX images: `Image` for PNG and JPEG files, placed at an anchor cell with
+  pixel sizes read from the file when not given.
+- XLSX print settings: `PrintSettings` and `PageMargins` for orientation, paper
+  size, margins, print area, repeating rows and columns, fit-to-page or scale,
+  centering, headers and footers, and manual page breaks.
+- XLSX chart types and options: horizontal bar (`"barh"`) and scatter XY
+  (`"scatter"`, with `x_values`) charts; `ChartAxis`, `ChartLegend`,
+  `DataLabels`, `ChartMarker`, series colours, `title_size`, and the
+  `x_axis`/`y_axis` settings. The original `Chart("bar")` remains a column chart.
+- Bounded-memory streaming. XLSX `write_sheet` consumes its input once and
+  encodes rows into a spool (in memory up to `spool_max_bytes`, then on disk).
+  `XlsbWriter` gains `useSharedStrings=False` (inline text, so no shared-string
+  table grows) and chart caches now keep only the cells the charts read.
+- `XlsbWriter` rejects features it cannot write (formulas, hyperlinks, and the
+  new chart options) with an explicit error rather than writing them as text.
+- `xlspy.refs`, `xlspy.charts`, `xlspy.formulas`, `xlspy.data_validation`,
+  `xlspy.hyperlinks`, `xlspy.images` and `xlspy.printing` modules; the new
+  public classes are exported from `xlspy`.
+
+- XLSB inline text (`useSharedStrings=False`) is encoded by the C extension
+  (`encode_xlsb_row_inline`). Rows it cannot encode fall back to the Python
+  encoder.
+- `examples/write_benchmark.py`: a reproducible write benchmark (isolated
+  worker processes, medians, peak memory, optional tracemalloc, JSON and CSV
+  output with environment metadata) for the xlspy writers with and without the
+  C extension, openpyxl and xlsxwriter.
+
+### Changed
+
+- `sharedStrings.xml` is written in chunks of 4,096 entries instead of one
+  growing string. The bytes are unchanged. On Windows, 50,000 × 50 XLSX went
+  from 3.73 s to 1.98 s, and 200,000 × 50 from 41.12 s / 327 MB to 13.48 s /
+  260 MB peak.
+- Cell text longer than Excel's limit of 32,767 UTF-16 code units raises
+  `ValueError` in every writer path: XLSX and XLSB, shared and inline strings,
+  the C and Python encoders, styled cells, DataFrames, hyperlink text and cached
+  formula results. Previously XLSX wrote such text unchanged, which Excel 16.0
+  refuses to open, and shared-string XLSB silently cut it to 32,767 units.
+- The C row encoders hand any row holding an object of another type (such as a
+  `Formula` or `Hyperlink`) to the Python encoder, instead of writing its
+  `str()`. This replaces a per-row type scan in both writers. The C XLSX encoder
+  also copies text with no characters to escape in runs instead of byte by byte.
+  Together these made 200,000 × 50 writes 5–12% faster on Windows (XLSX shared
+  13.69 → 12.04 s, XLSX inline 11.56 → 10.79 s, XLSB shared 5.44 → 5.17 s, XLSB
+  inline 4.76 → 4.40 s).
+- `XlsxWriter` and `XlsbWriter` share one implementation of the open, save and
+  close lifecycle (`xlspy._output.StagedWriter`).
+- XLSB chart caches keep one list per referenced column instead of a dict keyed
+  by cell. On 200,000 × 3 with charts, the Python allocation peak fell from
+  119.5 MB to 105.7 MB.
+- A workbook is published only after a complete, successful save. `XlsxWriter`
+  and `XlsbWriter` build the archive in a staging file: a temporary file next to
+  a path target, moved into place with `os.replace`, or a spool (memory, then
+  disk) copied into a file-object target. If `write_sheet` raises, saving fails,
+  or the `with` block exits with an exception, the target is left as it was: no
+  new file, an existing file unchanged, a stream untouched. Previously the
+  partial workbook was saved on exit, and a stream received the written members
+  and a ZIP end record.
+- After a failed write, `write_sheet` and `save()` raise `RuntimeError`; `save()`
+  also refuses to run twice. The file is published when the writer closes, so a
+  writer closed without a successful `save()` publishes nothing.
+- Chart and cell-reference classes moved to `xlspy.charts` and `xlspy.refs`.
+  `xlspy.styles` still exports `Chart` and `ChartSeries`.
+- The `_FilterDatabase` defined name quotes its sheet name, so sheets with
+  spaces get a valid filter range.
+- Explicit `column_widths` for columns beyond the data are written.
+
+### Fixed
+
+- `write_sheet` no longer materializes the whole sheet in memory (XLSX and XLSB).
+- XLSB inline text counted code points instead of UTF-16 code units, so text
+  containing characters outside the Basic Multilingual Plane (such as emoji)
+  produced a record whose character count did not match its payload.
+- XLSB inline text containing a lone surrogate was written as invalid UTF-16. It
+  is now refused with `UnicodeEncodeError`, as the shared-string path already did.
+- The C extension sized XLSB column widths from UTF-8 bytes instead of
+  characters, so non-ASCII headers got different widths from the Python writer.
+- XLSX text with control characters (such as `"\x07"` or `"\x00"`), carriage
+  returns, or U+FFFE/U+FFFF produced ill-formed XML in all four string paths. Such
+  characters are now written as OOXML `_xHHHH_` escapes, literal `_xHHHH_` text
+  is protected with `_x005F_`, and the XLSX reader decodes both. Excel 16.0 reads
+  the original text back.
+- The C XLSB encoder dropped a cell whose `str()` raised and wrote the row without
+  it; the error now reaches the caller, as in the Python encoder. When the C
+  shared-string XLSB encoder hands a row back to Python, the strings it had
+  already added to the table are removed again, so string indexes stay in step.
+- Undefined behaviour found with UBSan: the C XLSB encoder left-shifted negative
+  integers when writing RK numbers, and the C reader built 32-bit values by
+  shifting into a 32-bit `long` (Windows). Both now use unsigned arithmetic; the
+  bytes written and the values read are unchanged.
+- Tables (XLSX and XLSB) without explicit `columns` were written with the
+  names `Column1`, `Column2`, … while the header cells held other text; Excel
+  16.0 refuses to open such a workbook. Names now come from the header row
+  (captured while the rows stream, at any depth). Header rows Excel would refuse
+  (an empty or non-text header cell, explicit `columns` that differ from the
+  cells other than in case, duplicate names) raise `ValueError` and nothing is
+  published. Table names that read as cell references (`T1`, `R1C1`, `C`) are
+  refused when the `ExcelTable` is created. This also affected the
+  `xlsx_report_features.py` example and was present in 0.7.0.
+- An error raised while the C shared-string encoders looked up a string (for
+  example by a `str` subclass whose `__hash__` raises) was printed as "Exception
+  ignored" and then reported as `MemoryError`. The original error now reaches
+  the caller, from both the XLSX and the XLSB encoder.
+- Row groups (XLSX and XLSB) set outline state only on rows that held data, so
+  a collapsed group ending on the last data row lost the `collapsed` flag on its
+  summary row, and a group reaching past the data lost its level there. These
+  rows are now written empty with their level, hidden and collapsed flags. A
+  group ending on the sheet's last row or column gets no summary past the sheet.
+- `Formula(value=...)` accepted `inf`, `-inf` and non-finite `Decimal` cached
+  values and wrote `<v>inf</v>`, which is not a valid number in OOXML. Only
+  finite cached numbers are accepted now.
+- An XLSX workbook whose drawings held only images contained `theme1.xml`
+  without a workbook relationship to it. The theme is now linked whenever it
+  is written.
+- List data validations refused any unquoted source containing a comma, which
+  ruled out dynamic lists such as `OFFSET($B$1,0,0,5,1)`. Only commas outside
+  function arguments, strings and quoted sheet names are refused now.
+- Internal hyperlinks were checked against sheet names after stripping every
+  apostrophe and comparing case-sensitively, so `#'''x'!A1` (sheet `'x`) and
+  `#sheet1!A1` (sheet `Sheet1`) were refused. Only the enclosing quotes are
+  removed, and names are compared ignoring case, as Excel does.
+- A `write_sheet` call rejected by validation could leave state behind: XLSB
+  kept the sheet's charts, table ids and conditional-format priorities, and both
+  writers kept table names, so a retry produced orphaned parts or refused a
+  valid name. Every option is now validated before the writer records anything.
+- Table header rows are checked as soon as they stream past instead of after
+  the whole sheet has been encoded, so a bad header fails before millions of
+  rows are read. A `Hyperlink` header cell names its column by its text.
+- `hidden_columns` with a negative index was accepted by `XlsxWriter`. Both
+  writers now share one validation for hidden rows and columns.
+
 ## [0.7.0] - 2026-10-18
 
 ### Added

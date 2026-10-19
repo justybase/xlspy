@@ -142,7 +142,7 @@ def test_cf_and_table_round_trip(tmp_path):
                     "638EC6",
                 ),
             ],
-            tables=[ExcelTable("T1", "A1:C5", columns=["a", "b", "c"])],
+            tables=[ExcelTable("Tbl", "A1:C5", columns=["a", "b", "c"])],
         )
 
     sheet = openpyxl.load_workbook(path)["Data"]
@@ -151,7 +151,7 @@ def test_cf_and_table_round_trip(tmp_path):
         for range_string in sheet.conditional_formatting
     )
     assert total == 3
-    assert sheet.tables["T1"].ref == "A1:C5"
+    assert sheet.tables["Tbl"].ref == "A1:C5"
 
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
@@ -246,7 +246,7 @@ def test_model_validation_rejects_bad_input():
     with pytest.raises(ValueError):
         ExcelTable("1bad", "A1:B2")
     with pytest.raises(ValueError):
-        ExcelTable("T1", "A1:C3", columns=["only-one"])
+        ExcelTable("Tbl", "A1:C3", columns=["only-one"])
     with pytest.raises(TypeError):
         Style(fill={"pattern": "solid"})
     namespace = {"GradientFill": type("GradientFill", (), {}), "Style": Style}

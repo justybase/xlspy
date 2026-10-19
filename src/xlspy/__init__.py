@@ -8,8 +8,6 @@ from .styles import (
     Alignment,
     Border,
     CellIsRule,
-    Chart,
-    ChartSeries,
     Color,
     ColorScaleRule,
     DataBarRule,
@@ -26,6 +24,20 @@ from .styles import (
     Stop,
     Style,
 )
+from .charts import (
+    Chart,
+    ChartAxis,
+    ChartLegend,
+    ChartMarker,
+    ChartSeries,
+    DataLabels,
+)
+from .data_validation import DataValidation
+from .formulas import Formula
+from .hyperlinks import Hyperlink
+from .images import Image
+from .outline import Group
+from .printing import PageMargins, PrintSettings
 from .dataframe import dataframe_to_rows, to_xlsb, to_xlsx
 
 __version__ = "0.7.0"
@@ -57,6 +69,17 @@ __all__ = [
     'ExcelTable',
     'Chart',
     'ChartSeries',
+    'ChartAxis',
+    'ChartLegend',
+    'ChartMarker',
+    'DataLabels',
+    'Formula',
+    'DataValidation',
+    'Hyperlink',
+    'Image',
+    'Group',
+    'PageMargins',
+    'PrintSettings',
     'dataframe_to_rows',
     'to_xlsx',
     'to_xlsb',

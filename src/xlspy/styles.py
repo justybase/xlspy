@@ -15,6 +15,14 @@ from functools import lru_cache
 import re
 from typing import Mapping, NamedTuple
 
+# Chart and cell-reference models live in their own modules; they are
+# re-exported here so that ``xlspy.styles`` keeps its historical names.
+from .charts import Chart, ChartSeries  # noqa: F401
+from .hyperlinks import Hyperlink
+from .refs import _column_index, column_label, parse_cell_range  # noqa: F401
+
+_EMPTY_STYLES = {}
+
 
 # ---------------------------------------------------------------------------
 # Structured cell-style model (openpyxl-like, XLSB-safe pure dataclasses)
@@ -22,6 +30,16 @@ from typing import Mapping, NamedTuple
 
 _ARGB_RE = re.compile(r"[0-9A-F]{8}")
 _TABLE_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
+# Table names Excel refuses because they read as cell references.
+_A1_NAME_RE = re.compile(r"([A-Za-z]{1,3})([0-9]+)")
+_R1C1_NAME_RE = re.compile(r"[Rr][0-9]*[Cc][0-9]*|[Rr][0-9]*|[Cc][0-9]*")
+
+
+def _is_reference_like(name: str) -> bool:
+    match = _A1_NAME_RE.fullmatch(name)
+    if match is not None and _column_index(match.group(1).upper()) < 16384 and 1 <= int(match.group(2)) <= 1048576:
+        return True
+    return _R1C1_NAME_RE.fullmatch(name) is not None
 
 _UNDERLINES = {"none", "single", "double", "singleAccounting", "doubleAccounting"}
 _VERT_ALIGNS = {"superscript", "subscript", "baseline"}
@@ -737,6 +755,11 @@ class ExcelTable:
             raise ValueError(
                 f"invalid table display name {self.display_name!r}"
             )
+        if _is_reference_like(self.display_name):
+            raise ValueError(
+                f"invalid table display name {self.display_name!r}: "
+                "it reads as a cell reference, which Excel refuses"
+            )
         first_col, _, last_col, _ = parse_cell_range(self.ref)
         if self.columns is not None:
             if not isinstance(self.columns, (list, tuple)):
@@ -762,94 +785,136 @@ class ExcelTable:
             raise TypeError("style_name must be a string")
 
 
-_CHART_TYPES = {"bar", "line", "pie"}
+def table_column_names(table: ExcelTable, header_cells) -> list[str]:
+    """Column names for ``table``, checked against the cells of its header row.
 
-
-def _validate_chart_range(reference: str, kind: str) -> tuple[int, int, int, int]:
-    """Parse an A1 range on the chart's own sheet (no ``!`` allowed)."""
-    if not isinstance(reference, str) or "!" in reference:
-        raise ValueError(f"{kind} must be a range on the chart sheet, got {reference!r}")
-    return parse_cell_range(reference)
-
-
-@dataclass(frozen=True, slots=True)
-class ChartSeries:
-    """One data series of a ``Chart``: values with an optional legend label."""
-
-    values: str
-    title: str | None = None
-    title_cell: str | None = None
-    categories: str | None = None
-
-    def __post_init__(self):
-        if not isinstance(self.values, str):
-            raise TypeError("series values must be an A1 range such as 'B2:B5'")
-        _validate_chart_range(self.values, "series values")
-        if self.title is not None and not isinstance(self.title, str):
-            raise TypeError("series title must be a string or None")
-        if self.title_cell is not None:
-            if not isinstance(self.title_cell, str):
-                raise TypeError("series title_cell must be an A1 cell or None")
-            first_col, first_row, last_col, last_row = _validate_chart_range(
-                self.title_cell, "series title_cell"
-            )
-            if (first_col, first_row) != (last_col, last_row):
-                raise ValueError(
-                    f"series title_cell must be a single cell, got {self.title_cell!r}"
-                )
-        if self.title is not None and self.title_cell is not None:
-            raise ValueError("series title and title_cell are mutually exclusive")
-        if self.categories is not None:
-            if not isinstance(self.categories, str):
-                raise TypeError("series categories must be an A1 range or None")
-            _validate_chart_range(self.categories, "series categories")
-
-
-@dataclass(frozen=True, slots=True)
-class Chart:
-    """A chart anchored to a cell of the sheet it is written to."""
-
-    chart_type: str
-    series: list[ChartSeries] | tuple[ChartSeries, ...]
-    title: str | None = None
-    anchor: str = "E2"
-    width: float = 15.0
-    height: float = 7.5
-    style: int | None = None
-
-    def __post_init__(self):
-        if self.chart_type not in _CHART_TYPES:
+    Excel opens a table only when each header cell holds text equal (ignoring
+    case) to its column's name and the names are unique; Excel 16.0 refuses
+    the whole file otherwise. Names come from ``table.columns`` or, when that
+    is not given, from the header cells. ``header_cells`` is the sheet row
+    holding the header (``None`` if the data never reached it).
+    """
+    first_col, first_row, last_col, _ = parse_cell_range(table.ref)
+    width = last_col - first_col + 1
+    if not table.header_row:
+        if table.columns is not None:
+            return list(table.columns)
+        return [f"Column{i + 1}" for i in range(width)]
+    row = header_cells or ()
+    names = []
+    for offset in range(width):
+        col = first_col + offset
+        ref = f"{column_label(col)}{first_row + 1}"
+        cell = row[col] if col < len(row) else None
+        if isinstance(cell, tuple) and len(cell) == 2 and isinstance(cell[1], str):
+            cell = cell[0]  # a (value, number format) cell
+        if isinstance(cell, Hyperlink):
+            cell = cell.display_text  # written to the cell as plain text
+        if not isinstance(cell, str) or cell == "":
             raise ValueError(
-                f"invalid chart type {self.chart_type!r}; "
-                f"expected one of {sorted(_CHART_TYPES)}"
+                f"table {table.display_name!r}: header cell {ref} must hold text "
+                f"(found {cell!r}); Excel requires a text header for every table column"
             )
-        if not isinstance(self.series, (list, tuple)) or not self.series:
-            raise ValueError("a chart needs at least one series")
-        series = tuple(self.series)
-        for item in series:
-            if not isinstance(item, ChartSeries):
-                raise TypeError("chart series must be ChartSeries instances")
-        object.__setattr__(self, "series", series)
-        if self.title is not None and not isinstance(self.title, str):
-            raise TypeError("chart title must be a string or None")
-        if not isinstance(self.anchor, str):
-            raise TypeError("chart anchor must be an A1 cell such as 'E2'")
-        first_col, first_row, last_col, last_row = _validate_chart_range(
-            self.anchor, "chart anchor"
-        )
-        if (first_col, first_row) != (last_col, last_row):
-            raise ValueError(f"chart anchor must be a single cell, got {self.anchor!r}")
-        for name in ("width", "height"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise TypeError(f"chart {name} must be a number (cm)")
-            if value <= 0:
-                raise ValueError(f"chart {name} must be positive")
-        if self.style is not None:
-            if isinstance(self.style, bool) or not isinstance(self.style, int):
-                raise TypeError("chart style must be an int or None")
-            if not 1 <= self.style <= 48:
-                raise ValueError("chart style must be between 1 and 48")
+        if table.columns is not None:
+            name = table.columns[offset]
+            if name.casefold() != cell.casefold():
+                raise ValueError(
+                    f"table {table.display_name!r}: column name {name!r} does not match "
+                    f"header cell {ref} ({cell!r}); Excel requires them to be equal"
+                )
+        else:
+            name = cell
+        names.append(name)
+    seen = set()
+    for name in names:
+        if name.casefold() in seen:
+            raise ValueError(
+                f"table {table.display_name!r}: duplicate column name {name!r}; "
+                "Excel requires unique table column names"
+            )
+        seen.add(name.casefold())
+    return names
+
+
+def capture_table_headers(rows, tables, store: dict):
+    """Yield ``rows`` unchanged, checking each table's header row as it passes.
+
+    A copy of every header row is kept in ``store`` (row index -> cells) for
+    ``table_column_names``. Checking while the row streams past means a bad
+    header fails before the rest of the sheet is encoded.
+    """
+    by_row: dict[int, list] = {}
+    for table in tables:
+        if table.header_row:
+            by_row.setdefault(parse_cell_range(table.ref)[1], []).append(table)
+    if not by_row:
+        yield from rows
+        return
+    for row_idx, row in enumerate(rows):
+        header_tables = by_row.get(row_idx)
+        if header_tables is not None:
+            cells = list(row)
+            store[row_idx] = cells
+            for table in header_tables:
+                table_column_names(table, cells)
+        yield row
+
+
+def explicit_cf_priorities(rules, *taken: set) -> list[int]:
+    """The explicit priorities of ``rules``, checked against each other and ``taken``.
+
+    Nothing is registered, so the writer can reserve them only once the whole
+    sheet's options are valid.
+    """
+    priorities: list[int] = []
+    for rule in rules:
+        priority = getattr(rule, "priority", None)
+        if priority is None:
+            continue
+        if priority in priorities or any(priority in used for used in taken):
+            raise ValueError(f"duplicate conditional formatting priority {priority}")
+        priorities.append(priority)
+    return priorities
+
+
+def normalize_hidden_columns(items, kind: str = "hidden_columns") -> set[int]:
+    """Validate a collection of column letters or 0-based ints; returns the indices."""
+    if items is None:
+        return set()
+    if isinstance(items, (str, bytes)):
+        raise TypeError(f"{kind} must be a collection of columns/rows, not a string")
+    try:
+        values = list(items)
+    except TypeError:
+        raise TypeError(f"{kind} must be a collection or None") from None
+    result = set()
+    for key in values:
+        if isinstance(key, str):
+            col = _column_index(key)
+        elif isinstance(key, int) and not isinstance(key, bool):
+            col = key
+        else:
+            raise TypeError(f"{kind} keys must be column letters or 0-based ints")
+        if col < 0 or col >= 16384:
+            raise ValueError(f"hidden column out of range: {col}")
+        result.add(col)
+    return result
+
+
+def normalize_hidden_rows(items) -> set[int]:
+    """Validate a collection of 0-based row ints; returns them as a set."""
+    if items is None:
+        return set()
+    try:
+        candidates = list(items)
+    except TypeError:
+        raise TypeError("hidden_rows must be a collection or None") from None
+    result = set()
+    for key in candidates:
+        if not isinstance(key, int) or isinstance(key, bool) or key < 0:
+            raise TypeError("hidden_rows entries must be 0-based row ints")
+        result.add(key)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1142,36 +1207,6 @@ def normalize_color(value: str) -> str:
     if not re.fullmatch(r"[0-9A-F]{6}", color):
         raise ValueError(f"invalid RGB color {value!r}; expected '#RRGGBB'")
     return color
-
-
-_CELL_RE = re.compile(r"^\$?([A-Za-z]{1,3})\$?([1-9][0-9]*)$")
-_EMPTY_STYLES = {}
-
-
-def _column_index(label: str) -> int:
-    result = 0
-    for char in label.upper():
-        result = result * 26 + ord(char) - 64
-    return result - 1
-
-
-def parse_cell_range(reference: str) -> tuple[int, int, int, int]:
-    """Parse an A1 cell or rectangular range into zero-based bounds."""
-    if not isinstance(reference, str):
-        raise TypeError("style range keys must be A1 references such as 'A1:D1'")
-    parts = reference.split(":")
-    if len(parts) not in (1, 2):
-        raise ValueError(f"invalid A1 range {reference!r}")
-    matches = [_CELL_RE.fullmatch(part) for part in parts]
-    if any(match is None for match in matches):
-        raise ValueError(f"invalid A1 range {reference!r}")
-    (c1, r1), (c2, r2) = (matches[0].groups(), matches[-1].groups())
-    bounds = (_column_index(c1), int(r1) - 1, _column_index(c2), int(r2) - 1)
-    if bounds[2] < bounds[0] or bounds[3] < bounds[1]:
-        raise ValueError(f"range end precedes its start in {reference!r}")
-    if bounds[2] >= 16384 or bounds[3] >= 1048576:
-        raise ValueError(f"range exceeds Excel limits: {reference!r}")
-    return bounds
 
 
 def normalize_style_ranges(styles: Mapping[str, Style] | None):

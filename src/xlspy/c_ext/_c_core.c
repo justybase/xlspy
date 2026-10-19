@@ -66,18 +66,24 @@ static long _read_varint(const unsigned char *data, Py_ssize_t data_len, Py_ssiz
     return value;
 }
 
+/* Assembled unsigned: with a 32-bit long (Windows), `(long)byte << 24`
+   overflows for bytes >= 0x80, which is undefined behaviour. */
+static unsigned long _le_uint32(const unsigned char *p)
+{
+    return (unsigned long)p[0] | ((unsigned long)p[1] << 8) |
+           ((unsigned long)p[2] << 16) | ((unsigned long)p[3] << 24);
+}
+
 static long _read_uint32(const unsigned char *data, Py_ssize_t data_len, Py_ssize_t pos)
 {
     if (pos + 4 > data_len) return -1;
-    return (long)data[pos] | ((long)data[pos+1] << 8) |
-           ((long)data[pos+2] << 16) | ((long)data[pos+3] << 24);
+    return (long)_le_uint32(data + pos);
 }
 
 static int _read_uint32_safe(const unsigned char *data, Py_ssize_t data_len, Py_ssize_t pos, long *out)
 {
     if (pos + 4 > data_len) return 0;
-    *out = (long)data[pos] | ((long)data[pos+1] << 8) |
-           ((long)data[pos+2] << 16) | ((long)data[pos+3] << 24);
+    *out = (long)_le_uint32(data + pos);
     return 1;
 }
 
@@ -322,29 +328,13 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
     return cell_val;
 }
 
-/* ===== Clean up cur_cells when _build_row fails ===== */
-static void _free_cur_cells(PyObject **cur_cells, long cur_cells_len)
+/* ===== Clean up cur_cells when a row cannot be built ===== */
+static void _free_cur_cells(PyObject **cur_cells, Py_ssize_t cur_cells_len)
 {
     if (!cur_cells) return;
-    for (long c = 0; c < cur_cells_len; c++)
+    for (Py_ssize_t c = 0; c < cur_cells_len; c++)
         Py_XDECREF(cur_cells[c]);
     free(cur_cells);
-}
-
-/* ===== Build a row list from cur_cells array ===== */
-static PyObject *_build_row(PyObject **cur_cells, long cur_cells_len, long cols_per_row)
-{
-    long out_cols = (cols_per_row > 0) ? cols_per_row : (cur_cells_len > 0 ? cur_cells_len : 1);
-    PyObject *row_list = PyList_New(out_cols);
-    if (!row_list) return NULL;
-    for (long c = 0; c < out_cols; c++)
-    {
-        if (c < cur_cells_len && cur_cells[c])
-            PyList_SET_ITEM(row_list, c, cur_cells[c]);
-        else
-            PyList_SET_ITEM(row_list, c, Py_None);
-    }
-    return row_list;
 }
 
 /* ===== Existing writer functions ===== */
@@ -355,12 +345,14 @@ static double _get_excel_serial(PyObject *cell, int cell_kind)
     if (!ymd) { PyErr_Clear(); return -1.0; }
     long year = PyLong_AsLong(ymd);
     Py_DECREF(ymd);
+    if (year == -1 && PyErr_Occurred()) { PyErr_Clear(); return -1.0; }
     if (year < 1900 || year > 9999) return -1.0;
 
     PyObject *ord = PyObject_CallMethod(cell, "toordinal", NULL);
     if (!ord) { PyErr_Clear(); return -1.0; }
     long ord_val = PyLong_AsLong(ord);
     Py_DECREF(ord);
+    if (ord_val == -1 && PyErr_Occurred()) { PyErr_Clear(); return -1.0; }
 
     long epoch_ord = 693594;
     /* Excel's fictitious 1900-02-29: dates before 1900-03-01 use the
@@ -468,10 +460,13 @@ static PyObject *C_calc_column_widths(PyObject *self, PyObject *args)
             {
                 PyObject *str_cell = PyObject_Str(cell);
                 if (!str_cell) { PyErr_Clear(); Py_XDECREF(owned); continue; }
-                const char *str_data = PyUnicode_AsUTF8(str_cell);
-                if (!str_data) { Py_DECREF(str_cell); PyErr_Clear(); Py_XDECREF(owned); continue; }
-                const char *nl = strchr(str_data, '\n');
-                Py_ssize_t lenn = nl ? (nl - str_data) : (Py_ssize_t)strlen(str_data);
+                /* Count code points up to the first newline, as len() does in
+                   the Python fallback (UTF-8 bytes would widen non-ASCII text). */
+                Py_ssize_t slen = PyUnicode_GET_LENGTH(str_cell);
+                int skind = PyUnicode_KIND(str_cell);
+                const void *sdata = PyUnicode_DATA(str_cell);
+                Py_ssize_t lenn = 0;
+                while (lenn < slen && PyUnicode_READ(skind, sdata, lenn) != '\n') lenn++;
                 temp_width = 1.25 * (double)lenn + 4.0;
                 Py_DECREF(str_cell);
             }
@@ -579,34 +574,17 @@ static PyObject *_sst_surrogate_error(PyObject *s, Py_ssize_t pos)
     return NULL;
 }
 
-/* Truncated UTF-16 unit count for one shared string, replicating the Python
-   behavior byte-for-byte: units are cut at 32767 and a single trailing high
-   surrogate left by the cut is dropped.  Short strings keep everything,
-   including a trailing lone high surrogate. */
-static Py_ssize_t _sst_truncated_units(int kind, const void *data, Py_ssize_t slen)
+/* Excel's per-cell text limit in UTF-16 code units, for XLSX and XLSB alike
+   (see xlspy/_text.py, which owns the error message). */
+#define _CELL_TEXT_LIMIT 32767
+
+/* UTF-16 code units in one shared string (a non-BMP character is two).  The
+   caller has already rejected lone surrogates and checked the cell limit. */
+static Py_ssize_t _sst_units(int kind, const void *data, Py_ssize_t slen)
 {
     Py_ssize_t ulen = 0;
-    int cut = 0;
-    int last_high = 0;
     for (Py_ssize_t k = 0; k < slen; k++)
-    {
-        if (ulen >= 32767) { cut = 1; break; }
-        Py_UCS4 ch = PyUnicode_READ(kind, data, k);
-        if (ch < 0x10000)
-        {
-            ulen++;
-            last_high = (ch >= 0xD800 && ch <= 0xDBFF);
-        }
-        else
-        {
-            ulen++;              /* high surrogate unit */
-            last_high = 1;
-            if (ulen >= 32767) { cut = 1; break; }  /* low unit cut off */
-            ulen++;              /* low surrogate unit */
-            last_high = 0;
-        }
-    }
-    if (cut && last_high) ulen--;
+        ulen += (PyUnicode_READ(kind, data, k) >= 0x10000) ? 2 : 1;
     return ulen;
 }
 
@@ -617,31 +595,22 @@ static unsigned char *_write_utf16_unit(unsigned char *p, unsigned int unit)
     return p;
 }
 
-/* Encode at most `budget` UTF-16LE units (budget comes from
-   _sst_truncated_units, so encoding is exact). */
+/* Encode every UTF-16LE unit of the string; _sst_units sized the record. */
 static unsigned char *_write_sst_string(unsigned char *p, int kind,
-                                        const void *data, Py_ssize_t slen,
-                                        Py_ssize_t budget)
+                                        const void *data, Py_ssize_t slen)
 {
-    Py_ssize_t emitted = 0;
-    for (Py_ssize_t k = 0; k < slen && emitted < budget; k++)
+    for (Py_ssize_t k = 0; k < slen; k++)
     {
         Py_UCS4 ch = PyUnicode_READ(kind, data, k);
         if (ch < 0x10000)
         {
             p = _write_utf16_unit(p, (unsigned int)ch);
-            emitted++;
         }
         else
         {
             ch -= 0x10000;
             p = _write_utf16_unit(p, 0xD800u | (unsigned int)(ch >> 10));
-            emitted++;
-            if (emitted < budget)
-            {
-                p = _write_utf16_unit(p, 0xDC00u | (unsigned int)(ch & 0x3FF));
-                emitted++;
-            }
+            p = _write_utf16_unit(p, 0xDC00u | (unsigned int)(ch & 0x3FF));
         }
     }
     return p;
@@ -684,7 +653,14 @@ static PyObject *C_encode_xlsb_sst(PyObject *self, PyObject *args)
             Py_ssize_t err_pos = 0;
             if (_sst_check_surrogates(kind, data, slen, &err_pos) < 0)
                 return _sst_surrogate_error(s, err_pos);
-            ulen = _sst_truncated_units(kind, data, slen);
+            ulen = _sst_units(kind, data, slen);
+            if (ulen > _CELL_TEXT_LIMIT)
+            {
+                PyErr_Format(PyExc_ValueError,
+                    "cell text exceeds Excel's %d-character limit (%zd UTF-16 code units)",
+                    _CELL_TEXT_LIMIT, ulen);
+                return NULL;
+            }
         }
         unsigned long rec_len = 5UL + 2UL * (unsigned long)ulen;
         total += 1 + _varint_len(rec_len) + 1 + 4 + 2 * (size_t)ulen;
@@ -715,7 +691,7 @@ static PyObject *C_encode_xlsb_sst(PyObject *self, PyObject *args)
         {
             kind = PyUnicode_KIND(s);
             data = PyUnicode_DATA(s);
-            ulen = _sst_truncated_units(kind, data, slen);
+            ulen = _sst_units(kind, data, slen);
         }
         unsigned long rec_len = 5UL + 2UL * (unsigned long)ulen;
         *p++ = 0x13;
@@ -726,7 +702,7 @@ static PyObject *C_encode_xlsb_sst(PyObject *self, PyObject *args)
             memcpy(p, &ul, 4); p += 4;
         }
         if (ulen > 0)
-            p = _write_sst_string(p, kind, data, slen, ulen);
+            p = _write_sst_string(p, kind, data, slen);
     }
     *p++ = 0xA0; *p++ = 0x01; *p++ = 0x00;
 
@@ -846,14 +822,33 @@ static PyObject *C_read_xlsb_shared_strings(PyObject *self, PyObject *args)
     return result;
 }
 
-/* Shared strings in encoder */
+/* 1 when s fits in a cell.  Each code point is one or two units, so only
+   text longer than half the limit needs counting, and only 4-byte-kind
+   strings can hold the two-unit characters. */
+static int _cell_text_fits(PyObject *s)
+{
+    Py_ssize_t slen = PyUnicode_GET_LENGTH(s);
+    if (slen <= _CELL_TEXT_LIMIT / 2) return 1;
+    if (slen > _CELL_TEXT_LIMIT) return 0;
+    if (PyUnicode_KIND(s) != PyUnicode_4BYTE_KIND) return 1;
+    const Py_UCS4 *data = PyUnicode_4BYTE_DATA(s);
+    Py_ssize_t units = slen;
+    for (Py_ssize_t k = 0; k < slen; k++)
+        if (data[k] >= 0x10000) units++;
+    return units <= _CELL_TEXT_LIMIT;
+}
+
+/* Shared strings in encoder.  Returns -2 (row fallback) for text over the
+   cell limit, so the Python encoder raises the error. */
 static int _write_str_cell(unsigned char **buf, size_t *buf_size, size_t *buf_cap,
                            PyObject *cell_str, PyObject *ss_dict, PyObject *ss_list,
                            unsigned int col_idx, unsigned int row_idx,
                            unsigned int style_override,
                            unsigned int *sst_uniq, unsigned int *sst_all)
 {
-    PyObject *idx_obj = PyDict_GetItem(ss_dict, cell_str);
+    if (!_cell_text_fits(cell_str)) return -2;
+    PyObject *idx_obj = PyDict_GetItemWithError(ss_dict, cell_str);
+    if (!idx_obj && PyErr_Occurred()) return -1;  /* e.g. a str subclass whose hash raises */
     unsigned int string_index;
     unsigned int style_ref = style_override ? style_override : ((row_idx == 0) ? 3 : 0);
 
@@ -864,9 +859,10 @@ static int _write_str_cell(unsigned char **buf, size_t *buf_size, size_t *buf_ca
         string_index = *sst_uniq;
         PyObject *si = PyLong_FromLong((long)string_index);
         if (!si) return -1;
+        /* List before dict, as in _xlsx_sst_index: see the note there. */
+        if (PyList_Append(ss_list, cell_str) < 0) { Py_DECREF(si); return -1; }
         if (PyDict_SetItem(ss_dict, cell_str, si) < 0) { Py_DECREF(si); return -1; }
         Py_DECREF(si);
-        if (PyList_Append(ss_list, cell_str) < 0) return -1;
         (*sst_uniq)++;
     }
     (*sst_all)++;
@@ -888,22 +884,91 @@ static int _write_str_cell(unsigned char **buf, size_t *buf_size, size_t *buf_ca
     return 0;
 }
 
-static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
+/* Inline text (BrtCellSt, record 0x06): the string is stored in the cell, so
+   the shared-strings table does not grow.  The count is in UTF-16 code units
+   (a non-BMP character is two), exactly as Excel reads it.  Returns -2 when
+   the string needs the Python path, which owns the error: more than 32767
+   units, or a lone surrogate. */
+static int _write_inline_str_cell(unsigned char **buf, size_t *buf_size, size_t *buf_cap,
+                                  PyObject *s, unsigned int col_idx, unsigned int style_ref)
 {
-    PyObject *row;
-    PyObject *ss_dict;
-    PyObject *ss_list;
-    unsigned int sst_uniq;
-    unsigned int sst_all;
-    unsigned int row_idx;
-    PyObject *style_ids = Py_None;
+    int kind = PyUnicode_KIND(s);
+    const void *data = PyUnicode_DATA(s);
+    Py_ssize_t slen = PyUnicode_GET_LENGTH(s);
+    Py_ssize_t units = 0;
 
-    if (!PyArg_ParseTuple(args, "OOOIII|O", &row, &ss_dict, &ss_list, &sst_uniq, &sst_all, &row_idx, &style_ids))
-        return NULL;
+    for (Py_ssize_t k = 0; k < slen; k++)
+    {
+        Py_UCS4 ch = PyUnicode_READ(kind, data, k);
+        if (ch >= 0xD800 && ch <= 0xDFFF) return -2;
+        units += (ch >= 0x10000) ? 2 : 1;
+    }
+    if (units > _CELL_TEXT_LIMIT) return -2;
+
+    size_t payload = 12 + 2 * (size_t)units;
+    size_t need = *buf_size + 1 + _varint_len((unsigned long)payload) + payload;
+    if (need > *buf_cap)
+    {
+        *buf_cap = need + 4096;
+        unsigned char *nb = (unsigned char *)PyMem_Realloc(*buf, *buf_cap);
+        if (!nb) return -1;
+        *buf = nb;
+    }
+
+    unsigned char *p = *buf + *buf_size;
+    *p++ = 0x06;
+    p = _write_varint_bytes(p, (unsigned long)payload);
+    unsigned int cch = (unsigned int)units;
+    memcpy(p, &col_idx, 4); p += 4;
+    memcpy(p, &style_ref, 4); p += 4;
+    memcpy(p, &cch, 4); p += 4;
+    for (Py_ssize_t k = 0; k < slen; k++)
+    {
+        Py_UCS4 ch = PyUnicode_READ(kind, data, k);
+        if (ch < 0x10000)
+            p = _write_utf16_unit(p, (unsigned int)ch);
+        else
+        {
+            ch -= 0x10000;
+            p = _write_utf16_unit(p, 0xD800u | (unsigned int)(ch >> 10));
+            p = _write_utf16_unit(p, 0xDC00u | (unsigned int)(ch & 0x3FF));
+        }
+    }
+    *buf_size = (size_t)(p - *buf);
+    return 0;
+}
+
+/* One text cell in the storage the caller chose.  Same return contract as
+   _write_inline_str_cell (-1 error, -2 row fallback, 0 written). */
+static int _write_text_cell(unsigned char **buf, size_t *buf_size, size_t *buf_cap,
+                            PyObject *cell_str, PyObject *ss_dict, PyObject *ss_list,
+                            unsigned int col_idx, unsigned int row_idx, unsigned int style_override,
+                            unsigned int *sst_uniq, unsigned int *sst_all, int inline_strings)
+{
+    if (!inline_strings)
+        return _write_str_cell(buf, buf_size, buf_cap, cell_str, ss_dict, ss_list,
+                               col_idx, row_idx, style_override, sst_uniq, sst_all);
+    unsigned int style_ref = style_override ? style_override : ((row_idx == 0) ? 3 : 0);
+    return _write_inline_str_cell(buf, buf_size, buf_cap, cell_str, col_idx, style_ref);
+}
+
+/* Encode one row.  Returns new bytes, Py_None when the row must go to the
+   Python encoder, or NULL with an exception set.  Shared
+   string state is read from and written back to *sst_uniq_io / *sst_all_io
+   only when the row is encoded. */
+static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObject *ss_list,
+                                       unsigned int *sst_uniq_io, unsigned int *sst_all_io,
+                                       unsigned int row_idx, PyObject *style_ids, int inline_strings)
+{
+    unsigned int sst_uniq = *sst_uniq_io;
+    unsigned int sst_all = *sst_all_io;
 
     if (!PyList_Check(row)) { PyErr_SetString(PyExc_TypeError, "row must be a list"); return NULL; }
-    if (!PyDict_Check(ss_dict)) { PyErr_SetString(PyExc_TypeError, "ss_dict must be a dict"); return NULL; }
-    if (!PyList_Check(ss_list)) { PyErr_SetString(PyExc_TypeError, "ss_list must be a list"); return NULL; }
+    if (!inline_strings)
+    {
+        if (!PyDict_Check(ss_dict)) { PyErr_SetString(PyExc_TypeError, "ss_dict must be a dict"); return NULL; }
+        if (!PyList_Check(ss_list)) { PyErr_SetString(PyExc_TypeError, "ss_list must be a list"); return NULL; }
+    }
     if (style_ids != Py_None && !PyList_Check(style_ids) && !PyTuple_Check(style_ids) && !PyLong_Check(style_ids)) { PyErr_SetString(PyExc_TypeError, "style_ids must be an integer, list, tuple, or None"); return NULL; }
     unsigned int row_style = 0;
     if (PyLong_Check(style_ids))
@@ -1020,7 +1085,9 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
 
         if (PyUnicode_Check(cell))
         {
-            if (_write_str_cell(&buf, &buf_size, &buf_cap, cell, ss_dict, ss_list, ci, row_idx, cell_style, &sst_uniq, &sst_all) < 0) { err = 1; break; }
+            int rc = _write_text_cell(&buf, &buf_size, &buf_cap, cell, ss_dict, ss_list, ci, row_idx, cell_style, &sst_uniq, &sst_all, inline_strings);
+            if (rc == -2) { PyMem_Free(buf); Py_RETURN_NONE; }
+            if (rc < 0) { err = 1; break; }
         }
         else if (cell == Py_True || cell == Py_False)
         {
@@ -1050,7 +1117,9 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
             }
             else if (val >= -536870912LL && val <= 536870911LL)
             {
-                int rk_val = ((int)val << 2) | 2;
+                /* Shift in unsigned arithmetic: left-shifting a negative int is
+                   undefined; the stored bit pattern is the same. */
+                unsigned int rk_val = ((unsigned int)val << 2) | 2u;
                 buf[buf_size++] = 0x02; buf[buf_size++] = 0x0C;
                 memcpy(buf + buf_size, &ci, 4); buf_size += 4;
                 unsigned int style_ref = cell_style ? cell_style : zero;
@@ -1111,28 +1180,92 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
         }
         else
         {
-            fallback:
+            /* Any other object goes to the Python encoder, which refuses
+               Formula and Hyperlink cells and writes str() of the rest.  Such
+               cells are rare, so the caller need not scan every row. */
+            PyMem_Free(buf);
+            Py_RETURN_NONE;
+            fallback:  /* reached by goto: dates out of range, odd Decimals */
             {
                 PyObject *str_cell = PyObject_Str(cell);
-                if (!str_cell) { PyErr_Clear(); continue; }
-                if (_write_str_cell(&buf, &buf_size, &buf_cap, str_cell, ss_dict, ss_list, ci, row_idx, cell_style, &sst_uniq, &sst_all) < 0)
-                { Py_DECREF(str_cell); err = 1; break; }
+                /* str() failed: the Python encoder calls it again and raises. */
+                if (!str_cell) { PyErr_Clear(); PyMem_Free(buf); Py_RETURN_NONE; }
+                int rc = _write_text_cell(&buf, &buf_size, &buf_cap, str_cell, ss_dict, ss_list, ci, row_idx, cell_style, &sst_uniq, &sst_all, inline_strings);
                 Py_DECREF(str_cell);
+                if (rc == -2) { PyMem_Free(buf); Py_RETURN_NONE; }
+                if (rc < 0) { err = 1; break; }
             }
         }
     }
 
-    if (err) { PyMem_Free(buf); return PyErr_NoMemory(); }
+    if (err)
+    {
+        PyMem_Free(buf);
+        /* Keep a Python error (from the shared-string dict) over a generic one. */
+        return PyErr_Occurred() ? NULL : PyErr_NoMemory();
+    }
 
     PyObject *result_bytes = PyBytes_FromStringAndSize((const char *)buf, buf_size);
     PyMem_Free(buf);
-    if (!result_bytes) return NULL;
+    if (result_bytes)
+    {
+        *sst_uniq_io = sst_uniq;
+        *sst_all_io = sst_all;
+    }
+    return result_bytes;
+}
+
+static int _xlsx_rollback(PyObject *ss_dict, PyObject *ss_list, Py_ssize_t len_before);
+
+/* Shared-string row: returns (bytes, sst_uniq, sst_all), or None when the
+   Python encoder must handle the row.  On None, the strings this call added
+   to the table are removed again, so the caller's counters stay valid. */
+static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
+{
+    PyObject *row;
+    PyObject *ss_dict;
+    PyObject *ss_list;
+    unsigned int sst_uniq;
+    unsigned int sst_all;
+    unsigned int row_idx;
+    PyObject *style_ids = Py_None;
+
+    if (!PyArg_ParseTuple(args, "OOOIII|O", &row, &ss_dict, &ss_list, &sst_uniq, &sst_all, &row_idx, &style_ids))
+        return NULL;
+    if (!PyList_Check(ss_list)) { PyErr_SetString(PyExc_TypeError, "ss_list must be a list"); return NULL; }
+    Py_ssize_t list_before = PyList_GET_SIZE(ss_list);
+
+    PyObject *result_bytes = _encode_xlsb_row_core(row, ss_dict, ss_list, &sst_uniq, &sst_all,
+                                                   row_idx, style_ids, 0);
+    if (!result_bytes || result_bytes == Py_None)
+    {
+        /* Fallback or error: undo the table entries this row added. */
+        _xlsx_rollback(ss_dict, ss_list, list_before);
+        return result_bytes;
+    }
 
     /* "O" in Py_BuildValue creates a new (incref'd) reference, so the
        local one must be released -- otherwise every call leaks it. */
     PyObject *res = Py_BuildValue("OII", result_bytes, sst_uniq, sst_all);
     Py_DECREF(result_bytes);
     return res;
+}
+
+/* Inline-string row: returns the row bytes, or None when the Python encoder
+   must handle the row.  Takes no shared-string state. */
+static PyObject *C_encode_xlsb_row_inline(PyObject *self, PyObject *args)
+{
+    PyObject *row;
+    unsigned int row_idx;
+    PyObject *style_ids = Py_None;
+    unsigned int unused_uniq = 0;
+    unsigned int unused_all = 0;
+
+    if (!PyArg_ParseTuple(args, "OI|O", &row, &row_idx, &style_ids))
+        return NULL;
+
+    return _encode_xlsb_row_core(row, NULL, NULL, &unused_uniq, &unused_all,
+                                 row_idx, style_ids, 1);
 }
 
 /* ===== XLSX row encoder =====
@@ -1153,8 +1286,9 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
    - a row containing a `(value, format)` tuple returns None (no error) so
      the caller falls back to the Python row writer, which owns format
      registration.  Other unencodable rows (non-sequences, lone
-     surrogates in inline mode) also fall back, letting the Python path
-     raise exactly what it always raised.
+     surrogates in inline mode, text over the cell limit, inline text that
+     needs _xHHHH_ escapes) also fall back, letting the Python path raise
+     or escape exactly as it does on its own.
    Returns (row_xml_str, sst_uniq, sst_all), None for row fallback, or
    NULL+error only on allocation failure. */
 
@@ -1209,18 +1343,53 @@ static int _xbuf_double(_XBuf *b, double v)
     return ok;
 }
 
-/* XML-escape & < > over UTF-8 bytes (multibyte units never collide). */
+static int _is_hex_byte(unsigned char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+}
+
+/* XML-escape & < > over UTF-8 bytes (multibyte units never collide), copying
+   runs of plain bytes at once.  Returns 1 written, 0 out of memory, or 2 when
+   the text needs an _xHHHH_ escape (see xlspy/_text.py) -- a control
+   character other than tab and line feed, U+FFFE/U+FFFF, or literal text of
+   the form _xHHHH_ -- in which case the caller hands the row to Python. */
 static int _xbuf_escaped(_XBuf *b, const char *s, Py_ssize_t n)
 {
+    Py_ssize_t run = 0;  /* start of the plain bytes not yet copied */
     for (Py_ssize_t i = 0; i < n; i++)
     {
         unsigned char c = (unsigned char)s[i];
-        if (c == '&') { if (!_xbuf_cstr(b, "&amp;")) return 0; }
-        else if (c == '<') { if (!_xbuf_cstr(b, "&lt;")) return 0; }
-        else if (c == '>') { if (!_xbuf_cstr(b, "&gt;")) return 0; }
-        else if (!_xbuf_byte(b, c)) return 0;
+        const char *entity;
+        if (c == '&') entity = "&amp;";
+        else if (c == '<') entity = "&lt;";
+        else if (c == '>') entity = "&gt;";
+        else
+        {
+            if (c < 0x20)
+            {
+                if (c != '\t' && c != '\n') return 2;
+            }
+            else if (c == '_')
+            {
+                if (i + 6 < n && s[i + 1] == 'x' &&
+                    _is_hex_byte((unsigned char)s[i + 2]) && _is_hex_byte((unsigned char)s[i + 3]) &&
+                    _is_hex_byte((unsigned char)s[i + 4]) && _is_hex_byte((unsigned char)s[i + 5]) &&
+                    s[i + 6] == '_')
+                    return 2;
+            }
+            else if (c == 0xEF)
+            {
+                if (i + 2 < n && (unsigned char)s[i + 1] == 0xBF &&
+                    ((unsigned char)s[i + 2] == 0xBE || (unsigned char)s[i + 2] == 0xBF))
+                    return 2;
+            }
+            continue;
+        }
+        if (!_xbuf_put(b, s + run, (size_t)(i - run))) return 0;
+        if (!_xbuf_cstr(b, entity)) return 0;
+        run = i + 1;
     }
-    return 1;
+    return _xbuf_put(b, s + run, (size_t)(n - run));
 }
 
 static int _long_attr(PyObject *obj, const char *name, long *out)
@@ -1285,7 +1454,8 @@ static int _xlsx_sst_index(PyObject *ss_dict, PyObject *ss_list, PyObject *s,
                            unsigned int *uniq, unsigned int *all,
                            unsigned int *out_idx)
 {
-    PyObject *idx = PyDict_GetItem(ss_dict, s);
+    PyObject *idx = PyDict_GetItemWithError(ss_dict, s);
+    if (!idx && PyErr_Occurred()) return 0;
     if (idx)
     {
         *out_idx = (unsigned int)PyLong_AsLong(idx);
@@ -1295,20 +1465,24 @@ static int _xlsx_sst_index(PyObject *ss_dict, PyObject *ss_list, PyObject *s,
         *out_idx = *uniq;
         PyObject *si = PyLong_FromLong((long)*uniq);
         if (!si) return 0;
+        /* List first: a failed insert then leaves only a list entry, which the
+           rollback removes. A dict key without a list entry would survive it. */
+        if (PyList_Append(ss_list, s) < 0) { Py_DECREF(si); return 0; }
         if (PyDict_SetItem(ss_dict, s, si) < 0) { Py_DECREF(si); return 0; }
         Py_DECREF(si);
-        if (PyList_Append(ss_list, s) < 0) return 0;
         (*uniq)++;
     }
     (*all)++;
     return 1;
 }
 
-/* String cell, mirroring `_write_string_cell` (1 ok, 0 row fallback, -1 OOM). */
+/* String cell, mirroring `_write_string_cell` (1 ok, 0 row fallback, -1 OOM).
+   Text over the cell limit falls back, so the Python encoder raises. */
 static int _xlsx_string_cell(_XBuf *b, PyObject *s, int is_header, int use_sst,
                              PyObject *ss_dict, PyObject *ss_list,
                              unsigned int *uniq, unsigned int *all)
 {
+    if (!_cell_text_fits(s)) return 0;
     if (use_sst)
     {
         unsigned int idx;
@@ -1330,7 +1504,9 @@ static int _xlsx_string_cell(_XBuf *b, PyObject *s, int is_header, int use_sst,
     if (!_xbuf_cstr(b, "><is><t")) return -1;
     if (preserve && !_xbuf_cstr(b, " xml:space=\"preserve\"")) return -1;
     if (!_xbuf_byte(b, '>')) return -1;
-    if (!_xbuf_escaped(b, utf8, n)) return -1;
+    int escaped = _xbuf_escaped(b, utf8, n);
+    if (escaped == 2) return 0;  /* needs _xHHHH_ escapes: Python writes it */
+    if (!escaped) return -1;
     if (!_xbuf_cstr(b, "</t></is></c>")) return -1;
     return 1;
 }
@@ -1491,15 +1667,10 @@ static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header, int use_sst,
         if (!_xbuf_cstr(b, "</v></c>")) return -1;
         return 1;
     }
-    {
-        /* Anything else becomes str(cell), like the Python path. */
-        PyObject *s = PyObject_Str(cell);
-        if (!s) { PyErr_Clear(); return 0; }
-        int rc = _xlsx_string_cell(b, s, is_header, use_sst,
-                                   ss_dict, ss_list, uniq, all);
-        Py_DECREF(s);
-        return rc;
-    }
+    /* Any other object goes to the Python encoder, which writes Formula and
+       Hyperlink cells and str() of everything else.  Such cells are rare, so
+       the caller need not scan every row for them. */
+    return 0;
 }
 
 /* Remove SST entries appended during an aborted row encode, so a row
@@ -1510,16 +1681,20 @@ static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header, int use_sst,
 static int _xlsx_rollback(PyObject *ss_dict, PyObject *ss_list,
                           Py_ssize_t len_before)
 {
+    /* The deletes can run Python code, so keep the error the caller is about
+       to return (if any) and put it back afterwards. */
+    PyObject *pending = PyErr_GetRaisedException();
     Py_ssize_t n = PyList_GET_SIZE(ss_list);
     for (Py_ssize_t i = len_before; i < n; i++)
     {
         PyObject *key = PyList_GET_ITEM(ss_list, i);  /* borrowed */
         if (PyDict_DelItem(ss_dict, key) < 0)
-            PyErr_Clear();  /* practically impossible; best effort */
+            PyErr_Clear();  /* the key was never inserted: nothing to undo */
     }
     if (n > len_before &&
         PySequence_DelSlice(ss_list, len_before, PY_SSIZE_T_MAX) < 0)
         PyErr_Clear();
+    PyErr_SetRaisedException(pending);
     return 0;
 }
 
@@ -1588,17 +1763,20 @@ static PyObject *C_encode_xlsx_row(PyObject *self, PyObject *args)
     {
         PyObject *s = PyUnicode_DecodeUTF8((const char *)b.data, (Py_ssize_t)b.size, "strict");
         PyMem_Free(b.data);
-        if (!s) return NULL;
         /* "O" creates a new reference: release the local one (no leaks). */
-        PyObject *res = Py_BuildValue("OII", s, sst_uniq, sst_all);
-        Py_DECREF(s);
+        PyObject *res = s ? Py_BuildValue("OII", s, sst_uniq, sst_all) : NULL;
+        Py_XDECREF(s);
+        if (!res) _xlsx_rollback(ss_dict, ss_list, list_before);
         return res;
     }
 
 oom:
     Py_DECREF(seq);
     PyMem_Free(b.data);
-    PyErr_NoMemory();
+    /* Undo this row's table entries; keeps any error raised above. */
+    _xlsx_rollback(ss_dict, ss_list, list_before);
+    /* Keep a Python error (from the shared-string dict) over a generic one. */
+    if (!PyErr_Occurred()) PyErr_NoMemory();
     return NULL;
 }
 
@@ -2112,6 +2290,8 @@ static PyMethodDef CMethods[] = {
      "Yields: rows one at a time"},
     {"encode_xlsb_row", C_encode_xlsb_row, METH_VARARGS,
      "Encode a single XLSB row. Returns (bytes, sst_uniq, sst_all)."},
+    {"encode_xlsb_row_inline", C_encode_xlsb_row_inline, METH_VARARGS,
+     "Encode a single XLSB row with inline text cells. Returns bytes, or None to use the Python encoder."},
     {"calc_column_widths", C_calc_column_widths, METH_VARARGS,
      "Calculate column widths from row data."},
     {"xlsb_row_has_formatted", C_xlsb_row_has_formatted, METH_VARARGS,

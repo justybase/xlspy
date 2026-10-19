@@ -259,6 +259,8 @@ def to_xlsx(
     hidden_columns=None,
     row_heights: dict | None = None,
     hidden_rows=None,
+    row_groups=None,
+    column_groups=None,
     freeze_panes: str | None = None,
     auto_filter: bool | None = None,
     charts=None,
@@ -279,7 +281,8 @@ def to_xlsx(
                 merges=merges, conditional_formats=conditional_formats,
                 tables=tables, column_widths=column_widths,
                 hidden_columns=hidden_columns, row_heights=row_heights,
-                hidden_rows=hidden_rows, freeze_panes=freeze_panes,
+                hidden_rows=hidden_rows, row_groups=row_groups,
+                column_groups=column_groups, freeze_panes=freeze_panes,
                 auto_filter=auto_filter, charts=charts,
             )
     except Exception:
@@ -302,6 +305,8 @@ def to_xlsb(
     hidden_columns=None,
     row_heights: dict | None = None,
     hidden_rows=None,
+    row_groups=None,
+    column_groups=None,
     freeze_panes: str | None = None,
     auto_filter: bool | None = None,
     charts=None,
@@ -323,7 +328,8 @@ def to_xlsb(
                 header_style=header_style, styles=styles,
                 merges=merges, column_widths=column_widths,
                 hidden_columns=hidden_columns, row_heights=row_heights,
-                hidden_rows=hidden_rows, freeze_panes=freeze_panes,
+                hidden_rows=hidden_rows, row_groups=row_groups,
+                column_groups=column_groups, freeze_panes=freeze_panes,
                 auto_filter=auto_filter, charts=charts, tables=tables,
                 conditional_formats=conditional_formats,
             )
