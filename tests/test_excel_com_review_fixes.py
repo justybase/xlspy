@@ -426,3 +426,97 @@ def test_binary_sparse_edit_dimension_matches_excel(tmp_path, open_workbook):
     assert [tuple(row) for row in excel_values][:2] == [("a", 2, 4), (4, None, None)]
     assert values[0][:2] == ("a", 2) and values[1][0] == 4 and values[3][1] == 9
     assert excel_values[3][1] == 9
+
+
+# Excel constants for HorizontalAlignment / VerticalAlignment / ReadingOrder.
+_XL_HORIZONTAL = {"general": 1, "left": -4131, "center": -4108, "right": -4152, "fill": 5,
+                  "justify": -4130, "centerContinuous": 7, "distributed": -4117}
+_XL_VERTICAL = {"top": -4160, "center": -4108, "bottom": -4107, "justify": -4130, "distributed": -4117}
+_XL_READING_ORDER = {0: -5002, 1: -5003, 2: -5004}
+_ALIGNMENT_CASES = {
+    "A1": dict(horizontal="center", vertical="top", wrap_text=True),
+    "B1": dict(horizontal="right", vertical="center", shrink_to_fit=True),
+    "C1": dict(horizontal="left", indent=3),
+    "D1": dict(horizontal="justify", vertical="justify"),
+    "E1": dict(horizontal="distributed", vertical="distributed", indent=1),
+    "F1": dict(horizontal="fill"),
+    "G1": dict(horizontal="centerContinuous"),
+    "H1": dict(text_rotation=45),
+    "A2": dict(text_rotation=135),
+    "B2": dict(text_rotation=255),
+    "C2": dict(horizontal="general", reading_order=2),
+    "D2": dict(reading_order=1),
+    "E2": dict(vertical="bottom"),
+}
+
+
+def _assert_alignment_in_excel(cell, options):
+    if "horizontal" in options:
+        assert cell.HorizontalAlignment == _XL_HORIZONTAL[options["horizontal"]]
+    if "vertical" in options:
+        assert cell.VerticalAlignment == _XL_VERTICAL[options["vertical"]]
+    assert cell.WrapText == options.get("wrap_text", False)
+    assert cell.ShrinkToFit == options.get("shrink_to_fit", False)
+    assert cell.IndentLevel == options.get("indent", 0)
+    rotation = options.get("text_rotation", 0)
+    # Excel reports 0 as xlHorizontal (-4128), 91..180 as -1..-90 and 255 as
+    # xlVertical (-4166).
+    expected = {0: -4128, 255: -4166}.get(rotation, 90 - rotation if rotation > 90 else rotation)
+    assert cell.Orientation == expected
+    if "reading_order" in options:
+        assert cell.ReadingOrder == _XL_READING_ORDER[options["reading_order"]]
+
+
+@pytest.mark.parametrize("writer_class, extension", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
+def test_alignment_options_in_excel(tmp_path, open_workbook, writer_class, extension):
+    from xlspy import Alignment, Style
+    path = tmp_path / f"alignment.{extension}"
+    with writer_class(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(
+            [["text that is long enough"] * 8, ["text"] * 5],
+            styles={ref: Style(alignment=Alignment(**options)) for ref, options in _ALIGNMENT_CASES.items()},
+        )
+    book = open_workbook(path)
+    sheet = book.Worksheets("Data")
+    for ref, options in _ALIGNMENT_CASES.items():
+        _assert_alignment_in_excel(sheet.Range(ref), options)
+
+
+def test_workbook_cell_alignment_round_trip_in_excel(tmp_path, excel, open_workbook):
+    from xlspy import Alignment, Workbook
+    created = tmp_path / "created.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Data"
+    for ref, options in _ALIGNMENT_CASES.items():
+        sheet[ref] = "text"
+        sheet[ref].alignment = Alignment(**options)
+    workbook.save(created)
+    book = open_workbook(created)
+    for ref, options in _ALIGNMENT_CASES.items():
+        _assert_alignment_in_excel(book.Worksheets("Data").Range(ref), options)
+
+    # Edit alignment in an Excel-created workbook through load_workbook.
+    source = tmp_path / "excel.xlsx"
+
+    def build(new_book):
+        new_book.Worksheets(1).Name = "Data"
+        new_book.Worksheets(1).Range("A1:E2").Value = "text"
+
+    _save_excel_book(excel, source, build)
+    loaded = load_workbook(source)
+    for ref, options in _ALIGNMENT_CASES.items():
+        loaded["Data"][ref].alignment = Alignment(**options)
+    edited = tmp_path / "edited.xlsx"
+    loaded.save(edited)
+    loaded.close()
+    book = open_workbook(edited)
+    for ref, options in _ALIGNMENT_CASES.items():
+        _assert_alignment_in_excel(book.Worksheets("Data").Range(ref), options)
+    reread = load_workbook(edited)
+    try:
+        assert reread["Data"]["H1"].alignment == Alignment(text_rotation=45)
+        assert reread["Data"]["A1"].alignment == Alignment(horizontal="center", vertical="top", wrap_text=True)
+    finally:
+        reread.close()
