@@ -2,6 +2,7 @@
 
 import datetime
 import io
+import re
 import zipfile
 from xml.etree import ElementTree as ET
 
@@ -509,10 +510,21 @@ def test_comment_edits_preserve_combined_report_parts(tmp_path):
     changed = {"[Content_Types].xml", "xl/worksheets/sheet1.xml", "xl/worksheets/_rels/sheet1.xml.rels"}
     for name in before.keys() - changed:
         assert before[name] == after[name], name
+    # The picture survives in the package; openpyxl only loads images when
+    # Pillow is installed, which the test extras do not require.
+    assert any(name.startswith("xl/media/") for name in after)
+    assert any(re.search(rb"<(?:\w+:)?pic[\s>/]", data) for name, data in after.items() if name.startswith("xl/drawings/drawing"))
+    try:
+        import PIL  # noqa: F401
+    except ImportError:
+        has_pillow = False
+    else:
+        has_pillow = True
     book = openpyxl.load_workbook(path)
     try:
         assert len(book["Summary"]._charts) == 3
-        assert len(book["Summary"]._images) == 1
+        if has_pillow:
+            assert len(book["Summary"]._images) == 1
         assert book["Summary"]["B3"].comment.text == "check quantity"
     finally:
         book.close()
