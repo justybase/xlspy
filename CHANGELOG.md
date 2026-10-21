@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Classic XLSX/XLSB cell notes: `Comment`, `comments=` on sheet/DataFrame exports,
+  `ExcelReader.get_comments()` and updater `get_comments()`/`set_comments()`.
+  Updates preserve unrelated note formatting and VML controls; unused note parts
+  are removed when the last note is deleted. XLSM macros remain opaque.
+- XLSX/XLSM/XLSB updater `update_cells()` for sparse value/formula changes preserving
+  existing styles, notes and untouched cell records. Formula edits request Excel
+  recalculation and remove the obsolete calculation chain.
+- `DefinedName` and writer/updater methods to set, list and remove global or
+  worksheet-local names; the reader can list user-defined names.
+- `SheetProtection` and `WorkbookProtection` for sheet selection restrictions
+  and workbook structure protection, including optional legacy password hashes.
+- XLSX/XLSM/XLSB formula text reading with `get_rows(..., data_only=False)` and
+  `read_all(..., data_only=False)`, including shared and legacy array formulas.
+- XLSB formula compilation, cached results and legacy array formulas, including
+  sheet/name references and supported built-in/newer functions. Unsupported
+  grammar and tokens raise explicit errors. Optional incremental binary reading
+  uses `streaming=True`; ordinary data retains the C/Python bulk paths.
+- Binary comment, protection and defined-name editing, preserving unrelated
+  records and VML controls. Deleted name slots remain hidden to preserve binary
+  formula indexes. Sparse edits invalidate binary indexes and calculation chains.
+- Excel COM interoperability checks against both generated XLSB files and
+  independently Excel-created binary templates.
+- An openpyxl-like workbook model: `Workbook`, `load_workbook()`, `Worksheet`,
+  `Cell` and related dimension/view classes for random cell access, styles,
+  merges, notes and patching edits back into loaded XLSX/XLSM packages. Read-only
+  mode follows openpyxl's semantics (worksheet coordinates, empty rows for
+  missing rows, stored dimensions, `ReadOnlyCell` objects) for XLSX and XLSB.
+- Strict Open XML workbooks can be read with `ExcelReader` and read-only
+  `load_workbook()`; editing them raises `NotImplementedError`.
+
 - Row and column groups (Excel's outline `+`/`−` buttons) in `XlsxWriter` and
   `XlsbWriter`: `row_groups` and `column_groups` take `Group(first, last,
   collapsed=False)` ranges on `write_sheet`, `write_dataframe`, `to_xlsx` and
@@ -93,6 +123,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Explicit `column_widths` for columns beyond the data are written.
 
 ### Fixed
+
+- XLSB `get_rows(..., streaming=True)` and `data_only=False` now return the same
+  row layout as the default bulk reader (missing rows, first column and widths).
+- Adding classic notes no longer writes into a header/footer picture VML part,
+  and deleting the last note keeps that part's relationship.
+- XLSB formulas may refer to a sheet-qualified local name defined later, legacy
+  array formulas accept date values in member cells, and array rows past the data
+  keep row heights, hidden rows and outline levels.
+- Saving a loaded workbook after removing or reordering sheets removes the sheet
+  relationship, remaps worksheet-local names and drops the calculation chain.
+  Rewritten `workbook.xml` and `styles.xml` keep Excel's namespace prefixes; before,
+  Excel refused workbooks it had created once they were edited and saved.
+- Style edits of cells without an `r` attribute no longer clear their values.
+- `load_workbook()` maps worksheet-local names correctly when chartsheets exist, and
+  saving keeps chartsheet positions and the active tab.
+- An invalid `XlsxWriter` `auto_filter_ref` is rejected before rows are written.
+
+- XLSX row reading now parses incrementally and releases completed rows instead
+  of loading the entire worksheet before yielding. Rows wider than the first
+  are no longer truncated, and inline rich text retains all displayed fragments.
+- Workbook and relationship parsing accepts XML namespace prefixes introduced
+  by other spreadsheet tools and metadata updates.
 
 - `write_sheet` no longer materializes the whole sheet in memory (XLSX and XLSB).
 - XLSB inline text counted code points instead of UTF-16 code units, so text

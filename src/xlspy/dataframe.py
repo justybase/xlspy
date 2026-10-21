@@ -264,6 +264,8 @@ def to_xlsx(
     freeze_panes: str | None = None,
     auto_filter: bool | None = None,
     charts=None,
+    comments=None,
+    sheet_protection=None,
     **writer_kwargs,
 ):
     """Write a DataFrame straight to an ``.xlsx`` file and return ``path``.
@@ -284,6 +286,7 @@ def to_xlsx(
                 hidden_rows=hidden_rows, row_groups=row_groups,
                 column_groups=column_groups, freeze_panes=freeze_panes,
                 auto_filter=auto_filter, charts=charts,
+                comments=comments, sheet_protection=sheet_protection,
             )
     except Exception:
         _remove_partial_file(path)
@@ -312,6 +315,8 @@ def to_xlsb(
     charts=None,
     tables=None,
     conditional_formats=None,
+    comments=None,
+    sheet_protection=None,
     **writer_kwargs,
 ):
     """Write a DataFrame straight to an ``.xlsb`` file and return ``path``.
@@ -332,6 +337,7 @@ def to_xlsb(
                 column_groups=column_groups, freeze_panes=freeze_panes,
                 auto_filter=auto_filter, charts=charts, tables=tables,
                 conditional_formats=conditional_formats,
+                comments=comments, sheet_protection=sheet_protection,
             )
     except Exception:
         _remove_partial_file(path)

@@ -677,6 +677,24 @@ class ZipPackage:
         self._entries.append(info)
         self._set_override(len(self._entries) - 1, bytes(data))
 
+    def remove(self, name: str) -> None:
+        """Remove a member, including staged replacements; supports rollback."""
+        if name not in self._indices:
+            return
+        removed_index = self._indices[name]
+        previous = self._overrides.get(removed_index)
+        if isinstance(previous, Path):
+            if self._package_transaction is None:
+                self._delete_staged_path(previous)
+            else:
+                self._superseded_paths.add(previous)
+        self._entries = [info for index, info in enumerate(self._entries) if index != removed_index]
+        self._indices = {info.filename: index for index, info in enumerate(self._entries)}
+        self._overrides = {
+            index - (index > removed_index): value
+            for index, value in self._overrides.items() if index != removed_index
+        }
+
     def set_file(self, name: str, path: str | os.PathLike[str]) -> None:
         """Use a file as the replacement payload for one ZIP member."""
 

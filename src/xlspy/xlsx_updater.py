@@ -33,6 +33,7 @@ from .updater_utils import (
     unwrap_cell,
 )
 from .excel_dates import datetime_to_serial
+from ._xlsx_edit import XlsxEditMixin
 
 
 StyleFallback = Literal["inherit", "general"]
@@ -64,7 +65,7 @@ def _date_like_format(format_code: str) -> bool:
     return bool(re.search(r"[dy]", simplified) or re.search(r"m", simplified))
 
 
-class XlsxUpdater:
+class XlsxUpdater(XlsxEditMixin):
     """Replace the data region of sheets in an existing XLSX or XLSM file.
 
     The workbook, styles, drawings and all unrelated ZIP members are kept in
@@ -79,6 +80,13 @@ class XlsxUpdater:
             raise ValueError("The input is XLSB; use XlsbUpdater")
         if not self._package.has("xl/workbook.xml"):
             raise ValueError("XLSX workbook.xml was not found")
+        if b"http://purl.oclc.org/ooxml/spreadsheetml/main" in self._package.get("xl/workbook.xml")[:4096]:
+            # Edits write Transitional markup, which a Strict package must not mix.
+            self._package.close()
+            raise NotImplementedError(
+                "Strict Open XML workbooks are supported for reading only "
+                "(ExcelReader, load_workbook(read_only=True)); save as a regular .xlsx to edit"
+            )
 
         self._date_1904 = self._load_date_system()
         self._sheets = self._load_sheet_structure()

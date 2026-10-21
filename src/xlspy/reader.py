@@ -187,14 +187,46 @@ class ExcelReader:
                 return i
         raise ValueError(f"Sheet '{sheet_name}' not found")
 
-    def get_rows(self, sheet_name: str) -> Generator[List[Any], None, None]:
+    def get_rows(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> Generator[List[Any], None, None]:
+        """Yield values or formula text; streaming=True opts into incremental XLSB."""
+        if not isinstance(data_only, bool):
+            raise TypeError("data_only must be bool")
+        if not isinstance(streaming, bool):
+            raise TypeError("streaming must be bool")
         if self._is_xlsb:
-            yield from self._get_rows_xlsb(sheet_name)
+            if not data_only or streaming:
+                from ._xlsb_read import iter_rows
+                yield from iter_rows(self, sheet_name, data_only=data_only)
+            else:
+                yield from self._get_rows_xlsb(sheet_name)
         else:
-            yield from self._get_rows_xlsx(sheet_name)
+            yield from self._get_rows_xlsx(sheet_name, data_only=data_only)
 
-    def read_all(self, sheet_name: str) -> List[List[Any]]:
-        return list(self.get_rows(sheet_name))
+    def read_all(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> List[List[Any]]:
+        return list(self.get_rows(sheet_name, data_only=data_only, streaming=streaming))
+
+    def get_comments(self, sheet_name: str):
+        """Return classic note text and authors, without reading worksheet rows."""
+        if self._is_xlsb:
+            from ._xlsb_metadata import parse_comments
+            from .comments import find_comment_parts
+            rid = self._worksheet_name_to_id[sheet_name]
+            path = self._resolve_path(self._worksheet_id_to_location[rid])
+            _, _, parts = find_comment_parts(self._archive.read, self._archive.namelist(), path)
+            return parse_comments(self._archive.read(parts['comments'][0]))[0] if 'comments' in parts else {}
+        from .comments import find_comment_parts, read_comments
+        rid = self._worksheet_name_to_id[sheet_name]
+        path = self._resolve_path(self._worksheet_id_to_location[rid])
+        _, _, parts = find_comment_parts(self._archive.read, self._archive.namelist(), path)
+        return read_comments(self._archive.read(parts["comments"][0])) if "comments" in parts else {}
+
+    def get_defined_names(self):
+        """Return global and worksheet-local user names (not built-in names)."""
+        if self._is_xlsb:
+            from ._xlsb_formulas import FormulaContext
+            return FormulaContext(self.get_sheet_names(), self._archive.read('xl/workbook.bin')).defined_names()
+        from ._metadata import read_defined_names
+        return read_defined_names(self._archive.read("xl/workbook.xml"), self.get_sheet_names())
 
     def _open_xlsx(self, path: str):
         self._archive = zipfile.ZipFile(path, 'r')
@@ -234,26 +266,18 @@ class ExcelReader:
             self._fill_bin_shared_strings()
 
     def _parse_workbook_xml(self, content: str):
-        name = ""
-        r_id = ""
-        in_sheet = False
-
-        parser = ParserCreate()
-        parser.StartElementHandler = lambda tag, attrs: self._workbook_start_elem(tag, attrs)
-        parser.Parse(content, True)
-
-    def _workbook_start_elem(self, tag: str, attrs: Dict[str, str]):
-        local = tag.split('}')[-1] if '}' in tag else tag
-        if local == 'sheet':
-            name = attrs.get('name', '')
-            r_id = attrs.get('r:id') or attrs.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id', '')
-            self._worksheet_id_to_name[r_id] = name
-            self._worksheet_name_to_id[name] = r_id
-        elif local == 'workbookPr':
-            value = attrs.get('date1904', '')
-            self._date_1904 = value.strip().lower() in {'1', 'true'}
-        elif local == 'pivotCache':
-            pass
+        from xml.etree import ElementTree as ET
+        from ._metadata import MAIN, namespace_of, relationship_namespace
+        root = ET.fromstring(content)
+        main = namespace_of(root.tag) or MAIN  # Transitional or Strict
+        rel = relationship_namespace(main)
+        for node in root.findall(f"{{{main}}}sheets/{{{main}}}sheet"):
+            name, rid = node.attrib['name'], node.attrib[f'{{{rel}}}id']
+            self._worksheet_id_to_name[rid] = name
+            self._worksheet_name_to_id[name] = rid
+        properties = root.find(f"{{{main}}}workbookPr")
+        if properties is not None:
+            self._date_1904 = properties.get('date1904', '').strip().lower() in {'1', 'true'}
 
     def _fill_rels(self, ext: str):
         rels_path = f'xl/_rels/workbook.{ext}.rels'
@@ -263,22 +287,24 @@ class ExcelReader:
         with self._archive.open(rels_path) as f:
             content = f.read().decode('utf-8')
 
-        parser = ParserCreate()
+        parser = ParserCreate(namespace_separator='}')
         parser.StartElementHandler = lambda tag, attrs: self._rels_start_elem(tag, attrs)
         parser.Parse(content, True)
 
     def _rels_start_elem(self, tag: str, attrs: Dict[str, str]):
-        local = tag.split('}')[-1] if '}' in tag else tag
+        local = tag.rsplit('}', 1)[-1].rsplit(':', 1)[-1]
         if local == 'Relationship':
             target = attrs.get('Target', '')
             rel_type = attrs.get('Type', '')
             r_id = attrs.get('Id', '')
 
-            if rel_type == 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet':
+            from ._metadata import relationship_kind
+            kind = relationship_kind(rel_type)
+            if kind == 'worksheet':
                 self._worksheet_id_to_location[r_id] = target
-            elif rel_type == 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings':
+            elif kind == 'sharedStrings':
                 self._shared_strings_location = target
-            elif rel_type == 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles':
+            elif kind == 'styles':
                 self._styles_location = target
 
     def _fill_shared_strings(self):
@@ -292,7 +318,7 @@ class ExcelReader:
         in_t = False
         char_buf = []
 
-        parser = ParserCreate()
+        parser = ParserCreate(namespace_separator='}')
         parser.StartElementHandler = lambda tag, attrs: None
         parser.EndElementHandler = lambda tag: None
         parser.CharacterDataHandler = lambda data: None
@@ -410,7 +436,7 @@ class ExcelReader:
                 pass
 
         h = StylesHandler(self._styles_cell_xfs_array)
-        parser = ParserCreate()
+        parser = ParserCreate(namespace_separator='}')
         parser.StartElementHandler = h.start
         parser.EndElementHandler = h.end
         parser.CharacterDataHandler = h.chars
@@ -460,175 +486,9 @@ class ExcelReader:
             return target
         return f'xl/{target}'
 
-    def _get_rows_xlsx(self, sheet_name: str) -> Generator[List[Any], None, None]:
-        r_id = self._worksheet_name_to_id[sheet_name]
-        location = self._worksheet_id_to_location[r_id]
-        entry_path = self._resolve_path(location)
-
-        with self._archive.open(entry_path) as f:
-            content = f.read().decode('utf-8')
-
-        rows = []
-        current_row: List[Any] = []
-        current_cell = {}
-        in_sheet_data = False
-        in_row = False
-        in_c = False
-        in_v = False
-        in_is = False
-        in_t_elem = False
-        char_buf = ""
-        cell_index = 0
-
-        class XlsxSheetHandler:
-            def __init__(self, outer, strings):
-                self.outer = outer
-                self.shared_strings = strings
-                self.rows = []
-                self.current_row = []
-                self.current_cell = {}
-                self.in_sheet_data = False
-                self.in_row = False
-                self.in_c = False
-                self.in_v = False
-                self.in_is = False
-                self.in_t_elem = False
-                self.char_buf = ""
-                self.cell_index = 0
-                self.col_num_from_r = None
-                self.first_row_cols = 0
-                self.is_first_row = True
-
-            def start(self, tag, attrs):
-                local = tag.split('}')[-1] if '}' in tag else tag
-                if local == 'sheetData':
-                    self.in_sheet_data = True
-                elif local == 'row' and self.in_sheet_data:
-                    self.in_row = True
-                    self.current_row = []
-                    self.cell_index = 0
-                elif local == 'c' and self.in_row:
-                    self.in_c = True
-                    r_attr = attrs.get('r', '')
-                    t_attr = attrs.get('t', '')
-                    s_attr = attrs.get('s', '')
-                    self.col_num_from_r = None
-                    if r_attr:
-                        self.col_num_from_r = self.outer._parse_column_reference(r_attr)
-                    self.current_cell = {
-                        'r': self.col_num_from_r if self.col_num_from_r is not None else self.cell_index,
-                        't': t_attr,
-                        's': int(s_attr) if s_attr else None,
-                        'is_inline': False,
-                    }
-                    self.in_is = False
-                    self.in_v = False
-                    self.in_t_elem = False
-                    self.char_buf = ""
-                elif local == 'v' and self.in_c:
-                    self.in_v = True
-                    self.char_buf = ""
-                elif local == 'is' and self.in_c:
-                    self.in_is = True
-                    self.current_cell['is_inline'] = True
-                elif local == 't' and self.in_c and self.in_is:
-                    self.in_t_elem = True
-                    self.char_buf = ""
-
-            def end(self, tag):
-                local = tag.split('}')[-1] if '}' in tag else tag
-                if local == 'sheetData':
-                    self.in_sheet_data = False
-                elif local == 'row' and self.in_row:
-                    self.in_row = False
-                    self._finalize_row()
-                elif local == 'c':
-                    self.in_c = False
-                    self._finalize_cell()
-                    self.cell_index += 1
-                elif local == 'v':
-                    self.in_v = False
-                elif local == 'is':
-                    self.in_is = False
-                elif local == 't' and self.in_t_elem:
-                    self.in_t_elem = False
-
-            def chars(self, data):
-                if self.in_v:
-                    self.char_buf += data
-                elif self.in_t_elem:
-                    self.char_buf += data
-
-            def _finalize_cell(self):
-                cell = self.current_cell
-                t_attr = cell.get('t', '')
-                val = self.char_buf
-                col = cell['r']
-                s_idx = cell['s']
-                is_inline = cell.get('is_inline', False)
-
-                col_num = col if col is not None else self.cell_index
-
-                while len(self.current_row) <= col_num:
-                    self.current_row.append(None)
-
-                if is_inline:
-                    self.current_row[col_num] = xstring_unescape(val)
-                    return
-
-                if t_attr == 's':
-                    idx = int(val) if val else 0
-                    if 0 <= idx < len(self.shared_strings):
-                        self.current_row[col_num] = self.shared_strings[idx]
-                    else:
-                        self.current_row[col_num] = val
-                elif t_attr == 'b':
-                    self.current_row[col_num] = (val == '1')
-                elif t_attr == 'e':
-                    self.current_row[col_num] = f"error:{val}"
-                elif t_attr == 'str' or t_attr == 'inlineStr':
-                    self.current_row[col_num] = xstring_unescape(val)
-                else:
-                    if val == '' or val is None:
-                        self.current_row[col_num] = None
-                    else:
-                        if s_idx is not None and s_idx < len(self.outer._styles_cell_xfs_array):
-                            style = self.outer._styles_cell_xfs_array[s_idx]
-                            num_fmt_id = style['numFmtId']
-                            fmt_type = self.outer._number_formats_type_dict.get(num_fmt_id, str)
-                            if fmt_type is datetime.datetime:
-                                try:
-                                    excel_date = float(val)
-                                    self.current_row[col_num] = _serial_to_datetime(excel_date, self.outer._date_1904)
-                                except (ValueError, OverflowError):
-                                    self.current_row[col_num] = val if val else None
-                                return
-
-                        if '.' in val or 'E' in val or 'e' in val:
-                            self.current_row[col_num] = float(val)
-                        else:
-                            try:
-                                self.current_row[col_num] = int(val)
-                            except ValueError:
-                                self.current_row[col_num] = float(val)
-
-            def _finalize_row(self):
-                if self.is_first_row:
-                    self.first_row_cols = len(self.current_row)
-                    self.is_first_row = False
-                while len(self.current_row) < self.first_row_cols:
-                    self.current_row.append(None)
-                self.rows.append(self.current_row[:self.first_row_cols])
-
-        h = XlsxSheetHandler(self, self._shared_string_array)
-        parser = ParserCreate()
-        parser.StartElementHandler = h.start
-        parser.EndElementHandler = h.end
-        parser.CharacterDataHandler = h.chars
-        parser.Parse(content, True)
-
-        for row in h.rows:
-            yield row
+    def _get_rows_xlsx(self, sheet_name: str, *, data_only: bool = True) -> Generator[List[Any], None, None]:
+        from ._xlsx_read import iter_rows
+        yield from iter_rows(self, sheet_name, data_only=data_only)
 
     def _get_rows_xlsb(self, sheet_name: str) -> Generator[List[Any], None, None]:
         r_id = self._worksheet_name_to_id[sheet_name]
@@ -779,6 +639,10 @@ class ExcelReader:
                         yield [None] * columns_cnt_from_first_row
                     leading_empty_rows = 0
 
+            if (prev_col_num > number_of_last_column_with_data and prev_col_num < 16384
+                    and columns_cnt_from_first_row > 0):
+                number_of_last_column_with_data = prev_col_num
+                columns_cnt_from_first_row = number_of_last_column_with_data - number_of_first_column_with_data + 1
             row_list = [inner_row.get(c, None) for c in range(columns_cnt_from_first_row)]
             yield row_list
 

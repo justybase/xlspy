@@ -6,7 +6,7 @@
 
 Read and write **XLSB** and **XLSX**, bring your pandas or polars DataFrames,
 and refresh existing **XLSM** templates while preserving their macros.
-Style the result with charts, tables, and formatting — all from Python.
+Style the result with charts, tables, formatting, and cell notes — all from Python.
 
 [Get started](#quick-start) · [Usage guide](docs/usage.md) · [Examples](examples/README.md) · [Benchmarks](docs/benchmarks.md)
 

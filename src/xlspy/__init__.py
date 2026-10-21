@@ -34,6 +34,8 @@ from .charts import (
 )
 from .data_validation import DataValidation
 from .formulas import Formula
+from .comments import Comment
+from ._metadata import DefinedName, SheetProtection, WorkbookProtection
 from .hyperlinks import Hyperlink
 from .images import Image
 from .outline import Group
@@ -41,6 +43,38 @@ from .printing import PageMargins, PrintSettings
 from .dataframe import dataframe_to_rows, to_xlsb, to_xlsx
 
 __version__ = "0.7.0"
+
+_WORKBOOK_EXPORTS = {
+    "Workbook",
+    "Worksheet",
+    "WriteOnlyWorksheet",
+    "ReadOnlyWorksheet",
+    "Cell",
+    "MergedCell",
+    "CellRange",
+    "MultiCellRange",
+    "DocumentProperties",
+    "ColumnDimension",
+    "RowDimension",
+    "Dimension",
+    "DimensionHolder",
+    "SheetProperties",
+    "SheetView",
+    "AutoFilter",
+    "load_workbook",
+}
+
+
+def __getattr__(name):
+    if name in _WORKBOOK_EXPORTS:
+        from . import workbook as _workbook
+
+        value = getattr(_workbook, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
     'XlsbWriter',
     'XlsxWriter',
@@ -74,6 +108,10 @@ __all__ = [
     'ChartMarker',
     'DataLabels',
     'Formula',
+    'Comment',
+    'DefinedName',
+    'SheetProtection',
+    'WorkbookProtection',
     'DataValidation',
     'Hyperlink',
     'Image',
@@ -83,4 +121,21 @@ __all__ = [
     'dataframe_to_rows',
     'to_xlsx',
     'to_xlsb',
+    'Workbook',
+    'Worksheet',
+    'WriteOnlyWorksheet',
+    'ReadOnlyWorksheet',
+    'Cell',
+    'MergedCell',
+    'CellRange',
+    'MultiCellRange',
+    'DocumentProperties',
+    'ColumnDimension',
+    'RowDimension',
+    'Dimension',
+    'DimensionHolder',
+    'SheetProperties',
+    'SheetView',
+    'AutoFilter',
+    'load_workbook',
 ]

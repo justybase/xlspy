@@ -1,8 +1,8 @@
 """Excel formula cells.
 
 A ``Formula`` is written as a formula, never as text. xlspy does not evaluate
-formulas: the text is stored as given, after a few mechanical normalizations
-that the file format requires, and Excel recalculates on open.
+formulas: XLSX stores normalized formula text, and XLSB compiles supported
+expressions to BIFF12 tokens. Excel recalculates on open.
 """
 
 from __future__ import annotations

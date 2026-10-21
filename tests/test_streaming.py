@@ -284,10 +284,10 @@ def test_xlsb_inline_text_limit_is_enforced(tmp_path):
 # -------------------------------------------- XLSB refuses XLSX-only cells
 
 
-def test_xlsb_rejects_formula_and_hyperlink_cells(tmp_path):
-    for index, cell in enumerate([Formula("A1+1"), Hyperlink("https://example.com")]):
+def test_xlsb_rejects_hyperlink_cells(tmp_path):
+    for index, cell in enumerate([Hyperlink("https://example.com")]):
         path = tmp_path / f"rich_{index}.xlsb"
-        with pytest.raises(TypeError, match="does not support Formula or Hyperlink"):
+        with pytest.raises(TypeError, match="does not support Hyperlink"):
             with XlsbWriter(path) as writer:
                 writer.add_sheet("Data")
                 writer.write_sheet([["x", cell]])

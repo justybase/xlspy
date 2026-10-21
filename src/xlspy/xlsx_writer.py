@@ -16,6 +16,8 @@ from .data_validation import DataValidation, data_validation_xml
 from .excel_dates import datetime_to_serial
 from .formats import _get_format, _unwrap_cell
 from .formulas import Formula
+from .comments import Comment, normalize_comments, comments_xml, vml_xml, COMMENTS_TYPE
+from ._metadata import MAIN, DefinedName, SheetProtection, WorkbookProtection, replace_element
 from .hyperlinks import Hyperlink
 from .images import Image
 from .outline import build_outline
@@ -203,6 +205,30 @@ class XlsxWriter(StagedWriter):
         self._next_chart_id = 1
         self._next_numfmt_id = 164
         self._next_xf_index = 4
+        self._sheet_comments: dict[int, dict[str, Comment]] = {}
+        self._defined_names: dict[tuple[str, str | None], DefinedName] = {}
+        self._workbook_protection: WorkbookProtection | None = None
+
+    def set_defined_name(self, definition: DefinedName) -> None:
+        """Set a global or worksheet-local name; local titles are checked on save."""
+        self._require_writable()
+        if not isinstance(definition, DefinedName):
+            raise TypeError("definition must be a DefinedName")
+        self._defined_names[(definition.name.casefold(), definition.scope)] = definition
+
+    def get_defined_names(self) -> list[DefinedName]:
+        return list(self._defined_names.values())
+
+    def remove_defined_name(self, name: str, scope: str | None = None) -> None:
+        self._require_writable()
+        DefinedName(name, "0", scope)
+        self._defined_names.pop((name.casefold(), scope), None)
+
+    def set_workbook_protection(self, protection: WorkbookProtection) -> None:
+        self._require_writable()
+        if not isinstance(protection, WorkbookProtection):
+            raise TypeError("protection must be WorkbookProtection")
+        self._workbook_protection = protection
 
     def _staging_bytes(self):
         # File-object targets are staged under the same in-memory limit as the rows.
@@ -440,10 +466,13 @@ class XlsxWriter(StagedWriter):
         column_groups: list | tuple | None = None,
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
+        auto_filter_ref: str | None = None,
         charts: list[Chart] | tuple[Chart, ...] | None = None,
         data_validations: list[DataValidation] | tuple[DataValidation, ...] | None = None,
         images: list[Image] | tuple[Image, ...] | None = None,
         print_settings: PrintSettings | None = None,
+        comments: Mapping[str, Comment] | None = None,
+        sheet_protection: SheetProtection | None = None,
     ):
         """Write rows to the current sheet.
 
@@ -457,6 +486,14 @@ class XlsxWriter(StagedWriter):
             raise TypeError("header_style must be a Style instance")
         style_ranges = normalize_style_ranges(styles)
         merge_refs = self._normalize_merges(merges)
+        comment_specs = normalize_comments(comments, merges=merge_refs)
+        if sheet_protection is not None and not isinstance(sheet_protection, SheetProtection):
+            raise TypeError("sheet_protection must be SheetProtection")
+        if auto_filter_ref is not None:
+            # Validate before rows are streamed: a late error aborts the writer.
+            if not isinstance(auto_filter_ref, str):
+                raise TypeError("auto_filter_ref must be an A1 range string")
+            parse_cell_range(auto_filter_ref)
         cf_rules = self._normalize_cf_rules(conditional_formats)
         table_specs = self._normalize_tables(tables)
         chart_specs = self._normalize_charts(charts)
@@ -530,7 +567,19 @@ class XlsxWriter(StagedWriter):
             tail = self._sheet_tail(
                 body, sheet_index, merge_refs, cf_rules, table_specs, table_bounds,
                 validations, link_rels, auto_filter, drawing_rid, print_spec,
+                auto_filter_ref=auto_filter_ref,
             )
+            if sheet_protection is not None:
+                tail = '</sheetData>' + sheet_protection.to_xml() + tail[len('</sheetData>'):]
+            if comment_specs:
+                self._sheet_comments[sheet_id] = comment_specs
+                rid = f"rId{len(rels) + 1}"
+                rels.append((rid, _REL_WORKSHEET.rsplit('/', 1)[0] + '/comments',
+                             f'../comments/comment{sheet_id}.xml', False))
+                vml_rid = f"rId{len(rels) + 1}"
+                rels.append((vml_rid, _REL_WORKSHEET.rsplit('/', 1)[0] + '/vmlDrawing',
+                             f'../drawings/commentsDrawing{sheet_id}.vml', False))
+                tail = replace_element(tail, 'legacyDrawing', f'<legacyDrawing r:id="{vml_rid}"/>', before=('tableParts',))
             if rels:
                 self._sheet_rels[sheet_id] = rels
             with self._zf.open(f"xl/worksheets/sheet{sheet_id}.xml", 'w') as sheet_file:
@@ -681,6 +730,8 @@ class XlsxWriter(StagedWriter):
         data_validations: list | tuple | None = None,
         images: list | tuple | None = None,
         print_settings: PrintSettings | None = None,
+        comments: Mapping[str, Comment] | None = None,
+        sheet_protection: SheetProtection | None = None,
     ):
         """Write a pandas or polars DataFrame to the current sheet.
 
@@ -719,6 +770,8 @@ class XlsxWriter(StagedWriter):
             data_validations=data_validations,
             images=images,
             print_settings=print_settings,
+            comments=comments,
+            sheet_protection=sheet_protection,
         )
 
     def _write_workbook_parts(self):
@@ -758,6 +811,10 @@ class XlsxWriter(StagedWriter):
                 f"xl/drawings/_rels/drawing{sheet_id}.xml.rels",
                 chart_parts.drawing_rels_xml(chart_ids, image_names=media),
             )
+
+        for sheet_id, comments in self._sheet_comments.items():
+            self._zf.writestr(f"xl/comments/comment{sheet_id}.xml", comments_xml(comments))
+            self._zf.writestr(f"xl/drawings/commentsDrawing{sheet_id}.vml", vml_xml(comments))
 
         for name, data in self._media_parts:
             self._zf.writestr(f"xl/media/{name}", data)
@@ -848,6 +905,12 @@ class XlsxWriter(StagedWriter):
             theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
 
         shared_strings_part = ""
+        comment_parts = ''.join(
+            f'<Override PartName="/xl/comments/comment{sheet_id}.xml" ContentType="{COMMENTS_TYPE}"/>'
+            for sheet_id in self._sheet_comments
+        )
+        if self._sheet_comments:
+            comment_parts += '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
         if self._useSharedStrings and self._shared_strings:
             shared_strings_part = '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
 
@@ -864,6 +927,7 @@ class XlsxWriter(StagedWriter):
 {chart_overrides}
 {theme_part}
 {shared_strings_part}
+{comment_parts}
 </Types>'''
 
     def _create_root_rels(self) -> str:
@@ -928,12 +992,16 @@ class XlsxWriter(StagedWriter):
                     f'<definedName name="_xlnm.Print_Titles" localSheetId="{sheet_index}">'
                     f'{saxutils.escape(titles)}</definedName>'
                 )
+        sheet_titles = [name for name, _, _ in self._worksheet_data]
+        names.extend(definition.to_xml(sheet_titles) for definition in self._defined_names.values())
         defined_names = f"<definedNames>{''.join(names)}</definedNames>" if names else ""
+        protection = self._workbook_protection.to_xml() if self._workbook_protection else ""
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <fileVersion appName="xl" lastEdited="4" lowestEdited="4" rupBuild="4505"/>
 <workbookPr defaultThemeVersion="124226"/>
+{protection}
 <bookViews><workbookView xWindow="240" yWindow="15" windowWidth="16095" windowHeight="9660"/></bookViews>
 <sheets>{sheets}</sheets>
 {defined_names}
@@ -1713,20 +1781,25 @@ class XlsxWriter(StagedWriter):
 
     def _sheet_tail(self, body, sheet_index, merge_refs, cf_rules, table_specs,
                     table_bounds, validations, link_rels, auto_filter, drawing_rid,
-                    print_spec):
+                    print_spec, *, auto_filter_ref=None):
         """Everything after the row data, in schema order."""
         parts = ['</sheetData>']
         data_filter = None
         if body.num_rows > 1 and body.max_cols > 0:
             data_filter = f"{self._letters[0]}1:{self._letters[body.max_cols - 1]}{body.num_rows}"
-        if data_filter is not None and auto_filter is not False and data_filter not in body.table_refs:
+        if auto_filter_ref is not None:
+            data_filter = auto_filter_ref
+        if auto_filter is False:
+            data_filter = None
+        if data_filter is not None and data_filter not in body.table_refs:
             parts.append(f'<autoFilter ref="{data_filter}"/>')
+            first_col, first_row, last_col, last_row = parse_cell_range(data_filter)
             self._filtered_data_list.append(FilterData(
                 sheet_index=sheet_index,
-                start_column=0,
-                end_column=body.max_cols - 1,
-                start_row=0,
-                end_row=body.num_rows - 1,
+                start_column=first_col,
+                end_column=last_col,
+                start_row=first_row,
+                end_row=last_row,
             ))
         if merge_refs:
             parts.append(f'<mergeCells count="{len(merge_refs)}">')

@@ -9,6 +9,7 @@ import re
 import struct
 from decimal import Decimal
 from typing import Any, Iterable, Literal, Sequence
+from ._xlsb_edit import XlsbEditMixin
 
 from .biff_utils import (
     Biff12Record,
@@ -57,7 +58,7 @@ def _xml_attribute(attrs: dict[str, str], wanted: str) -> str | None:
     return None
 
 
-class XlsbUpdater:
+class XlsbUpdater(XlsbEditMixin):
     """Replace the data region of sheets in an existing XLSB file."""
 
     def __init__(self, path: str | os.PathLike[str]):

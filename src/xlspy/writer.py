@@ -11,6 +11,7 @@ from ._accel import xlsb_row_has_formatted as accel_row_has_formatted
 from ._accel import encode_xlsb_sst as accel_encode_xlsb_sst
 from .formats import _is_formatted_cell, _unwrap_cell, _get_format
 from .excel_dates import datetime_to_serial
+from ._xlsb_writer import XlsbWriterMetadata
 from . import chart_parts
 from .styles import (
     Chart,
@@ -145,7 +146,7 @@ class FilterData:
 
 # XLSB has no encoding here for formulas and hyperlinks. The C row encoder
 # hands rows with such objects to the Python encoder, which refuses them.
-_XLSB_REJECTED_TYPES = frozenset({Formula, Hyperlink})
+_XLSB_REJECTED_TYPES = frozenset({Hyperlink})
 
 
 def _capture_cells(rows, store: dict):
@@ -159,7 +160,7 @@ def _capture_cells(rows, store: dict):
         yield row
 
 
-class XlsbWriter(StagedWriter):
+class XlsbWriter(StagedWriter, XlsbWriterMetadata):
     def __init__(self, file: str | io.IOBase, compressionLevel:int = 4,
                  useSharedStrings: bool = True):
         self._file = file
@@ -199,6 +200,9 @@ class XlsbWriter(StagedWriter):
         self._seen_cf_priorities: set[int] = set()
         self._reserved_cf_priorities: set[int] = set()
         self._next_cf_priority = 1
+        self._xlsb_formula_context = None
+        self._sheet_comments = {}
+        self._workbook_protection = None
 
     def add_sheet(self, sheet_name: str, hidden : bool = False):
         check_sheet_name(sheet_name, (name for name, _data, _hidden in self._worksheet_data))
@@ -763,6 +767,8 @@ class XlsbWriter(StagedWriter):
         charts: list[Chart] | tuple[Chart, ...] | None = None,
         tables: list | tuple | None = None,
         conditional_formats: list | tuple | None = None,
+        comments=None,
+        sheet_protection=None,
     ):
         self._require_writable()
         if header_style is not None and not isinstance(header_style, Style):
@@ -771,6 +777,14 @@ class XlsbWriter(StagedWriter):
         for candidate in ([header_style] if header_style is not None else []) + [item[-1] for item in style_ranges]:
             self._reject_rich_style(candidate)
         merge_refs = self._normalize_merges(merges)
+        comment_specs = {}
+        if comments is not None:
+            from .comments import normalize_comments
+            comment_specs = normalize_comments(comments, merges=merge_refs)
+        if sheet_protection is not None:
+            from ._metadata import SheetProtection
+            if not isinstance(sheet_protection, SheetProtection):
+                raise TypeError("sheet_protection must be SheetProtection")
         widths = self._normalize_widths(column_widths, "column_widths")
         hidden_cols = normalize_hidden_columns(hidden_columns)
         heights = self._normalize_row_heights(row_heights)
@@ -803,6 +817,8 @@ class XlsbWriter(StagedWriter):
         sheet_name,_, hidden = self._worksheet_data[self._sheet_count - 1]
         self._worksheet_data[self._sheet_count - 1] = (sheet_name, data, hidden)
         sheet_id = self._sheet_count
+        if comment_specs:
+            self._sheet_comments[sheet_id] = comment_specs
         if chart_specs:
             self._sheet_charts[sheet_id] = chart_specs
             # Chart caches need only the cells the charts read. Capture those
@@ -848,6 +864,8 @@ class XlsbWriter(StagedWriter):
                     freeze_panes=freeze_panes, auto_filter=auto_filter,
                     drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
                     cf_rules=cf_specs, row_outline=row_outline, col_outline=col_outline,
+                    sheet_protection=sheet_protection,
+                    comment_vml_rid=(f'rId{3 + len(table_ids) + int(bool(chart_specs))}' if comment_specs else None),
                 )
             for table, table_id in zip(table_specs, table_ids):
                 names = table_column_names(table, header_rows.get(parse_cell_range(table.ref)[1]))
@@ -874,6 +892,8 @@ class XlsbWriter(StagedWriter):
         charts: list | tuple | None = None,
         tables: list | tuple | None = None,
         conditional_formats: list | tuple | None = None,
+        comments=None,
+        sheet_protection=None,
     ):
         """Write a pandas or polars DataFrame to the current sheet.
 
@@ -909,9 +929,17 @@ class XlsbWriter(StagedWriter):
             charts=charts,
             tables=tables,
             conditional_formats=conditional_formats,
+            comments=comments,
+            sheet_protection=sheet_protection,
         )
 
     def _write_workbook_parts(self):
+        if self._sheet_comments:
+            from ._xlsb_metadata import comments_bin
+            from .comments import vml_xml
+            for sheet_id, comments in self._sheet_comments.items():
+                self._zf.writestr(f'xl/comments/comment{sheet_id}.bin', comments_bin(comments))
+                self._zf.writestr(f'xl/drawings/commentsDrawing{sheet_id}.vml', vml_xml(comments))
         for sheet_id, charts in self._sheet_charts.items():
             if not charts or sheet_id in self._sheet_chart_ids:
                 continue
@@ -975,6 +1003,12 @@ class XlsbWriter(StagedWriter):
             for chart_id in range(1, self._next_chart_id)
         )
         theme_part = ""
+        comment_parts = ''.join(
+            f'<Override PartName="/xl/comments/comment{sheet_id}.bin" ContentType="application/vnd.ms-excel.comments"/>'
+            for sheet_id in self._sheet_comments
+        )
+        if self._sheet_comments:
+            comment_parts += '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
         if any(self._sheet_charts.values()):
             theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
 
@@ -989,6 +1023,7 @@ class XlsbWriter(StagedWriter):
 {table_parts}
 {chart_parts_overrides}
 {theme_part}
+{comment_parts}
 <Override PartName="/xl/styles.bin" ContentType="application/vnd.ms-excel.styles"/>
 <Override PartName="/xl/sharedStrings.bin" ContentType="application/vnd.ms-excel.sharedStrings"/>
 </Types>'''
@@ -1038,6 +1073,12 @@ class XlsbWriter(StagedWriter):
                 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" '
                 f'Target="../drawings/drawing{sheet_id}.xml"/>'
             )
+        if self._sheet_comments.get(sheet_id):
+            index = 2 + len(tables) + int(bool(self._sheet_charts.get(sheet_id)))
+            rels += (
+                f'<Relationship Id="rId{index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments/comment{sheet_id}.bin"/>'
+                f'<Relationship Id="rId{index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/commentsDrawing{sheet_id}.vml"/>'
+            )
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 {rels}
@@ -1068,8 +1109,13 @@ class XlsbWriter(StagedWriter):
             data.extend(sheet_name_utf16)
 
         data.extend(self._workbookBinMiddle)
-        self._write_filter_defined_names(data)
+        if self._xlsb_formula_context is None:
+            self._write_filter_defined_names(data)
+        else:
+            self._register_filter_names()
         data.extend(self._workbookBinEnd)
+        if self._xlsb_formula_context is not None or self._workbook_protection is not None:
+            return self._metadata_workbook(bytes(data))
         return bytes(data)
 
     def _write_custom_variable_int(self, value: int) -> bytes:
@@ -1499,6 +1545,7 @@ class XlsbWriter(StagedWriter):
         table_rel_ids: list[str] | None = None,
         cf_rules: list | None = None,
         row_outline=None, col_outline=None,
+        sheet_protection=None, comment_vml_rid=None,
     ):
         buffer = io.BytesIO()
         BUFFER_SIZE = 65536
@@ -1599,6 +1646,7 @@ class XlsbWriter(StagedWriter):
         # encoder, which only emits default row headers.
         heights = heights or {}
         custom_rows = set(heights) | set(hidden_row_set)
+        array_ranges = []
 
         row_idx = -1
         for row_idx, row in enumerate(data_iterator):
@@ -1614,7 +1662,7 @@ class XlsbWriter(StagedWriter):
             else:
                 outline_level, outline_hidden = row_outline.state_at(row_idx)
                 outline_collapsed = row_outline.collapsed_at(row_idx)
-            if (not has_formatted and row_idx not in custom_rows
+            if (not has_formatted and not array_ranges and row_idx not in custom_rows
                     and not outline_level and not outline_collapsed):
                 style_ids = None
                 if row_styles:
@@ -1646,17 +1694,32 @@ class XlsbWriter(StagedWriter):
                     continue
 
             last_col = len(row) - 1 if row else 0
+            if array_ranges:
+                from ._xlsb_formulas import ArrayValue
+                row = list(row)
+                for c1, r1, c2, r2 in array_ranges:
+                    if r1 < row_idx <= r2:
+                        row.extend([None] * max(0, c2 + 1 - len(row)))
+                        for col in range(c1, c2 + 1):
+                            value = _unwrap_cell(row[col]) if row[col] is not None else None
+                            if isinstance(value, Formula):
+                                raise ValueError("overlapping array formulas")
+                            row[col] = ArrayValue(r1, c1, value)
+                last_col = max(0, len(row) - 1)
+                row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
 
             height_twips = None
             if row_idx in heights:
                 height_twips = self._row_height_twips(heights[row_idx])
+            row_header_position = buffer.tell()
             buffer.write(self._row_header_record(
                 row_idx, last_col, height_twips,
                 row_idx in hidden_row_set or outline_hidden,
                 outline_level, outline_collapsed,
             ))
 
-            for col_idx, cell in enumerate(row):
+            row_cells = enumerate(row)
+            for col_idx, cell in row_cells:
                 if cell is None:
                     cell_style = row_styles.get(col_idx)
                     if cell_style is not None:
@@ -1725,9 +1788,42 @@ class XlsbWriter(StagedWriter):
                         buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
                 else:
                     # The C encoder hands rows with other objects to this path.
+                    if isinstance(cell, Formula):
+                        from ._xlsb_formulas import formula_cell
+                        buffer.write(formula_cell(cell, col_idx, xf_index if has_custom_fmt else 0,
+                                                  self._formula_context(), sheet=self._worksheet_data[worksheet_index][0], row=row_idx))
+                        if cell.array_ref is not None:
+                            from ._xlsb_formulas import ArrayValue
+                            bounds = parse_cell_range(cell.array_ref)
+                            c1, r1, c2, r2 = bounds
+                            if any(not (c2 < a or c1 > c or r2 < b or r1 > d) for a, b, c, d in array_ranges):
+                                raise ValueError("overlapping array formulas")
+                            array_ranges.append(bounds)
+                            if c2 > last_col:
+                                position = buffer.tell()
+                                buffer.seek(row_header_position + 2 + 21)
+                                buffer.write(struct.pack('<I', c2))
+                                buffer.seek(position)
+                                last_col = c2
+                            for follower_col in range(c1 + 1, c2 + 1):
+                                _, cache = next(row_cells, (follower_col, None))
+                                cache = _unwrap_cell(cache) if cache is not None else None
+                                if isinstance(cache, Formula):
+                                    raise ValueError("overlapping array formulas")
+                                follower_style = row_styles.get(follower_col)
+                                style = self._register_style(follower_style) if follower_style is not None else 0
+                                buffer.write(formula_cell(ArrayValue(r1, c1, cache), follower_col, style,
+                                                          self._formula_context(), sheet=self._worksheet_data[worksheet_index][0], row=row_idx))
+                        continue
+                    if array_ranges:
+                        from ._xlsb_formulas import ArrayValue, formula_cell
+                        if isinstance(cell, ArrayValue):
+                            buffer.write(formula_cell(cell, col_idx, xf_index if has_custom_fmt else 0,
+                                                      self._formula_context(), sheet=self._worksheet_data[worksheet_index][0], row=row_idx))
+                            continue
                     if type(cell) in _XLSB_REJECTED_TYPES:
                         raise TypeError(
-                            "XlsbWriter does not support Formula or Hyperlink cells; use XlsxWriter"
+                            "XlsbWriter does not support Hyperlink cells; use XlsxWriter"
                         )
                     self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx,
                                     xf_index if has_custom_fmt else None)
@@ -1736,6 +1832,36 @@ class XlsbWriter(StagedWriter):
                 sheet_file.write(buffer.getvalue())
                 buffer.seek(0)
                 buffer.truncate()
+
+        if array_ranges:
+            from ._xlsb_formulas import ArrayValue, formula_cell
+            final_row = max(bounds[3] for bounds in array_ranges)
+            for extra_row in range(row_idx + 1, final_row + 1):
+                active = [bounds for bounds in array_ranges if bounds[1] <= extra_row <= bounds[3]]
+                final_col = max((bounds[2] for bounds in active), default=0)
+                # Array rows past the data keep the row options of real rows.
+                if row_outline is None:
+                    extra_level, extra_hidden, extra_collapsed = 0, False, False
+                else:
+                    extra_level, extra_hidden = row_outline.state_at(extra_row)
+                    extra_collapsed = row_outline.collapsed_at(extra_row)
+                buffer.write(self._row_header_record(
+                    extra_row, final_col,
+                    self._row_height_twips(heights[extra_row]) if extra_row in heights else None,
+                    extra_row in hidden_row_set or extra_hidden,
+                    extra_level, extra_collapsed,
+                ))
+                extra_styles = styles_for_row(extra_row, final_col + 1, style_ranges, header_style)
+                for c1, r1, c2, r2 in active:
+                    for col in range(c1, c2 + 1):
+                        style = self._register_style(extra_styles[col]) if col in extra_styles else 0
+                        buffer.write(formula_cell(ArrayValue(r1, c1), col, style, self._formula_context(),
+                                                  sheet=self._worksheet_data[worksheet_index][0], row=extra_row))
+                if buffer.tell() > BUFFER_SIZE:
+                    sheet_file.write(buffer.getvalue())
+                    buffer.seek(0)
+                    buffer.truncate()
+            row_idx = max(row_idx, final_row)
 
         if row_outline is not None:
             # Grouped rows and summary rows past the data get an empty BrtRowHdr.
@@ -1754,7 +1880,11 @@ class XlsbWriter(StagedWriter):
                     buffer.seek(0)
                     buffer.truncate()
 
-        buffer.write(self._sheet1Bytes[218:290])
+        if sheet_protection is None:
+            buffer.write(self._sheet1Bytes[218:290])
+        else:
+            from ._xlsb_metadata import replace_records, sheet_protection_bin
+            buffer.write(replace_records(self._sheet1Bytes[218:290], {0x217}, sheet_protection_bin(sheet_protection), before=(0x217,)))
 
         last_row_idx = row_idx if row_idx > -1 else 0 
 
@@ -1801,7 +1931,13 @@ class XlsbWriter(StagedWriter):
                 struct.pack('<I', len(drawing_rel)) + rel_encoded,
             ))
         if table_rel_ids:
+            if comment_vml_rid is not None:
+                from ._xlsb_metadata import wide_string
+                buffer.write(build_record(0x227, wide_string(comment_vml_rid)))
             buffer.write(self._list_parts_bin(table_rel_ids))
+        elif comment_vml_rid is not None:
+            from ._xlsb_metadata import wide_string
+            buffer.write(build_record(0x227, wide_string(comment_vml_rid)))
         buffer.write(self._sheet1Bytes[346:])
         if buffer.tell() > 0:
             sheet_file.write(buffer.getvalue())

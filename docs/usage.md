@@ -10,6 +10,7 @@ APIs and options behind the [quick start](../README.md#quick-start).
 - [Export pandas and polars DataFrames](#writing-pandas--polars-dataframes-optional)
 - [Update existing workbooks](#updating-an-existing-workbook)
 - [Read XLSB and XLSX files](#reading-xlsb-and-xlsx-files)
+- [Edit cells with the openpyxl-like workbook model](#openpyxl-like-workbook-model)
 - [Stream from a database](#streaming-from-a-database-netezza)
 
 Run commands and examples from the repository root unless stated otherwise.
@@ -563,17 +564,150 @@ report.
 
 | Feature | XLSX | XLSB |
 |---|---|---|
-| Formulas (`Formula`), cached values, array formulas | Yes | No (`TypeError`) |
+| Formulas (`Formula`), cached values, legacy array formulas | Yes | Yes (supported BIFF12 grammar below) |
 | Data validation (all seven types, prompts, errors) | Yes | No (`TypeError`) |
 | Hyperlinks (external, internal, tooltip, styled) | Yes | No (`TypeError`) |
 | Images (PNG, JPEG) | Yes | No (`TypeError`) |
 | Print settings, print area, titles, breaks, headers | Yes | No (`TypeError`) |
 | Row and column groups (`row_groups`, `column_groups`) | Yes | Yes |
+| Classic cell notes (`Comment`) | Yes | Yes |
+| User-defined names, sheet/workbook protection | Yes | Yes |
+| Formula text reading (`data_only=False`) | Yes | Yes (supported BIFF12 tokens below) |
+| Sparse template edits (`update_cells`) | Yes (XLSX/XLSM updater) | Yes |
 | Column, bar, line, pie charts (original options) | Yes | Yes |
 | Horizontal bar, scatter, axes, legend, labels, markers, colours | Yes | No (`ValueError`) |
 | Streaming: one-pass input, spooled rows | Yes | Yes (rows written as produced) |
 | Inline strings (`useSharedStrings=False`) | Yes | Yes (C row encoder; Python fallback) |
 | Chart caches from streamed rows | n/a (no caches) | Yes (only chart cells are kept) |
+
+## Comments and template metadata (XLSX/XLSM/XLSB)
+
+Classic Excel notes are available through `Comment`. These are the notes with
+a cell indicator, rather than Microsoft 365 threaded conversations.
+
+```python
+from xlspy import Comment, DefinedName, SheetProtection, WorkbookProtection, XlsxWriter
+
+with XlsxWriter("review.xlsx") as writer:
+    writer.add_sheet("Data")
+    writer.write_sheet(
+        [["Amount"], [120]],
+        comments={"A2": Comment("Confirm this amount", "Jan", width=240, height=100)},
+        sheet_protection=SheetProtection(password="review"),
+    )
+    writer.set_defined_name(DefinedName("Amount", "'Data'!$A$2"))
+    writer.set_workbook_protection(WorkbookProtection(password="review"))
+```
+
+For binary workbooks use `XlsbWriter("review.xlsb")`; the same metadata API
+is available. `comments` is also accepted by `write_dataframe()`, `to_xlsx()`
+and `to_xlsb()`. Addresses
+are worksheet coordinates, including the header row. Notes may be attached to
+empty cells; a note in a merged range must use its top-left cell. Text and
+author are required strings; width and height are positive pixel dimensions.
+Comment text has the same 32,767 UTF-16 unit limit as cell text.
+
+Read and edit an existing workbook without replacing its entire data region:
+
+```python
+from xlspy import Comment, ExcelReader, Formula, XlsxUpdater
+
+updater = XlsxUpdater("review.xlsx")  # XlsmUpdater and XlsbUpdater have the same API
+try:
+    updater.update_cells("Data", {"A2": 125, "B2": Formula("A2*2", value=250)})
+    updater.set_comments("Data", {
+        "A2": Comment("Confirmed", "Ola"),
+        "C3": None,  # remove this note if present
+    })
+    updater.save("reviewed.xlsx")
+finally:
+    updater.close()
+
+with ExcelReader("reviewed.xlsx") as reader:
+    notes = reader.get_comments("Data")  # {"A2": Comment(...)}
+    names = reader.get_defined_names()
+    formulas = reader.read_all("Data", data_only=False)
+```
+
+`set_comments()` patches only the supplied addresses. `get_comments()` is
+available on both reader and updater and guarantees text and author; returned
+dimensions use the defaults (144 × 79 pixels). Untouched note XML/binary records, including
+rich formatting, and unrelated VML controls are preserved during updates.
+Existing threaded conversations are preserved; creating/editing them, or adding
+a classic note to a cell with a threaded comment, is unsupported. Ambiguous
+or unsupported VML relationships/shapes cause an error before changes are staged.
+Deleting the last note removes unused comment parts and drawing references;
+VML parts containing controls are retained.
+
+`update_cells(sheet_name, cells)` accepts a mapping from single-cell addresses
+to strings, finite numbers, booleans, dates/datetimes, `Formula`, or `None`.
+Existing styles and notes stay attached to the same addresses. Dates are stored
+as Excel serials and use the target cell's existing number format. `None` clears
+the value while retaining formatting and metadata. A `(value, format_string)`
+wrapper uses its value, as in the existing updater. Strings are written inline;
+other cells and shared-string indexes retain their contents. The method expands
+worksheet dimensions, but does not resize tables, filters or pivot sources.
+It materializes the selected worksheet XML or binary part; use `replace_sheet_data_stream()`
+for bounded-memory replacement of large data regions.
+
+Formula edits request recalculation in Excel and remove the obsolete calculation
+chain. This library does not calculate results; `Formula.value` supplies an
+optional cached result. Point edits into shared, array or data-table formula
+groups are refused, and `update_cells()` accepts only scalar new formulas.
+Edits into merged ranges must use the top-left cell. Each new updater operation
+stages all affected parts atomically; `save()` publishes them using a temporary file.
+Ordinary `replace_sheet_data()` and its streaming variant keep notes at their
+original addresses, including notes outside a newly shortened data region.
+
+`DefinedName(name, formula, scope=None)` represents an Excel expression, constant
+or range without evaluating it. `scope=None` creates a global name; a worksheet
+title creates a local name. Writer and updater expose `set_defined_name()`,
+`get_defined_names()` and `remove_defined_name(name, scope=None)`. Names replace
+existing names case-insensitively within their scope. Built-in `_xlnm.*` names
+remain managed by the print/filter APIs and are excluded from `get_defined_names()`.
+Local worksheet titles must match the workbook; the writer checks them on save.
+XLSB names retain their ordinal slots so existing binary formula references
+remain valid. Removing a name replaces its slot with a hidden internal
+`_xlspy_deleted_*` name whose value is `#NAME?`; these slots are not listed.
+
+`SheetProtection(enabled=True, select_locked_cells=True,
+select_unlocked_cells=True, password=None)` controls selection and enables cell
+protection. Use `Style(protection=Protection(locked=False))` for editable cells.
+`WorkbookProtection(lock_structure=True, password=None)` protects workbook
+structure. The updater exposes `set_sheet_protection(sheet_name, protection)`
+and `set_workbook_protection(protection)`; pass `enabled=False` or
+`lock_structure=False` to disable protection. Writer accepts `sheet_protection`
+on its sheet/DataFrame methods and `set_workbook_protection()` for the workbook.
+Passwords use Excel's legacy hash, accept up to 15 ASCII characters, and do not
+encrypt the file.
+
+These additions support XLSX/XLSB creation and XLSX/XLSM/XLSB updates without
+additional runtime dependencies. See the runnable
+[`comments and templates example`](../examples/xlsx_comments_and_templates.py)
+(`--out reviewed.xlsb` selects binary output).
+
+### XLSB formulas and the bulk data path
+
+`Formula` in XLSB supports arithmetic, comparisons, concatenation, constants,
+cell/range references (including absolute, whole-row/column and sheet references),
+defined names, legacy array formulas and the built-in functions in the BIFF12
+function table. Supported newer functions such as `CONCAT` and `XLOOKUP` use
+hidden `_xlfn.*` names. Excel performs calculation; a missing `Formula.value`
+is initially stored as a numeric zero placeholder in XLSB.
+
+Structured table references, external-workbook references, inline array
+constants and unsupported BIFF12 formula tokens raise an explicit error.
+`LET` and the `LAMBDA` family remain unsupported. These limits also apply
+when reading formula text; reading cached values does not parse formula tokens.
+Point edits into grouped formulas are refused. Sparse edits discard the
+modified sheet's obsolete binary index and request recalculation.
+
+Ordinary exports and reads with `data_only=True` retain their C row encoder
+and reader, with the existing Python fallback. They do not parse formula
+tokens or look up comments for each cell. The binary formula context is
+created only when formulas or names are used. Incremental binary reading
+is available through `get_rows(..., streaming=True)`; `data_only=False`
+selects the formula-aware incremental reader automatically.
 
 ## Writing pandas / polars DataFrames (optional)
 
@@ -743,6 +877,20 @@ powershell -ExecutionPolicy Bypass -File tools\validate_excel_com.ps1 result.xls
 
 ## Reading XLSB and XLSX Files
 
+For XLSX/XLSM, `get_rows()` parses worksheet XML incrementally. It does not load
+the complete worksheet or retain previously returned rows. Shared strings and
+styles are still loaded separately; shared-formula definitions are retained when
+reading formula text. `read_all()` explicitly collects all rows in memory.
+Rows wider than the first row retain all cells; shorter rows retain the historical
+padding to the first row's width. Missing worksheet row numbers are not synthesized.
+
+The default `data_only=True` returns stored values, including formula caches.
+`get_rows(sheet_name, data_only=False)` and `read_all(..., data_only=False)` return
+formula strings beginning with `=`. Shared formulas are expanded to each cell's
+relative references; legacy array formulas appear at their source cell. Formula
+text reading is supported for XLSX/XLSM and supported XLSB tokens. Inline rich text is returned as
+plain text with all displayed fragments and spaces retained.
+
 Reading files is done via the `ExcelReader` class, which automatically detects the format.
 
 ```python
@@ -762,6 +910,95 @@ with ExcelReader("large_file.xlsb") as reader:
     for row in reader.get_rows("Sheet1"):
         print(row)
 ```
+
+Strict Open XML workbooks (Excel's "Strict Open XML Spreadsheet" format,
+ISO/IEC 29500 Strict namespaces) are readable through `ExcelReader`, including
+values, formula text, notes and defined names, and through
+`load_workbook(..., read_only=True)`. Updating them is not supported:
+`XlsxUpdater` and `load_workbook()` raise `NotImplementedError`, because edits
+would mix Transitional markup into a Strict package. Save the file as a
+regular `.xlsx` to edit it.
+
+## openpyxl-like workbook model
+
+`xlspy.Workbook` and `xlspy.load_workbook()` provide random cell access with an
+API modelled on openpyxl. The fast `XlsxWriter`, `XlsbWriter` and `ExcelReader`
+paths are unchanged and do not import this model; use it when you need
+coordinates, styles, merges or in-place edits rather than bulk throughput.
+
+```python
+from xlspy import Comment, Font, Workbook, load_workbook
+
+workbook = Workbook()
+sheet = workbook.active
+sheet.title = "Data"
+sheet["A1"] = "Amount"
+sheet["A2"] = 120
+sheet["B2"] = "=A2*2"            # stored as a formula
+sheet["A1"].font = Font(bold=True)
+sheet["A2"].comment = Comment("Confirm", "Ann")
+sheet.merge_cells("D1:E2")
+sheet.column_dimensions["A"].width = 18
+sheet.freeze_panes = "A2"
+workbook.save("report.xlsx")      # .xlsb uses XlsbWriter
+
+workbook = load_workbook("report.xlsx")
+workbook["Data"]["A2"] = 125
+workbook.save("report.xlsx")
+workbook.close()
+```
+
+Supported model features:
+
+- `Workbook`: `active`, `sheetnames`, `worksheets`, `create_sheet(title,
+  index)`, `remove()`, `copy_worksheet()`, `properties`, `defined_names`
+  (read), `save()` and `close()`. `Workbook(write_only=True)` creates
+  append-only sheets.
+- `Worksheet`: `cell()`, `ws["A1"]`, ranges such as `ws["A1:B3"]`, `append()`,
+  `iter_rows()`/`iter_cols()` (with `values_only`), `rows`, `values`,
+  `merge_cells()`/`unmerge_cells()`, `column_dimensions`/`row_dimensions`
+  (width/height, hidden, outline level), `freeze_panes`, `auto_filter.ref`,
+  `sheet_state`, `sheet_properties.tabColor` and `sheet_view` options.
+- `Cell`: `value` (numbers, text, booleans, dates/times, `Formula` or text
+  starting with `=`), `font`, `fill`, `border`, `alignment`, `protection`,
+  `number_format`, `comment` and, for new workbooks, `hyperlink`.
+
+Saving a loaded XLSX/XLSM workbook patches only what changed. Changed cells,
+styles, notes, sheet metadata, added/removed/renamed/reordered sheets and
+`styles.xml` are rewritten; drawings, charts, pivots, VBA projects and other
+parts are copied unchanged. When sheets are removed or reordered,
+worksheet-local defined names (such as print areas) keep pointing to the same
+sheet, names local to a removed sheet are dropped, and the calculation chain is
+removed so that Excel rebuilds it. Rewritten workbook and style parts keep
+Excel's namespace prefixes, which `mc:Ignorable` refers to.
+
+Limitations: editing hyperlinks in a loaded workbook, named styles, saving a
+new `.xlsm` and template formats raise `NotImplementedError`/`ValueError`.
+Loading XLSB for editing is not supported; use `XlsbUpdater` for sparse
+binary edits. Like openpyxl, `load_workbook()` returns formula text by default
+(`data_only=False`).
+
+### Read-only mode
+
+`load_workbook(path, read_only=True)` streams XLSX, XLSM and XLSB worksheets
+without building the cell model, following openpyxl's read-only semantics:
+
+- Rows and columns use worksheet coordinates. `iter_rows()` starts at row 1 and
+  column 1 unless `min_row`/`min_col` are given; rows missing from the file are
+  yielded as empty rows.
+- Bounds come from the stored worksheet dimension (`min_row`, `min_column`,
+  `max_row`, `max_column`, `dimensions`). Without one, `max_row` and
+  `max_column` are `None` and each row is as wide as its last cell;
+  `reset_dimensions()` ignores a wrong stored dimension and
+  `calculate_dimension(force=True)` scans the sheet.
+- `iter_rows()` yields `ReadOnlyCell` objects (`value`, `row`, `column`,
+  `coordinate`) and an empty-cell filler; `values_only=True` yields values.
+  `ws["B3"]`, `ws.cell(row, column)` and ranges scan the sheet, as in openpyxl.
+- Read-only sheets cannot be modified or saved.
+
+This differs from `ExcelReader.get_rows()`, which returns compact rows: the
+XLSX reader does not synthesize missing rows, and the XLSB reader starts at the
+first column and row of the first row that contains data.
 
 ## Streaming from a Database (Netezza)
 

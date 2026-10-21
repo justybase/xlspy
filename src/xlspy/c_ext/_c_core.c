@@ -2102,8 +2102,21 @@ static int _process_cell_record(XlsbReader *self, const unsigned char *data,
             col < self->first_col ||
             col - self->first_col >= self->cols_per_row)
         {
-            if (has_cell_alloc) Py_DECREF(cell_val);
-            return 1;
+            /* Only the rare out-of-window branch does extra work. Ordinary
+               rectangular exports execute the same checks as before. Valid
+               later rows may be wider than their header: keep their cells. */
+            if (self->cols_per_row > 0 &&
+                self->cols_per_row <= _XLSB_MAX_COL_SPAN &&
+                col >= self->first_col && col < 16384 &&
+                col - self->first_col >= self->cols_per_row)
+            {
+                self->cols_per_row = col - self->first_col + 1;
+            }
+            else
+            {
+                if (has_cell_alloc) Py_DECREF(cell_val);
+                return 1;
+            }
         }
     }
     else

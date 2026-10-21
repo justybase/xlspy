@@ -25,6 +25,17 @@ To measure coverage (the configured branch-coverage threshold is 84%):
 python -m pytest --cov
 ```
 
+The notes/template regression suites are `test_comments_and_editing.py` and
+`test_xlsx_reader_streaming.py`. For native Excel validation of notes, dimensions,
+named ranges, protection and preserved form controls:
+
+```powershell
+$env:XLSPY_RUN_EXCEL_COM = "1"
+python -m pytest tests/test_excel_com_metadata.py
+python -m pytest tests/test_xlsb_metadata_com.py
+python -m pytest tests/test_excel_com_review_fixes.py
+```
+
 ## Optional C extension
 
 Most XLSB tests run through the pure-Python reader by default when the
