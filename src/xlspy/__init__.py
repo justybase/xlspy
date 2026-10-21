@@ -42,7 +42,7 @@ from .outline import Group
 from .printing import PageMargins, PrintSettings
 from .dataframe import dataframe_to_rows, to_xlsb, to_xlsx
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 
 _WORKBOOK_EXPORTS = {
     "Workbook",
