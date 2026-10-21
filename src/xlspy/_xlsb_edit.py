@@ -259,6 +259,18 @@ class XlsbEditMixin(XlsxEditMixin):
         output.append(data[end.header_start:])
         patched = b''.join(output)
         coordinates = [parse_cell_range(ref) for ref in values]
+        # Existing cells count too: XlsbWriter stores an A1:A1 placeholder.
+        current_row, previous_column = None, -1
+        for record, payload in all_records:
+            if not begin.data_end <= record.header_start < end.header_start:
+                continue
+            if record.record_id == 0:
+                current_row, previous_column = struct.unpack_from('<I', payload)[0], -1
+            elif current_row is not None and 1 <= record.record_id <= 0x12:
+                column = previous_column + 1 if record.record_id >= 0xC else struct.unpack_from('<I', payload)[0]
+                previous_column = column
+                if column < 16384:
+                    coordinates.append((column, current_row, column, current_row))
         dimension = next((payload for record, payload in all_records if record.record_id == 0x94), None)
         if dimension is not None:
             r1, r2, c1, c2 = struct.unpack('<IIII', dimension)

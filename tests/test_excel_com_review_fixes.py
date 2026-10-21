@@ -399,3 +399,30 @@ def test_local_names_with_chartsheet_in_excel(tmp_path, excel, open_workbook):
     assert [sheet.Name for sheet in book.Sheets] == ["Graph", "Other"]
     assert book.Worksheets("Other").Names("LocalOther").RefersToRange.Value == 10
     assert book.Charts.Count == 1
+
+
+def test_binary_sparse_edit_dimension_matches_excel(tmp_path, open_workbook):
+    path, updated = tmp_path / "written.xlsb", tmp_path / "updated.xlsb"
+    with XlsbWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet([["a", 2, Formula("B1*2")], [4]])
+    updater = XlsbUpdater(path)
+    try:
+        updater.update_cells("Data", {"B4": 9})
+        updater.save(updated)
+    finally:
+        updater.close()
+    workbook = load_workbook(updated, read_only=True, data_only=True)
+    try:
+        sheet = workbook["Data"]
+        dimensions, values = sheet.dimensions, list(sheet.values)
+    finally:
+        workbook.close()
+    book = open_workbook(updated)
+    book.Application.CalculateFull()
+    excel_sheet = book.Worksheets("Data")
+    assert excel_sheet.UsedRange.Address == "$" + dimensions.replace(":", ":$").replace("A", "A$", 1).replace("C", "C$", 1)
+    excel_values = excel_sheet.Range(dimensions).Value
+    assert [tuple(row) for row in excel_values][:2] == [("a", 2, 4), (4, None, None)]
+    assert values[0][:2] == ("a", 2) and values[1][0] == 4 and values[3][1] == 9
+    assert excel_values[3][1] == 9

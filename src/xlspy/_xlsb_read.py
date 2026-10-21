@@ -117,7 +117,9 @@ def sheet_dimension(reader, sheet_name):
         for record, payload in iter_records_stream(stream):
             if record.record_id == 0x94 and len(payload) >= 16:
                 r1, r2, c1, c2 = struct.unpack_from('<IIII', payload)
-                if r1 <= r2 < 1048576 and c1 <= c2 < 16384:
+                # XlsbWriter stores an A1:A1 placeholder whatever the data; a
+                # sheet that really is A1:A1 reads the same when unsized.
+                if (r1, r2, c1, c2) != (0, 0, 0, 0) and r1 <= r2 < 1048576 and c1 <= c2 < 16384:
                     return c1 + 1, r1 + 1, c2 + 1, r2 + 1
                 return None
             if record.record_id == 0x91:

@@ -619,3 +619,32 @@ def test_serialize_like_keeps_prefixes_named_by_ignorable():
     assert 'mc:Ignorable="x15"' in output and "<xcalcf:calcFeatures" in output
     assert "ns0" not in output and "ns1" not in output
     assert output.splitlines()[1].startswith('<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"')
+
+
+def test_read_only_binary_files_written_by_xlspy_are_not_truncated(tmp_path):
+    from xlspy import XlsbUpdater, XlsbWriter
+    path = tmp_path / "written.xlsb"
+    with XlsbWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet([[1, 2, Formula("A1*2")], [4]])
+    workbook = load_workbook(path, read_only=True)
+    try:
+        # XlsbWriter stores an A1:A1 dimension placeholder: treat it as unsized.
+        assert workbook["Data"].max_row is None
+        assert list(workbook["Data"].values) == [(1, 2, "=A1*2"), (4,)]
+    finally:
+        workbook.close()
+    updated = tmp_path / "updated.xlsb"
+    updater = XlsbUpdater(path)
+    try:
+        updater.update_cells("Data", {"B4": 9})
+        updater.save(updated)
+    finally:
+        updater.close()
+    workbook = load_workbook(updated, read_only=True, data_only=True)
+    try:
+        sheet = workbook["Data"]
+        assert sheet.dimensions == "A1:C4"
+        assert list(sheet.values) == [(1, 2, 0), (4, None, None), (None, None, None), (None, 9, None)]
+    finally:
+        workbook.close()

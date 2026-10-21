@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `load_workbook(..., read_only=True)` no longer truncates XLSB files written by
+  `XlsbWriter`: their A1:A1 dimension placeholder is treated as unsized.
+  XLSB `update_cells()` now includes existing cells in the stored dimension.
+
 ## [0.8.0] - 2026-10-21
 
 ### Added
