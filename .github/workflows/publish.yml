@@ -36,7 +36,7 @@ jobs:
           CIBW_ARCHS: "auto64"
           CIBW_TEST_COMMAND: "python {project}/tools/wheel_smoke.py"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: wheels-${{ matrix.os }}
           path: ./wheelhouse/*.whl
@@ -60,7 +60,7 @@ jobs:
       - name: Build sdist
         run: python -m build --sdist --outdir wheelhouse
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: wheels-sdist
           path: ./wheelhouse/*.tar.gz
@@ -71,7 +71,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v7
         with:
           pattern: wheels-*
           merge-multiple: true
