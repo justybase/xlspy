@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-22
+
 ### Fixed
 
 - Saving a loaded workbook no longer rewrites the worksheet part of a sheet
