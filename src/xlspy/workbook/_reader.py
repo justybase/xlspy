@@ -31,6 +31,7 @@ from ._model import (
     _normalize_range,
 )
 from ._loaded import _meta_signature
+from ._print import print_settings_for
 from ._styles import XlsxStyleTable, _read_color
 
 _NS_DC = "http://purl.org/dc/elements/1.1/"
@@ -742,6 +743,7 @@ def load_workbook(filename, *, read_only: bool = False, data_only: bool = False,
             rich_text=rich_text,
         )
         sheet._meta_signature = _meta_signature(sheet)
+        sheet._saved_print_settings = print_settings_for(sheet)
         workbook._sheets.append(sheet)
 
     if not workbook._sheets:

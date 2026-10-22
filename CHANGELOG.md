@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Saving a loaded workbook no longer rewrites the worksheet part of a sheet
+  whose print setup was not edited: the page setup read from the file was
+  mistaken for a pending change, so untouched sheets gained a rewritten
+  `pageMargins` element (and were no longer copied byte-for-byte). Printed
+  settings changed through the model are still saved.
+
 ## [0.9.0] - 2026-10-22
 
 ### Added

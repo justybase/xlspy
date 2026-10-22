@@ -612,6 +612,9 @@ class Worksheet:
         # For a loaded workbook: how many objects of each list a save already
         # put into the package (see _objects.pending_objects).
         self._saved_object_counts: dict[str, int] = {}
+        # The print setup a loaded sheet already has in the package, so saving
+        # does not rewrite a sheet whose print settings were not edited.
+        self._saved_print_settings = None
         self._print_settings = None
         self.page_setup = PageSetup()
         self.page_margins = PageMargins()

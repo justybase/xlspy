@@ -9,7 +9,7 @@ import pytest
 
 from xlspy import (
     CellIsRule, Chart, ChartSeries, DataValidation, DifferentialStyle, ExcelTable, Font, Image,
-    XlsxWriter, load_workbook,
+    PageMargins, PrintSettings, XlsxWriter, load_workbook,
 )
 
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -208,8 +208,6 @@ def test_table_name_and_range_conflicts(tmp_path, load):
 
 
 def test_print_setup_keeps_other_page_settings(tmp_path, load):
-    from xlspy import PrintSettings
-
     source = tmp_path / "print.xlsx"
     with XlsxWriter(source) as writer:
         writer.add_sheet("Data")
@@ -223,6 +221,36 @@ def test_print_setup_keeps_other_page_settings(tmp_path, load):
     assert 'paperSize="9"' in setup and 'orientation="landscape"' in setup
     footer = re.search(r"<headerFooter>.*</headerFooter>", sheet)[0]
     assert footer == "<headerFooter><oddHeader>&amp;LLeft</oddHeader><oddFooter>&amp;CFooter</oddFooter></headerFooter>"
+
+
+def test_untouched_sheet_print_setup_is_not_rewritten(tmp_path, load):
+    """A sheet's own print setup must not mark it as changed on every save."""
+    source = tmp_path / "print.xlsx"
+    with XlsxWriter(source) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet([["a"]])
+        writer.add_sheet("Other")
+        writer.write_sheet(
+            [["b"]],
+            print_settings=PrintSettings(
+                orientation="landscape",
+                margins=PageMargins(left=0.4),
+                header="&CReport",
+                print_area="A1:A1",
+            ),
+        )
+    with zipfile.ZipFile(source) as archive:
+        before = archive.read("xl/worksheets/sheet2.xml")
+        first = archive.read("xl/worksheets/sheet1.xml")
+
+    workbook = load(source)
+    workbook["Data"]["A1"] = "changed"
+    workbook.save(tmp_path / "out.xlsx")
+
+    parts = _parts(tmp_path / "out.xlsx")
+    assert parts["xl/worksheets/sheet2.xml"] == before
+    # The edited sheet really was saved.
+    assert parts["xl/worksheets/sheet1.xml"] != first
 
 
 def test_failed_save_does_not_repeat_objects_on_retry(tmp_path, load):

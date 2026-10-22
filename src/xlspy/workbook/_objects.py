@@ -55,11 +55,15 @@ def pending_objects(sheet) -> dict[str, list]:
 
 
 def has_pending_objects(sheet) -> bool:
-    return any(pending_objects(sheet).values()) or print_settings_for(sheet) is not None
+    return (
+        any(pending_objects(sheet).values())
+        or print_settings_for(sheet) != getattr(sheet, "_saved_print_settings", None)
+    )
 
 
 def mark_objects_saved(sheet) -> None:
     sheet._saved_object_counts = {name: len(list(getattr(sheet, name))) for name in _OBJECT_LISTS}
+    sheet._saved_print_settings = print_settings_for(sheet)
 
 
 def _scratch(sheet, objects, settings) -> dict[str, bytes]:
@@ -320,6 +324,14 @@ def _add_validations(sheet: _Sheet, donor: str) -> None:
     sheet.replace(host, body)
 
 
+def _with_prefix(fragment: str, prefix: str) -> str:
+    """Re-tag a donor fragment with the host worksheet's element prefix."""
+    if not prefix:
+        return fragment
+    fragment = re.sub(r"^<([\w.-]+)", lambda m: f"<{prefix}{m[1]}", fragment, count=1)
+    return re.sub(r"</([\w.-]+)\s*>\s*$", lambda m: f"</{prefix}{m[1]}>", fragment, count=1)
+
+
 def _add_print_setup(sheet: _Sheet, donor: str, settings) -> None:
     if settings.center_horizontally or settings.center_vertically:
         for item in _donor_elements(donor, "printOptions"):
@@ -330,7 +342,9 @@ def _add_print_setup(sheet: _Sheet, donor: str, settings) -> None:
         if host is None:
             sheet.insert("pageMargins", _with_namespaces(margins, MAIN))
         else:
-            sheet.replace(host, _with_namespaces(margins, MAIN))
+            # The element stays in the host part: keep its prefix and let the
+            # worksheet root's default namespace cover it.
+            sheet.replace(host, _with_prefix(margins, sheet.prefix))
     if any(value is not None for value in (
         settings.orientation, settings.paper_size, settings.scale,
         settings.fit_to_width, settings.fit_to_height,
