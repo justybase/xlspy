@@ -733,6 +733,182 @@ class IconSetRule:
         _validate_priority(self.priority)
 
 
+def _check_dxf_rule(rule) -> None:
+    """Checks shared by the rules that apply a ``DifferentialStyle``."""
+    _validate_sqref(rule.sqref)
+    if rule.dxf is not None and not isinstance(rule.dxf, DifferentialStyle):
+        raise TypeError("dxf must be a DifferentialStyle or None")
+    if rule.stop_if_true is not None and not isinstance(rule.stop_if_true, bool):
+        raise TypeError("stop_if_true must be bool or None")
+    _validate_priority(rule.priority)
+
+
+def _check_flag(value, name: str) -> None:
+    if not isinstance(value, bool):
+        raise TypeError(f"{name} must be a bool")
+
+
+@dataclass(frozen=True, slots=True)
+class TopBottomRule:
+    """Top or bottom ``rank`` values (``percent=True``: ``rank`` percent) (XLSX)."""
+
+    sqref: str
+    rank: int = 10
+    percent: bool = False
+    bottom: bool = False
+    dxf: DifferentialStyle | None = None
+    stop_if_true: bool | None = None
+    priority: int | None = None
+
+    def __post_init__(self):
+        _check_dxf_rule(self)
+        if isinstance(self.rank, bool) or not isinstance(self.rank, int):
+            raise TypeError("rank must be an int")
+        if not 1 <= self.rank <= (100 if self.percent else 1000):
+            raise ValueError("rank must be 1-1000 (1-100 with percent=True)")
+        _check_flag(self.percent, "percent")
+        _check_flag(self.bottom, "bottom")
+
+
+@dataclass(frozen=True, slots=True)
+class AboveAverageRule:
+    """Values above (or ``below``) the range's average; ``std_dev`` moves the
+    threshold by that many standard deviations (XLSX)."""
+
+    sqref: str
+    below: bool = False
+    equal_average: bool = False
+    std_dev: int | None = None
+    dxf: DifferentialStyle | None = None
+    stop_if_true: bool | None = None
+    priority: int | None = None
+
+    def __post_init__(self):
+        _check_dxf_rule(self)
+        _check_flag(self.below, "below")
+        _check_flag(self.equal_average, "equal_average")
+        if self.std_dev is not None:
+            if isinstance(self.std_dev, bool) or not isinstance(self.std_dev, int):
+                raise TypeError("std_dev must be an int or None")
+            if not 1 <= self.std_dev <= 3:
+                raise ValueError("std_dev must be 1, 2 or 3")
+
+
+TEXT_OPERATORS = frozenset({"contains", "notContains", "beginsWith", "endsWith"})
+
+
+@dataclass(frozen=True, slots=True)
+class TextRule:
+    """Cells whose text ``contains``, ``notContains``, ``beginsWith`` or
+    ``endsWith`` ``text`` (case-insensitive, as in Excel) (XLSX)."""
+
+    sqref: str
+    operator: str
+    text: str
+    dxf: DifferentialStyle | None = None
+    stop_if_true: bool | None = None
+    priority: int | None = None
+
+    def __post_init__(self):
+        _check_dxf_rule(self)
+        if self.operator not in TEXT_OPERATORS:
+            raise ValueError(f"operator must be one of {sorted(TEXT_OPERATORS)}")
+        if not isinstance(self.text, str) or not self.text:
+            raise ValueError("text must be a non-empty string")
+        if len(self.text) > 255:
+            raise ValueError("text must be at most 255 characters")
+
+
+@dataclass(frozen=True, slots=True)
+class DuplicateRule:
+    """Duplicate values in the range, or ``unique=True`` for values that occur once (XLSX)."""
+
+    sqref: str
+    unique: bool = False
+    dxf: DifferentialStyle | None = None
+    stop_if_true: bool | None = None
+    priority: int | None = None
+
+    def __post_init__(self):
+        _check_dxf_rule(self)
+        _check_flag(self.unique, "unique")
+
+
+TIME_PERIODS = frozenset({
+    "today", "yesterday", "tomorrow", "last7Days", "thisWeek", "lastWeek",
+    "nextWeek", "thisMonth", "lastMonth", "nextMonth",
+})
+
+
+@dataclass(frozen=True, slots=True)
+class TimePeriodRule:
+    """Dates in a period relative to today, such as ``"last7Days"`` (XLSX)."""
+
+    sqref: str
+    period: str
+    dxf: DifferentialStyle | None = None
+    stop_if_true: bool | None = None
+    priority: int | None = None
+
+    def __post_init__(self):
+        _check_dxf_rule(self)
+        if self.period not in TIME_PERIODS:
+            raise ValueError(f"period must be one of {sorted(TIME_PERIODS)}")
+
+
+BLANK_KINDS = frozenset({"blanks", "no_blanks", "errors", "no_errors"})
+
+
+@dataclass(frozen=True, slots=True)
+class BlanksRule:
+    """Blank (``"blanks"``/``"no_blanks"``) or error (``"errors"``/``"no_errors"``) cells (XLSX)."""
+
+    sqref: str
+    kind: str = "blanks"
+    dxf: DifferentialStyle | None = None
+    stop_if_true: bool | None = None
+    priority: int | None = None
+
+    def __post_init__(self):
+        _check_dxf_rule(self)
+        if self.kind not in BLANK_KINDS:
+            raise ValueError(f"kind must be one of {sorted(BLANK_KINDS)}")
+
+
+# Rules XlsxWriter writes beyond the original five.
+# Formulas Excel itself stores with these rules, for the range's top-left
+# cell ({c}); Excel evaluates them relative to each cell of the range.
+CF_TEXT_RULES = {
+    "contains": ("containsText", "containsText", 'NOT(ISERROR(SEARCH({t},{c})))'),
+    "notContains": ("notContainsText", "notContains", 'ISERROR(SEARCH({t},{c}))'),
+    "beginsWith": ("beginsWith", "beginsWith", 'LEFT({c},LEN({t}))={t}'),
+    "endsWith": ("endsWith", "endsWith", 'RIGHT({c},LEN({t}))={t}'),
+}
+CF_TIME_PERIOD_FORMULAS = {
+    "today": "FLOOR({c},1)=TODAY()",
+    "yesterday": "FLOOR({c},1)=TODAY()-1",
+    "tomorrow": "FLOOR({c},1)=TODAY()+1",
+    "last7Days": "AND(TODAY()-FLOOR({c},1)<=6,FLOOR({c},1)<=TODAY())",
+    "thisWeek": "AND(TODAY()-ROUNDDOWN({c},0)<=WEEKDAY(TODAY())-1,ROUNDDOWN({c},0)-TODAY()<=7-WEEKDAY(TODAY()))",
+    "lastWeek": "AND(TODAY()-ROUNDDOWN({c},0)>=(WEEKDAY(TODAY())),TODAY()-ROUNDDOWN({c},0)<(WEEKDAY(TODAY())+7))",
+    "nextWeek": "AND(ROUNDDOWN({c},0)-TODAY()>(7-WEEKDAY(TODAY())),ROUNDDOWN({c},0)-TODAY()<(15-WEEKDAY(TODAY())))",
+    "thisMonth": "AND(MONTH({c})=MONTH(TODAY()),YEAR({c})=YEAR(TODAY()))",
+    "lastMonth": "AND(MONTH({c})=MONTH(EDATE(TODAY(),0-1)),YEAR({c})=YEAR(EDATE(TODAY(),0-1)))",
+    "nextMonth": "AND(MONTH({c})=MONTH(EDATE(TODAY(),0+1)),YEAR({c})=YEAR(EDATE(TODAY(),0+1)))",
+}
+CF_BLANK_RULES = {
+    "blanks": ("containsBlanks", "LEN(TRIM({c}))=0"),
+    "no_blanks": ("notContainsBlanks", "LEN(TRIM({c}))>0"),
+    "errors": ("containsErrors", "ISERROR({c})"),
+    "no_errors": ("notContainsErrors", "NOT(ISERROR({c}))"),
+}
+
+
+EXTRA_CF_RULES = (
+    TopBottomRule, AboveAverageRule, TextRule, DuplicateRule, TimePeriodRule, BlanksRule,
+)
+
+
 @dataclass(frozen=True, slots=True)
 class ExcelTable:
     """An Excel table (ListObject) bound to a rectangular range."""
@@ -853,7 +1029,10 @@ def capture_table_headers(rows, tables, store: dict):
     for row_idx, row in enumerate(rows):
         header_tables = by_row.get(row_idx)
         if header_tables is not None:
-            cells = list(row)
+            from .formats import _unwrap_cell  # formats imports this module
+
+            # A (value, format) or (value, Style) header is its value.
+            cells = [_unwrap_cell(cell) for cell in row]
             store[row_idx] = cells
             for table in header_tables:
                 table_column_names(table, cells)
@@ -1209,17 +1388,137 @@ def normalize_color(value: str) -> str:
     return color
 
 
+class StyleRanges(tuple):
+    """``(first_col, first_row, last_col, last_row, style)`` entries in the
+    caller's order, plus a sweep that finds the ranges covering a row.
+
+    Writers ask for rows in increasing order, so the sweep adds ranges as
+    their first row is reached and drops them past their last row: the cost
+    per row follows the ranges on that row, not all ranges of the sheet.
+    Asking for an earlier row restarts the sweep.
+    """
+
+    def __init__(self, entries=()):
+        self._by_first_row = sorted(range(len(self)), key=lambda i: self[i][1])
+        self._restart()
+
+    def _restart(self):
+        self._next = 0
+        self._row = -1
+        self._open = []
+        self._expires = None
+        self._active = ()
+
+    def active(self, row_index: int):
+        """``(first_col, last_col, style)`` of the ranges covering ``row_index``,
+        in the caller's order."""
+        if row_index == self._row:
+            return self._active
+        if row_index < self._row:
+            self._restart()
+        changed = False
+        if self._expires is not None and row_index > self._expires:
+            self._open = [i for i in self._open if self[i][3] >= row_index]
+            changed = True
+        order = self._by_first_row
+        position = self._next
+        while position < len(order) and self[order[position]][1] <= row_index:
+            index = order[position]
+            if self[index][3] >= row_index:
+                self._open.append(index)
+                changed = True
+            position += 1
+        self._next = position
+        if changed:
+            self._open.sort()
+            self._expires = min((self[i][3] for i in self._open), default=None)
+            self._active = tuple(
+                (self[i][0], self[i][2], self[i][4]) for i in self._open
+            )
+        self._row = row_index
+        return self._active
+
+
+_LAST_ROW = 1048575
+_LAST_COL = 16383
+# Whole columns ("B:D") or columns from a row down ("B2:D"), and whole rows ("1:3").
+_OPEN_COLUMNS_RE = re.compile(r"\$?([A-Za-z]{1,3})(?:\$?([1-9][0-9]*))?:\$?([A-Za-z]{1,3})")
+_OPEN_ROWS_RE = re.compile(r"\$?([1-9][0-9]*):\$?([1-9][0-9]*)")
+
+
+def parse_style_range(reference: str) -> tuple[int, int, int, int]:
+    """Bounds of a ``styles`` key: an A1 cell or range, whole columns
+    (``"B:D"``), columns from a row down (``"B2:D"``) or whole rows
+    (``"1:3"``). Open ranges reach Excel's last row or column; the writers
+    style only the cells of the rows they write."""
+    if isinstance(reference, str):
+        match = _OPEN_COLUMNS_RE.fullmatch(reference)
+        if match is not None:
+            first, row, last = match.groups()
+            bounds = (_column_index(first), int(row) - 1 if row else 0,
+                      _column_index(last), _LAST_ROW)
+        else:
+            match = _OPEN_ROWS_RE.fullmatch(reference)
+            if match is not None:
+                bounds = (0, int(match[1]) - 1, _LAST_COL, int(match[2]) - 1)
+        if match is not None:
+            if bounds[2] < bounds[0] or bounds[3] < bounds[1]:
+                raise ValueError(f"range end precedes its start in {reference!r}")
+            if bounds[2] > _LAST_COL or bounds[1] > _LAST_ROW or bounds[3] > _LAST_ROW:
+                raise ValueError(f"range exceeds Excel limits: {reference!r}")
+            return bounds
+    return parse_cell_range(reference)
+
+
 def normalize_style_ranges(styles: Mapping[str, Style] | None):
     if styles is None:
-        return ()
+        return StyleRanges()
     if not isinstance(styles, Mapping):
         raise TypeError("styles must be a mapping of A1 ranges to Style objects")
     result = []
     for reference, style in styles.items():
         if not isinstance(style, Style):
             raise TypeError(f"style for {reference!r} must be a Style instance")
-        result.append((*parse_cell_range(reference), style))
-    return tuple(result)
+        result.append((*parse_style_range(reference), style))
+    return StyleRanges(result)
+
+
+def check_header_rows(header_rows) -> int:
+    if isinstance(header_rows, bool) or not isinstance(header_rows, int):
+        raise TypeError("header_rows must be an int")
+    if not 1 <= header_rows <= _LAST_ROW + 1:
+        raise ValueError("header_rows must be at least 1")
+    return header_rows
+
+
+def header_style_ranges(style_ranges, header_style, header_rows: int):
+    """``(style_ranges, header_style)`` for a header of ``header_rows`` rows.
+
+    One header row keeps the header_style path. A taller header becomes a
+    whole-row range ahead of the caller's ranges, so they still overlay it.
+    """
+    if header_style is None or header_rows == 1:
+        return style_ranges, header_style
+    header = (0, 0, _LAST_COL, header_rows - 1, merge_styles(Style(bold=True), header_style))
+    return StyleRanges((header, *style_ranges)), None
+
+
+def check_zoom(zoom) -> int | None:
+    """A sheet's zoom in percent (10-400), or None for Excel's 100%."""
+    if zoom is None:
+        return None
+    if isinstance(zoom, bool) or not isinstance(zoom, int):
+        raise TypeError("zoom must be an int percentage or None")
+    if not 10 <= zoom <= 400:
+        raise ValueError("zoom must be between 10 and 400 percent")
+    return zoom
+
+
+def tab_color_key(tab_color):
+    """Color key of a sheet's ``tab_color`` (a Color or color string), or None."""
+    if tab_color is None:
+        return None
+    return _color_key(_coerce_color(tab_color, "tab_color"))
 
 
 def merge_styles(base: Style | None, overlay: Style | None) -> Style | None:
@@ -1240,24 +1539,104 @@ def _uniform_row_styles(row_length: int, style: Style):
     return {column: style for column in range(row_length)}
 
 
+@lru_cache(maxsize=128)
+def _row_styles_for_pattern(row_length: int, ranges, header_style: Style | None):
+    """Reuse the same immutable-in-practice map for rows with the same styles."""
+    styles = {}
+    if header_style is not None:
+        for column in range(row_length):
+            styles[column] = header_style
+    for first_col, last_col, style in ranges:
+        for column in range(first_col, min(last_col, row_length - 1) + 1):
+            styles[column] = merge_styles(styles.get(column), style)
+    return styles or _EMPTY_STYLES
+
+
 def styles_for_row(row_index: int, row_length: int, ranges, header_style: Style | None = None):
     """Return sparse column->style mappings; no allocation for unstyled rows."""
-    if not ranges and header_style is None:
-        return _EMPTY_STYLES
-    if row_index == 0 and header_style is not None and not ranges:
+    if not ranges:
+        if header_style is None or row_index:
+            return _EMPTY_STYLES
         return _uniform_row_styles(row_length, merge_styles(Style(bold=True), header_style))
     if len(ranges) == 1 and header_style is None:
         first_col, first_row, last_col, last_row, style = ranges[0]
         if (first_row <= row_index <= last_row and first_col == 0
                 and last_col >= row_length - 1):
             return _uniform_row_styles(row_length, style)
-    styles = {}
+    if isinstance(ranges, StyleRanges):
+        active = ranges.active(row_index)
+    else:
+        active = tuple(
+            (first_col, last_col, style)
+            for first_col, first_row, last_col, last_row, style in ranges
+            if first_row <= row_index <= last_row
+        )
     if row_index == 0 and header_style is not None:
         effective_header = merge_styles(Style(bold=True), header_style)
-        for column in range(row_length):
-            styles[column] = effective_header
-    for first_col, first_row, last_col, last_row, style in ranges:
-        if first_row <= row_index <= last_row:
-            for column in range(first_col, min(last_col, row_length - 1) + 1):
-                styles[column] = merge_styles(styles.get(column), style)
-    return styles or _EMPTY_STYLES
+    elif not active:
+        return _EMPTY_STYLES
+    else:
+        effective_header = None
+    return _row_styles_for_pattern(row_length, active, effective_header)
+
+
+def _xf_for_style_format(style: Style, overlay: str | Style, register_style, cache: dict) -> int:
+    """XF of ``style`` with a cell's number format or ``Style`` on top,
+    merged once per pair."""
+    if isinstance(overlay, str):
+        key = (id(style), overlay)
+        cached = cache.get(key)
+        if cached is not None and cached[0] is style:
+            return cached[2]
+        merged = merge_styles(style, Style(number_format=overlay))
+    else:
+        key = (id(style), id(overlay))
+        cached = cache.get(key)
+        if cached is not None and cached[0] is style and cached[1] is overlay:
+            return cached[2]
+        merged = merge_styles(style, overlay)
+    xf_index = register_style(merged)
+    # Holding both styles keeps their ids from being reused by other objects.
+    cache[key] = (style, overlay, xf_index)
+    return xf_index
+
+
+def _record_cell_xf(fmt_xf: dict, keep: list, base_xf, overlay, xf_index: int) -> None:
+    """Record the xf of a ``(value, format)`` or ``(value, Style)`` cell for
+    the C row encoders: keyed by the format or the Style's ``id()``, paired
+    with the cell's range-style xf when it has one. ``keep`` holds every
+    keyed Style so its id cannot be reused while the writer is open."""
+    key = overlay if isinstance(overlay, str) else id(overlay)
+    if base_xf is not None:
+        key = (base_xf, key)
+    if key not in fmt_xf:
+        fmt_xf[key] = xf_index
+        if not isinstance(overlay, str):
+            keep.append(overlay)
+
+
+def _style_ids_for_row(row_styles, row_length: int, register_style, cache: dict):
+    """Convert a shared row-style map once per distinct row-style pattern."""
+    if not row_styles:
+        return None
+    key = id(row_styles)
+    cached = cache.get(key)
+    if cached is not None and cached[0] is row_styles:
+        return cached[1]
+    first_style = next(iter(row_styles.values()))
+    if (len(row_styles) == row_length
+            and all(style is first_style for style in row_styles.values())):
+        style_ids = register_style(first_style)
+    else:
+        style_ids = tuple(
+            (column, register_style(row_styles[column]))
+            for column in sorted(row_styles)
+        )
+    # Keep the style map alive along with its cached ids so the identity key
+    # cannot be reused for a different map during this sheet's write.
+    cache[key] = (row_styles, style_ids)
+    return style_ids
+
+
+# Built-in look of a hyperlink cell that has no style of its own.
+HYPERLINK_STYLE = Style(font_color="#0563C1", underline=True)

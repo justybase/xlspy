@@ -158,30 +158,57 @@ def _location(ref, *, relative_offsets=False, origin=(0, 0)):
     return row, col | flags
 
 
-def encode_reference(ref, sheet, context, operand, origin, name_formula):
+# Functions Excel recalculates on every change; formulas using them start
+# with PtgAttrSemi in Excel-written files.
+_VOLATILE_FUNCTIONS = frozenset({'NOW', 'TODAY', 'RAND', 'OFFSET', 'INDIRECT', 'CELL', 'INFO'})
+
+
+def _is_relative(ref):
+    """True when a column or row of an A1 reference lacks its ``$``."""
+    for part in ref.split(':'):
+        match = re.fullmatch(r'(\$?)([A-Za-z]*)(\$?)(\d*)', part)
+        if (match[2] and not match[1]) or (match[4] and not match[3]):
+            return True
+    return False
+
+
+def encode_reference(ref, sheet, context, operand, origin, name_formula, cell_relative=False):
     kind = 0x20 if operand == 'R' else 0x60 if operand == 'A' else 0x40
+    # Validation and conditional-format formulas store same-sheet references
+    # with a relative part as offsets from the range's top-left cell
+    # (PtgRefN, PtgAreaN); fully absolute ones stay PtgRef/PtgArea, like Excel.
+    relative_token = cell_relative and sheet is None and _is_relative(ref)
+    offsets = name_formula or relative_token
     if ':' in ref:
         a, b = ref.split(':')
         if not re.search(r'\d', a):
             a, b = a + '$1', b + '$1048576'
         elif not re.search('[A-Za-z]', a):
             a, b = '$A' + a, '$XFD' + b
-        r1, c1 = _location(a, relative_offsets=name_formula, origin=origin)
-        r2, c2 = _location(b, relative_offsets=name_formula, origin=origin)
-        token = bytes([kind | (0x1B if sheet is not None else 5)])
+        r1, c1 = _location(a, relative_offsets=offsets, origin=origin)
+        r2, c2 = _location(b, relative_offsets=offsets, origin=origin)
+        token = bytes([kind | (0x1B if sheet is not None else 0x0D if relative_token else 5)])
         payload = struct.pack('<IIHH', r1, r2, c1, c2)
     else:
-        row, col = _location(ref, relative_offsets=name_formula, origin=origin)
-        token = bytes([kind | (0x1A if sheet is not None else 4)])
+        row, col = _location(ref, relative_offsets=offsets, origin=origin)
+        token = bytes([kind | (0x1A if sheet is not None else 0x0C if relative_token else 4)])
         payload = struct.pack('<IH', row, col)
     if sheet is not None:
         token += struct.pack('<H', context.sheet_reference(sheet))
     return token + payload
 
 
-def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=False):
+def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=False,
+                    cell_relative=False, operand=None, stats=None):
+    """Encode formula text as a CellParsedFormula.
+
+    ``stats``, when given, is a dict that receives the number of reference
+    tokens under ``"references"``.
+    """
     if not isinstance(text, str) or not text or len(text) > 8192:
         raise ValueError("invalid XLSB formula text or length")
+    references = 0
+    volatile = False
 
     def emit(node, operand='V'):
         kind = node[0]
@@ -202,7 +229,9 @@ def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=Fa
         if kind == 'missing':
             return b'\x16'
         if kind == 'reference':
-            return encode_reference(node[1], node[2], context, operand, origin, name_formula)
+            nonlocal references
+            references += 1
+            return encode_reference(node[1], node[2], context, operand, origin, name_formula, cell_relative)
         if kind == 'name':
             index = context.name_reference(node[1], node[2] or sheet, qualified=node[2] is not None)
             return bytes([0x23 if operand == 'R' else 0x63 if operand == 'A' else 0x43]) + struct.pack('<I', index + 1)
@@ -228,6 +257,9 @@ def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=Fa
                     raise ValueError("too many XLSB function arguments")
                 return b'\x23' + struct.pack('<I', index + 1) + b''.join(emit(arg, 'R') for arg in args) + bytes([result_class | 2, len(args) + 1]) + struct.pack('<H', 255)
             identifier, minimum, maximum, fixed, classes = info
+            if base in _VOLATILE_FUNCTIONS:
+                nonlocal volatile
+                volatile = True
             if not minimum <= len(args) <= maximum:
                 raise ValueError(f"{function} expects {minimum}..{maximum} arguments")
             def argument_class(index):
@@ -261,7 +293,14 @@ def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=Fa
             return b''.join(encoded) + ending
         raise NotImplementedError(f"unsupported XLSB formula node {kind}")
 
-    return parsed_formula(emit(parse_expression(text), 'R' if name_formula else 'V'))
+    top = operand or ('R' if name_formula else 'V')
+    tokens = emit(parse_expression(text), top)
+    if volatile:
+        # PtgAttrSemi opens every formula with a volatile function.
+        tokens = b'\x19\x01\x00\x00' + tokens
+    if stats is not None:
+        stats['references'] = references
+    return parsed_formula(tokens)
 
 
 def _decode_ref(row, column, origin, relative_offsets):

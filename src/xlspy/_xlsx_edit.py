@@ -385,6 +385,12 @@ def _cell_value(value, date_1904, prefix):
             raise ValueError("numeric cell values must be finite")
         text = str(value) if isinstance(value, (int, Decimal)) else repr(float(value))
         return None, f'<{prefix}v>{text}</{prefix}v>'
+    from .rich_text import CellRichText
+
+    if isinstance(value, CellRichText):
+        runs = value.runs_xml(prefix)
+        runs.encode("utf-8")
+        return "inlineStr", f'<{prefix}is>{runs}</{prefix}is>'
     if not isinstance(value, str):
         raise TypeError(f"unsupported cell value: {type(value).__name__}")
     check_cell_text(value)

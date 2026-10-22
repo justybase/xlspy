@@ -75,6 +75,9 @@ with XlsxWriter("output.xlsx", compressionLevel=6) as writer:
 
 `xlspy` supports custom cell formatting for numbers, dates, and datetimes in both XLSB and XLSX output. Pass a `(value, format_string)` tuple to apply a format to a specific cell.
 
+Without a format, both writers show a `date` as `yyyy-mm-dd` and a `datetime` as
+`yyyy-mm-dd hh:mm`, whatever the language of the Excel that opens the file.
+
 ```python
 from xlspy import XlsxWriter, F  # or XlsbWriter
 import datetime
@@ -161,9 +164,152 @@ tuple remains supported and its number format takes precedence over a range
 style's `number_format`.
 
 `write_dataframe()` accepts the same `header_style` and `styles` arguments.
-Unstyled rows continue to use the XLSB C acceleration path. The C encoder also
-accepts compact row style IDs, avoiding the old tuple-based fallback for
-styled rows.
+
+### Open ranges and per-cell styles
+
+A `styles` key can also be open-ended, so a streamed sheet can be styled
+without knowing its length: whole columns (`"B:D"`), columns from a row down
+(`"B2:D"`), or whole rows (`"1:1"`). Only the cells of the rows you write are
+styled; an open range adds no empty rows.
+
+For a style that changes from cell to cell, put it in the row as
+`(value, Style)`, just like `(value, number_format)`. The cell's `Style` goes on
+top of the header and range styles, overriding only the properties it sets:
+
+```python
+ok = Style(fill="E2EFDA")
+late = Style(fill="FCE4D6", bold=True)
+
+with XlsbWriter("status.xlsb") as writer:          # XlsxWriter works the same way
+    writer.add_sheet("Orders")
+    writer.write_sheet(
+        ([order.id, (order.status, late if order.late else ok), order.amount]
+         for order in orders),
+        styles={"C:C": Style(number_format="#,##0.00")},
+    )
+```
+
+`(value, Style)` cells produce the same file as one `styles` entry per cell
+(`{"B2": late, "B3": ok, ...}`), but much faster: Python does not have to
+build and parse an A1 key per cell. The workbook model uses them when it
+saves styled cells.
+
+### Performance of styled writes
+
+Styles cost little on top of a plain write. The C encoders write header,
+range, `(value, format)` and `(value, Style)` cells, and rows with a height,
+hidden flag or outline level. Each distinct style combination is resolved
+once and then reused. Medians from `tools/bench_styles.py` (10,000 rows × 12
+columns, Python 3.14, Windows, C extension on, seconds):
+
+| Scenario | XLSX 0.8.1 | XLSX now | XLSB 0.8.1 | XLSB now |
+|---|---:|---:|---:|---:|
+| no styles | 0.045 | 0.048 | 0.027 | 0.028 |
+| `header_style` | 0.104 | 0.050 | 0.028 | 0.028 |
+| header + `"B2:C10000"` range | 0.122 | 0.055 | 0.046 | 0.035 |
+| four overlapping ranges | 0.438 | 0.060 | 0.354 | 0.036 |
+| `(value, format)` cells | 0.126 | 0.048 | 0.091 | 0.029 |
+| `(value, format)` + range | 0.387 | 0.060 | 0.420 | 0.039 |
+| one `styles` entry per cell (60,000) | 21.0 | 0.183 | 20.4 | 0.171 |
+| the same with `(value, Style)` cells | — | 0.054 | — | 0.032 |
+| range + row heights and groups | 0.146 | 0.066 | 0.145 | 0.046 |
+| workbook model, per-cell styles | 20.6 | 0.112 | 21.1 | 0.092 |
+
+Practical advice:
+
+- Prefer one range per column or block (`"B:B"`, `"B2:D"`) over many small
+  ranges; for styles that vary per cell use `(value, Style)`.
+- Reuse `Style` objects instead of creating an equal one per cell: identical
+  objects are recognised without comparing their contents.
+- Run `python tools/bench_styles.py --help` to measure your own shapes;
+  `--compare before.json after.json` prints the change per scenario.
+
+### Column widths
+
+Columns you do not size with `column_widths` get an automatic width from the
+first 100 rows, close to Excel's own *AutoFit* but never narrower:
+
+- Text is measured per character with widths taken from Excel (Calibri 11):
+  `W`, `M`, `@` and capitals take more room than `i` or `l`, and Chinese,
+  Japanese or Korean characters about two digits each.
+- Numbers and dates are measured as Excel shows them: `(1234567.891, "#,##0.00")`
+  as `1,234,567.89`, General numbers with at most 11 characters, and dates
+  with their format. Month and day names, `TRUE`/`FALSE` and separators
+  depend on the reader's language, so they get room for long names.
+- Bold text, a `Font(size=...)` from the cell's style, and wrapped text (the
+  longest line) are taken into account.
+- Header cells under a filter or table drop-down button get two extra
+  characters for the button.
+- A column is never narrower than Excel's default width (8.43).
+
+Values beyond the first 100 rows are not measured; give `column_widths` for
+columns whose longest values come later. `tools/score_column_widths.py`
+compares the estimate with Excel's AutoFit widths recorded by
+`tools/calibrate_column_widths.py`.
+
+### Grid lines
+
+`show_grid_lines=False` hides the sheet's grid lines, like Excel's
+*View → Gridlines* checkbox or openpyxl's `ws.sheet_view.showGridLines = False`.
+Both writers and `write_dataframe()` accept it; the default `True` writes the
+same file as before. The setting belongs to each sheet:
+
+```python
+with XlsxWriter("report.xlsx") as writer:       # XlsbWriter works the same way
+    writer.add_sheet("Summary")
+    writer.write_sheet(summary_rows, show_grid_lines=False)
+    writer.add_sheet("Data")
+    writer.write_sheet(data_rows)                # grid lines shown
+```
+
+The [workbook model](#openpyxl-like-workbook-model) saves
+`ws.sheet_view.showGridLines = False` the same way, for new XLSX and XLSB
+workbooks as well as loaded ones.
+
+### Tab colour
+
+`tab_color` colours the sheet's tab: an `"RRGGBB"` string (with or without
+`#`) or a `Color`, including theme colours. Both writers and
+`write_dataframe()` accept it, and the workbook model saves
+`ws.sheet_properties.tabColor` for new workbooks:
+
+```python
+writer.add_sheet("Summary")
+writer.write_sheet(summary_rows, tab_color="#C00000")
+writer.add_sheet("Data")
+writer.write_sheet(data_rows, tab_color=Color(theme=4, tint=0.4))
+```
+
+### Zoom
+
+`zoom=85` (10-400 percent) sets the sheet's zoom in both writers and
+`write_dataframe()`; the workbook model saves `ws.sheet_view.zoomScale`.
+
+### Headers of several rows
+
+`header_rows=2` (or more) declares a header of several rows, for example group
+titles above the column names. The automatic filter then starts at the last
+header row, so its buttons sit on the column names, and `header_style` covers
+every header row (both writers):
+
+```python
+writer.write_sheet(
+    [
+        ["Customer", None, "Sales", None],
+        ["Name", "Code", "Q1", "Q2"],
+        ["North", "N", 120, 140],
+    ],
+    header_rows=2,
+    header_style=Style(bold=True, fill="#1F4E78", font_color="#FFFFFF"),
+    merges=["A1:B1", "C1:D1"],
+    freeze_panes="A3",
+)
+```
+
+Here the filter covers `A2:D3`. `styles` ranges still overlay the header style,
+and the column widths leave room for the filter buttons on row 2. Without data
+rows below the header no filter is added. The default `header_rows=1` writes the
+same file as before.
 
 ### Structured styles (openpyxl-like)
 
@@ -211,8 +357,12 @@ grouped by range; priorities are assigned automatically or taken from the
 rule's `priority`. A `DifferentialStyle` (Excel `dxf`) can style the matched
 cells with a font, number format, fill, alignment, border, and protection:
 
-XLSB supports `ColorScaleRule`, `DataBarRule`, and `IconSetRule`; XLSB
-`CellIsRule` and `FormulaRule` currently raise `NotImplementedError`.
+`XlsbWriter` writes the same rules. Its `DifferentialStyle` takes the font
+name, size, colour, bold, italic, underline and strike; pattern fills; the
+top/bottom/left/right borders; horizontal alignment and wrapping; protection
+and a number format. The other options (`GradientFill`, `vertAlign`, diagonal
+borders, vertical alignment and so on) raise `TypeError` in XLSB, as does a
+`CellIsRule` with a text operator such as `containsText` (use `TextRule`).
 
 ```python
 from xlspy import (
@@ -265,18 +415,21 @@ writer.write_sheet(
 width=15.0, height=7.5, style=None)` anchors the chart at a cell; dimensions
 are in centimeters (openpyxl defaults: 15 × 7.5). Each `ChartSeries` takes an
 A1 `values` range on the same sheet, an optional legend label (`title` literal
-or `title_cell` reference) and, except for pie charts, optional `categories`.
+or `title_cell` reference) and optional `categories` (the point labels: axis
+labels, or the slice names in a pie chart's legend).
 Both writers emit the same DrawingML parts (`drawings/drawingN.xml`,
-`charts/chartN.xml`); the XLSX writer links them with a `<drawing>` sheet
-element, the XLSB writer with a `BrtDrawing` record. XLSB chart parts also
-mirror real Excel files: cached values inside every reference, text
-categories via `strRef`, and an explicit `varyColors` flag.
+`charts/chartN.xml`) and take every chart option below; the XLSX writer links
+them with a `<drawing>` sheet element, the XLSB writer with a `BrtDrawing`
+record. XLSB chart parts also mirror real Excel files: cached values inside
+every reference (a `Formula` cell contributes its cached `value`, an empty
+cell is a gap), text categories via `strRef`, and an explicit `varyColors`
+flag.
 
 **XLSB parity:** `XlsbWriter` supports the same `Style` object model
 (`Font`, `PatternFill`, `GradientFill`, `Border`, `Alignment`, `Protection`)
 as well as `merges`, `column_widths`, `hidden_columns`, `row_heights`,
-`hidden_rows`, `row_groups`, `column_groups`, `freeze_panes`, and
-`auto_filter`. A few properties have no BIFF12 representation and raise
+`hidden_rows`, `row_groups`, `column_groups`, `freeze_panes`,
+`show_grid_lines`, and `auto_filter`. A few properties have no BIFF12 representation and raise
 `NotImplementedError` instead of being silently ignored: `relative_indent`,
 the `vertical`/`horizontal`/`start`/`end` border sides, and `outline=False`.
 
@@ -322,12 +475,12 @@ with XlsxWriter("grouped.xlsx") as writer:
 [`xlsx_grouping.py`](../examples/xlsx_grouping.py) builds a two-level report
 with region subtotals and quarter columns (pass `--out grouping.xlsb` for XLSB).
 
-## Formulas, validation, hyperlinks, images, and printing (XLSX)
+## Formulas, validation, hyperlinks, images, and printing
 
-These features are written by `XlsxWriter`. `XlsbWriter` refuses them with a
-`TypeError` (or a `ValueError` for chart options), so an unsupported option is
-never dropped silently. See [feature support](#feature-support) for the full
-matrix.
+`XlsxWriter` and `XlsbWriter` take the same parameters for these features
+(`data_validations=`, `images=`, `print_settings=`). XLSB formulas use the
+BIFF12 grammar described in [XLSB formulas](#xlsb-formulas-and-the-bulk-data-path);
+see [feature support](#feature-support) for the full matrix.
 
 ### Formulas
 
@@ -413,6 +566,42 @@ relative file paths raise `ValueError`. An internal link to a sheet that is not 
 the workbook fails when the workbook is saved. Linked cells use a built-in
 hyperlink look unless the cell has its own style.
 
+**What clicking does.** The whole cell is the hot area, and an internal link
+keeps the reader inside the workbook: clicking `#'Sales Data'!B2` moves the
+selection to B2 of *Sales Data*, which is how you navigate between sheets of a
+report. A web or mail target opens the browser or the mail client instead.
+Excel may ask for `Ctrl` first: *File > Options > Advanced* and clear
+**Use CTRL+Click to follow hyperlink** to follow links with a plain click. To
+select a linked cell without following it, press and hold the mouse button until
+the pointer changes from the pointing hand to the selection cross and then
+release, or use the arrow keys.
+
+**Reading links back.** `load_workbook()` restores them as `cell.hyperlink`
+(the label stays in `cell.value`); `read_rows()` and the streaming readers do
+not report hyperlinks, and changing a link in a loaded workbook raises
+`NotImplementedError` at save time.
+
+**XLSB** takes `Hyperlink` cells too, with the same targets, tooltip and link look
+as XLSX. External links are stored in the sheet's relationships and internal
+ones as location records. The `HYPERLINK` function is also available in XLSB when
+you want the target to come from a formula:
+
+```python
+from xlspy import Formula
+
+writer.write_sheet([
+    ["Sales", Formula('HYPERLINK("#Sales!B2","Go to sales")', value="Go to sales")],
+    # a sheet name with spaces: HYPERLINK("#'Sales Data'!B2","Go to sales")
+])
+```
+
+Excel evaluates it on open and jumps to the target on click just like a
+`Hyperlink` cell. Differences: no tooltip and no link styling (style the cell
+yourself). In XLSB a cell without `value=` keeps a zero placeholder for
+readers that do not recalculate. Use `,` as the argument separator and English
+function names: that is the invariant form the file formats store, whatever
+separator your Excel displays.
+
 ### Images
 
 ```python
@@ -424,8 +613,19 @@ writer.write_sheet(rows, images=[
 ])
 ```
 
-PNG and JPEG only, embedded byte-for-byte; no re-encoding or Pillow dependency.
-`width` and `height` are pixels. Give one and the other keeps the aspect ratio;
+The first argument is a file path, the image bytes, or a binary file object
+such as `io.BytesIO` (read from its current position), so a chart rendered in
+memory needs no temporary file:
+
+```python
+buffer = io.BytesIO()
+figure.savefig(buffer, format="png")      # e.g. matplotlib
+buffer.seek(0)
+writer.write_sheet(rows, images=[Image(buffer, anchor="H2")])
+```
+
+PNG, JPEG, GIF and BMP, embedded byte-for-byte; no re-encoding or Pillow
+dependency. `width` and `height` are pixels. Give one and the other keeps the aspect ratio;
 give neither and the file's own size is used. Pictures and charts can share a
 sheet. Identical files are stored once.
 
@@ -468,6 +668,17 @@ The original chart options still work: `Chart("bar", ...)` is a column chart,
 - `ChartSeries(color="#C00000", marker=ChartMarker("diamond", 8), line=True)`:
   the series colour fills bars and sets the line or marker colour.
 - `title_size=16` (points) for the chart title.
+- `"area"`: an area chart, and `"doughnut"`: a pie with a hole (one series,
+  no axes, slices coloured from the theme).
+- `grouping="stacked"` or `"percent_stacked"` stacks the series of a `"bar"`,
+  `"barh"`, `"line"` or `"area"` chart (each category as 100% for
+  `"percent_stacked"`).
+
+```python
+Chart("bar", [ChartSeries("B2:B13", categories="A2:A13", title_cell="B1"),
+              ChartSeries("C2:C13", categories="A2:A13", title_cell="C1")],
+      title="Sales by region", grouping="stacked")
+```
 
 ```python
 from xlspy import Chart, ChartAxis, ChartLegend, ChartMarker, ChartSeries
@@ -484,15 +695,82 @@ Chart(
 )
 ```
 
-Pie charts have no axes. Options that a chart type cannot use (a marker on a bar
-chart, a colour on a pie) are rejected with a `ValueError`.
+### Rich text
+
+`CellRichText` puts several fonts in one cell (both writers, the workbook
+model and XLSX updates). `XlsbWriter` stores it in the shared-string table, as
+Excel does, also with `useSharedStrings=False`. The classes follow openpyxl:
+
+```python
+from xlspy import CellRichText, InlineFont, TextBlock
+
+total = CellRichText(
+    "Total: ",
+    TextBlock(InlineFont(b=True, color="C00000", sz=14), "1 234"),
+    " EUR",
+)
+writer.write_sheet([["Summary"], [total]])
+```
+
+`InlineFont` takes `b`, `i`, `u`, `strike`, `sz`, `color`, `rFont`,
+`vertAlign`, `family`, `charset` and `scheme`. `str(total)` is the plain text,
+which is also what `ExcelReader` and `load_workbook()` return unless
+`load_workbook(..., rich_text=True)` is used.
+
+### More conditional formatting
+
+Besides `CellIsRule`, `FormulaRule`, `ColorScaleRule`, `DataBarRule` and
+`IconSetRule`, both writers have Excel's other built-in rules. Each takes the
+range first and a `dxf=DifferentialStyle(...)` for the look:
+
+| Rule | Excel's menu entry |
+|---|---|
+| `TopBottomRule(sqref, rank=10, percent=False, bottom=False)` | Top/Bottom Rules |
+| `AboveAverageRule(sqref, below=False, equal_average=False, std_dev=None)` | Above/Below Average |
+| `TextRule(sqref, "contains" \| "notContains" \| "beginsWith" \| "endsWith", text)` | Text that Contains |
+| `DuplicateRule(sqref, unique=False)` | Duplicate Values |
+| `TimePeriodRule(sqref, "today" \| "last7Days" \| "thisMonth" \| ...)` | A Date Occurring |
+| `BlanksRule(sqref, "blanks" \| "no_blanks" \| "errors" \| "no_errors")` | Blanks / Errors |
+
+In XLSB the rules take the same `DifferentialStyle` options as `CellIsRule`
+(see [Conditional formatting](#conditional-formatting)).
+
+Pie and doughnut charts have no axes. Options that a chart type cannot use (a
+marker on a bar chart, a colour on a pie, `grouping` on a pie) are rejected
+with a `ValueError`.
+
+### Document properties
+
+`set_properties()` fills in what Excel shows under *File → Info* (both writers):
+
+```python
+import datetime
+
+with XlsxWriter("report.xlsx") as writer:          # XlsbWriter works the same way
+    writer.set_properties(
+        title="Sales Q3", subject="Sales", author="Finance team",
+        manager="CFO", company="ACME", category="Reports",
+        keywords="sales, q3", comments="Generated nightly", status="Final",
+        created=datetime.datetime(2024, 10, 1, tzinfo=datetime.timezone.utc),
+        custom={"Project": "Alpha", "Revision": 3, "Approved": True},
+    )
+    writer.add_sheet("Data")
+    writer.write_sheet(rows)
+```
+
+Every field is optional. `created` defaults to the time of the call; a naive
+datetime is taken as UTC. `custom` holds str, int, float, bool, date or
+datetime values, shown under *Properties → Advanced Properties → Custom*.
+Without `set_properties()` no `docProps` parts are written, so repeated writes
+of the same data stay byte-for-byte identical. The workbook model saves
+`wb.properties` (title, creator, subject, keywords, ...) the same way.
 
 ### Streaming large exports
 
 `write_sheet` consumes its input exactly once, row by row:
 
 - **XLSX** encodes rows into a temporary spool (kept in memory up to
-  `spool_max_bytes`, 8 MiB by default, then on disk). The sheet is assembled once
+  `spool_max_bytes`, 1 MiB by default, then on disk). The sheet is assembled once
   the last row is known, so the dimension and autofilter are exact. Writes are
   bounded by the spool setting and the 100-row width sample, not by the row count.
 - **XLSB** writes each row to the archive as it is produced.
@@ -565,17 +843,22 @@ report.
 | Feature | XLSX | XLSB |
 |---|---|---|
 | Formulas (`Formula`), cached values, legacy array formulas | Yes | Yes (supported BIFF12 grammar below) |
-| Data validation (all seven types, prompts, errors) | Yes | No (`TypeError`) |
-| Hyperlinks (external, internal, tooltip, styled) | Yes | No (`TypeError`) |
-| Images (PNG, JPEG) | Yes | No (`TypeError`) |
-| Print settings, print area, titles, breaks, headers | Yes | No (`TypeError`) |
+| Data validation (all seven types, prompts, errors) | Yes | Yes |
+| Hyperlinks (external, internal, tooltip, styled) | Yes | Yes ([Hyperlinks](#hyperlinks)) |
+| Images (PNG, JPEG, GIF, BMP; files or in-memory bytes) | Yes | Yes |
+| Print settings, print area, titles, breaks, headers | Yes | Yes |
 | Row and column groups (`row_groups`, `column_groups`) | Yes | Yes |
 | Classic cell notes (`Comment`) | Yes | Yes |
 | User-defined names, sheet/workbook protection | Yes | Yes |
 | Formula text reading (`data_only=False`) | Yes | Yes (supported BIFF12 tokens below) |
 | Sparse template edits (`update_cells`) | Yes (XLSX/XLSM updater) | Yes |
 | Column, bar, line, pie charts (original options) | Yes | Yes |
-| Horizontal bar, scatter, axes, legend, labels, markers, colours | Yes | No (`ValueError`) |
+| Horizontal bar, scatter, area, doughnut, stacked, axes, legend, labels, markers, colours | Yes | Yes |
+| Document properties (`set_properties`, custom properties) | Yes | Yes |
+| Rich text cells (`CellRichText`) | Yes | Yes |
+| Top/bottom, average, text, duplicate, date and blank rules | Yes | Yes |
+| Conditional format styles (`DifferentialStyle`) | Yes | Yes, except gradient fills, diagonal borders, vertical alignment and rare font options (`TypeError`) |
+| Sheet zoom (`zoom`) | Yes | Yes |
 | Streaming: one-pass input, spooled rows | Yes | Yes (rows written as produced) |
 | Inline strings (`useSharedStrings=False`) | Yes | Yes (C row encoder; Python fallback) |
 | Chart caches from streamed rows | n/a (no caches) | Yes (only chart cells are kept) |
@@ -694,6 +977,11 @@ defined names, legacy array formulas and the built-in functions in the BIFF12
 function table. Supported newer functions such as `CONCAT` and `XLOOKUP` use
 hidden `_xlfn.*` names. Excel performs calculation; a missing `Formula.value`
 is initially stored as a numeric zero placeholder in XLSB.
+
+`HYPERLINK` is one of those built-in functions, so a binary workbook can also get
+a clickable link from a formula, `Formula('HYPERLINK("#Other!A1","Go")')`. A
+`Hyperlink` cell works in XLSB as well. See [Hyperlinks](#hyperlinks) for the
+differences and an example.
 
 Structured table references, external-workbook references, inline array
 constants and unsupported BIFF12 formula tokens raise an explicit error.
@@ -958,10 +1246,37 @@ Supported model features:
   `iter_rows()`/`iter_cols()` (with `values_only`), `rows`, `values`,
   `merge_cells()`/`unmerge_cells()`, `column_dimensions`/`row_dimensions`
   (width/height, hidden, outline level), `freeze_panes`, `auto_filter.ref`,
-  `sheet_state`, `sheet_properties.tabColor` and `sheet_view` options.
+  `sheet_state`, `sheet_properties.tabColor` and `sheet_view` options
+  (a new XLSX/XLSB workbook saves `sheet_view.showGridLines`; a loaded one
+  also keeps the other view settings).
 - `Cell`: `value` (numbers, text, booleans, dates/times, `Formula` or text
-  starting with `=`), `font`, `fill`, `border`, `alignment`, `protection`,
-  `number_format`, `comment` and, for new workbooks, `hyperlink`.
+  starting with `=`, `CellRichText`), `font`, `fill`, `border`, `alignment`,
+  `protection`, `number_format`, `comment` and, for new workbooks, `hyperlink`.
+- Rows and columns: `insert_rows()`, `delete_rows()`, `insert_cols()`,
+  `delete_cols()` and `move_range(range, rows, cols, translate=False)`, also
+  in loaded workbooks.
+- Objects: `add_chart()`, `add_image()`, `add_table()`,
+  `add_data_validation()` and `conditional_formatting.add(range, rule)`, in
+  new and loaded workbooks.
+- Printing (new XLSX and XLSB workbooks, and loaded XLSX ones): `print_title_rows`, `print_title_cols`,
+  `print_area`, `page_setup`, `page_margins`, `print_options`,
+  `sheet_properties.pageSetUpPr.fitToPage`, `oddHeader`/`oddFooter`, and
+  `sheet_view.zoomScale` (XLSX and XLSB).
+
+#### Moving from openpyxl
+
+Most report scripts only change their imports. The differences:
+
+| openpyxl | xlspy |
+|---|---|
+| `from openpyxl.chart import BarChart` ... `ws.add_chart(chart, "E2")` | `ws.add_chart(Chart("bar", [ChartSeries("B2:B9")]), "E2")`: xlspy's own chart, image, table, validation and rule classes; passing openpyxl objects raises `TypeError` naming the xlspy class. |
+| `CellIsRule(operator=..., formula=...)` | xlspy rules take the range first: `CellIsRule("B2:B9", "greaterThan", ["10"], dxf=...)`; `conditional_formatting.add(range, rule)` replaces it with its own range. |
+| `insert_rows()` keeps row heights in place | Heights and widths move with their rows and columns, as in Excel. Cell contents, styles, comments and hyperlinks move as in openpyxl; merged ranges and formulas do not (`move_range(translate=True)` shifts the references of moved formulas). |
+| `CellRichText`, `TextBlock`, `InlineFont` from `openpyxl.cell.rich_text` / `.text` | The same names from `xlspy`; `load_workbook(..., rich_text=True)` returns them. |
+| Named styles, autofilter column filters and sort conditions | Not implemented yet (`NotImplementedError`). |
+
+The first row of a model sheet is written as stored: unlike `XlsxWriter`, the
+model does not make first-row text bold.
 
 Saving a loaded XLSX/XLSM workbook patches only what changed. Changed cells,
 styles, notes, sheet metadata, added/removed/renamed/reordered sheets and
@@ -971,6 +1286,16 @@ worksheet-local defined names (such as print areas) keep pointing to the same
 sheet, names local to a removed sheet are dropped, and the calculation chain is
 removed so that Excel rebuilds it. Rewritten workbook and style parts keep
 Excel's namespace prefixes, which `mc:Ignorable` refers to.
+
+Charts, images, tables, data validation, conditional formats and print setup
+added to a loaded sheet are saved next to the file's own objects, which stay
+as they are: a new rule comes after the sheet's rules (its priority follows
+theirs), a new picture joins the sheet's drawing, a new table gets a free id
+and must not share its name with another table in the workbook or overlap a
+table on its sheet (`ValueError`). Print settings change only what was set:
+setting the orientation keeps the sheet's paper size, and setting the footer
+keeps its header. Each object is saved once; saving again writes only the
+objects added since.
 
 Limitations: editing hyperlinks in a loaded workbook, named styles, saving a
 new `.xlsm` and template formats raise `NotImplementedError`/`ValueError`.

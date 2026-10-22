@@ -18,12 +18,19 @@ from .styles import (
     FormulaRule,
     GradientFill,
     IconSetRule,
+    TopBottomRule,
+    AboveAverageRule,
+    TextRule,
+    DuplicateRule,
+    TimePeriodRule,
+    BlanksRule,
     PatternFill,
     Protection,
     Side,
     Stop,
     Style,
 )
+from .rich_text import CellRichText, InlineFont, TextBlock
 from .charts import (
     Chart,
     ChartAxis,
@@ -42,7 +49,7 @@ from .outline import Group
 from .printing import PageMargins, PrintSettings
 from .dataframe import dataframe_to_rows, to_xlsb, to_xlsx
 
-__version__ = "0.8.1"
+__version__ = "0.9.0"
 
 _WORKBOOK_EXPORTS = {
     "Workbook",
@@ -100,6 +107,12 @@ __all__ = [
     'IconSetRule',
     'ColorScaleRule',
     'DataBarRule',
+    'TopBottomRule',
+    'AboveAverageRule',
+    'TextRule',
+    'DuplicateRule',
+    'TimePeriodRule',
+    'BlanksRule',
     'ExcelTable',
     'Chart',
     'ChartSeries',
@@ -115,6 +128,9 @@ __all__ = [
     'DataValidation',
     'Hyperlink',
     'Image',
+    'CellRichText',
+    'TextBlock',
+    'InlineFont',
     'Group',
     'PageMargins',
     'PrintSettings',

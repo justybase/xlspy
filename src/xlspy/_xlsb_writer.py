@@ -51,3 +51,22 @@ class XlsbWriterMetadata:
             last = f'${column_label(item.end_column)}${item.end_row + 1}'
             definition = DefinedName('_FilterDatabase', quote_sheet_name(title) + '!' + first + ':' + last, title)
             context.names.append(_Name(definition.name, title, 0x21, definition=definition))
+
+    def _register_print_names(self):
+        # Built-in (fBuiltin) sheet names, as Excel stores _xlnm.Print_Area
+        # and _xlnm.Print_Titles in XLSB.
+        from ._xlsb_formulas import _Name
+        from .printing import print_area_name, print_titles_name
+        context = self._xlsb_formula_context
+        for sheet_index in sorted(self._sheet_print):
+            settings = self._sheet_print[sheet_index]
+            title = self._worksheet_data[sheet_index][0]
+            values = []
+            if settings.print_area is not None:
+                values.append(('Print_Area', print_area_name(title, settings.print_area)))
+            titles = print_titles_name(title, settings)
+            if titles is not None:
+                values.append(('Print_Titles', titles))
+            for name, formula in values:
+                definition = DefinedName(name, formula, title)
+                context.names.append(_Name(name, title, 0x20, definition=definition))

@@ -217,6 +217,16 @@ def _attr(value: str) -> str:
     return escape(value, {'"': "&quot;", "\n": "&#10;"})
 
 
+def normalize_validations(validations) -> list[DataValidation]:
+    """The ``data_validations`` option of ``write_sheet`` as a list."""
+    if not validations:
+        return []
+    for rule in validations:
+        if not isinstance(rule, DataValidation):
+            raise TypeError("data_validations must be DataValidation instances")
+    return list(validations)
+
+
 def data_validation_xml(rule: DataValidation) -> str:
     """One ``dataValidation`` element; attributes that match the OOXML defaults are omitted."""
     attrs = [f'type="{rule.ooxml_type}"']

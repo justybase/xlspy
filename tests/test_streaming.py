@@ -9,7 +9,7 @@ import zipfile
 
 import pytest
 
-from xlspy import Chart, ChartSeries, ExcelReader, Hyperlink, Formula, XlsbWriter, XlsxWriter
+from xlspy import Chart, ChartSeries, CellRichText, ExcelReader, Hyperlink, Formula, XlsbWriter, XlsxWriter
 
 ROWS = 120_000
 COLS = 5
@@ -284,27 +284,13 @@ def test_xlsb_inline_text_limit_is_enforced(tmp_path):
 # -------------------------------------------- XLSB refuses XLSX-only cells
 
 
-def test_xlsb_rejects_hyperlink_cells(tmp_path):
-    for index, cell in enumerate([Hyperlink("https://example.com")]):
-        path = tmp_path / f"rich_{index}.xlsb"
-        with pytest.raises(TypeError, match="does not support Hyperlink"):
-            with XlsbWriter(path) as writer:
-                writer.add_sheet("Data")
-                writer.write_sheet([["x", cell]])
-        assert not path.exists()
-
-
-@pytest.mark.parametrize("chart", [
-    Chart("barh", [ChartSeries("B2:B3")]),
-    Chart("scatter", [ChartSeries("B2:B3", x_values="A2:A3")]),
-    Chart("bar", [ChartSeries("B2:B3", categories="A2:A3")], show_data_labels=True),
-    Chart("bar", [ChartSeries("B2:B3", categories="A2:A3")], title_size=14),
-])
-def test_xlsb_rejects_extended_chart_options(tmp_path, chart):
-    with XlsbWriter(tmp_path / "chart.xlsb") as writer:
+def test_xlsb_writes_rich_text_cells_from_streamed_rows(tmp_path):
+    path = tmp_path / "rich.xlsb"
+    with XlsbWriter(path) as writer:
         writer.add_sheet("Data")
-        with pytest.raises(ValueError, match="XlsbWriter supports only the original chart options"):
-            writer.write_sheet([["a", 1], ["b", 2], ["c", 3]], charts=[chart])
+        writer.write_sheet(iter([["x", CellRichText("a", "b")], ["y", CellRichText("c")]]))
+    with ExcelReader(str(path)) as reader:
+        assert list(reader.get_rows("Data")) == [["x", "ab"], ["y", "c"]]
 
 
 def test_xlsb_original_chart_forms_still_write(tmp_path):

@@ -262,6 +262,9 @@ FUNCTIONS = {
     'ROUNDBAHTUP': (377, 1, 1, 1, 'V'),
     'THAIYEAR': (378, 1, 1, 1, 'V'),
     'RTD': (379, 2, 5, None, 'V'),
+    # Excel 2007 made the Analysis ToolPak functions built-in; EDATE is
+    # stored as PtgFuncVar with two arguments, as in Excel-written files.
+    'EDATE': (449, 2, 2, None, 'VV'),
     'IFERROR': (480, 2, 2, 2, 'VV'),
     'COUNTIFS': (481, 2, 255, None, 'RV'),
     'SUMIFS': (482, 3, 255, None, 'RRV'),

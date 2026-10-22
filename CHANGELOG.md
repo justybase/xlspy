@@ -7,6 +7,187 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-22
+
+### Added
+
+- `show_grid_lines=False` on `write_sheet()`/`write_dataframe()` of both
+  writers hides a sheet's grid lines (XLSX `showGridLines="0"`, XLSB
+  `fDspGrid`). The workbook model now also saves
+  `ws.sheet_view.showGridLines = False` for new XLSX/XLSB workbooks.
+- `(value, Style)` cells: a per-cell style in the row data, applied on top of
+  header and range styles like `(value, number_format)`. They give the same
+  file as one `styles` entry per cell, 3.5-5x faster.
+- Open-ended `styles` keys: whole columns (`"B:D"`), columns from a row down
+  (`"B2:D"`) and whole rows (`"1:1"`), for streamed sheets of unknown length.
+- Document properties: `set_properties()` on `XlsxWriter` and `XlsbWriter`
+  writes title, subject, author, manager, company, category, keywords,
+  comments, status, creation date and custom properties (*File → Info* in
+  Excel). The workbook model now saves `wb.properties` for new workbooks.
+- Charts (XLSX): `"area"` and `"doughnut"` types, and
+  `grouping="stacked"`/`"percent_stacked"` for bar, horizontal bar, line and
+  area charts.
+- `Image` accepts image bytes or a binary file object (`io.BytesIO`) besides a
+  path, and GIF and BMP pictures besides PNG and JPEG.
+- `tab_color` on `write_sheet()`/`write_dataframe()` of both writers colours the
+  sheet tab (an RGB string or a `Color`, theme colours included). The workbook
+  model saves `ws.sheet_properties.tabColor` for new workbooks.
+- `header_rows=N` on `write_sheet()` of both writers: for a header of several
+  rows the automatic filter starts on the last header row and `header_style`
+  covers every header row.
+- openpyxl compatibility of the workbook model:
+  - `ws.add_chart()`, `add_image()`, `add_table()`, `add_data_validation()` and
+    `ws.conditional_formatting.add(range, rule)` for new workbooks (xlspy's
+    classes; openpyxl objects get a `TypeError` naming the xlspy class).
+  - Print setup: `print_title_rows`/`print_title_cols`, `print_area`,
+    `page_setup`, `page_margins`, `print_options`,
+    `sheet_properties.pageSetUpPr.fitToPage`, `oddHeader`/`oddFooter`; and
+    `sheet_view.zoomScale` for new workbooks.
+  - `insert_rows()`, `delete_rows()`, `insert_cols()`, `delete_cols()` and
+    `move_range(..., translate=True)`, in new and loaded workbooks. Row heights
+    and column widths move with their rows and columns. 5-6x faster than
+    openpyxl on 100,000 cells.
+- Rich text: `CellRichText`, `TextBlock` and `InlineFont` (openpyxl's names) in
+  `XlsxWriter` (shared and inline strings), the workbook model and XLSX
+  updates; `load_workbook(..., rich_text=True)` reads them back.
+- Conditional formatting (XLSX): `TopBottomRule`, `AboveAverageRule`,
+  `TextRule`, `DuplicateRule`, `TimePeriodRule` and `BlanksRule`.
+- `zoom=` on `write_sheet()`/`write_dataframe()` of both writers.
+- `Hyperlink` cells in `XlsbWriter`: external (web, mail) and internal links,
+  tooltips and the link look, as in XLSX. `XlsbWriter` used to raise
+  `TypeError` for them. Excel reads back the targets, sub-addresses, tooltips
+  and styling.
+- `XlsbWriter` now writes what `XlsxWriter` writes, with the same parameters.
+  It used to raise `TypeError` or `ValueError` for these. Each one was checked
+  against the same file saved as XLSX and opened in Excel 16:
+  - all chart options: horizontal bar, scatter, area and doughnut charts,
+    stacking, axes, legend, data labels, markers and colours;
+  - `images=` (PNG, JPEG, GIF, BMP), in the same drawing as the charts;
+  - `print_settings=`: orientation, paper, scale, fit to pages, margins,
+    centring, headers and footers, page breaks, print area and print titles;
+  - `data_validations=`: all seven types, lists from text or ranges (other
+    sheets too), prompts and error messages;
+  - conditional formats with a `DifferentialStyle`: `CellIsRule`,
+    `FormulaRule`, `TopBottomRule`, `AboveAverageRule`, `TextRule`,
+    `DuplicateRule`, `TimePeriodRule` and `BlanksRule`. Gradient fills,
+    diagonal borders, vertical alignment and rare font options still raise
+    `TypeError` in XLSB.
+
+  The workbook model saves images, data validation and print setup to `.xlsb`.
+- Loaded workbooks save added objects: `add_chart()`, `add_image()`,
+  `add_table()`, `add_data_validation()`, `conditional_formatting.add()` and
+  print setup on a sheet of a workbook from `load_workbook()`. They are added
+  next to the file's own objects, which are kept; checked in Excel on files
+  written by xlspy and on files saved by Excel. Saving used to raise
+  `NotImplementedError`.
+- Rich text (`CellRichText`) in `XlsbWriter`, as Excel stores it: a shared
+  string with font runs, whose fonts join the cell fonts in `styles.bin`.
+  Excel shows the same fonts per character as for the XLSX file. It used to
+  raise `TypeError`.
+- XLSB formulas: the `EDATE` function, and the volatile-function marker that
+  Excel expects before `TODAY`, `NOW`, `RAND`, `OFFSET`, `INDIRECT`, `CELL`
+  and `INFO`.
+
+### Changed
+
+- The same workbook gives the same bytes on every save: ZIP members carry
+  Excel's fixed 1980-01-01 timestamp instead of the current time, and the
+  revision ids in XLSB table parts are derived from the table instead of
+  being random.
+- `XlsxWriter` writes `date` and `datetime` cells without a format as
+  `yyyy-mm-dd` and `yyyy-mm-dd hh:mm`, like `XlsbWriter`. It used Excel's
+  built-in formats 14 and 22, which change with the reader's language
+  (`m/d/yyyy` in English Excel, `dd.mm.yyyy` in Polish), so the same data
+  looked different in XLSX and XLSB. Every XLSX `styles.xml` now has these
+  two number formats, and user formats are numbered from 166.
+- Chart caches: an empty cell is a gap in the series (no point) instead of a
+  zero, as Excel stores it.
+
+- Faster styled writes, with byte-identical output (measured with the new
+  `tools/bench_styles.py`, 10,000 rows × 12 columns):
+  - `styles` ranges are found per row by a sweep instead of a scan over all
+    ranges, so many ranges no longer cost rows × ranges. One range per cell
+    (60,000 ranges) went from 21 s to 0.18 s, and the workbook model's
+    per-cell styles from 21 s to 0.1 s.
+  - `(value, format)` cells inside styled ranges reuse their merged style:
+    2x faster in Python, 6x (XLSX) / 11x (XLSB) with the C extension.
+  - The C row encoders now also write `(value, format)` and `(value, Style)`
+    cells, styled cells, and rows with a height, hidden flag or outline level.
+  - Header and range styles in XLSX use the C encoder: 2x faster.
+  - A1 range parsing is about twice as fast.
+
+- Automatic column widths follow what Excel shows. Measured against Excel's
+  AutoFit on 87 sample cells, the old estimate was too narrow for 11 (XLSX) /
+  8 (XLSB) of them (by up to 15 characters); the new one for none, at about
+  one character of extra room on average:
+  - per-character widths measured in Excel instead of 1.25 per character, so
+    capitals, `W`/`M`/`@` and CJK text no longer get cut;
+  - numbers and dates as formatted (`#,##0.00`, `0%`, `dddd, d mmmm yyyy`,
+    General's 11 characters), so they no longer show `####`;
+  - bold, font size and wrapped text from the cell's style, and two extra
+    characters for a filter or table drop-down button on the header;
+  - the 5-pixel cell padding Excel adds to a file's column width is now
+    included, and XLSB no longer truncates widths to whole characters;
+  - XLSX and XLSB share one algorithm. XLSB columns are no longer narrower
+    than Excel's default, and columns after empty cells are measured too.
+- `XlsxWriter` keeps 1 MiB of encoded rows in memory before spilling to disk
+  (was 8 MiB, `spool_max_bytes`). Writing 50,000 × 50 cells with
+  `useSharedStrings=False` takes the same time and 13 MB less memory (peak
+  40 MB instead of 52 MB). With shared strings the peak is set by the string
+  table and barely changes.
+
+### Fixed
+
+- The workbook model no longer makes first-row text bold when saving a new
+  workbook (it inherited the writers' default header look).
+- Table headers written as `(value, Style)` or `(value, format)` cells were
+  rejected as "not text".
+- Saving a loaded workbook kept the old height of a row whose height was
+  cleared (or moved away by `insert_rows`).
+- XLSX borders: a `Border` with a left or right edge was written with empty
+  `<start/>`/`<end/>` elements, which Excel reads as those edges, so it showed
+  no left or right border. `start`/`end` are now written only when set.
+- Chart legends and titles overlapped the plot area: Excel draws them over the
+  plot when the `<overlay>` element is missing. Legends and titles are now
+  written with `overlay val="0"`, so the legend sits beside the plot and the
+  title above it. This affects XLSX and XLSB charts. The XLSX chart XML of
+  default charts changes too (one `overlay` element per legend and title).
+- XLSB files without a chart opened in Microsoft 365 in Aptos Narrow instead
+  of Calibri: without a theme part Excel uses its current default theme. The
+  theme is now always written, so XLSB files look like the XLSX ones (fonts
+  and theme colours).
+- Excel refused XLSB files whose chart series pointed at `Formula` cells: the
+  chart cache held the formula text. It now holds the formula's cached
+  `value` (or nothing).
+- Pie charts dropped their categories, so the legend showed 1, 2, 3 instead of
+  the slice names (XLSX and XLSB).
+- XLSB line charts were drawn smoothed.
+- A single-series XLSB chart without a title often lost Excel's automatic
+  title (the series name) when another workbook was open in Excel. Charts
+  without a title are now saved as Excel saves them: an empty automatic title
+  for a single series and `autoTitleDeleted val="0"`, in both formats. This
+  changes the chart XML of untitled XLSX charts.
+- A conditional format fill given as `PatternFill("solid", start_color=...)`
+  showed no colour in Excel, which paints a conditional solid fill with the
+  background colour. The background colour is now set to the start colour
+  when `end_color` is missing (XLSX and XLSB). This changes the XLSX
+  `styles.xml` of such rules.
+- XLSB icon sets now serialize threshold types and show/reverse flags according
+  to the file format, and explicitly reject formula thresholds that need
+  unsupported formula-token encoding.
+- Loading a workbook now preserves its existing page margins, including when
+  only one margin is changed. `rich_text=True` also retains rich runs in inline
+  strings.
+- Translating moved array formulas now moves their `array_ref` with the formula.
+
+### Documentation
+
+- `docs/usage.md`: what clicking a hyperlink does in Excel (an internal link
+  jumps to its sheet and cell, the `Use CTRL+Click to follow hyperlink` option,
+  and how to select a linked cell without following it), which readers return
+  hyperlinks, and the XLSB hyperlink support. The feature support table and the
+  `HYPERLINK` formula section now point to it.
+
 ## [0.8.1] - 2026-10-21
 
 ### Fixed

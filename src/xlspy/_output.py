@@ -26,6 +26,34 @@ DEFAULT_STAGING_BYTES = 8 << 20
 _COPY_CHUNK = 1 << 20
 
 
+
+class PackageZip(zipfile.ZipFile):
+    """A ZIP archive whose members carry a fixed 1980-01-01 timestamp.
+
+    Excel stores that date in the workbooks it saves; using it instead of the
+    current time makes the same workbook give the same bytes on every save.
+    """
+
+    def _member(self, name):
+        info = zipfile.ZipInfo(name)
+        info.compress_type = self.compression
+        if hasattr(info, "compress_level"):  # Python 3.13+
+            info.compress_level = self.compresslevel
+        else:
+            info._compresslevel = self.compresslevel
+        return info
+
+    def writestr(self, zinfo_or_arcname, data, *args, **kwargs):
+        if isinstance(zinfo_or_arcname, str):
+            zinfo_or_arcname = self._member(zinfo_or_arcname)
+            zinfo_or_arcname.external_attr = 0o600 << 16
+        super().writestr(zinfo_or_arcname, data, *args, **kwargs)
+
+    def open(self, name, mode="r", *args, **kwargs):
+        if mode == "w" and isinstance(name, str):
+            name = self._member(name)
+        return super().open(name, mode, *args, **kwargs)
+
 class StagedOutput:
     """The staging file for one workbook and its eventual publication."""
 
@@ -105,7 +133,7 @@ class StagedWriter:
         if self._zf is None:
             output = StagedOutput(self._file, self._staging_bytes())
             try:
-                self._zf = zipfile.ZipFile(output.stream, 'w', zipfile.ZIP_DEFLATED,
+                self._zf = PackageZip(output.stream, 'w', zipfile.ZIP_DEFLATED,
                                            compresslevel=self._compressionLevel)
             except BaseException:
                 output.discard()

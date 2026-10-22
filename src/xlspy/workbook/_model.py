@@ -15,19 +15,38 @@ import numbers
 import re
 from typing import Any
 
+from ..charts import Chart
 from ..comments import Comment
+from ..data_validation import DataValidation
 from ..formulas import Formula
 from ..hyperlinks import Hyperlink
+from ..images import Image
 from ..refs import column_label, parse_cell_range
+from ..rich_text import CellRichText
 from ..styles import (
     Alignment,
     Border,
+    CellIsRule,
     Color,
+    ColorScaleRule,
+    DataBarRule,
+    EXTRA_CF_RULES,
+    ExcelTable,
     Font,
+    FormulaRule,
     GradientFill,
+    IconSetRule,
     PatternFill,
     Protection,
     Style,
+)
+from . import _shift
+from ._print import (
+    HeaderFooter,
+    PageMargins,
+    PageSetup,
+    PageSetupProperties,
+    PrintOptions,
 )
 from ._styles import XlsxStyleTable
 
@@ -177,7 +196,7 @@ class DocumentProperties:
 class SheetProperties:
     tabColor: Color | str | None = None
     codeName: str | None = None
-    pageSetUpPr: Any = None
+    pageSetUpPr: PageSetupProperties = field(default_factory=PageSetupProperties)
 
 
 @dataclass
@@ -199,6 +218,38 @@ class AutoFilter:
 
     def add_sort_condition(self, ref, descending=False):
         raise NotImplementedError("AutoFilter sort conditions are not implemented yet")
+
+
+_CF_RULES = (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule, *EXTRA_CF_RULES)
+
+
+def _expect(value, expected, what: str, hint: str):
+    """Type check for the ``add_*`` methods; openpyxl objects get a hint."""
+    if not isinstance(value, expected):
+        module = type(value).__module__ or ""
+        extra = f"; use {hint} instead of the openpyxl class" if module.startswith("openpyxl") else ""
+        raise TypeError(f"{what} must be {hint}, not {type(value).__name__}{extra}")
+
+
+class ConditionalFormattingList:
+    """``ws.conditional_formatting``: the sheet's rules, in the order added."""
+
+    def __init__(self):
+        self._rules: list = []
+
+    def add(self, range_string: str, rule) -> None:
+        """Apply ``rule`` to ``range_string`` (its own ``sqref`` is replaced)."""
+        _expect(rule, _CF_RULES, "rule", "an xlspy conditional formatting rule (CellIsRule, ...)")
+        self._rules.append(replace(rule, sqref=_normalize_range(range_string)))
+
+    def __iter__(self):
+        return iter(self._rules)
+
+    def __len__(self):
+        return len(self._rules)
+
+    def __bool__(self):
+        return bool(self._rules)
 
 
 class Dimension:
@@ -393,7 +444,7 @@ class Cell:
             return "n"
         if isinstance(value, (_datetime.datetime, _datetime.date, _datetime.time, _datetime.timedelta)):
             return "d"
-        if isinstance(value, str):
+        if isinstance(value, (str, CellRichText)):
             return "s"
         if isinstance(value, bytes):
             return "s"
@@ -519,6 +570,13 @@ class MergedCell(Cell):
 
 
 class Worksheet:
+    ORIENTATION_PORTRAIT = "portrait"
+    ORIENTATION_LANDSCAPE = "landscape"
+    PAPERSIZE_LETTER = 1
+    PAPERSIZE_LEGAL = 5
+    PAPERSIZE_A3 = 8
+    PAPERSIZE_A4 = 9
+
     def __init__(self, workbook, title: str, *, index: int | None = None):
         self._workbook = workbook
         self._title = title
@@ -550,8 +608,18 @@ class Worksheet:
         self._tables: list = []
         self._charts: list = []
         self._images: list = []
-        self._conditional_formats: list = []
+        self._conditional_formats = ConditionalFormattingList()
+        # For a loaded workbook: how many objects of each list a save already
+        # put into the package (see _objects.pending_objects).
+        self._saved_object_counts: dict[str, int] = {}
         self._print_settings = None
+        self.page_setup = PageSetup()
+        self.page_margins = PageMargins()
+        self.print_options = PrintOptions()
+        self.HeaderFooter = HeaderFooter()
+        self._print_area: str | None = None
+        self._print_title_rows: str | None = None
+        self._print_title_cols: str | None = None
         self._sheet_protection = None
         self._comments: dict[str, Comment] = {}
         self._legacy_drawing = None
@@ -695,8 +763,90 @@ class Worksheet:
         return self._images
 
     @property
-    def conditional_formatting(self):
+    def conditional_formatting(self) -> ConditionalFormattingList:
         return self._conditional_formats
+
+    # -- printing (openpyxl names) --------------------------------------
+    @property
+    def oddHeader(self):
+        return self.HeaderFooter.oddHeader
+
+    @property
+    def oddFooter(self):
+        return self.HeaderFooter.oddFooter
+
+    @property
+    def print_area(self) -> str | None:
+        return self._print_area
+
+    @print_area.setter
+    def print_area(self, value):
+        """An A1 range, several separated by commas, or a list of ranges."""
+        if value is not None and not isinstance(value, str):
+            value = ",".join(value)
+        self._print_area = value
+
+    @property
+    def print_title_rows(self) -> str | None:
+        """Rows repeated at the top of every printed page, such as ``"1:2"``."""
+        return self._print_title_rows
+
+    @print_title_rows.setter
+    def print_title_rows(self, value: str | None):
+        self._print_title_rows = value
+
+    @property
+    def print_title_cols(self) -> str | None:
+        """Columns repeated at the left of every printed page, such as ``"A:B"``."""
+        return self._print_title_cols
+
+    @print_title_cols.setter
+    def print_title_cols(self, value: str | None):
+        self._print_title_cols = value
+
+    # -- inserting, deleting and moving (openpyxl semantics, see _shift) --
+    def insert_rows(self, idx: int, amount: int = 1) -> None:
+        """Insert ``amount`` empty rows before row ``idx``."""
+        _shift.shift_rows(self, idx, amount, delete=False)
+
+    def delete_rows(self, idx: int, amount: int = 1) -> None:
+        """Delete ``amount`` rows starting at row ``idx``; the rows below move up."""
+        _shift.shift_rows(self, idx, amount, delete=True)
+
+    def insert_cols(self, idx: int, amount: int = 1) -> None:
+        """Insert ``amount`` empty columns before column ``idx`` (1-based)."""
+        _shift.shift_cols(self, idx, amount, delete=False)
+
+    def delete_cols(self, idx: int, amount: int = 1) -> None:
+        """Delete ``amount`` columns starting at column ``idx``; the rest move left."""
+        _shift.shift_cols(self, idx, amount, delete=True)
+
+    def move_range(self, cell_range, rows: int = 0, cols: int = 0, translate: bool = False) -> None:
+        """Move the cells of ``cell_range``; cells at the destination are replaced.
+        ``translate=True`` shifts the relative references of moved formulas."""
+        _shift.move_range(self, cell_range, rows, cols, translate)
+
+    # -- objects (openpyxl names, xlspy types) ------------------------
+    def add_chart(self, chart: Chart, anchor: str | None = None) -> None:
+        _expect(chart, Chart, "chart", "an xlspy Chart")
+        if anchor is not None:
+            chart = replace(chart, anchor=anchor)
+        self._charts.append(chart)
+
+    def add_image(self, img: Image, anchor: str | None = None) -> None:
+        _expect(img, Image, "image", "an xlspy Image")
+        if anchor is not None:
+            # The bytes already read: a file object source is used up.
+            img = replace(img, path=img.data, anchor=anchor)
+        self._images.append(img)
+
+    def add_table(self, table: ExcelTable) -> None:
+        _expect(table, ExcelTable, "table", "an xlspy ExcelTable")
+        self._tables.append(table)
+
+    def add_data_validation(self, data_validation: DataValidation) -> None:
+        _expect(data_validation, DataValidation, "data_validation", "an xlspy DataValidation")
+        self._data_validations.append(data_validation)
 
     # -- cells --------------------------------------------------------
     def cell(self, row: int, column: int | str, value=None) -> Cell:

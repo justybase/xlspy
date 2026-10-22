@@ -83,12 +83,17 @@ def _date_kind(format_code: str | None) -> str | None:
     return None
 
 
-def _value(cell: ET.Element, style, *, date_1904: bool, shared_strings: list[str]):
+def _value(cell: ET.Element, style, *, date_1904: bool, shared_strings: list[str],
+           rich_text: bool = False):
     kind = cell.get("t", "n")
     if kind == "inlineStr":
         inline = cell.find(_q("is"))
         if inline is None:
             return None
+        if rich_text:
+            from ..rich_text import rich_text_from_si
+
+            return rich_text_from_si(inline)
         return xstring_unescape("".join(node.text or "" for node in inline.iter(_q("t"))))
     raw = cell.findtext(_q("v"), "")
     if kind == "s":
@@ -138,7 +143,7 @@ def _value(cell: ET.Element, style, *, date_1904: bool, shared_strings: list[str
 
 def _cell_data(cell: ET.Element, style_table: XlsxStyleTable, *, data_only: bool,
                date_1904: bool, shared: dict[str, tuple[str, str]],
-               shared_strings: list[str]):
+               shared_strings: list[str], rich_text: bool = False):
     style_id = int(cell.get("s", "0") or 0)
     style = style_table.style_at(style_id)
     formula = cell.find(_q("f"))
@@ -159,7 +164,10 @@ def _cell_data(cell: ET.Element, style_table: XlsxStyleTable, *, data_only: bool
             else:
                 text = ""
         return None, "f", text, style_id
-    value = _value(cell, style, date_1904=date_1904, shared_strings=shared_strings)
+    value = _value(
+        cell, style, date_1904=date_1904, shared_strings=shared_strings,
+        rich_text=rich_text,
+    )
     kind = cell.get("t", "n")
     if kind in {"s", "inlineStr", "str"}:
         data_type = "s"
@@ -229,7 +237,8 @@ def _read_sheet_relationships(package, sheet_path: str) -> dict[str, tuple[str, 
 
 def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                      *, data_only: bool, date_1904: bool, package,
-                     sheet_path: str, shared_strings: list[str]):
+                     sheet_path: str, shared_strings: list[str],
+                     rich_text: bool = False):
     shared_formulas: dict[str, tuple[str, str]] = {}
     hyperlinks: list[dict] = []
     next_row = 1
@@ -269,7 +278,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                     value, data_type, formula_text, style_id = _cell_data(
                         cell, style_table, data_only=data_only,
                         date_1904=date_1904, shared=shared_formulas,
-                        shared_strings=shared_strings,
+                        shared_strings=shared_strings, rich_text=rich_text,
                     )
                     if value is None and formula_text is None and style_id == 0:
                         continue
@@ -343,6 +352,11 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                     )
                 except (TypeError, ValueError):
                     pass
+            elif tag == "pageMargins":
+                for name in ("left", "right", "top", "bottom", "header", "footer"):
+                    value = node.get(name)
+                    if value is not None:
+                        setattr(sheet.page_margins, name, float(value))
             if stack:
                 stack.pop()
 
@@ -700,12 +714,17 @@ def load_workbook(filename, *, read_only: bool = False, data_only: bool = False,
     workbook._styles = style_table
     workbook._loaded_worksheet_names = {name for name, _path, _state in worksheet_entries}
 
-    shared_strings: list[str] = []
+    shared_strings: list = []
     if package.has("xl/sharedStrings.xml"):
-        shared_strings = [
-            xstring_unescape(value)
-            for value in parse_shared_strings_xml(package.get("xl/sharedStrings.xml"))
-        ]
+        if rich_text:
+            from ..rich_text import parse_rich_shared_strings
+
+            shared_strings = parse_rich_shared_strings(package.get("xl/sharedStrings.xml"))
+        else:
+            shared_strings = [
+                xstring_unescape(value)
+                for value in parse_shared_strings_xml(package.get("xl/sharedStrings.xml"))
+            ]
 
     for index, (name, sheet_path, state) in enumerate(worksheet_entries):
         sheet = Worksheet(workbook, name, index=index)
@@ -720,6 +739,7 @@ def load_workbook(filename, *, read_only: bool = False, data_only: bool = False,
             package=package,
             sheet_path=sheet_path,
             shared_strings=shared_strings,
+            rich_text=rich_text,
         )
         sheet._meta_signature = _meta_signature(sheet)
         workbook._sheets.append(sheet)

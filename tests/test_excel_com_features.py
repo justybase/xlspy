@@ -83,17 +83,23 @@ def test_combined_report_in_excel(tmp_path, open_workbook):
     assert sheet.ChartObjects().Count == 3
     assert sum(1 for i in range(1, sheet.Shapes.Count + 1) if sheet.Shapes(i).Type == MSO_PICTURE) == 1
 
-    setup = sheet.PageSetup
-    assert setup.PrintArea == "$A$1:$F$7"
-    assert setup.PrintTitleRows == "$2:$2"
-    assert setup.Orientation == XL_LANDSCAPE
-    assert setup.PaperSize == 9  # xlPaperA4
+    assert sheet.Names("Print_Area").RefersTo == "=Summary!$A$1:$F$7"
 
     sheet.Activate()
     window = workbook.Windows(1)
     assert window.FreezePanes
     assert (window.SplitRow, window.SplitColumn) == (2, 0)
     assert workbook.Worksheets("Q1 Sales").AutoFilterMode
+
+
+@pytest.mark.printer
+def test_combined_report_page_setup_in_excel(tmp_path, open_workbook):
+    path = build_report(tmp_path / "report.xlsx", _png(tmp_path / "logo.png"))
+    setup = open_workbook(path).Worksheets("Summary").PageSetup
+    assert setup.PrintArea == "$A$1:$F$7"
+    assert setup.PrintTitleRows == "$2:$2"
+    assert setup.Orientation == XL_LANDSCAPE
+    assert setup.PaperSize == 9  # xlPaperA4
 
 
 @pytest.mark.parametrize("writer_cls,ext", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])

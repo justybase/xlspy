@@ -29,7 +29,7 @@ on a 50,000 × 50 dataset (Windows: Python 3.14.6; WSL2: Python 3.14.4).
 | Your workflow | What xlspy brings |
 | :--- | :--- |
 | **Export large datasets** | XLSB and XLSX output from a generator or database cursor, with bounded memory via `useSharedStrings=False`, and C acceleration for supported read and write paths. A failed export publishes no partial workbook ([failure handling](docs/usage.md#failure-handling)). |
-| **Deliver polished reports** | Cell styles, number formats, formulas, dropdown validation, hyperlinks, images, print setup, charts (column, bar, line, pie, scatter), tables, and conditional formatting. XLSX-only features are listed in the [feature support table](docs/usage.md#feature-support). |
+| **Deliver polished reports** | Cell styles, number formats, formulas, dropdown validation, hyperlinks, images, print setup, charts (column, bar, line, area, pie, doughnut, scatter, stacked), tables, and conditional formatting. Both XLSX and XLSB support them; see the [feature support table](docs/usage.md#feature-support). |
 | **Work with DataFrames** | Export pandas or polars data directly to either format. |
 | **Refresh a familiar template** | Replace data in XLSB, XLSX, or XLSM while keeping workbook structure, styles, and unrelated sheets. |
 | **Connect a data pipeline** | Read rows as a generator and stream updates from a database cursor. |

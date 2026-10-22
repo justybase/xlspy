@@ -33,7 +33,13 @@ py -3.14 -m pytest tests/test_excel_com_metadata.py -q -p no:faulthandler
 ```
 
 `-p no:faulthandler` suppresses the known host-specific COM shutdown diagnostic
-described below; assertions and test exit codes remain enabled. Coverage tools
+described below; assertions and test exit codes remain enabled.
+
+Tests marked `printer` read or set Excel's `PageSetup` (orientation, paper,
+headers, page breaks). Excel does that through the default printer and, when
+it cannot reach one, waits, shows a printer prompt and fails, so these tests
+also need `XLSPY_RUN_EXCEL_PRINT=1`. Without it they are skipped; the other
+COM tests check print areas through the sheet's `Print_Area` name instead. Coverage tools
 were installed into an isolated, ignored `tmp/coverage-tools` directory and made
 available through `PYTHONPATH`; the library gained no runtime dependencies.
 

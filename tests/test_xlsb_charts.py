@@ -118,6 +118,33 @@ def test_xlsb_chart_caches_carry_cell_values(tmp_path):
         assert "<pieChart><varyColors val=\"1\"/>" in pie
 
 
+def test_xlsb_chart_caches_use_formula_results(tmp_path):
+    from xlspy import Formula, Hyperlink
+
+    path = tmp_path / "formula_caches.xlsb"
+    with XlsbWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(
+            [["Q", "A"],
+             [Hyperlink("#'Data'!A1", text="Q1"), Formula("5*2", 10)],
+             ["Q2", Formula("B2*3")],
+             ["Q3", (Formula("B2*5", 50.5), "0.0")],
+             ["Q4", None]],
+            charts=[Chart("bar", [ChartSeries("B2:B5", categories="A2:A5")], anchor="E2")],
+        )
+
+    with zipfile.ZipFile(path) as archive:
+        bar = archive.read("xl/charts/chart1.xml").decode()
+    assert "Formula(" not in bar and "Hyperlink(" not in bar
+    # A formula shows its cached result; one without a result, like an empty
+    # cell, is a missing point, which Excel draws as a gap.
+    assert (
+        "<numCache><formatCode>General</formatCode><ptCount val=\"4\"/>"
+        "<pt idx=\"0\"><v>10</v></pt><pt idx=\"2\"><v>50.5</v></pt></numCache>"
+    ) in bar
+    assert "<pt idx=\"0\"><v>Q1</v></pt>" in bar
+
+
 def test_xlsb_chart_style_uses_c14_extension(tmp_path):
     """Numeric styles go through mc:AlternateContent, like Excel's own files."""
     path = tmp_path / "styled.xlsb"
@@ -296,8 +323,9 @@ def test_xlsb_plain_write_has_no_drawing(tmp_path):
         names = plain.namelist()
         assert not [n for n in names if "/drawings/" in n or "/charts/" in n]
         assert "drawing" not in plain.read("[Content_Types].xml").decode()
-        assert "theme" not in plain.read("[Content_Types].xml").decode()
-        assert "theme" not in plain.read("xl/_rels/workbook.bin.rels").decode()
+        # The theme is written with or without charts (Excel's fonts follow it).
+        assert plain.read("xl/theme/theme1.xml") == charted.read("xl/theme/theme1.xml")
+        assert "theme/theme1.xml" in plain.read("xl/_rels/workbook.bin.rels").decode()
         plain_bin = plain.read("xl/worksheets/sheet1.bin")
         assert _drawing_records(plain_bin) == []
         # Charts do not touch the workbook binary or the styles.

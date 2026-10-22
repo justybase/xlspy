@@ -87,6 +87,7 @@ def _vml_parts(path):
 @pytest.mark.parametrize("extension, updater_class, file_format", [
     ("xlsx", XlsxUpdater, None), ("xlsb", XlsbUpdater, XL_XLSB),
 ])
+@pytest.mark.printer
 def test_notes_keep_excel_header_picture(tmp_path, excel, open_workbook, extension, updater_class, file_format):
     picture = _png(tmp_path / "logo.png")
     path = tmp_path / f"header.{extension}"
@@ -138,7 +139,9 @@ def test_removing_sheet_keeps_local_names_and_print_area(tmp_path, excel, open_w
             book.Worksheets(index).Range("A1").Value = index
         book.Worksheets("Second").Range("B1").Formula = "=First!A1+1"
         book.Worksheets("Third").Range("B1").Formula = "=A1*2"
-        book.Worksheets("Third").PageSetup.PrintArea = "$A$1:$B$2"
+        # The print area is the sheet's Print_Area name; set this way it does
+        # not go through the printer as PageSetup.PrintArea does.
+        book.Worksheets("Third").Names.Add("Print_Area", "=Third!$A$1:$B$2")
         book.Worksheets("Third").Names.Add("LocalC", "=Third!$A$1")
         book.Names.Add("GlobalB", "=Second!$A$1")
 
@@ -160,7 +163,7 @@ def test_removing_sheet_keeps_local_names_and_print_area(tmp_path, excel, open_w
     book = open_workbook(target)
     assert [sheet.Name for sheet in book.Worksheets] == ["Second", "Third"]
     sheet_c = book.Worksheets("Third")
-    assert sheet_c.PageSetup.PrintArea == "$A$1:$B$2"
+    assert sheet_c.Names("Print_Area").RefersTo == "=Third!$A$1:$B$2"
     assert sheet_c.Names("LocalC").RefersToRange.Value == 3
     assert sheet_c.Range("B1").Value == 6
     assert book.Names("GlobalB").RefersToRange.Value == 2

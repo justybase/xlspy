@@ -36,22 +36,6 @@ def test_filter_database_name_quotes_sheet_names_with_spaces(tmp_path):
     assert ws.auto_filter.ref == "A1:B3"
 
 
-def test_xlsb_refuses_xlsx_only_arguments(tmp_path):
-    from xlspy import Image
-
-    png = tmp_path / "x.png"
-    png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + (1).to_bytes(4, "big") * 2
-                    + b"\x08\x02\x00\x00\x00" + b"\x00" * 8)
-    with pytest.raises(TypeError, match="unexpected keyword argument 'images'"):
-        with XlsbWriter(tmp_path / "x.xlsb") as writer:
-            writer.add_sheet("Sheet1")
-            writer.write_sheet([["a"]], images=[Image(png)])
-    with pytest.raises(TypeError, match="unexpected keyword argument 'print_settings'"):
-        with XlsbWriter(tmp_path / "y.xlsb") as writer:
-            writer.add_sheet("Sheet1")
-            writer.write_sheet([["a"]], print_settings=PrintSettings(orientation="landscape"))
-
-
 def test_explicit_column_width_beyond_the_data_is_written(tmp_path):
     path = tmp_path / "widths.xlsx"
     with XlsxWriter(path) as writer:

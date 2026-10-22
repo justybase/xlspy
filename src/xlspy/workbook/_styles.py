@@ -733,9 +733,15 @@ class XlsxStyleTable:
             attrs += ' diagonalDown="1"'
         if key.outline is False:
             attrs += ' outline="0"'
+        # Excel reads <start>/<end> as the left/right edges (in a
+        # left-to-right sheet), so an empty <start/> would hide <left>:
+        # write them only when set, like <vertical>/<horizontal>.
         parts = [
-            self._border_side_xml("start", key.start, self._color_attrs),
-            self._border_side_xml("end", key.end, self._color_attrs),
+            self._border_side_xml(tag, getattr(key, tag), self._color_attrs)
+            for tag in ("start", "end")
+            if getattr(key, tag) != (None, None)
+        ]
+        parts += [
             self._border_side_xml("left", key.left, self._color_attrs),
             self._border_side_xml("right", key.right, self._color_attrs),
             self._border_side_xml("top", key.top, self._color_attrs),
@@ -846,6 +852,30 @@ class XlsxStyleTable:
             return serialize_like(root, source)
         ET.register_namespace("", MAIN)
         return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+    def append_dxfs(self, fragments: list[str]) -> int:
+        """Append differential formats and return the index of the first.
+
+        ``fragments`` are ``<dxf>`` elements in the main namespace. Their
+        number formats are given this table's ids, so that a format code
+        keeps one id in the workbook.
+        """
+        if self._root is None:
+            self.to_bytes()
+        root = self._root
+        container = next((child for child in root if _local(child.tag) == "dxfs"), None)
+        if container is None:
+            self._replace_container(root, "dxfs", [f'<dxf xmlns="{MAIN}"/>'])
+            container = next(child for child in root if _local(child.tag) == "dxfs")
+            container.clear()
+        first = len(container)
+        for fragment in fragments:
+            node = ET.fromstring(fragment)
+            for numfmt in node.iter(_q("numFmt")):
+                numfmt.set("numFmtId", str(self._intern_numfmt(numfmt.get("formatCode", "General"))))
+            container.append(node)
+        container.set("count", str(len(container)))
+        return first
 
     def style_at(self, index: int) -> Style:
         if not 0 <= index < len(self.styles):

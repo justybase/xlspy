@@ -6,33 +6,54 @@ import struct
 from typing import  Tuple, Iterable, Mapping
 import io
 import itertools
-from ._accel import encode_xlsb_row, encode_xlsb_row_inline, calc_column_widths as accel_calc_column_widths
+import uuid
+import xml.sax.saxutils as saxutils
+from ._accel import encode_xlsb_row, encode_xlsb_row_inline
+from ._widths import estimate_column_widths, file_width
 from ._accel import xlsb_row_has_formatted as accel_row_has_formatted
 from ._accel import encode_xlsb_sst as accel_encode_xlsb_sst
-from .formats import _is_formatted_cell, _unwrap_cell, _get_format
+from .formats import _is_formatted_cell, _unwrap_cell
 from .excel_dates import datetime_to_serial
 from ._xlsb_writer import XlsbWriterMetadata
 from . import chart_parts
 from .styles import (
+    HYPERLINK_STYLE,
     Chart,
     Style,
+    _FontKey,
+    _color_key,
     _column_index,
-    capture_table_headers,
-    explicit_cf_priorities,
     merge_styles,
+    capture_table_headers,
+    check_header_rows,
+    check_zoom,
+    header_style_ranges,
+    tab_color_key,
+    explicit_cf_priorities,
     normalize_hidden_columns,
     normalize_hidden_rows,
     normalize_style_ranges,
     parse_cell_range,
     split_style,
     styles_for_row,
+    _record_cell_xf,
+    _style_ids_for_row,
+    _xf_for_style_format,
     table_column_names,
 )
 from .biff_utils import build_record
+from ._xlsb_print import FIT_TO_PAGE_BIT, FIT_TO_PAGE_BYTE, print_records
+from ._xlsb_validation import validations_bin
+from ._xlsb_cf import FORMULA_RULES, dxf_payload, dxfs_bin, rule_bin
 from ._output import StagedWriter
+from .doc_properties import DocumentPropertiesMixin
+from .rich_text import CellRichText, InlineFont, TextBlock
 from ._text import check_cell_text
 from .formulas import Formula
 from .hyperlinks import Hyperlink
+from .images import Image, MediaParts, normalize_images
+from .printing import PrintSettings, normalize_print_settings
+from .data_validation import DataValidation, normalize_validations
 from .outline import build_outline
 from .refs import check_sheet_name
 
@@ -66,6 +87,25 @@ _BRT_BEGIN_MERGE_CELLS = 0x00B1
 _BRT_END_MERGE_CELLS = 0x00B2
 # BrtDrawing ([MS-XLSB] 2.4.351) links a sheet to its Drawings part.
 _BRT_DRAWING = 0x0226
+# BrtHLink: one hyperlink, written directly under the worksheet (no container).
+_BRT_HLINK = 0x01EE
+
+
+def _hlink_payload(row: int, col: int, link: Hyperlink, rid: str | None) -> bytes:
+    """A BrtHLink payload: the cell, then the relationship id, location, tooltip
+    and display text as wide strings ('' when absent). The layout matches a
+    file saved by Excel: an external link names its relationship and displays
+    its URL; an internal link has no relationship and repeats its location."""
+    from ._xlsb_metadata import wide_string
+    if link.is_internal:
+        relationship, location, display = "", link.location, link.location
+    else:
+        relationship, location, display = rid, "", link.target
+    return (
+        struct.pack("<4I", row, row, col, col)
+        + wide_string(relationship) + wide_string(location)
+        + wide_string(link.tooltip or "") + wide_string(display)
+    )
 
 # Table (List) parts ([MS-XLSB] 2.1.7.51, 2.4.100).
 _BRT_BEGIN_LIST = 343  # 0x157
@@ -100,6 +140,7 @@ _BRT_DXF = 507
 _BRT_AC_BEGIN = 0x25
 _BRT_AC_END = 0x26
 _BRT_FRT_BEGIN = 0xC00
+_ACUID_NAMESPACE = uuid.UUID("6f1c2a52-7b1e-4f0b-9a7e-58a3c1d0b6e4")
 
 # Active-pane identifiers for BrtPane/BrtSel ([MS-XLSB] 2.5.108 Pnn).
 _PANE_ACTIVE = {"bottomRight": 0, "topRight": 1, "bottomLeft": 2, "topLeft": 3}
@@ -144,9 +185,10 @@ class FilterData:
     end_row: int = 0
 
 
-# XLSB has no encoding here for formulas and hyperlinks. The C row encoder
-# hands rows with such objects to the Python encoder, which refuses them.
-_XLSB_REJECTED_TYPES = frozenset({Hyperlink})
+# The C row encoder hands rows with rich text to the Python encoder, which
+# writes them as rich shared strings (see _write_rich_str). Hyperlinks are
+# written as BrtHLink records (see _hlink_payload).
+_MAX_STR_RUNS = 32767
 
 
 def _capture_cells(rows, store: dict):
@@ -160,7 +202,7 @@ def _capture_cells(rows, store: dict):
         yield row
 
 
-class XlsbWriter(StagedWriter, XlsbWriterMetadata):
+class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
     def __init__(self, file: str | io.IOBase, compressionLevel:int = 4,
                  useSharedStrings: bool = True):
         self._file = file
@@ -174,6 +216,8 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         self._sheet_count = 0
         self._sst_unique_count = 0
         self._sst_all_count = 0
+        # Rich entries are tuples, which only the Python SST writer encodes.
+        self._sst_has_rich = False
         self._filtered_data_list: list[FilterData] = []
         self._sheetCnt = 1
         self._compressionLevel = compressionLevel
@@ -183,6 +227,11 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         self._format_registry: dict[str, int] = {}
         self._format_xf_map: dict[str, int] = {}
         self._style_xf_map: dict[Style, int] = {}
+        self._style_format_xf: dict[tuple, tuple] = {}
+        # xf of each (value, format) cell the C row encoder may reuse: keyed
+        # by the format, or by (cell style xf, format) for a styled cell.
+        self._fmt_xf: dict = {}
+        self._fmt_xf_styles: list = []
         self._style_components: dict[int, tuple] = {}
         self._font_registry: dict[tuple, int] = {}
         self._fill_registry: dict[tuple, int] = {}
@@ -193,6 +242,15 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         self._sheet_chart_ids: dict[int, list[int]] = {}
         self._sheet_chart_cells: dict[int, dict] = {}
         self._next_chart_id = 1
+        # Sheets with a drawing part: charts, pictures or both.
+        self._sheet_drawings: set[int] = set()
+        self._sheet_images: dict[int, list[Image]] = {}
+        self._sheet_image_media: dict[int, list[str]] = {}
+        self._media = MediaParts()
+        # Sheet index -> print settings; print area and titles become names.
+        self._sheet_print: dict[int, PrintSettings] = {}
+        # BrtDXF payload -> index, for conditional formats with a style.
+        self._dxf_index: dict[bytes, int] = {}
         self._next_table_id = 1
         self._table_names: set[str] = set()
         self._sheet_tables: dict[int, list[tuple]] = {}
@@ -202,6 +260,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         self._next_cf_priority = 1
         self._xlsb_formula_context = None
         self._sheet_comments = {}
+        self._sheet_link_rels = {}
         self._workbook_protection = None
 
     def add_sheet(self, sheet_name: str, hidden : bool = False):
@@ -396,12 +455,9 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         return list(tables)
 
     def _check_unknown_cf_rule(self, rule) -> None:
-        from .styles import (
-            CellIsRule, ColorScaleRule, DataBarRule, FormulaRule, IconSetRule,
-        )
+        from .styles import ColorScaleRule, DataBarRule, IconSetRule
         if hasattr(rule, "sqref") and not isinstance(
-            rule,
-            (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule),
+            rule, FORMULA_RULES + (ColorScaleRule, DataBarRule, IconSetRule),
         ):
             raise TypeError(
                 f"unsupported conditional formatting rule {type(rule).__name__}; "
@@ -428,18 +484,13 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         return priority
 
     def _normalize_cf_rules(self, conditional_formats):
-        from .styles import (
-            CellIsRule, ColorScaleRule, DataBarRule, DifferentialStyle,
-            FormulaRule, IconSetRule,
-        )
+        from .styles import ColorScaleRule, DataBarRule, DifferentialStyle, IconSetRule
         if not conditional_formats:
             return []
         for rule in conditional_formats:
             self._check_unknown_cf_rule(rule)
             if not isinstance(
-                rule,
-                (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule,
-                 IconSetRule),
+                rule, FORMULA_RULES + (ColorScaleRule, DataBarRule, IconSetRule),
             ):
                 raise TypeError(
                     f"unsupported conditional formatting rule {type(rule).__name__}"
@@ -448,15 +499,13 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
                 rule.dxf, DifferentialStyle
             ):
                 raise TypeError("dxf must be a DifferentialStyle or None")
-            # XLSB CF with formulas/DXF is not yet supported in this step;
-            # tables + ColorScale/DataBar/IconSet (non-formula) are supported.
-            # CellIs/Formula and formula-type CFVOs need Ptg + DXF (next step).
-            from .styles import CellIsRule as _C, FormulaRule as _F
-            if isinstance(rule, (_C, _F)):
+            if isinstance(rule, IconSetRule) and rule.type == "formula":
                 raise NotImplementedError(
-                    "XLSB CellIs/Formula rules need Ptg + DXF (next step); "
-                    "use ColorScale/DataBar/IconSet or XLSX for now"
+                    "XLSB icon-set formula thresholds are not supported"
                 )
+            if isinstance(rule, FORMULA_RULES) and rule.dxf is not None:
+                # Reject styles XLSB cannot hold before anything is recorded.
+                dxf_payload(rule.dxf, lambda _fmt: 0)
         return list(conditional_formats)
 
     _CFVO_CODES = {
@@ -510,9 +559,15 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             + struct.pack("<II", 0, 0) + struct.pack("<I", 0)
         )
 
-    def _cfvo_icon_bin(self, value: float) -> bytes:
+    def _cfvo_icon_bin(self, value: float, type_: str) -> bytes:
+        if type_ == "formula":
+            raise NotImplementedError(
+                "XLSB icon-set formula thresholds are not supported"
+            )
+        code = self._CFVO_CODES[type_]
+        number = 0.0 if type_ in ("min", "max") else float(value)
         return (
-            struct.pack("<I", 4) + struct.pack("<d", float(value))
+            struct.pack("<I", code) + struct.pack("<d", number)
             + struct.pack("<II", 1, 1) + struct.pack("<I", 0)
         )
 
@@ -529,10 +584,11 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         return struct.pack("<IIII", first_row, last_row, first_col, last_col)
 
     @staticmethod
-    def _acuid() -> bytes:
-        # ACBegin / FRTBegin (random GUID, as Excel does) / ACEnd.
-        import uuid
-        guid = uuid.uuid4()
+    def _acuid(key: str) -> bytes:
+        # ACBegin / FRTBegin (revision GUID) / ACEnd. Excel writes a random
+        # GUID; one derived from the table and column keeps the output the
+        # same for the same input. It only has to be unique in the workbook.
+        guid = uuid.uuid5(_ACUID_NAMESPACE, key)
         payload = guid.bytes_le
         out = build_record(_BRT_AC_BEGIN, bytes((1, 0, 2, 0x10, 0, 0x80)))
         out += build_record(_BRT_FRT_BEGIN, payload)
@@ -542,7 +598,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
     def _table_bin(self, table, table_id: int, names: list[str]) -> bytes:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
         out = bytearray()
-        out.extend(self._acuid())
+        out.extend(self._acuid(f"{table_id}:{table.display_name}"))
         # BrtBeginList
         payload = bytearray()
         payload.extend(self._encode_rfx(first_col, first_row, last_col, last_row))
@@ -565,7 +621,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         for _ in range(3):
             payload.extend(self._encode_nullable_wstring(None))
         out.extend(build_record(_BRT_BEGIN_LIST, bytes(payload)))
-        out.extend(self._acuid())
+        out.extend(self._acuid(f"{table_id}:{table.display_name}:list"))
         # AutoFilter range inside the table part.
         out.extend(build_record(
             _BRT_BEGIN_AUTOFILTER,
@@ -577,7 +633,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             _BRT_BEGIN_LIST_COLS, struct.pack("<I", len(names)),
         ))
         for idx, col_name in enumerate(names, start=1):
-            out.extend(self._acuid())
+            out.extend(self._acuid(f"{table_id}:{table.display_name}:{idx}"))
             col_payload = bytearray()
             col_payload.extend(struct.pack("<I", idx))
             col_payload.extend(struct.pack("<I", 0))  # ilta none
@@ -644,8 +700,18 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         payload.extend(struct.pack("<I", 0xFFFFFFFF))  # strParam NULL
         return build_record(_BRT_BEGIN_CF_RULE, bytes(payload))
 
+    def _register_dxf(self, dxf) -> int:
+        """Index of ``dxf`` in the styles part; equal styles share one BrtDXF."""
+        if dxf is None:
+            return -1
+        payload = dxf_payload(dxf, self._register_numfmt)
+        return self._dxf_index.setdefault(payload, len(self._dxf_index))
+
     def _cf_bin_for_rule(self, rule, priority: int) -> bytes:
         from .styles import ColorScaleRule, DataBarRule, IconSetRule
+        if isinstance(rule, FORMULA_RULES):
+            return rule_bin(rule, priority, self._register_dxf(rule.dxf),
+                            self._formula_context(), self._letters)
         out = bytearray()
         if isinstance(rule, ColorScaleRule):
             out.extend(self._begin_cf_rule_bin(3, 2, -1, priority, 0))
@@ -692,36 +758,19 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         if isinstance(rule, IconSetRule):
             out.extend(self._begin_cf_rule_bin(6, 4, -1, priority, 0))
             code = self._ICON_SET_CODES[rule.icon_style]
-            # BeginIconSet: iconSet (4) + showValue/percent/reverse flags (2)?
-            # Reference 3TrafficLights1: 03 00 00 00 78 00.
-            # 03 = code 3, 78 00 = flags? showValue=1, percent=1, reverse=0?
-            # Bits: showValue? percent? reverse? Need to infer.
-            show = 0 if rule.show_value is False else 1
-            percent = 0 if rule.percent is False else 1
-            reverse = 1 if rule.reverse else 0
-            # Excel reference 78 00 = 0x0078 = 01111000b.
-            # Guess: bit3=showValue? bit4=percent? bit5-6?
-            # For now, match reference for defaults (show=1,percent=1,reverse=0):
-            # show=1, percent=1 -> flags 0x78? Let's hardcode mapping from XLSX attrs:
-            # showValue, percent, reverse -> flags per spec (need spec).
-            # From reference: show=1,percent=1,reverse=0 => 0x78.
-            # We compute: bit3 (0x08) = showValue? bit4 (0x10)=percent? bit5 (0x20)=? bit6 (0x40)=?
-            # 0x78 = 0x08|0x10|0x20|0x40 = all except low 3 bits. Hmm.
-            # Simpler: use 0x78 for defaults, adjust for reverse/show/percent by flipping?
-            # For now, use 0x78 and set bit for reverse (0x80?)? Need spec, but test with defaults first.
-            flags = 0x78
+            # fIcon hides the value when set. fReverse is 1 for the icon
+            # set's normal order. All reserved and undefined bits stay clear.
+            flags = 0
             if rule.show_value is False:
-                flags &= ~0x08  # guess
-            if rule.percent is False:
-                flags &= ~0x10  # guess
-            if rule.reverse:
-                flags |= 0x80  # guess (reverse bit?)
+                flags |= 0x02
+            if rule.reverse is not True:
+                flags |= 0x04
             out.extend(build_record(
                 _BRT_BEGIN_ICONSET,
                 struct.pack("<I", code) + struct.pack("<H", flags),
             ))
             for v in rule.values:
-                out.extend(build_record(_BRT_CFVO, self._cfvo_icon_bin(v)))
+                out.extend(build_record(_BRT_CFVO, self._cfvo_icon_bin(v, rule.type)))
             out.extend(build_record(_BRT_END_ICONSET, b""))
             out.extend(build_record(_BRT_END_CF_RULE, b""))
             return bytes(out)
@@ -765,17 +814,30 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
         charts: list[Chart] | tuple[Chart, ...] | None = None,
+        images: list[Image] | tuple[Image, ...] | None = None,
+        print_settings: PrintSettings | None = None,
+        data_validations: list[DataValidation] | tuple[DataValidation, ...] | None = None,
         tables: list | tuple | None = None,
         conditional_formats: list | tuple | None = None,
         comments=None,
         sheet_protection=None,
+        show_grid_lines: bool = True,
+        header_rows: int = 1,
+        tab_color=None,
+        zoom: int | None = None,
     ):
         self._require_writable()
+        if not isinstance(show_grid_lines, bool):
+            raise TypeError("show_grid_lines must be a bool")
         if header_style is not None and not isinstance(header_style, Style):
             raise TypeError("header_style must be a Style instance")
+        header_rows = check_header_rows(header_rows)
+        tab_key = tab_color_key(tab_color)
+        zoom = check_zoom(zoom)
         style_ranges = normalize_style_ranges(styles)
         for candidate in ([header_style] if header_style is not None else []) + [item[-1] for item in style_ranges]:
             self._reject_rich_style(candidate)
+        style_ranges, header_style = header_style_ranges(style_ranges, header_style, header_rows)
         merge_refs = self._normalize_merges(merges)
         comment_specs = {}
         if comments is not None:
@@ -796,13 +858,9 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         if freeze_panes is not None and freeze_panes != "":
             self._split_freeze_cell(freeze_panes)
         chart_specs = self._normalize_charts(charts)
-        for chart in chart_specs:
-            if chart.uses_extended_features:
-                raise ValueError(
-                    "XlsbWriter supports only the original chart options "
-                    "(bar, line and pie with no axis, legend, label, colour or marker settings); "
-                    "use XlsxWriter for these charts"
-                )
+        image_specs = normalize_images(images)
+        print_spec = normalize_print_settings(print_settings)
+        validations = normalize_validations(data_validations)
         table_specs = self._normalize_tables(tables)
         cf_specs = self._normalize_cf_rules(conditional_formats)
         # Pre-reserve explicit priorities (like XLSX) so auto-assigned ones skip them.
@@ -826,9 +884,17 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             store = chart_parts.new_cell_store(chart_parts.chart_cell_spans(chart_specs))
             data = _capture_cells(data, store)
             self._sheet_chart_cells[sheet_id] = store
+        if image_specs:
+            self._sheet_images[sheet_id] = image_specs
+            self._sheet_image_media[sheet_id] = [self._media.name(image) for image in image_specs]
+        if print_spec is not None:
+            self._sheet_print[sheet_id - 1] = print_spec
+        has_drawing = bool(chart_specs or image_specs)
+        if has_drawing:
+            self._sheet_drawings.add(sheet_id)
         table_ids: list[int] = []
         table_rel_ids: list[str] = []
-        header_rows: dict = {}
+        table_header_cells: dict = {}
         if table_specs:
             self._table_names.update(table.display_name for table in table_specs)
             # rId1 is binaryIndex; tables take rId2..; drawing (if any) last.
@@ -841,19 +907,18 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             self._sheet_tables[sheet_id] = list(zip(table_ids, table_rel_ids))
             # Column names must match the header cells, which stream past with
             # the rows; a mismatch fails as soon as the header row is read.
-            data = capture_table_headers(data, table_specs, header_rows)
+            data = capture_table_headers(data, table_specs, table_header_cells)
         if table_specs and auto_filter is None:
             # Tables carry their own AutoFilter; skip sheet-level filter.
             auto_filter = False
         for priority in cf_priorities:
             self._reserved_cf_priorities.add(priority)
             self._next_cf_priority = max(self._next_cf_priority, priority + 1)
-        if chart_specs and table_specs:
-            drawing_rel = f"rId{1 + len(table_ids) + 1}"
-        elif chart_specs:
-            drawing_rel = "rId2"
-        else:
-            drawing_rel = None
+        drawing_rel = f"rId{2 + len(table_ids)}" if has_drawing else None
+        # External hyperlinks take the relationship ids after the others
+        # (binary index, tables, drawing, comments).
+        link_rids: dict[str, str] = {}
+        link_rid_start = 2 + len(table_ids) + int(has_drawing) + (2 if comment_specs else 0)
         try:
             with self._zf.open(f"xl/worksheets/sheet{sheet_id}.bin", 'w') as sheet_file:
                 self._write_worksheet_bin(
@@ -865,10 +930,19 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
                     drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
                     cf_rules=cf_specs, row_outline=row_outline, col_outline=col_outline,
                     sheet_protection=sheet_protection,
-                    comment_vml_rid=(f'rId{3 + len(table_ids) + int(bool(chart_specs))}' if comment_specs else None),
+                    show_grid_lines=show_grid_lines,
+                    header_rows=header_rows, tab_key=tab_key, zoom=zoom,
+                    filter_cells=[
+                        (r1, c1, c2) for table in table_specs if table.header_row
+                        for c1, r1, c2, _r2 in (parse_cell_range(table.ref),)
+                    ],
+                    comment_vml_rid=(f'rId{3 + len(table_ids) + int(has_drawing)}' if comment_specs else None),
+                    link_rids=link_rids, link_rid_start=link_rid_start,
+                    print_spec=print_spec, validations=validations,
                 )
+            self._sheet_link_rels[sheet_id] = link_rids
             for table, table_id in zip(table_specs, table_ids):
-                names = table_column_names(table, header_rows.get(parse_cell_range(table.ref)[1]))
+                names = table_column_names(table, table_header_cells.get(parse_cell_range(table.ref)[1]))
                 self._tables_bin[table_id] = self._table_bin(table, table_id, names)
             self._zf.writestr(f"xl/worksheets/_rels/sheet{sheet_id}.bin.rels", self._create_worksheet_rels(sheet_id))
             self._zf.writestr(f"xl/worksheets/binaryIndex{sheet_id}.bin", self._binaryIndexBin)
@@ -890,10 +964,16 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
         charts: list | tuple | None = None,
+        images: list | tuple | None = None,
+        print_settings=None,
+        data_validations: list | tuple | None = None,
         tables: list | tuple | None = None,
         conditional_formats: list | tuple | None = None,
         comments=None,
         sheet_protection=None,
+        show_grid_lines: bool = True,
+        tab_color=None,
+        zoom: int | None = None,
     ):
         """Write a pandas or polars DataFrame to the current sheet.
 
@@ -927,10 +1007,16 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             freeze_panes=freeze_panes,
             auto_filter=auto_filter,
             charts=charts,
+            images=images,
+            print_settings=print_settings,
+            data_validations=data_validations,
             tables=tables,
             conditional_formats=conditional_formats,
             comments=comments,
             sheet_protection=sheet_protection,
+            show_grid_lines=show_grid_lines,
+            tab_color=tab_color,
+            zoom=zoom,
         )
 
     def _write_workbook_parts(self):
@@ -940,9 +1026,10 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             for sheet_id, comments in self._sheet_comments.items():
                 self._zf.writestr(f'xl/comments/comment{sheet_id}.bin', comments_bin(comments))
                 self._zf.writestr(f'xl/drawings/commentsDrawing{sheet_id}.vml', vml_xml(comments))
-        for sheet_id, charts in self._sheet_charts.items():
-            if not charts or sheet_id in self._sheet_chart_ids:
+        for sheet_id in sorted(self._sheet_drawings):
+            if sheet_id in self._sheet_chart_ids:
                 continue
+            charts = self._sheet_charts.get(sheet_id, [])
             sheet_name = self._worksheet_data[sheet_id - 1][0]
             cells = self._sheet_chart_cells.get(sheet_id)
             chart_ids = []
@@ -960,15 +1047,19 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             self._sheet_chart_ids[sheet_id] = chart_ids
             self._zf.writestr(
                 f"xl/drawings/drawing{sheet_id}.xml",
-                chart_parts.drawing_xml(charts, chart_ids),
+                chart_parts.drawing_xml(charts, chart_ids, images=self._sheet_images.get(sheet_id, [])),
             )
             self._zf.writestr(
                 f"xl/drawings/_rels/drawing{sheet_id}.xml.rels",
-                chart_parts.drawing_rels_xml(chart_ids),
+                chart_parts.drawing_rels_xml(chart_ids, image_names=self._sheet_image_media.get(sheet_id, [])),
             )
+        for name, data in self._media.parts:
+            self._zf.writestr(f"xl/media/{name}", data)
 
-        if any(self._sheet_charts.values()):
-            self._zf.writestr("xl/theme/theme1.xml", chart_parts.THEME_XML)
+        # Always written: without a theme part Excel opens an XLSB with its
+        # current default theme (Aptos Narrow in Microsoft 365) instead of
+        # Calibri, which the fonts and the XLSX writer's files use.
+        self._zf.writestr("xl/theme/theme1.xml", chart_parts.THEME_XML)
 
         for table_id, table_bin in self._tables_bin.items():
             self._zf.writestr(f"xl/tables/table{table_id}.bin", table_bin)
@@ -978,6 +1069,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         self._zf.writestr("xl/workbook.bin", self._create_workbook_bin())
         self._zf.writestr("xl/styles.bin", self._build_styles_bin())
         self._zf.writestr("xl/_rels/workbook.bin.rels", self._create_workbook_rels())
+        self._write_doc_props()
 
         with self._zf.open("xl/sharedStrings.bin", 'w') as sst_file:
             self._write_shared_strings_bin(sst_file)
@@ -991,8 +1083,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
 
         drawing_parts = "".join(
             f'<Override PartName="/xl/drawings/drawing{sheet_id}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>'
-            for sheet_id in sorted(self._sheet_charts)
-            if self._sheet_charts[sheet_id]
+            for sheet_id in sorted(self._sheet_drawings)
         )
         table_parts = "".join(
             f'<Override PartName="/xl/tables/table{table_id}.bin" ContentType="application/vnd.ms-excel.table"/>'
@@ -1002,21 +1093,19 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             f'<Override PartName="/xl/charts/chart{chart_id}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'
             for chart_id in range(1, self._next_chart_id)
         )
-        theme_part = ""
         comment_parts = ''.join(
             f'<Override PartName="/xl/comments/comment{sheet_id}.bin" ContentType="application/vnd.ms-excel.comments"/>'
             for sheet_id in self._sheet_comments
         )
         if self._sheet_comments:
             comment_parts += '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
-        if any(self._sheet_charts.values()):
-            theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
+        theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="bin" ContentType="application/vnd.ms-excel.sheet.binary.macroEnabled.main"/>
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
+<Default Extension="xml" ContentType="application/xml"/>{self._media.content_type_defaults()}
 <Override PartName="/xl/workbook.bin" ContentType="application/vnd.ms-excel.sheet.binary.macroEnabled.main"/>
 {parts}
 {drawing_parts}
@@ -1026,12 +1115,14 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
 {comment_parts}
 <Override PartName="/xl/styles.bin" ContentType="application/vnd.ms-excel.styles"/>
 <Override PartName="/xl/sharedStrings.bin" ContentType="application/vnd.ms-excel.sharedStrings"/>
+{self._doc_props_content_types()}
 </Types>'''
 
     def _create_root_rels(self) -> str:
-        return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.bin"/>
+{self._doc_props_root_rels()}
 </Relationships>'''
 
     def _create_workbook_rels(self) -> str:
@@ -1044,9 +1135,8 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         shared_strings_rid = self._sheet_count + 2
         relationships.append(f'<Relationship Id="rId{style_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.bin"/>')
         relationships.append(f'<Relationship Id="rId{shared_strings_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.bin"/>')
-        if any(self._sheet_charts.values()):
-            theme_rid = self._sheet_count + 3
-            relationships.append(f'<Relationship Id="rId{theme_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>')
+        theme_rid = self._sheet_count + 3
+        relationships.append(f'<Relationship Id="rId{theme_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>')
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -1066,7 +1156,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
                 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" '
                 f'Target="../tables/table{table_id}.bin"/>'
             )
-        if self._sheet_charts.get(sheet_id):
+        if sheet_id in self._sheet_drawings:
             drawing_rid = f"rId{1 + len(tables) + 1}"
             rels += (
                 f'<Relationship Id="{drawing_rid}" '
@@ -1074,10 +1164,15 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
                 f'Target="../drawings/drawing{sheet_id}.xml"/>'
             )
         if self._sheet_comments.get(sheet_id):
-            index = 2 + len(tables) + int(bool(self._sheet_charts.get(sheet_id)))
+            index = 2 + len(tables) + int(sheet_id in self._sheet_drawings)
             rels += (
                 f'<Relationship Id="rId{index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments/comment{sheet_id}.bin"/>'
                 f'<Relationship Id="rId{index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/commentsDrawing{sheet_id}.vml"/>'
+            )
+        for target, rel_id in self._sheet_link_rels.get(sheet_id, {}).items():
+            rels += (
+                f'<Relationship Id="{rel_id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+                f'Target="{saxutils.escape(target, {chr(34): "&quot;"})}" TargetMode="External"/>'
             )
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -1109,10 +1204,14 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             data.extend(sheet_name_utf16)
 
         data.extend(self._workbookBinMiddle)
+        if self._sheet_print:
+            # Print areas and titles are names with formulas: use the name table.
+            self._formula_context()
         if self._xlsb_formula_context is None:
             self._write_filter_defined_names(data)
         else:
             self._register_filter_names()
+            self._register_print_names()
         data.extend(self._workbookBinEnd)
         if self._xlsb_formula_context is not None or self._workbook_protection is not None:
             return self._metadata_workbook(bytes(data))
@@ -1136,7 +1235,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         return bytes(buffer)
 
     def _write_shared_strings_bin(self, sst_file: io.BufferedWriter):
-        c_sst = accel_encode_xlsb_sst(
+        c_sst = None if self._sst_has_rich else accel_encode_xlsb_sst(
             self._shared_strings, self._sst_all_count, self._sst_unique_count
         )
         if c_sst is not None:
@@ -1151,6 +1250,13 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         buffer.write(struct.pack('<II', self._sst_all_count, self._sst_unique_count))
         
         for s in self._shared_strings:
+            if type(s) is tuple:  # ("rich", text, runs) from _write_rich_str
+                buffer.write(build_record(0x13, self._rich_str_payload(s[1], s[2])))
+                if buffer.tell() > BUFFER_SIZE:
+                    sst_file.write(buffer.getvalue())
+                    buffer.seek(0)
+                    buffer.truncate()
+                continue
             # An over-limit string is an error, never a cut: the cell writers
             # check every value before it reaches this table.
             check_cell_text(s)
@@ -1352,7 +1458,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         return build_record(_BRT_XF, bytes(payload))
 
     def _build_styles_bin(self) -> bytes:
-        if not self._format_registry and not self._style_components:
+        if not (self._format_registry or self._style_components or self._dxf_index or self._font_registry):
             return self._stylesBin
 
         template = self._stylesBin
@@ -1420,7 +1526,13 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         buf.extend(build_record(_BRT_END_CELL_XFS))
 
         # ── Remaining sections (styles, DXFs, tableStyles, BrtEndStyleSheet) ──
-        buf.extend(template[519:])
+        if self._dxf_index:
+            # Template bytes 588..598 are the empty BrtBeginDXFs/BrtEndDXFs pair.
+            buf.extend(template[519:588])
+            buf.extend(dxfs_bin(list(self._dxf_index)))
+            buf.extend(template[598:])
+        else:
+            buf.extend(template[519:])
 
         return bytes(buf)
 
@@ -1519,9 +1631,8 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             if explicit is not None:
                 coldx = int(round(explicit * 256))
             elif i - start_col < len(col_widths_array):
-                # Historical encoding: the auto width truncated to whole
-                # characters, i.e. coldx = int(width) * 256.
-                coldx = int(col_widths_array[i - start_col]) * 256
+                # Automatic widths count characters; the file adds the cell padding.
+                coldx = int(round(file_width(col_widths_array[i - start_col]) * 256))
             else:
                 coldx = 8 * 256  # the default width, 8.43 characters, truncated
             flags = 0x02 | (0x01 if i in hidden_cols else 0)
@@ -1545,19 +1656,43 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         table_rel_ids: list[str] | None = None,
         cf_rules: list | None = None,
         row_outline=None, col_outline=None,
-        sheet_protection=None, comment_vml_rid=None,
+        sheet_protection=None, comment_vml_rid=None, show_grid_lines=True,
+        filter_cells=(), header_rows=1, tab_key=None, zoom=None,
+        link_rids: dict | None = None, link_rid_start: int = 2,
+        print_spec: PrintSettings | None = None, validations=(),
     ):
         buffer = io.BytesIO()
         BUFFER_SIZE = 65536
+        # (row, column, Hyperlink, relationship id or None) for the BrtHLink records.
+        hyperlinks = []
+        if link_rids is None:
+            link_rids = {}
 
-        buffer.write(self._sheet1Bytes[:54])
-        if self._sheetCnt != 1:
-            buffer.write(b'\x9C')
+        if tab_key is None:
+            head = self._sheet1Bytes[:54]
         else:
-            buffer.write(b'\xDC')
+            # Bytes 9-16 are brtcolorTab, the BrtColor inside BrtWsProp.
+            head = self._sheet1Bytes[:9] + self._color_payload(tab_key) + self._sheet1Bytes[17:54]
+        if print_spec is not None and print_spec.fit_to_page:
+            # The BrtWsProp payload starts at byte 6; fFitToPage is in its second byte.
+            head = bytearray(head)
+            head[6 + FIT_TO_PAGE_BYTE] |= FIT_TO_PAGE_BIT
+        buffer.write(head)
+        # First flag byte of BrtBeginWsView: fDspGrid (0x04), fDspRwCol,
+        # fDspZeros, fSelected (0x40, first sheet only) and fDspRuler.
+        view_flags = 0xDC if self._sheetCnt == 1 else 0x9C
+        if not show_grid_lines:
+            view_flags &= ~0x04
+        buffer.write(bytes((view_flags,)))
         self._sheetCnt += 1
 
-        buffer.write(self._sheet1Bytes[55:84])
+        view_tail = self._sheet1Bytes[55:84]
+        if zoom is not None:
+            # wScale and wScaleNormal of BrtBeginWsView ([MS-XLSB] 2.4.304),
+            # payload offsets 18 and 20.
+            scale = struct.pack('<HH', zoom, zoom)
+            view_tail = view_tail[:17] + scale + view_tail[21:]
+        buffer.write(view_tail)
 
         buffer.write(self._pane_record(freeze_panes))
 
@@ -1568,49 +1703,26 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         for _ in range(100):
             try:
                 row = next(data_iterator)
-                rows_to_analyze.append(row)
-                row_len = 0
-                for c in row:
-                    cv = _unwrap_cell(c) if c is not None else None
-                    if cv is not None:
-                        row_len += 1
-                max_cols = max(max_cols, row_len if row else 0)
             except StopIteration:
                 break
-
-        if max_cols == 0:
-            max_cols = 1
+            rows_to_analyze.append(row)
+            # Columns up to the last cell with a value.
+            for col_idx in range(len(row) - 1, -1, -1):
+                cell = row[col_idx]
+                if cell is not None and _unwrap_cell(cell) is not None:
+                    max_cols = max(max_cols, col_idx + 1)
+                    break
 
         start_col = 0
         end_col = max_cols
 
-        col_widths_array = accel_calc_column_widths(rows_to_analyze, max_cols)
-        if col_widths_array is None:
-            col_widths_array = []
-            for i in range(max_cols):
-                max_width = 0
-                for row in rows_to_analyze:
-                    if i < len(row):
-                        cell = row[i] if i < len(row) else None
-                        cell = _unwrap_cell(cell) if cell is not None else None
-                        if cell is not None:
-                            if isinstance(cell, Decimal):
-                                cell = float(cell)
-                            if isinstance(cell, datetime.datetime):
-                                temp_width = 18
-                            else:
-                                str_cell = str(cell)
-                                if '\n' in str_cell:
-                                    str_cell = str_cell.split('\n')[0]
-                                lenn = len(str_cell)
-                                temp_width = 1.25 * lenn + 4
-                            max_width = max(max_width, temp_width)
-                
-                if max_width == 0:
-                    max_width = 4.0
-                if max_width > 255:
-                    max_width = 255
-                col_widths_array.append(max_width)
+        if auto_filter is not False and len(rows_to_analyze) >= header_rows:
+            filter_cells = [*filter_cells, (header_rows - 1, 0, max_cols - 1)]
+        col_widths_array = estimate_column_widths(
+            rows_to_analyze, max_cols,
+            lambda row_idx, length: styles_for_row(row_idx, length, style_ranges, header_style),
+            filter_cells,
+        )
 
         # The last two bytes of BrtWsFmtInfo are the maximum row and column
         # outline levels; the template holds zeros.
@@ -1647,6 +1759,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         heights = heights or {}
         custom_rows = set(heights) | set(hidden_row_set)
         array_ranges = []
+        row_style_ids_cache = {}
 
         row_idx = -1
         for row_idx, row in enumerate(data_iterator):
@@ -1662,29 +1775,45 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
             else:
                 outline_level, outline_hidden = row_outline.state_at(row_idx)
                 outline_collapsed = row_outline.collapsed_at(row_idx)
-            if (not has_formatted and not array_ranges and row_idx not in custom_rows
-                    and not outline_level and not outline_collapsed):
-                style_ids = None
-                if row_styles:
-                    first_style = next(iter(row_styles.values()))
-                    if (len(row_styles) == len(row)
-                            and all(style is first_style for style in row_styles.values())):
-                        style_ids = self._register_style(first_style)
-                    else:
-                        style_ids = tuple(
-                            (col, self._register_style(row_styles[col]))
-                            for col in sorted(row_styles)
+            use_c = not array_ranges and (not has_formatted or self._fmt_xf)
+            style_ids = None
+            if use_c and row_styles:
+                if has_formatted:
+                    # Only look styles up: the Python encoder registers the
+                    # styles of formatted cells in its own order.
+                    try:
+                        style_ids = _style_ids_for_row(
+                            row_styles, len(row), self._style_xf_map.__getitem__,
+                            row_style_ids_cache,
                         )
+                    except KeyError:
+                        use_c = False
+                else:
+                    style_ids = _style_ids_for_row(
+                        row_styles, len(row), self._register_style,
+                        row_style_ids_cache,
+                    )
+            if use_c:
+                fmt_xf = self._fmt_xf if has_formatted else None
+                row_header = None
+                if row_idx in custom_rows or outline_level or outline_collapsed:
+                    row_header = self._row_header_record(
+                        row_idx, len(row) - 1 if row else 0,
+                        self._row_height_twips(heights[row_idx]) if row_idx in heights else None,
+                        row_idx in hidden_row_set or outline_hidden,
+                        outline_level, outline_collapsed,
+                    )
                 cell_data = None
                 if self._useSharedStrings:
                     c_result = encode_xlsb_row(
                         row, self._shared_strings_dict, self._shared_strings,
-                        self._sst_unique_count, self._sst_all_count, row_idx, style_ids
+                        self._sst_unique_count, self._sst_all_count, row_idx,
+                        style_ids, fmt_xf, row_header,
                     )
                     if c_result is not None:
                         cell_data, self._sst_unique_count, self._sst_all_count = c_result
                 else:
-                    cell_data = encode_xlsb_row_inline(row, row_idx, style_ids)
+                    cell_data = encode_xlsb_row_inline(row, row_idx, style_ids, fmt_xf, row_header)
                 if cell_data is not None:
                     buffer.write(cell_data)
                     if buffer.tell() > BUFFER_SIZE:
@@ -1728,19 +1857,47 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
                         buffer.write(struct.pack('<II', col_idx, xf_index))
                     continue
 
-                fmt_string = _get_format(cell)
-                if fmt_string is not None:
-                    cell = _unwrap_cell(cell)
-                    cell_style = row_styles.get(col_idx)
+                # (value, format) and (value, Style) cells: the overlay goes
+                # on top of the range style.
+                overlay = None
+                if _is_formatted_cell(cell):
+                    cell, overlay = cell
+                cell_style = row_styles.get(col_idx)
+                if isinstance(cell, Hyperlink):
+                    if isinstance(overlay, str):
+                        raise TypeError("a hyperlink cell cannot carry a number format; style the cell instead")
+                    # The link look sits under the range style and the cell's
+                    # own style, as in the XLSX writer.
+                    cell_style = merge_styles(HYPERLINK_STYLE, merge_styles(cell_style, overlay))
+                    overlay = None
+                    rid = None
+                    if not cell.is_internal:
+                        rid = link_rids.get(cell.target)
+                        if rid is None:
+                            rid = link_rids[cell.target] = f"rId{link_rid_start + len(link_rids)}"
+                    hyperlinks.append((row_idx, col_idx, cell, rid))
+                    cell = cell.display_text
+                if overlay is not None:
                     if cell_style is not None:
-                        cell_style = merge_styles(cell_style, Style(number_format=fmt_string))
-                else:
-                    cell_style = row_styles.get(col_idx)
-                if cell_style is not None:
-                    xf_index = self._register_style(cell_style)
+                        xf_index = _xf_for_style_format(
+                            cell_style, overlay, self._register_style,
+                            self._style_format_xf,
+                        )
+                        # Only a registered style has the id the C encoder sees.
+                        base_xf = self._style_xf_map.get(cell_style)
+                        if base_xf is not None:
+                            _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
+                                            base_xf, overlay, xf_index)
+                    else:
+                        if isinstance(overlay, str):
+                            xf_index = self._register_format(overlay)
+                        else:
+                            xf_index = self._register_style(overlay)
+                        _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
+                                        None, overlay, xf_index)
                     has_custom_fmt = True
-                elif fmt_string is not None:
-                    xf_index = self._register_format(fmt_string)
+                elif cell_style is not None:
+                    xf_index = self._register_style(cell_style)
                     has_custom_fmt = True
                 else:
                     xf_index = 0
@@ -1821,10 +1978,10 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
                             buffer.write(formula_cell(cell, col_idx, xf_index if has_custom_fmt else 0,
                                                       self._formula_context(), sheet=self._worksheet_data[worksheet_index][0], row=row_idx))
                             continue
-                    if type(cell) in _XLSB_REJECTED_TYPES:
-                        raise TypeError(
-                            "XlsbWriter does not support Hyperlink cells; use XlsxWriter"
-                        )
+                    if isinstance(cell, CellRichText):
+                        self._write_rich_str(buffer, cell, shared_strings_dict, shared_strings_append,
+                                             row_idx, col_idx, xf_index if has_custom_fmt else None)
+                        continue
                     self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx,
                                     xf_index if has_custom_fmt else None)
 
@@ -1888,9 +2045,11 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
 
         last_row_idx = row_idx if row_idx > -1 else 0 
 
-        if row_idx >= 0 and auto_filter is not False:
+        # The filter buttons sit on the last header row.
+        filter_row = header_rows - 1
+        if row_idx >= filter_row and auto_filter is not False:
             buffer.write(self._autoFilterStartBytes)
-            buffer.write(struct.pack('<I', 0))
+            buffer.write(struct.pack('<I', filter_row))
             buffer.write(struct.pack('<I', last_row_idx))
             buffer.write(struct.pack('<I', 0))
             buffer.write(struct.pack('<I', 0 + end_col - 1))
@@ -1900,7 +2059,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
                 sheet_index=worksheet_index,
                 start_column=0,
                 end_column=end_col - 1,
-                start_row=0,
+                start_row=filter_row,
                 end_row=last_row_idx
             ))
 
@@ -1918,12 +2077,21 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
 
         if cf_rules:
             buffer.write(self._cf_bin_grouped(cf_rules))
+        if validations:
+            # DVALS follow the conditional formats and precede the hyperlinks.
+            buffer.write(validations_bin(validations, self._formula_context()))
+        for row_idx, col_idx, link, rid in hyperlinks:
+            buffer.write(build_record(_BRT_HLINK, _hlink_payload(row_idx, col_idx, link, rid)))
 
         # Template offsets 290..346 hold BrtPrintOptions + BrtMargins; 346..
         # holds the FRT alternative-content block and BrtEndSheet. BrtDrawing
         # ([MS-XLSB] 2.4.351, record 550) sits between them per the Worksheet
-        # ABNF: ... [BrtMargins] ... [BrtDrawing] ... [LISTPARTS] ... BrtEndSheet.
-        buffer.write(self._sheet1Bytes[290:346])
+        # ABNF: ... [BrtMargins] [BrtPageSetup] [HEADERFOOTER] [RWBRK] [COLBRK]
+        # ... [BrtDrawing] ... [LISTPARTS] ... BrtEndSheet.
+        if print_spec is None:
+            buffer.write(self._sheet1Bytes[290:346])
+        else:
+            buffer.write(print_records(print_spec))
         if drawing_rel is not None:
             rel_encoded = drawing_rel.encode('utf-16-le')
             buffer.write(build_record(
@@ -1955,6 +2123,74 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata):
         buffer.write(build_record(
             0x06, struct.pack('<IIi', col_idx, style_ref, units) + encoded,
         ))
+
+    def _rich_font_id(self, font: InlineFont) -> int:
+        """The font table index of a run's font, shared with cell styles."""
+        if font.rFont is not None and len(font.rFont) > 31:
+            raise ValueError("XLSB font names are limited to 31 characters")
+        key = _FontKey(
+            font.rFont, font.sz, font.b, font.i, font.strike, font.u, font.vertAlign,
+            _color_key(font.color), font.charset, font.family, font.scheme,
+            font.outline, font.shadow, font.condense, font.extend,
+        )
+        return self._register_component(self._font_registry, key, 2)
+
+    def _rich_runs(self, rich: CellRichText) -> tuple[str, tuple]:
+        """The text and the StrRun list ``(ich, ifnt)`` of a rich cell.
+
+        As in the files Excel saves, text before the first formatted run has
+        no run (it takes the cell's font) and later plain text uses font 0.
+        """
+        texts, runs, position, current = [], [], 0, 0
+        for part in rich:
+            text = str(part)
+            if not text:
+                continue
+            font_id = self._rich_font_id(part.font) if isinstance(part, TextBlock) else 0
+            if font_id != current:
+                runs.append((position, font_id))
+                current = font_id
+            texts.append(text)
+            position += len(text.encode('utf-16-le')) // 2
+        if len(runs) > _MAX_STR_RUNS:
+            raise ValueError(f"XLSB rich text supports at most {_MAX_STR_RUNS} formatting runs")
+        text = "".join(texts)
+        check_cell_text(text)
+        return text, tuple(runs)
+
+    @staticmethod
+    def _rich_str_payload(text: str, runs: tuple) -> bytes:
+        """A RichStr ([MS-XLSB] 2.5.125): fRichStr, the text and its StrRuns."""
+        encoded = text.encode('utf-16-le')
+        payload = struct.pack('<BI', 0x01 if runs else 0x00, len(encoded) // 2) + encoded
+        if runs:
+            payload += struct.pack('<I', len(runs))
+            payload += b"".join(struct.pack('<HH', ich, ifnt) for ich, ifnt in runs)
+        return payload
+
+    def _write_rich_str(self, buffer, rich: CellRichText, shared_strings_dict, shared_strings_append,
+                        row_idx, col_idx, style_override=None):
+        text, runs = self._rich_runs(rich)
+        if not runs:
+            self._write_str(buffer, text, shared_strings_dict, shared_strings_append, row_idx, col_idx,
+                            style_override)
+            return
+        style_ref = style_override if style_override is not None else (3 if row_idx == 0 else 0)
+        # Rich text always goes to the shared-string table, also with
+        # useSharedStrings=False: Excel saves it there too, and the in-cell
+        # BrtCellRString is a record readers rarely know. A tuple key never
+        # equals a str, so the same text plain and formatted stays two entries.
+        key = ("rich", text, runs)
+        self._sst_all_count += 1
+        string_index = shared_strings_dict.get(key)
+        if string_index is None:
+            string_index = self._sst_unique_count
+            shared_strings_dict[key] = string_index
+            shared_strings_append(key)
+            self._sst_unique_count += 1
+            self._sst_has_rich = True
+        buffer.write(b'')
+        buffer.write(struct.pack('<III', col_idx, style_ref, string_index))
 
     def _write_str(self, buffer, cell, shared_strings_dict, shared_strings_append, row_idx, col_idx, style_override=None):
         if not self._useSharedStrings:

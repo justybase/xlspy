@@ -411,6 +411,31 @@ static double _get_excel_serial(PyObject *cell, int cell_kind)
     return serial;
 }
 
+/* xlspy.Style, registered by set_style_type: the second item of a
+   (value, Style) cell, which the writers treat like (value, format). */
+static PyObject *g_style_type = NULL;
+
+/* Kind of the second item of a 2-tuple cell: 1 format string, 2 Style,
+   0 anything else (the tuple is then an ordinary value). */
+static int _cell_overlay_kind(PyObject *item)
+{
+    if (PyUnicode_Check(item)) return 1;
+    if (g_style_type && PyObject_TypeCheck(item, (PyTypeObject *)g_style_type)) return 2;
+    return 0;
+}
+
+static PyObject *C_set_style_type(PyObject *self, PyObject *type)
+{
+    if (!PyType_Check(type))
+    {
+        PyErr_SetString(PyExc_TypeError, "set_style_type expects a class");
+        return NULL;
+    }
+    Py_INCREF(type);
+    Py_XSETREF(g_style_type, type);
+    Py_RETURN_NONE;
+}
+
 static PyObject *C_calc_column_widths(PyObject *self, PyObject *args)
 {
     PyObject *rows;
@@ -454,7 +479,7 @@ static PyObject *C_calc_column_widths(PyObject *self, PyObject *args)
                 {
                     PyObject *fmt = PySequence_GetItem(cell, 1);
                     if (!fmt) { PyErr_Clear(); continue; }
-                    int is_fmt = PyUnicode_Check(fmt);
+                    int is_fmt = _cell_overlay_kind(fmt);
                     Py_DECREF(fmt);
                     if (is_fmt)
                     {
@@ -537,9 +562,9 @@ static PyObject *C_xlsb_row_has_formatted(PyObject *self, PyObject *args)
                 /* PySequence_GetItem honors __getitem__ overrides, like cell[1]. */
                 PyObject *fmt = PySequence_GetItem(cell, 1);
                 if (!fmt) { PyErr_Clear(); Py_DECREF(seq); Py_RETURN_NONE; }
-                int is_str = PyUnicode_Check(fmt);
+                int is_fmt = _cell_overlay_kind(fmt);
                 Py_DECREF(fmt);
-                if (is_str) { found = 1; break; }
+                if (is_fmt) { found = 1; break; }
             }
         }
     }
@@ -979,9 +1004,14 @@ static int _write_text_cell(unsigned char **buf, size_t *buf_size, size_t *buf_c
    Python encoder, or NULL with an exception set.  Shared
    string state is read from and written back to *sst_uniq_io / *sst_all_io
    only when the row is encoded. */
+static int _is_fmt_tuple(PyObject *cell, int *out);
+static int _xlsx_fmt_xf(PyObject *cell, PyObject *fmt_xf, unsigned int *style,
+                        PyObject **value);
+
 static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObject *ss_list,
                                        unsigned int *sst_uniq_io, unsigned int *sst_all_io,
-                                       unsigned int row_idx, PyObject *style_ids, int inline_strings)
+                                       unsigned int row_idx, PyObject *style_ids, int inline_strings,
+                                       PyObject *fmt_xf, PyObject *row_header)
 {
     unsigned int sst_uniq = *sst_uniq_io;
     unsigned int sst_all = *sst_all_io;
@@ -993,6 +1023,8 @@ static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObjec
         if (!PyList_Check(ss_list)) { PyErr_SetString(PyExc_TypeError, "ss_list must be a list"); return NULL; }
     }
     if (style_ids != Py_None && !PyList_Check(style_ids) && !PyTuple_Check(style_ids) && !PyLong_Check(style_ids)) { PyErr_SetString(PyExc_TypeError, "style_ids must be an integer, list, tuple, or None"); return NULL; }
+    if (fmt_xf != Py_None && !PyDict_Check(fmt_xf)) { PyErr_SetString(PyExc_TypeError, "fmt_xf must be a dict or None"); return NULL; }
+    if (row_header != Py_None && (!PyBytes_Check(row_header) || PyBytes_GET_SIZE(row_header) > 256)) { PyErr_SetString(PyExc_TypeError, "row_header must be a BrtRowHdr record (bytes) or None"); return NULL; }
     unsigned int row_style = 0;
     if (PyLong_Check(style_ids))
     {
@@ -1017,15 +1049,24 @@ static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObjec
     Py_ssize_t style_pair_index = 0;
     unsigned int last_col = (row_len > 0) ? (unsigned int)(row_len - 1) : 0;
 
-    buf[buf_size++] = 0x00; buf[buf_size++] = 0x19;
-    memcpy(buf + buf_size, &row_idx, 4); buf_size += 4;
-    memset(buf + buf_size, 0, 4); buf_size += 4;
-    unsigned int row_h = 0x12c;
-    memcpy(buf + buf_size, &row_h, 4); buf_size += 4;
-    buf[buf_size++] = 0x00; buf[buf_size++] = 0x01; buf[buf_size++] = 0x00; buf[buf_size++] = 0x00; buf[buf_size++] = 0x00;
-    unsigned int r0 = 0;
-    memcpy(buf + buf_size, &r0, 4); buf_size += 4;
-    memcpy(buf + buf_size, &last_col, 4); buf_size += 4;
+    if (row_header != Py_None)
+    {
+        /* A custom height, hidden flag or outline level: the caller's record. */
+        memcpy(buf, PyBytes_AS_STRING(row_header), (size_t)PyBytes_GET_SIZE(row_header));
+        buf_size = (size_t)PyBytes_GET_SIZE(row_header);
+    }
+    else
+    {
+        buf[buf_size++] = 0x00; buf[buf_size++] = 0x19;
+        memcpy(buf + buf_size, &row_idx, 4); buf_size += 4;
+        memset(buf + buf_size, 0, 4); buf_size += 4;
+        unsigned int row_h = 0x12c;
+        memcpy(buf + buf_size, &row_h, 4); buf_size += 4;
+        buf[buf_size++] = 0x00; buf[buf_size++] = 0x01; buf[buf_size++] = 0x00; buf[buf_size++] = 0x00; buf[buf_size++] = 0x00;
+        unsigned int r0 = 0;
+        memcpy(buf + buf_size, &r0, 4); buf_size += 4;
+        memcpy(buf + buf_size, &last_col, 4); buf_size += 4;
+    }
 
     for (Py_ssize_t col_idx = 0; col_idx < row_len; col_idx++)
     {
@@ -1072,6 +1113,24 @@ static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObjec
                     }
                     break;
                 }
+            }
+        }
+        if (cell && PyTuple_Check(cell))
+        {
+            /* (value, format): the xf the Python writer recorded in fmt_xf,
+               else the Python encoder writes the row and records it. */
+            int fmt = 0;
+            _is_fmt_tuple(cell, &fmt);
+            if (fmt)
+            {
+                PyObject *value = NULL;
+                int xf_rc = PyTuple_CheckExact(cell)
+                    ? _xlsx_fmt_xf(cell, fmt_xf, &cell_style, &value) : 0;
+                if (xf_rc < 0) { err = 1; break; }
+                if (xf_rc == 0) { PyMem_Free(buf); Py_RETURN_NONE; }
+                /* The exact tuple keeps its item alive while the row is encoded. */
+                Py_DECREF(value);
+                cell = value;
             }
         }
         if (!cell || cell == Py_None)
@@ -1252,14 +1311,16 @@ static PyObject *C_encode_xlsb_row(PyObject *self, PyObject *args)
     unsigned int sst_all;
     unsigned int row_idx;
     PyObject *style_ids = Py_None;
+    PyObject *fmt_xf = Py_None;
+    PyObject *row_header = Py_None;
 
-    if (!PyArg_ParseTuple(args, "OOOIII|O", &row, &ss_dict, &ss_list, &sst_uniq, &sst_all, &row_idx, &style_ids))
+    if (!PyArg_ParseTuple(args, "OOOIII|OOO", &row, &ss_dict, &ss_list, &sst_uniq, &sst_all, &row_idx, &style_ids, &fmt_xf, &row_header))
         return NULL;
     if (!PyList_Check(ss_list)) { PyErr_SetString(PyExc_TypeError, "ss_list must be a list"); return NULL; }
     Py_ssize_t list_before = PyList_GET_SIZE(ss_list);
 
     PyObject *result_bytes = _encode_xlsb_row_core(row, ss_dict, ss_list, &sst_uniq, &sst_all,
-                                                   row_idx, style_ids, 0);
+                                                   row_idx, style_ids, 0, fmt_xf, row_header);
     if (!result_bytes || result_bytes == Py_None)
     {
         /* Fallback or error: undo the table entries this row added. */
@@ -1283,12 +1344,14 @@ static PyObject *C_encode_xlsb_row_inline(PyObject *self, PyObject *args)
     PyObject *style_ids = Py_None;
     unsigned int unused_uniq = 0;
     unsigned int unused_all = 0;
+    PyObject *fmt_xf = Py_None;
+    PyObject *row_header = Py_None;
 
-    if (!PyArg_ParseTuple(args, "OI|O", &row, &row_idx, &style_ids))
+    if (!PyArg_ParseTuple(args, "OI|OOO", &row, &row_idx, &style_ids, &fmt_xf, &row_header))
         return NULL;
 
     return _encode_xlsb_row_core(row, NULL, NULL, &unused_uniq, &unused_all,
-                                 row_idx, style_ids, 1);
+                                 row_idx, style_ids, 1, fmt_xf, row_header);
 }
 
 /* ===== XLSX row encoder =====
@@ -1501,7 +1564,23 @@ static int _xlsx_sst_index(PyObject *ss_dict, PyObject *ss_list, PyObject *s,
 
 /* String cell, mirroring `_write_string_cell` (1 ok, 0 row fallback, -1 OOM).
    Text over the cell limit falls back, so the Python encoder raises. */
-static int _xlsx_string_cell(_XBuf *b, PyObject *s, int is_header, int use_sst,
+static int _xlsx_style_attr(_XBuf *b, unsigned int style_id)
+{
+    if (!style_id) return 1;
+    return _xbuf_cstr(b, " s=\"") && _xbuf_uint(b, style_id) &&
+           _xbuf_byte(b, '"');
+}
+
+/* "<c><v>" or "<c s=\"N\"><v>" for a numeric cell. */
+static int _xlsx_open_value(_XBuf *b, unsigned int style_id)
+{
+    if (!style_id) return _xbuf_cstr(b, "<c><v>");
+    return _xbuf_cstr(b, "<c s=\"") && _xbuf_uint(b, style_id) &&
+           _xbuf_cstr(b, "\"><v>");
+}
+
+static int _xlsx_string_cell(_XBuf *b, PyObject *s, int is_header,
+                             unsigned int style_id, int use_sst,
                              PyObject *ss_dict, PyObject *ss_list,
                              unsigned int *uniq, unsigned int *all)
 {
@@ -1512,7 +1591,11 @@ static int _xlsx_string_cell(_XBuf *b, PyObject *s, int is_header, int use_sst,
         if (!_xlsx_sst_index(ss_dict, ss_list, s, uniq, all, &idx))
             return -1;
         if (!_xbuf_cstr(b, "<c t=\"s\"")) return -1;
-        if (is_header && !_xbuf_cstr(b, " s=\"3\"")) return -1;
+        if (style_id)
+        {
+            if (!_xlsx_style_attr(b, style_id)) return -1;
+        }
+        else if (is_header && !_xbuf_cstr(b, " s=\"3\"")) return -1;
         if (!_xbuf_cstr(b, "><v>")) return -1;
         if (!_xbuf_uint(b, idx)) return -1;
         if (!_xbuf_cstr(b, "</v></c>")) return -1;
@@ -1523,7 +1606,11 @@ static int _xlsx_string_cell(_XBuf *b, PyObject *s, int is_header, int use_sst,
     if (!utf8) { PyErr_Clear(); return 0; }  /* e.g. lone surrogates */
     int preserve = (n > 0 && (utf8[0] == ' ' || utf8[0] == '\t'));
     if (!_xbuf_cstr(b, "<c t=\"inlineStr\"")) return -1;
-    if (is_header && !_xbuf_cstr(b, " s=\"3\"")) return -1;
+    if (style_id)
+    {
+        if (!_xlsx_style_attr(b, style_id)) return -1;
+    }
+    else if (is_header && !_xbuf_cstr(b, " s=\"3\"")) return -1;
     if (!_xbuf_cstr(b, "><is><t")) return -1;
     if (preserve && !_xbuf_cstr(b, " xml:space=\"preserve\"")) return -1;
     if (!_xbuf_byte(b, '>')) return -1;
@@ -1534,7 +1621,8 @@ static int _xlsx_string_cell(_XBuf *b, PyObject *s, int is_header, int use_sst,
     return 1;
 }
 
-/* Exact `_is_formatted_cell`: tuple + len 2 + str second item. */
+/* Exact `_is_formatted_cell`: tuple + len 2 + a str or Style second item;
+   *out is its `_cell_overlay_kind`. */
 static int _is_fmt_tuple(PyObject *cell, int *out)
 {
     *out = 0;
@@ -1546,27 +1634,75 @@ static int _is_fmt_tuple(PyObject *cell, int *out)
         return 1;
     PyObject *fmt = PySequence_GetItem(cell, 1);
     if (!fmt) { PyErr_Clear(); return 1; }
-    *out = PyUnicode_Check(fmt);
+    *out = _cell_overlay_kind(fmt);
     Py_DECREF(fmt);
     return 1;
 }
 
+/* Resolve a (value, format) or (value, Style) cell through fmt_xf (1 ok,
+   0 row fallback, -1 error). The key is the format string, or the Style's
+   id(), for an unstyled cell and (style id, that key) for a styled one; the
+   writer keeps every keyed Style alive, so an id cannot be reused. On
+   success *style becomes the xf and *value a new reference to the cell's
+   value. A None value (written as the text "None" by the Python path) and
+   nested tuples fall back. */
+static int _xlsx_fmt_xf(PyObject *cell, PyObject *fmt_xf, unsigned int *style,
+                        PyObject **value)
+{
+    if (fmt_xf == Py_None) return 0;
+    PyObject *fmt = PySequence_GetItem(cell, 1);
+    if (!fmt) { PyErr_Clear(); return 0; }
+    if (!PyUnicode_Check(fmt))
+    {
+        PyObject *ident = PyLong_FromVoidPtr(fmt);
+        Py_DECREF(fmt);
+        if (!ident) return -1;
+        fmt = ident;
+    }
+    PyObject *key = fmt;
+    if (*style)
+    {
+        key = Py_BuildValue("(IO)", *style, fmt);
+        Py_DECREF(fmt);
+        if (!key) return -1;
+    }
+    PyObject *xf = PyDict_GetItemWithError(fmt_xf, key);  /* borrowed */
+    Py_DECREF(key);
+    if (!xf) return PyErr_Occurred() ? -1 : 0;
+    unsigned long xf_value = PyLong_AsUnsignedLong(xf);
+    if (PyErr_Occurred()) return -1;
+    PyObject *inner = PySequence_GetItem(cell, 0);
+    if (!inner) { PyErr_Clear(); return 0; }
+    if (inner == Py_None || PyTuple_Check(inner)) { Py_DECREF(inner); return 0; }
+    *style = (unsigned int)xf_value;
+    *value = inner;
+    return 1;
+}
+
 /* Encode one cell (1 ok, 0 row fallback, -1 OOM). */
-static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header, int use_sst,
+static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header,
+                      unsigned int style_id, int use_sst,
                       PyObject *ss_dict, PyObject *ss_list,
                       unsigned int *uniq, unsigned int *all)
 {
     if (!cell || cell == Py_None)
     {
-        return _xbuf_cstr(b, "<c/>") ? 1 : -1;
+        if (!style_id) return _xbuf_cstr(b, "<c/>") ? 1 : -1;
+        if (!_xbuf_cstr(b, "<c")) return -1;
+        if (!_xlsx_style_attr(b, style_id)) return -1;
+        return _xbuf_cstr(b, "/>") ? 1 : -1;
     }
     if (PyUnicode_Check(cell))
-        return _xlsx_string_cell(b, cell, is_header, use_sst,
+        return _xlsx_string_cell(b, cell, is_header, style_id, use_sst,
                                  ss_dict, ss_list, uniq, all);
     if (cell == Py_True || cell == Py_False)
     {
-        if (!_xbuf_cstr(b, cell == Py_True ? "<c t=\"b\"><v>1</v></c>"
-                                           : "<c t=\"b\"><v>0</v></c>"))
+        if (!style_id)
+            return _xbuf_cstr(b, cell == Py_True ? "<c t=\"b\"><v>1</v></c>"
+                                                 : "<c t=\"b\"><v>0</v></c>") ? 1 : -1;
+        if (!_xbuf_cstr(b, "<c t=\"b\"") ||
+            !_xlsx_style_attr(b, style_id) ||
+            !_xbuf_cstr(b, cell == Py_True ? "><v>1</v></c>" : "><v>0</v></c>"))
             return -1;
         return 1;
     }
@@ -1597,7 +1733,7 @@ static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header, int use_sst,
             d = PyFloat_AsDouble(f);
             Py_DECREF(f);
         }
-        if (!_xbuf_cstr(b, "<c><v>")) return -1;
+        if (!_xlsx_open_value(b, style_id)) return -1;
         if (!_xbuf_double(b, d)) return -1;
         if (!_xbuf_cstr(b, "</v></c>")) return -1;
         return 1;
@@ -1647,12 +1783,12 @@ static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header, int use_sst,
             PyObject *s = PyUnicode_FromString(
                 nan_like ? "NaN" : (pos_inf ? "\xe2\x88\x9e" : "-\xe2\x88\x9e"));
             if (!s) return -1;
-            int rc = _xlsx_string_cell(b, s, is_header, use_sst,
+            int rc = _xlsx_string_cell(b, s, is_header, style_id, use_sst,
                                        ss_dict, ss_list, uniq, all);
             Py_DECREF(s);
             return rc;
         }
-        if (!_xbuf_cstr(b, "<c><v>")) return -1;
+        if (!_xlsx_open_value(b, style_id)) return -1;
         if (!_xbuf_double(b, d)) return -1;
         if (!_xbuf_cstr(b, "</v></c>")) return -1;
         return 1;
@@ -1663,7 +1799,7 @@ static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header, int use_sst,
         if (!f) { PyErr_Clear(); return 0; }
         double d = PyFloat_AsDouble(f);
         Py_DECREF(f);
-        if (!_xbuf_cstr(b, "<c><v>")) return -1;
+        if (!_xlsx_open_value(b, style_id)) return -1;
         if (!_xbuf_double(b, d)) return -1;
         if (!_xbuf_cstr(b, "</v></c>")) return -1;
         return 1;
@@ -1680,12 +1816,14 @@ static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header, int use_sst,
             /* Year out of range: str(cell), like the Python path. */
             PyObject *s = PyObject_Str(cell);
             if (!s) { PyErr_Clear(); return 0; }
-            int rc = _xlsx_string_cell(b, s, is_header, use_sst,
+            int rc = _xlsx_string_cell(b, s, is_header, style_id, use_sst,
                                        ss_dict, ss_list, uniq, all);
             Py_DECREF(s);
             return rc;
         }
-        if (!_xbuf_cstr(b, is_dt ? "<c s=\"2\"><v>" : "<c s=\"1\"><v>")) return -1;
+        if (!(style_id ? _xlsx_open_value(b, style_id)
+                       : _xbuf_cstr(b, is_dt ? "<c s=\"2\"><v>" : "<c s=\"1\"><v>")))
+            return -1;
         if (!_xbuf_double(b, serial)) return -1;
         if (!_xbuf_cstr(b, "</v></c>")) return -1;
         return 1;
@@ -1724,16 +1862,51 @@ static int _xlsx_rollback(PyObject *ss_dict, PyObject *ss_list,
 static PyObject *C_encode_xlsx_row(PyObject *self, PyObject *args)
 {
     PyObject *row, *ss_dict, *ss_list;
+    PyObject *style_ids = Py_None;
+    PyObject *fmt_xf = Py_None;
+    PyObject *row_attrs = Py_None;
     unsigned int sst_uniq, sst_all, row_idx;
     int use_sst;
 
-    if (!PyArg_ParseTuple(args, "OOOIIIp", &row, &ss_dict, &ss_list,
-                          &sst_uniq, &sst_all, &row_idx, &use_sst))
+    if (!PyArg_ParseTuple(args, "OOOIIIp|OOO", &row, &ss_dict, &ss_list,
+                          &sst_uniq, &sst_all, &row_idx, &use_sst, &style_ids,
+                          &fmt_xf, &row_attrs))
         return NULL;
+    const char *attrs = NULL;
+    if (row_attrs != Py_None)
+    {
+        if (!PyUnicode_Check(row_attrs))
+        {
+            PyErr_SetString(PyExc_TypeError, "row_attrs must be a str or None");
+            return NULL;
+        }
+        /* ASCII attributes built by the writer (ht, outlineLevel, hidden...). */
+        attrs = PyUnicode_AsUTF8(row_attrs);
+        if (!attrs) return NULL;
+    }
+    if (fmt_xf != Py_None && !PyDict_Check(fmt_xf))
+    {
+        PyErr_SetString(PyExc_TypeError, "fmt_xf must be a dict or None");
+        return NULL;
+    }
     if (!PyDict_Check(ss_dict) || !PyList_Check(ss_list))
     {
         PyErr_SetString(PyExc_TypeError, "ss_dict must be a dict, ss_list a list");
         return NULL;
+    }
+    if (style_ids != Py_None && !PyList_Check(style_ids) &&
+        !PyTuple_Check(style_ids) && !PyLong_Check(style_ids))
+    {
+        PyErr_SetString(PyExc_TypeError,
+                        "style_ids must be an integer, list, tuple, or None");
+        return NULL;
+    }
+    unsigned int row_style = 0;
+    if (PyLong_Check(style_ids))
+    {
+        unsigned long style_value = PyLong_AsUnsignedLong(style_ids);
+        if (PyErr_Occurred()) return NULL;
+        row_style = (unsigned int)style_value;
     }
 
     _ensure_types();
@@ -1743,24 +1916,75 @@ static PyObject *C_encode_xlsx_row(PyObject *self, PyObject *args)
     Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
     PyObject **items = PySequence_Fast_ITEMS(seq);
     Py_ssize_t list_before = PyList_GET_SIZE(ss_list);
+    Py_ssize_t style_len = PyList_Check(style_ids) ? PyList_GET_SIZE(style_ids)
+                         : PyTuple_Check(style_ids) ? PyTuple_GET_SIZE(style_ids) : 0;
+    Py_ssize_t style_pair_index = 0;
 
     _XBuf b = {NULL, 0, 0};
     /* <row r="{n}"> */
     {
         char head[64];
-        int hn = snprintf(head, sizeof(head), "<row r=\"%u\">", row_idx + 1);
+        int hn = snprintf(head, sizeof(head), attrs ? "<row r=\"%u\"" : "<row r=\"%u\">",
+                          row_idx + 1);
         if (hn <= 0 || !_xbuf_cstr(&b, head)) goto oom;
+        if (attrs && (!_xbuf_cstr(&b, attrs) || !_xbuf_byte(&b, '>'))) goto oom;
     }
     for (Py_ssize_t i = 0; i < n; i++)
     {
         PyObject *cell = items[i];
+        unsigned int cell_style = row_style;
+        if (!row_style && PyList_Check(style_ids) && i < style_len)
+        {
+            PyObject *style_obj = PyList_GET_ITEM(style_ids, i);
+            if (style_obj != Py_None)
+            {
+                unsigned long style_value = PyLong_AsUnsignedLong(style_obj);
+                if (PyErr_Occurred()) goto oom;
+                cell_style = (unsigned int)style_value;
+            }
+        }
+        else if (!row_style && PyTuple_Check(style_ids))
+        {
+            while (style_pair_index < style_len)
+            {
+                PyObject *pair = PyTuple_GET_ITEM(style_ids, style_pair_index);
+                if (!PyTuple_Check(pair) || PyTuple_GET_SIZE(pair) != 2)
+                {
+                    PyErr_SetString(PyExc_TypeError,
+                                    "sparse style entries must be (column, style_id) pairs");
+                    goto oom;
+                }
+                long style_col = PyLong_AsLong(PyTuple_GET_ITEM(pair, 0));
+                if (PyErr_Occurred()) goto oom;
+                if (style_col < i)
+                {
+                    style_pair_index++;
+                    continue;
+                }
+                if (style_col == i)
+                {
+                    unsigned long style_value =
+                        PyLong_AsUnsignedLong(PyTuple_GET_ITEM(pair, 1));
+                    if (PyErr_Occurred()) goto oom;
+                    cell_style = (unsigned int)style_value;
+                    style_pair_index++;
+                }
+                break;
+            }
+        }
+        PyObject *value = NULL;  /* owned: the value of a (value, format) cell */
         if (cell != Py_None)
         {
             int fmt = 0;
             if (PyTuple_Check(cell))
             {
                 if (!_is_fmt_tuple(cell, &fmt)) goto oom;
-                if (fmt)  /* (value, format): Python slow path owns formats */
+                /* (value, format): use the xf the Python writer recorded in
+                   fmt_xf for this format (and cell style); otherwise the
+                   Python path writes the row and records it. */
+                int xf_rc = fmt ? _xlsx_fmt_xf(cell, fmt_xf, &cell_style, &value) : 1;
+                if (xf_rc < 0) goto oom;
+                if (xf_rc == 0)
                 {
                     Py_DECREF(seq);
                     PyMem_Free(b.data);
@@ -1769,8 +1993,9 @@ static PyObject *C_encode_xlsx_row(PyObject *self, PyObject *args)
                 }
             }
         }
-        int rc = _xlsx_cell(&b, cell, row_idx == 0, use_sst,
-                            ss_dict, ss_list, &sst_uniq, &sst_all);
+        int rc = _xlsx_cell(&b, value ? value : cell, row_idx == 0, cell_style,
+                            use_sst, ss_dict, ss_list, &sst_uniq, &sst_all);
+        Py_XDECREF(value);
         if (rc == 0)
         {
             Py_DECREF(seq);
@@ -2340,7 +2565,9 @@ static PyMethodDef CMethods[] = {
     {"calc_column_widths", C_calc_column_widths, METH_VARARGS,
      "Calculate column widths from row data."},
     {"xlsb_row_has_formatted", C_xlsb_row_has_formatted, METH_VARARGS,
-     "Return True if a row contains any (value, format) tuple cell."},
+     "Return True if a row contains any (value, format) or (value, Style) cell."},
+    {"set_style_type", C_set_style_type, METH_O,
+     "Register xlspy.Style, the class of the second item of (value, Style) cells."},
     {"encode_xlsb_sst", C_encode_xlsb_sst, METH_VARARGS,
      "Encode the sharedStrings.bin part. Returns bytes."},
     {"read_xlsb_shared_strings", C_read_xlsb_shared_strings, METH_VARARGS,

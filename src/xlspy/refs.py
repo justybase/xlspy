@@ -7,10 +7,14 @@ without creating an import cycle.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
-_CELL_RE = re.compile(r"^\$?([A-Za-z]{1,3})\$?([1-9][0-9]*)$")
+_RANGE_RE = re.compile(
+    r"\$?([A-Za-z]{1,3})\$?([1-9][0-9]*)(?::\$?([A-Za-z]{1,3})\$?([1-9][0-9]*))?"
+)
 
 
+@lru_cache(maxsize=4096)
 def _column_index(label: str) -> int:
     result = 0
     for char in label.upper():
@@ -34,13 +38,12 @@ def parse_cell_range(reference: str) -> tuple[int, int, int, int]:
     """Parse an A1 cell or rectangular range into zero-based bounds."""
     if not isinstance(reference, str):
         raise TypeError("style range keys must be A1 references such as 'A1:D1'")
-    parts = reference.split(":")
-    if len(parts) not in (1, 2):
+    match = _RANGE_RE.fullmatch(reference)
+    if match is None:
         raise ValueError(f"invalid A1 range {reference!r}")
-    matches = [_CELL_RE.fullmatch(part) for part in parts]
-    if any(match is None for match in matches):
-        raise ValueError(f"invalid A1 range {reference!r}")
-    (c1, r1), (c2, r2) = (matches[0].groups(), matches[-1].groups())
+    c1, r1, c2, r2 = match.groups()
+    if c2 is None:
+        c2, r2 = c1, r1
     bounds = (_column_index(c1), int(r1) - 1, _column_index(c2), int(r2) - 1)
     if bounds[2] < bounds[0] or bounds[3] < bounds[1]:
         raise ValueError(f"range end precedes its start in {reference!r}")

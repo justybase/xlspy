@@ -1,6 +1,7 @@
 import re
 import zipfile
 import struct
+import datetime
 
 import pytest
 
@@ -77,6 +78,38 @@ def test_xlsx_style_values_are_interpreted_by_openpyxl(tmp_path):
     assert sheet["C2"].alignment.horizontal == "center"
     assert sheet["C2"].alignment.wrap_text is True
     assert sheet["B2"].number_format == "#,##0"
+
+
+@pytest.mark.parametrize("use_shared_strings", [True, False])
+def test_xlsx_c_encoder_applies_range_styles_to_cell_kinds(tmp_path, use_shared_strings):
+    from xlspy._accel import HAVE_C_EXT
+    if not HAVE_C_EXT:
+        pytest.skip("requires the optional C encoder")
+    openpyxl = pytest.importorskip("openpyxl")
+    path = tmp_path / f"styled-fast-path-{use_shared_strings}.xlsx"
+    with XlsxWriter(path, useSharedStrings=use_shared_strings) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(
+            [
+                ["Header", "Text", "Number", "Flag", "Date", "Blank"],
+                ["row", "value", 3.5, True, datetime.date(2024, 1, 2), None],
+            ],
+            header_style=Style(
+                fill="008000", font_color="FFFFFF", horizontal="center",
+            ),
+            styles={
+                "B2:F2": Style(fill="FFFF00", horizontal="center"),
+                "E2": Style(number_format="yyyy-mm-dd"),
+            },
+        )
+
+    sheet = openpyxl.load_workbook(path)["Data"]
+    assert sheet["A1"].fill.fgColor.rgb == "FF008000"
+    assert sheet["A1"].alignment.horizontal == "center"
+    for ref in ("B2", "C2", "D2", "E2", "F2"):
+        assert sheet[ref].fill.fgColor.rgb == "FFFFFF00"
+        assert sheet[ref].alignment.horizontal == "center"
+    assert sheet["E2"].number_format == "yyyy-mm-dd"
 
 
 def test_xlsb_style_records_are_well_framed_and_blank_cells_keep_style(tmp_path):
@@ -436,7 +469,8 @@ def test_xlsb_sheet_args_are_encoded_in_worksheet_records(tmp_path):
     columns = _xlsb_sheet_payloads(path, 0x003C)
     assert [struct.unpack("<IIIIH", payload) for payload in columns] == [
         (0, 0, 20 * 256, 0, 0x02),
-        (1, 1, 5 * 256, 0, 0x03),
+        # Automatic widths never go below Excel's default 8.43 characters.
+        (1, 1, round((8.43 + 5 / 7) * 256), 0, 0x03),
         (2, 2, round(30.5 * 256), 0, 0x02),
     ]
 
@@ -473,8 +507,8 @@ def test_xlsb_freeze_and_filter_defaults(tmp_path):
     assert _xlsb_sheet_payloads(path, 0x00A1)  # autofilter present by default
     columns = _xlsb_sheet_payloads(path, 0x003C)
     assert [struct.unpack("<IIIIH", payload) for payload in columns] == [
-        (0, 0, 5 * 256, 0, 0x02),
-        (1, 1, 5 * 256, 0, 0x02),
+        (0, 0, round((8.43 + 5 / 7) * 256), 0, 0x02),
+        (1, 1, round((8.43 + 5 / 7) * 256), 0, 0x02),
     ]
 
     path = tmp_path / "plain.xlsb"
@@ -530,3 +564,176 @@ def test_xlsb_sheet_args_reject_invalid_input(tmp_path):
         writer.add_sheet("Data")
         with pytest.raises(ValueError, match="hidden column out of range"):
             writer.write_sheet([["x"]], hidden_columns=[16384])
+
+
+def _ws_view_flags(path, sheet=1):
+    """First flag byte of BrtBeginWsView (record 0x89) in an XLSB sheet."""
+    with zipfile.ZipFile(path) as archive:
+        data = archive.read(f"xl/worksheets/sheet{sheet}.bin")
+    view = next(record for record in iter_records(data) if record.record_id == 0x89)
+    return data[view.data_start]
+
+
+@pytest.mark.parametrize("show", [True, False])
+def test_show_grid_lines_xlsx(tmp_path, show):
+    path = tmp_path / "grid.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("First")
+        writer.write_sheet([["a"]], show_grid_lines=show)
+        writer.add_sheet("Second")
+        writer.write_sheet([["b"]], freeze_panes="B2", show_grid_lines=show)
+    with zipfile.ZipFile(path) as archive:
+        for part in ("xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"):
+            xml = archive.read(part).decode()
+            assert ('showGridLines="0"' in xml) is (not show)
+    openpyxl = pytest.importorskip("openpyxl")
+    workbook = openpyxl.load_workbook(path)
+    for sheet in workbook.worksheets:
+        # openpyxl reads a missing attribute as None, Excel's default (shown).
+        assert (sheet.sheet_view.showGridLines is not False) is show
+    from xlspy import load_workbook
+    loaded = load_workbook(path)
+    try:
+        assert loaded.active.sheet_view.showGridLines is show
+    finally:
+        loaded.close()
+
+
+@pytest.mark.parametrize("show", [True, False])
+def test_show_grid_lines_xlsb(tmp_path, show):
+    path = tmp_path / "grid.xlsb"
+    with XlsbWriter(path) as writer:
+        writer.add_sheet("First")
+        writer.write_sheet([["a"]], show_grid_lines=show)
+        writer.add_sheet("Second")
+        writer.write_sheet([["b"]], freeze_panes="B2", show_grid_lines=show)
+    grid = 0x04 if show else 0
+    # The first sheet is also selected (0x40); only fDspGrid changes.
+    assert _ws_view_flags(path, 1) == 0xD8 | grid
+    assert _ws_view_flags(path, 2) == 0x98 | grid
+
+
+@pytest.mark.parametrize("ext", ["xlsx", "xlsb"])
+def test_show_grid_lines_from_workbook_api(tmp_path, ext):
+    from xlspy import Workbook
+    path = tmp_path / f"grid.{ext}"
+    workbook = Workbook()
+    workbook.active.append(["x"])
+    workbook.active.sheet_view.showGridLines = False
+    workbook.create_sheet("Grid").append(["y"])
+    workbook.save(path)
+    if ext == "xlsb":
+        assert not _ws_view_flags(path, 1) & 0x04
+        assert _ws_view_flags(path, 2) & 0x04
+    else:
+        with zipfile.ZipFile(path) as archive:
+            assert 'showGridLines="0"' in archive.read("xl/worksheets/sheet1.xml").decode()
+            assert "showGridLines" not in archive.read("xl/worksheets/sheet2.xml").decode()
+
+
+@pytest.mark.parametrize("writer_cls,ext", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
+def test_show_grid_lines_must_be_bool(tmp_path, writer_cls, ext):
+    with writer_cls(tmp_path / f"bad.{ext}") as writer:
+        writer.add_sheet("Data")
+        with pytest.raises(TypeError, match="show_grid_lines must be a bool"):
+            writer.write_sheet([["x"]], show_grid_lines=0)
+
+
+def _cell_styles_via_openpyxl(path):
+    openpyxl = pytest.importorskip("openpyxl")
+    return openpyxl.load_workbook(path).active
+
+
+@pytest.mark.parametrize("use_c", [True, False])
+def test_value_style_cells_xlsx(tmp_path, monkeypatch, use_c):
+    import xlspy.xlsx_writer
+    if not use_c:
+        monkeypatch.setattr(xlspy.xlsx_writer, "accel_encode_xlsx_row", lambda *a, **k: None)
+    bold = Style(font=Font(bold=True))
+    red = Style(fill="FF0000", number_format="0.0")
+    rows = [["h1", "h2", "h3"]]
+    rows += [[(r, bold), (r / 2, red), (f"t{r}", "@")] for r in range(1, 30)]
+    rows.append([("plain", Style()), None, (datetime.date(2024, 5, 1), red)])
+    path = tmp_path / "cells.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(rows, styles={"A2:C10": Style(italic=True)})
+    sheet = _cell_styles_via_openpyxl(path)
+    assert sheet["A2"].value == 1 and sheet["A2"].font.b and sheet["A2"].font.i
+    assert sheet["A20"].font.b and not sheet["A20"].font.i
+    assert sheet["B3"].value == 1.0 and sheet["B3"].number_format == "0.0"
+    assert sheet["B3"].fill.fgColor.rgb == "FFFF0000" and sheet["B3"].font.i
+    assert sheet["C25"].number_format == "@" and sheet["C25"].value == "t24"
+    assert sheet["A31"].value == "plain"
+    # A date under the cell's "0.0" format is a plain serial to openpyxl.
+    assert sheet["C31"].number_format == "0.0" and sheet["C31"].value == 45413
+
+
+@pytest.mark.parametrize("use_c", [True, False])
+def test_value_style_cells_xlsb(tmp_path, monkeypatch, use_c):
+    import xlspy.writer
+    if not use_c:
+        monkeypatch.setattr(xlspy.writer, "encode_xlsb_row", lambda *a, **k: None)
+    bold = Style(bold=True)
+    rows = [["h"], *[[(r, bold)] for r in range(1, 20)], [("x", Style(number_format="0.00"))]]
+    path = tmp_path / "cells.xlsb"
+    with XlsbWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(rows, styles={"A2:A5": Style(italic=True)})
+    with ExcelReader(str(path)) as reader:
+        values = [row[0] for row in reader.get_rows("Data")]
+    assert values == ["h", *range(1, 20), "x"]
+    with zipfile.ZipFile(path) as archive:
+        sheet_bin = archive.read("xl/worksheets/sheet1.bin")
+    # Every (value, Style) cell carries a custom xf: none of A2..A21 uses xf 0.
+    cells = [record for record in iter_records(sheet_bin) if record.record_id in (0x02, 0x05, 0x07)]
+    xfs = [struct.unpack_from("<I", sheet_bin, record.data_start + 4)[0] for record in cells][1:]
+    assert len(xfs) == 20 and 0 not in xfs
+    assert len(set(xfs[:4])) == 1 and len(set(xfs[4:19])) == 1 and xfs[0] != xfs[4]
+
+
+def test_value_style_cell_column_widths_use_the_value(tmp_path):
+    path = tmp_path / "widths.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet([[("a long cell text", Style(bold=True)), "a long cell text"]])
+    with zipfile.ZipFile(path) as archive:
+        xml = archive.read("xl/worksheets/sheet1.xml").decode()
+    widths = re.findall(r'<col min="\d+" max="\d+" width="([0-9.]+)"', xml)
+    assert len(widths) == 2 and widths[0] == widths[1]
+
+
+def test_value_style_rejected_rich_style_in_xlsb(tmp_path):
+    with pytest.raises(NotImplementedError):
+        with XlsbWriter(tmp_path / "bad.xlsb") as writer:
+            writer.add_sheet("Data")
+            writer.write_sheet([[(1, Style(border=Border(start=Side(style="thin"))))]])
+
+
+@pytest.mark.parametrize("writer_cls,ext", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
+def test_open_style_ranges(tmp_path, writer_cls, ext):
+    from xlspy.styles import normalize_style_ranges
+    ranges = normalize_style_ranges({"B:C": Style(bold=True), "A3:A": Style(italic=True),
+                                     "1:1": Style(fill="00FF00")})
+    assert [r[:4] for r in ranges] == [(1, 0, 2, 1048575), (0, 2, 0, 1048575), (0, 0, 16383, 0)]
+    path = tmp_path / f"open.{ext}"
+    with writer_cls(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet([[r, r, r, r] for r in range(50)],
+                           styles={"B:C": Style(bold=True), "A3:A": Style(italic=True)})
+    with zipfile.ZipFile(path) as archive:
+        sheet = archive.read(f"xl/worksheets/sheet1.{'xml' if ext == 'xlsx' else 'bin'}")
+    # Only the written rows are styled: an open range adds no empty rows.
+    if ext == "xlsx":
+        assert sheet.count(b"<row ") == 50
+    if ext == "xlsx":
+        loaded = _cell_styles_via_openpyxl(path)
+        assert loaded["B50"].font.b and loaded["C1"].font.b and not loaded["D1"].font.b
+        assert loaded["A3"].font.i and loaded["A50"].font.i and not loaded["A2"].font.i
+
+
+@pytest.mark.parametrize("reference", ["D:B", "5:2", "B2:A", "XFE:XFE", "0:1", "B:"])
+def test_open_style_ranges_reject_bad_references(reference):
+    from xlspy.styles import parse_style_range
+    with pytest.raises(ValueError):
+        parse_style_range(reference)

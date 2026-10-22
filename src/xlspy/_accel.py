@@ -33,20 +33,38 @@ if _os.environ.get('XLSPY_DISABLE_C_EXT', '0') != '1':
         from xlspy._c_core import encode_xlsb_row_inline as _c_encode_xlsb_row_inline
     except ImportError:
         pass
+    try:
+        from xlspy._c_core import set_style_type as _c_set_style_type
+    except ImportError:
+        _c_set_style_type = None
+    if _c_set_style_type is not None:
+        # (value, Style) cells: the C encoders and width scan recognise them.
+        from xlspy.styles import Style as _Style
+        _c_set_style_type(_Style)
 
 
-def encode_xlsb_row_inline(row, row_idx, style_ids=None):
+def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header=None):
     """Row bytes with inline text cells via C, or None to use the Python
-    writer (over-long or unpaired-surrogate text, tuple-formatted rows)."""
+    writer (over-long or unpaired-surrogate text, tuple-formatted cells whose
+    xf is not in ``fmt_xf`` yet). ``row_header`` replaces the default
+    BrtRowHdr record."""
     if _c_encode_xlsb_row_inline is not None:
+        if fmt_xf is not None or row_header is not None:
+            return _c_encode_xlsb_row_inline(row, row_idx, style_ids, fmt_xf, row_header)
         if style_ids is not None:
             return _c_encode_xlsb_row_inline(row, row_idx, style_ids)
         return _c_encode_xlsb_row_inline(row, row_idx)
     return None
 
 
-def encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx, style_ids=None):
+def encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx,
+                    style_ids=None, fmt_xf=None, row_header=None):
     if HAVE_C_EXT:
+        if fmt_xf is not None or row_header is not None:
+            return _c_encode_xlsb_row(
+                row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx,
+                style_ids, fmt_xf, row_header,
+            )
         if style_ids is not None:
             return _c_encode_xlsb_row(
                 row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx, style_ids
@@ -93,10 +111,17 @@ def read_xlsb_shared_strings(data):
 
 
 def encode_xlsx_row(row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,
-                    use_shared_strings):
+                    use_shared_strings, style_ids=None, fmt_xf=None, row_attrs=None):
     """(row_xml, uniq, all) via C, or None to use the Python row writer
-    (tuple-formatted rows, unencodable rows).  C errors propagate."""
+    (unencodable rows, and tuple-formatted cells whose xf is not in
+    ``fmt_xf`` yet).  ``row_attrs`` are extra ``<row>`` attributes.  C errors
+    propagate."""
     if _c_encode_xlsx_row is not None:
+        if style_ids is not None or fmt_xf is not None or row_attrs is not None:
+            return _c_encode_xlsx_row(
+                row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,
+                use_shared_strings, style_ids, fmt_xf, row_attrs,
+            )
         return _c_encode_xlsx_row(row, ss_dict, ss_list, sst_uniq,
                                   sst_all, row_idx, use_shared_strings)
     return None

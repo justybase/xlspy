@@ -27,6 +27,7 @@ from decimal import Decimal
 from xml.sax import saxutils
 
 from .charts import (
+    GROUPINGS,
     LABEL_POSITIONS,
     LEGEND_POSITIONS,
     ChartAxis,
@@ -178,13 +179,27 @@ def _chart_number_text(value) -> str:
     return str(value)
 
 
+def _cached_value(raw):
+    """What a chart cache shows for a sheet cell.
+
+    A formula shows its cached result (``None`` when it has none), a hyperlink
+    its label; ``(value, format)`` and ``(value, Style)`` show the value.
+    """
+    from .formats import _unwrap_cell
+    from .formulas import Formula
+    from .hyperlinks import Hyperlink
+
+    value = _unwrap_cell(raw)
+    if isinstance(value, Formula):
+        return value.value
+    if isinstance(value, Hyperlink):
+        return value.display_text
+    return value
+
+
 def _chart_text(value) -> str:
     """Plain-text form of a cached chart string."""
-    from .formats import _unwrap_cell
-
-    if value is None:
-        return ""
-    value = _unwrap_cell(value)
+    value = _cached_value(value)
     if value is None:
         return ""
     if isinstance(value, bool):
@@ -201,14 +216,13 @@ def _str_cache_xml(values: list) -> str:
 
 
 def _num_cache_xml(values: list) -> str:
-    from .formats import _unwrap_cell
-
     points = []
     for i, raw in enumerate(values):
-        value = _unwrap_cell(raw) if raw is not None else None
+        value = _cached_value(raw)
         if value is None:
-            text = "0"
-        elif isinstance(value, str):
+            # Excel stores an empty cell as a missing point, drawn as a gap.
+            continue
+        if isinstance(value, str):
             try:
                 text = _chart_number_text(float(value))
             except ValueError:
@@ -224,11 +238,9 @@ def _num_cache_xml(values: list) -> str:
 
 
 def _is_numeric_range(values: list) -> bool:
-    from .formats import _unwrap_cell
-
     seen = False
     for raw in values:
-        value = _unwrap_cell(raw) if raw is not None else None
+        value = _cached_value(raw)
         if value is None:
             continue
         if isinstance(value, (str, bool)):
@@ -280,27 +292,18 @@ def _series_title_xml(letters, series, sheet_name, cells, xlsb: bool) -> str:
 def _categories_xml(letters, series, sheet_name, cells, xlsb: bool) -> str:
     if series.categories is None:
         return ""
-    formula = chart_ref(letters, sheet_name, series.categories)
     if not xlsb:
-        return (
-            "<cat><numRef><f>"
-            f"{formula}"
-            "</f></numRef></cat>"
-        )
-    cat_values = _range_values(cells, series.categories)
-    if _is_numeric_range(cat_values):
-        return (
-            "<cat><numRef><f>"
-            f"{formula}"
-            "</f>"
-            f"{_num_cache_xml(cat_values)}</numRef></cat>"
-        )
-    return (
-        "<cat><strRef><f>"
-        f"{formula}"
-        "</f>"
-        f"{_str_cache_xml(cat_values)}</strRef></cat>"
-    )
+        return _ref_xml("cat", letters, sheet_name, series.categories)
+    return _cached_ref_xml("cat", letters, sheet_name, series.categories, cells)
+
+
+def _cached_ref_xml(tag: str, letters, sheet_name: str, ref: str, cells) -> str:
+    """A reference with its cache, as ``numRef`` for numbers, else ``strRef``."""
+    formula = chart_ref(letters, sheet_name, ref)
+    values = _range_values(cells, ref)
+    if _is_numeric_range(values):
+        return f"<{tag}><numRef><f>{formula}</f>{_num_cache_xml(values)}</numRef></{tag}>"
+    return f"<{tag}><strRef><f>{formula}</f>{_str_cache_xml(values)}</strRef></{tag}>"
 
 
 def _line_sp_xml(color, line_on: bool) -> str:
@@ -329,20 +332,26 @@ def _marker_xml(marker, color) -> str:
 def _series_style_xml(series, chart_type: str, index: int, cells, xlsb: bool):
     """Return ``(spPr, dPt, marker)`` XML for one series."""
     if xlsb:
-        color = _LEGACY_ACCENTS[index % len(_LEGACY_ACCENTS)]
-        if chart_type == "line":
-            sp_pr = (
-                "<spPr><a:ln>"
-                f"<a:solidFill><a:srgbClr val=\"{color}\"/></a:solidFill>"
-                "<a:prstDash val=\"solid\"/></a:ln></spPr>"
-            )
+        # Every colour is explicit: the XLSB loader would otherwise paint
+        # series with the theme accents (see _LEGACY_ACCENTS).
+        color = series.color or _LEGACY_ACCENTS[index % len(_LEGACY_ACCENTS)]
+        line_on = series.line is True if chart_type == "scatter" else series.line is not False
+        if chart_type in ("line", "scatter"):
+            if line_on:
+                sp_pr = (
+                    "<spPr><a:ln>"
+                    f"<a:solidFill><a:srgbClr val=\"{color}\"/></a:solidFill>"
+                    "<a:prstDash val=\"solid\"/></a:ln></spPr>"
+                )
+            else:
+                sp_pr = '<spPr><a:ln w="19050"><a:noFill/></a:ln></spPr>'
         else:
             sp_pr = (
                 f"<spPr><a:solidFill><a:srgbClr val=\"{color}\"/></a:solidFill>"
                 "<a:ln><a:prstDash val=\"solid\"/></a:ln></spPr>"
             )
         points = ""
-        if chart_type == "pie":
+        if chart_type in ("pie", "doughnut"):
             value_count = len(_range_values(cells, series.values))
             points = "".join(
                 f"<dPt><idx val=\"{point}\"/><spPr><a:solidFill>"
@@ -351,17 +360,22 @@ def _series_style_xml(series, chart_type: str, index: int, cells, xlsb: bool):
                 for point in range(value_count)
             )
         marker = ""
-        if chart_type == "line":
-            marker = (
-                "<marker><symbol val=\"none\"/>"
-                "<spPr><a:ln><a:prstDash val=\"solid\"/></a:ln></spPr></marker>"
-            )
+        if chart_type == "scatter":
+            marker = _marker_xml(series.marker or ChartMarker(), color)
+        elif chart_type == "line":
+            if series.marker is None:
+                marker = (
+                    "<marker><symbol val=\"none\"/>"
+                    "<spPr><a:ln><a:prstDash val=\"solid\"/></a:ln></spPr></marker>"
+                )
+            else:
+                marker = _marker_xml(series.marker, color)
         return sp_pr, points, marker
 
     color = series.color
     points = ""
     marker = ""
-    if chart_type in ("bar", "barh"):
+    if chart_type in ("area", "bar", "barh"):
         if color is None:
             sp_pr = '<spPr><a:ln><a:prstDash val="solid"/></a:ln></spPr>'
         else:
@@ -394,26 +408,37 @@ def chart_series_xml(letters: list[str], series, sheet_name: str,
     if chart_type == "scatter":
         x_xml = ""
         if series.x_values is not None:
-            x_xml = _ref_xml("xVal", letters, sheet_name, series.x_values)
-        y_xml = _ref_xml("yVal", letters, sheet_name, series.values)
+            if xlsb:
+                x_xml = _cached_ref_xml("xVal", letters, sheet_name, series.x_values, cells)
+            else:
+                x_xml = _ref_xml("xVal", letters, sheet_name, series.x_values)
+        if xlsb:
+            y_xml = _ref_xml(
+                "yVal", letters, sheet_name, series.values,
+                cache=_num_cache_xml(_range_values(cells, series.values)),
+            )
+        else:
+            y_xml = _ref_xml("yVal", letters, sheet_name, series.values)
         return (
             f"<ser><idx val=\"{index}\"/><order val=\"{index}\"/>{title}"
             f"{sp_pr}{marker}{x_xml}{y_xml}<smooth val=\"0\"/></ser>"
         )
-    categories = ""
-    if chart_type != "pie":
-        categories = _categories_xml(letters, series, sheet_name, cells, xlsb)
+    categories = _categories_xml(letters, series, sheet_name, cells, xlsb)
+    smooth = ""
     if xlsb:
         values_xml = _ref_xml(
             "val", letters, sheet_name, series.values,
             cache=_num_cache_xml(_range_values(cells, series.values)),
         )
+        if chart_type == "line":
+            # The XLSB loader smooths a line series that does not say otherwise.
+            smooth = "<smooth val=\"0\"/>"
     else:
         values_xml = _ref_xml("val", letters, sheet_name, series.values)
     return (
         f"<ser><idx val=\"{index}\"/><order val=\"{index}\"/>{title}"
         f"{sp_pr}{points}{marker}{categories}"
-        f"{values_xml}</ser>"
+        f"{values_xml}{smooth}</ser>"
     )
 
 
@@ -445,8 +470,13 @@ def _axis_title_xml(text: str) -> str:
 
 
 def _axis_xml(kind: str, ax_id: int, cross_id: int, position: str, axis,
-              default_gridlines: bool, cross_between: str = "between") -> str:
-    """One ``catAx`` or ``valAx`` element for the extended chart model."""
+              default_gridlines: bool, cross_between: str = "between",
+              xlsb: bool = False) -> str:
+    """One ``catAx`` or ``valAx`` element for the extended chart model.
+
+    The XLSB loader draws an axis only with an explicit ``delete val="0"``
+    (see ``_XLSB_CHART_AXES_XML``).
+    """
     axis = axis if axis is not None else ChartAxis()
     gridlines = default_gridlines if axis.gridlines is None else axis.gridlines
     scaling = f'<orientation val="{"maxMin" if axis.reverse else "minMax"}"/>'
@@ -458,6 +488,8 @@ def _axis_xml(kind: str, ax_id: int, cross_id: int, position: str, axis,
     parts = [f'<{kind}><axId val="{ax_id}"/><scaling>{scaling}</scaling>']
     if not axis.visible:
         parts.append('<delete val="1"/>')
+    elif xlsb:
+        parts.append('<delete val="0"/>')
     parts.append(f'<axPos val="{position}"/>')
     if gridlines:
         parts.append("<majorGridlines/>")
@@ -483,24 +515,28 @@ def _axis_xml(kind: str, ax_id: int, cross_id: int, position: str, axis,
 def _axes_xml(chart, xlsb: bool) -> str:
     """Axis elements for a bar, horizontal bar, line or scatter chart."""
     kind = chart.chart_type
-    if xlsb:
-        return _XLSB_CHART_AXES_XML
     customised = chart.x_axis is not None or chart.y_axis is not None
     if kind in ("bar", "line") and not customised:
-        return _CHART_AXES_XML
+        return _XLSB_CHART_AXES_XML if xlsb else _CHART_AXES_XML
+    if kind == "area":
+        # Excel's own area charts start the plot at the value axis.
+        return (
+            _axis_xml("catAx", 10, 100, "b", chart.x_axis, False, xlsb=xlsb)
+            + _axis_xml("valAx", 100, 10, "l", chart.y_axis, True, "midCat", xlsb)
+        )
     if kind == "scatter":
         return (
-            _axis_xml("valAx", 10, 100, "b", chart.x_axis, False, "midCat")
-            + _axis_xml("valAx", 100, 10, "l", chart.y_axis, True, "midCat")
+            _axis_xml("valAx", 10, 100, "b", chart.x_axis, False, "midCat", xlsb)
+            + _axis_xml("valAx", 100, 10, "l", chart.y_axis, True, "midCat", xlsb)
         )
     if kind == "barh":
         return (
-            _axis_xml("catAx", 10, 100, "l", chart.x_axis, False)
-            + _axis_xml("valAx", 100, 10, "b", chart.y_axis, True)
+            _axis_xml("catAx", 10, 100, "l", chart.x_axis, False, xlsb=xlsb)
+            + _axis_xml("valAx", 100, 10, "b", chart.y_axis, True, xlsb=xlsb)
         )
     return (
-        _axis_xml("catAx", 10, 100, "b", chart.x_axis, False)
-        + _axis_xml("valAx", 100, 10, "l", chart.y_axis, True)
+        _axis_xml("catAx", 10, 100, "b", chart.x_axis, False, xlsb=xlsb)
+        + _axis_xml("valAx", 100, 10, "l", chart.y_axis, True, xlsb=xlsb)
     )
 
 
@@ -508,8 +544,9 @@ def _legend_xml(legend) -> str:
     if legend is False:
         return ""
     if legend is None or legend is True:
-        return '<legend><legendPos val="r"/></legend>'
-    overlay = '<overlay val="1"/>' if legend.overlay else ""
+        return '<legend><legendPos val="r"/><overlay val="0"/></legend>'
+    # An absent overlay element means the legend covers the plot in Excel.
+    overlay = '<overlay val="1"/>' if legend.overlay else '<overlay val="0"/>'
     return (
         f'<legend><legendPos val="{LEGEND_POSITIONS[legend.position]}"/>'
         f"{overlay}</legend>"
@@ -519,31 +556,31 @@ def _legend_xml(legend) -> str:
 def _title_xml(chart, xlsb: bool) -> str:
     title_text = saxutils.escape(chart.title)
     if xlsb:
+        size = "1800" if chart.title_size is None else _chart_number_text(chart.title_size * 100)
         return (
             "<title><tx><rich><a:bodyPr/><a:p>"
-            "<a:pPr><a:defRPr sz=\"1800\" b=\"1\"/></a:pPr>"
-            "<a:r><a:rPr lang=\"en-US\" sz=\"1800\" b=\"1\"/>"
+            f"<a:pPr><a:defRPr sz=\"{size}\" b=\"1\"/></a:pPr>"
+            f"<a:r><a:rPr lang=\"en-US\" sz=\"{size}\" b=\"1\"/>"
             f"<a:t>{title_text}</a:t></a:r>"
-            "</a:p></rich></tx></title>"
+            "</a:p></rich></tx><overlay val=\"0\"/></title>"
         )
     if chart.title_size is None:
         return (
             "<title><tx><rich><a:bodyPr/><a:p><a:pPr><a:defRPr/></a:pPr>"
-            f"<a:r><a:t>{title_text}</a:t></a:r></a:p></rich></tx></title>"
+            f"<a:r><a:t>{title_text}</a:t></a:r></a:p></rich></tx>"
+            '<overlay val="0"/></title>'
         )
     size = _chart_number_text(chart.title_size * 100)
     return (
         "<title><tx><rich><a:bodyPr/><a:p>"
         f'<a:pPr><a:defRPr sz="{size}"/></a:pPr>'
         f'<a:r><a:rPr lang="en-US" sz="{size}"/><a:t>{title_text}</a:t></a:r>'
-        "</a:p></rich></tx></title>"
+        '</a:p></rich></tx><overlay val="0"/></title>'
     )
 
 
 def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
               xlsb: bool = False) -> str:
-    if xlsb and chart.uses_extended_features:
-        raise ValueError("this chart uses features that only the XLSX writer supports")
     parts = []
     if chart.style is not None:
         if xlsb:
@@ -559,6 +596,13 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
     parts.append("<chart>")
     if chart.title is not None:
         parts.append(_title_xml(chart, xlsb))
+    else:
+        # The automatic title: the series name of a single-series chart. Excel
+        # saves it as an empty title; with autoTitleDeleted alone an XLSB
+        # opened while another workbook is open usually loses it.
+        if len(chart.series) == 1:
+            parts.append("<title><overlay val=\"0\"/></title>")
+        parts.append("<autoTitleDeleted val=\"0\"/>")
     series_xml = "".join(
         chart_series_xml(
             letters, item, sheet_name, index, chart.chart_type,
@@ -571,19 +615,24 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
     if chart.labels_enabled:
         labels = _dlbls_xml(chart.data_labels or DataLabels())
     parts.append("<plotArea>")
+    grouping = GROUPINGS.get(chart.grouping)
     if chart.chart_type in ("bar", "barh"):
         bar_dir = "col" if chart.chart_type == "bar" else "bar"
+        # Stacked bars sit on top of each other: overlap 100%.
+        overlap = "<overlap val=\"100\"/>" if grouping else ""
         parts.append(
-            f"<barChart><barDir val=\"{bar_dir}\"/><grouping val=\"clustered\"/>"
+            f"<barChart><barDir val=\"{bar_dir}\"/>"
+            f"<grouping val=\"{grouping or 'clustered'}\"/>"
             f"{vary}{series_xml}{labels}"
-            "<gapWidth val=\"150\"/><axId val=\"10\"/><axId val=\"100\"/></barChart>"
+            f"<gapWidth val=\"150\"/>{overlap}<axId val=\"10\"/><axId val=\"100\"/></barChart>"
             f"{_axes_xml(chart, xlsb)}"
         )
-    elif chart.chart_type == "line":
+    elif chart.chart_type in ("line", "area"):
+        tag = f"{chart.chart_type}Chart"
         parts.append(
-            "<lineChart><grouping val=\"standard\"/>"
+            f"<{tag}><grouping val=\"{grouping or 'standard'}\"/>"
             f"{vary}{series_xml}{labels}"
-            "<axId val=\"10\"/><axId val=\"100\"/></lineChart>"
+            f"<axId val=\"10\"/><axId val=\"100\"/></{tag}>"
             f"{_axes_xml(chart, xlsb)}"
         )
     elif chart.chart_type == "scatter":
@@ -593,22 +642,21 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
             "<axId val=\"10\"/><axId val=\"100\"/></scatterChart>"
             f"{_axes_xml(chart, xlsb)}"
         )
+    elif chart.chart_type == "doughnut":
+        parts.append(
+            f"<doughnutChart><varyColors val=\"1\"/>{series_xml}{labels}"
+            "<firstSliceAng val=\"0\"/><holeSize val=\"50\"/></doughnutChart>"
+        )
     else:
         parts.append(
             f"<pieChart><varyColors val=\"1\"/>{series_xml}{labels}"
             "<firstSliceAng val=\"0\"/></pieChart>"
         )
     parts.append("</plotArea>")
-    if xlsb:
-        parts.append(
-            "<legend><legendPos val=\"r\"/></legend>"
-            "<plotVisOnly val=\"1\"/><dispBlanksAs val=\"gap\"/>"
-        )
-    else:
-        parts.append(
-            f"{_legend_xml(chart.legend)}"
-            "<plotVisOnly val=\"1\"/><dispBlanksAs val=\"gap\"/>"
-        )
+    parts.append(
+        f"{_legend_xml(chart.legend)}"
+        "<plotVisOnly val=\"1\"/><dispBlanksAs val=\"gap\"/>"
+    )
     parts.append("</chart>")
     return (
         "<chartSpace "

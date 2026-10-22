@@ -318,3 +318,103 @@ def test_encode_xlsx_row_error_paths_no_growth():
     run()
     assert_no_tracemalloc_growth(run, iters=100, allowance_kb=256.0)
     assert_no_gc_growth(run, iters=100, allowance=10)
+
+
+def _formatted_row(i):
+    """(value, format) cells of every type the C encoders take, plus a styled one."""
+    return [
+        (f"s{i}", "@"),
+        (i, "#,##0"),
+        (i / 4, "0.00"),
+        (i % 2 == 0, "0"),
+        (datetime.date(2024, 1, 1) + datetime.timedelta(days=i % 300), "yyyy-mm-dd"),
+        (Decimal(f"{i}.5"), "0.0"),
+        None,
+    ]
+
+
+FMT_XF = {"@": 10, "#,##0": 11, "0.00": 12, "0": 13, "yyyy-mm-dd": 14, "0.0": 15,
+          (20, "0.00"): 21}
+
+
+@needs_c_ext
+def test_encoders_with_format_ids_no_growth():
+    from xlspy._accel import encode_xlsb_row_inline
+
+    rows = [_formatted_row(i) for i in range(100)]
+    styled = [[(1.5, "0.00"), "x"]]  # column 0 has style id 20
+
+    def run():
+        ss_dict, ss_list = {}, []
+        uniq = allc = 0
+        for idx, row in enumerate(rows):
+            res = encode_xlsx_row(row, ss_dict, ss_list, uniq, allc, idx, True, None, FMT_XF)
+            assert res is not None
+            uniq, allc = res[1], res[2]
+            res = encode_xlsb_row(row, {}, [], 0, 0, idx, None, FMT_XF)
+            assert res is not None
+            assert encode_xlsb_row_inline(row, idx, None, FMT_XF) is not None
+        assert encode_xlsx_row(styled[0], {}, [], 0, 0, 1, True, ((0, 20),), FMT_XF) is not None
+        assert encode_xlsb_row(styled[0], {}, [], 0, 0, 1, ((0, 20),), FMT_XF) is not None
+
+    run()
+    assert_no_tracemalloc_growth(run, iters=20, allowance_kb=512.0)
+    assert_no_gc_growth(run, iters=50, allowance=10)
+
+
+@needs_c_ext
+def test_encoders_with_format_ids_fall_back_cleanly():
+    from xlspy._accel import encode_xlsb_row_inline
+
+    class Tup(tuple):
+        pass
+
+    fallbacks = [
+        ["a", ("v", "unknown format")],   # format not recorded yet
+        ["a", (None, "0.00")],            # the Python path writes "None"
+        ["a", Tup((1, "0.00"))],          # XLSB borrows items of exact tuples only
+        ["a", ((1, 2), "0.00")],          # nested tuple
+    ]
+    d0, l0 = {"pre": 0}, ["pre"]
+
+    def run():
+        for idx, row in enumerate(fallbacks):
+            d, l = dict(d0), list(l0)
+            if idx != 2:
+                assert encode_xlsx_row(row, d, l, 1, 1, idx, True, None, FMT_XF) is None
+                assert d == d0 and l == l0
+            assert encode_xlsb_row(row, d, l, 1, 1, idx, None, FMT_XF) is None
+            assert d == d0 and l == l0
+            assert encode_xlsb_row_inline(row, idx, None, FMT_XF) is None
+        with pytest.raises(TypeError, match="fmt_xf"):
+            encode_xlsx_row(["a"], {}, [], 0, 0, 0, True, None, [])
+        with pytest.raises(TypeError, match="fmt_xf"):
+            encode_xlsb_row(["a"], {}, [], 0, 0, 0, None, [])
+
+    run()
+    assert_no_tracemalloc_growth(run, iters=100, allowance_kb=256.0)
+    assert_no_gc_growth(run, iters=100, allowance=10)
+
+
+@needs_c_ext
+def test_encoders_with_row_attributes_no_growth():
+    from xlspy._accel import encode_xlsb_row_inline
+
+    header = XlsbWriter._row_header_record(3, 2, 400, True, 2, False)
+    row = ["a", 1, 2.5]
+
+    def run():
+        xml, _uniq, _all = encode_xlsx_row(row, {}, [], 0, 0, 3, True, None, None,
+                                           ' ht="20" customHeight="1" hidden="1"')
+        assert xml.startswith('<row r="4" ht="20" customHeight="1" hidden="1"><c')
+        data, _uniq, _all = encode_xlsb_row(row, {}, [], 0, 0, 3, None, None, header)
+        assert data.startswith(header)
+        assert encode_xlsb_row_inline(row, 3, None, None, header).startswith(header)
+        with pytest.raises(TypeError, match="row_attrs"):
+            encode_xlsx_row(row, {}, [], 0, 0, 3, True, None, None, b"x")
+        with pytest.raises(TypeError, match="row_header"):
+            encode_xlsb_row(row, {}, [], 0, 0, 3, None, None, "x")
+
+    run()
+    assert_no_tracemalloc_growth(run, iters=100, allowance_kb=256.0)
+    assert_no_gc_growth(run, iters=100, allowance=10)

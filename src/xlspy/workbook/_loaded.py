@@ -16,6 +16,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .._metadata import MAIN, REL, PKG_REL, CT, element_pattern, replace_element, serialize_like
 from .._xlsx_edit import _attributes, _bytes, _cell_value
 from ..formulas import Formula
+from ._objects import add_objects, has_pending_objects, mark_objects_saved
 from ..refs import column_label, parse_cell_range
 from ..styles import _coerce_color, _color_key
 from ..updater_utils import replace_or_add_xml_attribute, resolve_zip_target
@@ -181,8 +182,6 @@ def _patch_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
         for row, dimension in sheet.row_dimensions.items()
         if _row_dimension_attrs(dimension)
     }
-    if not dimensions:
-        return xml
     match = element_pattern("sheetData").search(xml)
     if match is None:
         return xml
@@ -202,11 +201,13 @@ def _patch_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
         next_row = row_number + 1
         seen.add(row_number)
         dimension = dimensions.get(row_number)
-        if dimension is None:
-            return row_xml
         new_opening = opening
+        # The reader loads every row's attributes, so a row the model has no
+        # dimension for (cleared, or moved by insert_rows) has none.
         for name in ("ht", "customHeight", "hidden", "outlineLevel", "collapsed"):
             new_opening = _remove_attr(new_opening, name)
+        if dimension is None:
+            return new_opening + row_xml[len(opening):]
         wanted = _row_dimension_attrs(dimension)
         for name, value in wanted.items():
             new_opening = _set_attr(new_opening, name, value)
@@ -761,10 +762,19 @@ def save_loaded(workbook: Workbook, filename) -> None:
 
     _reorder_and_state(workbook, updater)
     _remap_local_names(updater, sheet_order, renamed)
+    # After the sheets have their final order: print names count it.
+    final_order = _sheet_order(updater)
+    for sheet in workbook._sheets:
+        if has_pending_objects(sheet):
+            if workbook._styles_dirty:
+                updater._package.set("xl/styles.xml", workbook._styles.to_bytes())
+                workbook._styles_dirty = False
+            add_objects(updater, workbook, sheet, final_order)
     updater.save(filename)
     for sheet in workbook._sheets:
         sheet._original_title = sheet.title
         sheet._meta_signature = _meta_signature(sheet)
         sheet._clear_dirty()
+        mark_objects_saved(sheet)
     workbook._loaded_worksheet_names = set(workbook.sheetnames)
     workbook._styles_dirty = False

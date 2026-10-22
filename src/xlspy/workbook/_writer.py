@@ -9,10 +9,13 @@ import shutil
 import tempfile
 
 from ..formulas import Formula
+from ..rich_text import CellRichText
+from ..styles import Style
 from ..refs import column_label
 from ..writer import XlsbWriter
 from ..xlsx_writer import XlsxWriter
 from ._loaded import save_loaded
+from ._print import print_settings_for
 from ._model import Workbook, Worksheet, WriteOnlyWorksheet, _coordinate
 
 
@@ -42,28 +45,46 @@ def _value_for_new(cell):
     return value
 
 
+# An empty style: written as the default look instead of the bold header.
+_PLAIN = Style()
+
+
 def _cell_values(sheet: Worksheet):
+    """Rows for the writer. A styled cell with a value is written as
+    ``(value, Style)``; styled empty cells go to ``_styles``."""
     if isinstance(sheet, WriteOnlyWorksheet):
         for row in sheet._rows:
             yield list(row)
         return
     max_row = max(sheet.max_row, 1)
     max_column = max(sheet.max_column, 1)
+    style_at = sheet._workbook._styles.style_at
     for row_number in range(1, max_row + 1):
         row = []
         for column in range(1, max_column + 1):
             cell = sheet._existing_cell(row_number, column)
-            row.append(None if cell is None else _value_for_new(cell))
+            if cell is None:
+                row.append(None)
+                continue
+            value = _value_for_new(cell)
+            if cell._style_id and value is not None:
+                value = (value, style_at(cell._style_id))
+            elif row_number == 1 and isinstance(value, (str, CellRichText)):
+                # The writers make first-row text bold by default; a model
+                # cell keeps the look it has, as in openpyxl.
+                value = (value, _PLAIN)
+            row.append(value)
         yield row
 
 
 def _styles(sheet: Worksheet):
+    """Styles of empty cells, which ``_cell_values`` cannot carry."""
     if isinstance(sheet, WriteOnlyWorksheet):
         return None
     result = {}
     for row in sheet._cells.values():
         for cell in row.values():
-            if cell._style_id:
+            if cell._style_id and _value_for_new(cell) is None:
                 result[cell.coordinate] = sheet._workbook._styles.style_at(cell._style_id)
     return result or None
 
@@ -109,13 +130,39 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
         "freeze_panes": sheet.freeze_panes or "",
         "comments": _comments(sheet),
         "sheet_protection": sheet._sheet_protection,
+        "show_grid_lines": sheet.sheet_view.showGridLines is not False,
+        "tab_color": sheet.sheet_properties.tabColor,
+        "zoom": sheet.sheet_view.zoomScale,
+        "charts": sheet.charts or None,
+        "tables": sheet.tables or None,
+        "conditional_formats": list(sheet.conditional_formatting) or None,
     }
+    print_settings = print_settings_for(sheet)
+    for name, items in (
+        ("images", sheet.images), ("data_validations", sheet.data_validations),
+        ("print_settings", print_settings),
+    ):
+        if items:
+            options[name] = items
     if xlsb:
         options["auto_filter"] = bool(sheet.auto_filter.ref)
     else:
         options["auto_filter"] = bool(sheet.auto_filter.ref)
         options["auto_filter_ref"] = sheet.auto_filter.ref
     return options
+
+
+def _set_properties(writer, props) -> None:
+    created = props.created
+    if isinstance(created, _datetime.datetime) and created.tzinfo is None:
+        # The model's default is datetime.now(): local time.
+        created = created.astimezone(_datetime.timezone.utc)
+    writer.set_properties(
+        title=props.title, subject=props.subject, author=props.creator,
+        keywords=props.keywords, comments=props.description,
+        category=props.category, status=props.contentStatus,
+        created=created if isinstance(created, _datetime.datetime) else None,
+    )
 
 
 def _save_new(workbook: Workbook, filename) -> None:
@@ -131,6 +178,7 @@ def _save_new(workbook: Workbook, filename) -> None:
         raise ValueError("template formats are not supported by the new workbook API")
     writer_class = XlsbWriter if extension == "xlsb" else XlsxWriter
     with writer_class(filename) as writer:
+        _set_properties(writer, workbook.properties)
         for sheet in workbook._sheets:
             writer.add_sheet(sheet.title, hidden=sheet.sheet_state != "visible")
             writer.write_sheet(

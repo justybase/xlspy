@@ -10,27 +10,42 @@ from typing import Iterable, Mapping, Tuple
 from . import chart_parts
 from ._accel import encode_xlsx_row as accel_encode_xlsx_row
 from ._output import StagedWriter
+from .doc_properties import DocumentPropertiesMixin
 from ._text import check_cell_text, xstring_escape
 from .charts import Chart
-from .data_validation import DataValidation, data_validation_xml
+from .data_validation import DataValidation, data_validation_xml, normalize_validations
 from .excel_dates import datetime_to_serial
-from .formats import _get_format, _unwrap_cell
+from ._widths import estimate_column_widths, file_width
+from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell
 from .formulas import Formula
 from .comments import Comment, normalize_comments, comments_xml, vml_xml, COMMENTS_TYPE
 from ._metadata import MAIN, DefinedName, SheetProtection, WorkbookProtection, replace_element
 from .hyperlinks import Hyperlink
-from .images import Image
+from .images import Image, MediaParts, normalize_images
 from .outline import build_outline
 from .printing import (
     PageMargins,
     PrintSettings,
     _paper_code,
+    normalize_print_settings,
     print_area_name,
     print_titles_name,
 )
 from .refs import check_sheet_name, quote_sheet_name
+from .rich_text import CellRichText
 from .styles import (
+    CF_BLANK_RULES,
+    CF_TEXT_RULES,
+    CF_TIME_PERIOD_FORMULAS,
+    EXTRA_CF_RULES,
+    HYPERLINK_STYLE,
+    AboveAverageRule,
     CellIsRule,
+    Color,
+    DuplicateRule,
+    TextRule,
+    TimePeriodRule,
+    TopBottomRule,
     ColorScaleRule,
     DataBarRule,
     DifferentialStyle,
@@ -39,6 +54,10 @@ from .styles import (
     FormulaRule,
     IconSetRule,
     Style,
+    check_header_rows,
+    check_zoom,
+    header_style_ranges,
+    tab_color_key,
     _alignment_key_from,
     _border_key,
     _column_index,
@@ -46,6 +65,9 @@ from .styles import (
     _font_is_empty,
     _font_key_from,
     _protection_key_from,
+    _record_cell_xf,
+    _style_ids_for_row,
+    _xf_for_style_format,
     capture_table_headers,
     explicit_cf_priorities,
     merge_styles,
@@ -64,10 +86,10 @@ _WIDTH_SAMPLE_ROWS = 100
 _FLUSH_CHARS = 1 << 20
 # Shared-string entries written per chunk of sharedStrings.xml.
 _SST_CHUNK_STRINGS = 4096
-DEFAULT_SPOOL_BYTES = 8 << 20
+# Larger spools cost resident memory without making writes faster: 1 MiB
+# and 8 MiB write 50,000 x 50 rows in the same time, 1 MiB with 14 MB less.
+DEFAULT_SPOOL_BYTES = 1 << 20
 _EMPTY_ROW_STYLES: dict = {}
-# Built-in look for a hyperlink cell that has no style of its own.
-_HYPERLINK_STYLE = Style(font_color="#0563C1", underline=True)
 _REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table"
 _REL_DRAWING = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"
 _REL_HYPERLINK = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
@@ -149,7 +171,7 @@ def _protection_xml(prot) -> str:
     return f'<protection {" ".join(attrs)}/>' if attrs else ""
 
 
-class XlsxWriter(StagedWriter):
+class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
     def __init__(self, file: str | io.IOBase, compressionLevel: int = 4, useSharedStrings: bool = True,
                  spool_max_bytes: int = DEFAULT_SPOOL_BYTES):
         self._file = file
@@ -170,9 +192,16 @@ class XlsxWriter(StagedWriter):
         self._aborted = False
         self._saved = False
 
-        self._format_registry: dict[str, int] = {}
+        # The default date and date-time formats, the same as XlsbWriter's.
+        # Excel's built-in formats 14 and 22 would follow the reader's locale.
+        self._format_registry: dict[str, int] = {DEFAULT_DATE_FORMAT: 164, DEFAULT_DATETIME_FORMAT: 165}
         self._format_xf_map: dict[str, int] = {}
         self._style_xf_map: dict[Style, int] = {}
+        self._style_format_xf: dict[tuple, tuple] = {}
+        # xf of each (value, format) cell the C row encoder may reuse: keyed
+        # by the format, or by (cell style xf, format) for a styled cell.
+        self._fmt_xf: dict = {}
+        self._fmt_xf_styles: list = []
         # Font id 0 is “no font”, id 1 is the builtin bold default emitted by
         # _create_styles_xml; custom fonts start at 2.
         self._font_registry: dict[tuple, int] = {}
@@ -195,15 +224,14 @@ class XlsxWriter(StagedWriter):
         self._sheet_drawings: set[int] = set()
         self._sheet_images: dict[int, list[Image]] = {}
         self._sheet_image_media: dict[int, list[str]] = {}
-        self._media_names: dict[str, str] = {}
-        self._media_parts: list[tuple[str, bytes]] = []
+        self._media = MediaParts()
         self._sheet_written: set[int] = set()
         self._sheet_rels: dict[int, list[tuple[str, str, str, bool]]] = {}
         self._sheet_print: dict[int, PrintSettings] = {}
         self._internal_links: list[tuple[int, str]] = []
         self._charts_xml: dict[int, tuple[int, int, str]] = {}
         self._next_chart_id = 1
-        self._next_numfmt_id = 164
+        self._next_numfmt_id = 166
         self._next_xf_index = 4
         self._sheet_comments: dict[int, dict[str, Comment]] = {}
         self._defined_names: dict[tuple[str, str | None], DefinedName] = {}
@@ -276,12 +304,14 @@ class XlsxWriter(StagedWriter):
     def _check_unknown_cf_rule(self, rule) -> None:
         if hasattr(rule, "sqref") and not isinstance(
             rule,
-            (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule),
+            (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule,
+             *EXTRA_CF_RULES),
         ):
             raise TypeError(
                 f"unsupported conditional formatting rule {type(rule).__name__}; "
                 "use xlspy rule classes (CellIsRule, FormulaRule, "
-                "ColorScaleRule, DataBarRule, IconSetRule)"
+                "ColorScaleRule, DataBarRule, IconSetRule, TopBottomRule, "
+                "AboveAverageRule, TextRule, DuplicateRule, TimePeriodRule, BlanksRule)"
             )
 
     def _claim_cf_priority(self, rule) -> int:
@@ -327,7 +357,7 @@ class XlsxWriter(StagedWriter):
             if not isinstance(
                 rule,
                 (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule,
-                 IconSetRule),
+                 IconSetRule, *EXTRA_CF_RULES),
             ):
                 raise TypeError(
                     f"unsupported conditional formatting rule {type(rule).__name__}"
@@ -414,41 +444,6 @@ class XlsxWriter(StagedWriter):
                 raise TypeError("charts must be Chart instances")
         return list(charts)
 
-    @staticmethod
-    def _normalize_validations(validations):
-        if not validations:
-            return []
-        for rule in validations:
-            if not isinstance(rule, DataValidation):
-                raise TypeError("data_validations must be DataValidation instances")
-        return list(validations)
-
-    @staticmethod
-    def _normalize_images(images):
-        if not images:
-            return []
-        for image in images:
-            if not isinstance(image, Image):
-                raise TypeError("images must be Image instances")
-        return list(images)
-
-    @staticmethod
-    def _normalize_print(settings):
-        if settings is None:
-            return None
-        if not isinstance(settings, PrintSettings):
-            raise TypeError("print_settings must be a PrintSettings or None")
-        return settings
-
-    def _media_name(self, image: Image) -> str:
-        """Name of the media part holding ``image``; identical pictures share one part."""
-        name = self._media_names.get(image.digest)
-        if name is None:
-            name = f"image{len(self._media_names) + 1}.{image.extension}"
-            self._media_names[image.digest] = name
-            self._media_parts.append((name, image.data))
-        return name
-
     def write_sheet(
         self,
         data: Iterable[list[any]],
@@ -473,6 +468,10 @@ class XlsxWriter(StagedWriter):
         print_settings: PrintSettings | None = None,
         comments: Mapping[str, Comment] | None = None,
         sheet_protection: SheetProtection | None = None,
+        show_grid_lines: bool = True,
+        header_rows: int = 1,
+        tab_color: Color | str | None = None,
+        zoom: int | None = None,
     ):
         """Write rows to the current sheet.
 
@@ -484,7 +483,14 @@ class XlsxWriter(StagedWriter):
         self._require_writable()
         if header_style is not None and not isinstance(header_style, Style):
             raise TypeError("header_style must be a Style instance")
-        style_ranges = normalize_style_ranges(styles)
+        if not isinstance(show_grid_lines, bool):
+            raise TypeError("show_grid_lines must be a bool")
+        header_rows = check_header_rows(header_rows)
+        tab_key = tab_color_key(tab_color)
+        zoom = check_zoom(zoom)
+        style_ranges, header_style = header_style_ranges(
+            normalize_style_ranges(styles), header_style, header_rows,
+        )
         merge_refs = self._normalize_merges(merges)
         comment_specs = normalize_comments(comments, merges=merge_refs)
         if sheet_protection is not None and not isinstance(sheet_protection, SheetProtection):
@@ -497,9 +503,9 @@ class XlsxWriter(StagedWriter):
         cf_rules = self._normalize_cf_rules(conditional_formats)
         table_specs = self._normalize_tables(tables)
         chart_specs = self._normalize_charts(charts)
-        validations = self._normalize_validations(data_validations)
-        image_specs = self._normalize_images(images)
-        print_spec = self._normalize_print(print_settings)
+        validations = normalize_validations(data_validations)
+        image_specs = normalize_images(images)
+        print_spec = normalize_print_settings(print_settings)
         widths = self._normalize_widths(column_widths, "column_widths")
         hidden_cols = normalize_hidden_columns(hidden_columns)
         heights = self._normalize_row_heights(row_heights)
@@ -551,7 +557,7 @@ class XlsxWriter(StagedWriter):
             if image_specs:
                 self._sheet_images[sheet_id] = image_specs
                 self._sheet_image_media[sheet_id] = [
-                    self._media_name(image) for image in image_specs
+                    self._media.name(image) for image in image_specs
                 ]
             if print_spec is not None:
                 self._sheet_print[sheet_index] = print_spec
@@ -560,14 +566,28 @@ class XlsxWriter(StagedWriter):
                     self._internal_links.append((sheet_index, link.location))
             if auto_filter is None and table_specs:
                 auto_filter = False
+            # Header cells under a filter drop-down button need room for it.
+            filter_cells = [
+                (r1, c1, c2) for table, (c1, r1, c2, _r2) in zip(table_specs, table_bounds)
+                if table.header_row
+            ]
+            if auto_filter is not False:
+                if auto_filter_ref is not None:
+                    c1, r1, c2, _r2 = parse_cell_range(auto_filter_ref)
+                    filter_cells.append((r1, c1, c2))
+                elif body.num_rows > header_rows:
+                    filter_cells.append((header_rows - 1, 0, body.max_cols - 1))
             head = self._sheet_head(
                 body, sheet_index, split_freeze, freeze_panes, widths, hidden_cols,
                 print_spec, row_outline=row_outline, col_outline=col_outline,
+                show_grid_lines=show_grid_lines,
+                width_styles=(style_ranges, header_style if has_styles else None),
+                filter_cells=filter_cells, tab_key=tab_key, zoom=zoom,
             )
             tail = self._sheet_tail(
                 body, sheet_index, merge_refs, cf_rules, table_specs, table_bounds,
                 validations, link_rels, auto_filter, drawing_rid, print_spec,
-                auto_filter_ref=auto_filter_ref,
+                auto_filter_ref=auto_filter_ref, header_rows=header_rows,
             )
             if sheet_protection is not None:
                 tail = '</sheetData>' + sheet_protection.to_xml() + tail[len('</sheetData>'):]
@@ -732,6 +752,9 @@ class XlsxWriter(StagedWriter):
         print_settings: PrintSettings | None = None,
         comments: Mapping[str, Comment] | None = None,
         sheet_protection: SheetProtection | None = None,
+        show_grid_lines: bool = True,
+        tab_color: Color | str | None = None,
+        zoom: int | None = None,
     ):
         """Write a pandas or polars DataFrame to the current sheet.
 
@@ -772,6 +795,9 @@ class XlsxWriter(StagedWriter):
             print_settings=print_settings,
             comments=comments,
             sheet_protection=sheet_protection,
+            show_grid_lines=show_grid_lines,
+            tab_color=tab_color,
+            zoom=zoom,
         )
 
     def _write_workbook_parts(self):
@@ -816,7 +842,7 @@ class XlsxWriter(StagedWriter):
             self._zf.writestr(f"xl/comments/comment{sheet_id}.xml", comments_xml(comments))
             self._zf.writestr(f"xl/drawings/commentsDrawing{sheet_id}.vml", vml_xml(comments))
 
-        for name, data in self._media_parts:
+        for name, data in self._media.parts:
             self._zf.writestr(f"xl/media/{name}", data)
 
         if self._sheet_drawings:
@@ -835,6 +861,7 @@ class XlsxWriter(StagedWriter):
         self._zf.writestr("xl/workbook.xml", self._create_workbook_xml())
         self._zf.writestr("xl/styles.xml", self._create_styles_xml())
         self._zf.writestr("xl/_rels/workbook.xml.rels", self._create_workbook_rels())
+        self._write_doc_props()
 
         if self._useSharedStrings and self._shared_strings:
             with self._zf.open("xl/sharedStrings.xml", 'w') as sst_file:
@@ -896,10 +923,7 @@ class XlsxWriter(StagedWriter):
             f'<Override PartName="/xl/charts/chart{chart_id}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'
             for chart_id in range(1, self._next_chart_id)
         )
-        image_defaults = "".join(
-            f'<Default Extension="{ext}" ContentType="image/{ext}"/>'
-            for ext in sorted({name.rsplit(".", 1)[1] for name, _data in self._media_parts})
-        )
+        image_defaults = self._media.content_type_defaults()
         theme_part = ""
         if self._sheet_drawings:
             theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
@@ -928,12 +952,14 @@ class XlsxWriter(StagedWriter):
 {theme_part}
 {shared_strings_part}
 {comment_parts}
+{self._doc_props_content_types()}
 </Types>'''
 
     def _create_root_rels(self) -> str:
-        return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+{self._doc_props_root_rels()}
 </Relationships>'''
 
     def _create_workbook_rels(self) -> str:
@@ -1115,7 +1141,9 @@ class XlsxWriter(StagedWriter):
             if bg_key is not None:
                 bg_xml = f'<bgColor {self._color_attrs(bg_key)}/>'
             elif for_dxf:
-                bg_xml = ""
+                # A conditional format paints a solid fill with its background
+                # color, so a fill given only start_color would not show.
+                bg_xml = f'<bgColor {self._color_attrs(fg_key)}/>' if fg_key is not None else ""
             else:
                 bg_xml = '<bgColor indexed="64"/>'
         else:
@@ -1141,9 +1169,15 @@ class XlsxWriter(StagedWriter):
             attrs += ' diagonalDown="1"'
         if border_key.outline is False:
             attrs += ' outline="0"'
+        # Excel reads <start>/<end> as the left/right edges (in a
+        # left-to-right sheet), so an empty <start/> would hide <left>:
+        # write them only when set, like <vertical>/<horizontal>.
         parts = [
-            self._border_side_xml("start", border_key.start, self._color_attrs),
-            self._border_side_xml("end", border_key.end, self._color_attrs),
+            self._border_side_xml(tag, getattr(border_key, tag), self._color_attrs)
+            for tag in ("start", "end")
+            if getattr(border_key, tag) != (None, None)
+        ]
+        parts += [
             self._border_side_xml("left", border_key.left, self._color_attrs),
             self._border_side_xml("right", border_key.right, self._color_attrs),
             self._border_side_xml("top", border_key.top, self._color_attrs),
@@ -1169,8 +1203,8 @@ class XlsxWriter(StagedWriter):
             numfmts = f'<numFmts count="{numfmt_count}">{"".join(numfmts_parts)}</numFmts>'
 
         xf_entries.append('<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>')
-        xf_entries.append('<xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>')
-        xf_entries.append('<xf numFmtId="22" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>')
+        xf_entries.append('<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>')
+        xf_entries.append('<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>')
         xf_entries.append('<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>')
 
         # Format XFs and style XFs share one index space, so they must be
@@ -1292,6 +1326,9 @@ class XlsxWriter(StagedWriter):
         sst_file.write(header.encode('utf-8'))
         parts: list[str] = []
         for s in self._shared_strings:
+            if type(s) is tuple:  # ("rich", runs) from _write_rich_cell, already escaped
+                parts.append(f'<si>{s[1]}</si>')
+                continue
             # The same three replacements as xml.sax.saxutils.escape, minus its call overhead.
             text = s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             if s and (s[0] == ' ' or s[0] == '\t'):
@@ -1305,43 +1342,50 @@ class XlsxWriter(StagedWriter):
         parts.append('</sst>')
         sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))
 
-    def _calculate_column_widths(self, data_iterator, max_cols: int) -> list[float]:
-        col_widths = [8.43] * max_cols
-
-        rows_analyzed = 0
-        for row in data_iterator:
-            if rows_analyzed >= _WIDTH_SAMPLE_ROWS:
-                break
-
-            for col_idx, cell in enumerate(row):
-                if col_idx >= max_cols:
-                    break
-
-                cell_val = _unwrap_cell(cell) if cell is not None else None
-                if isinstance(cell_val, Hyperlink):
-                    cell_val = cell_val.display_text
-                elif isinstance(cell_val, Formula):
-                    cell_val = cell_val.value
-                if cell_val is not None:
-                    if isinstance(cell_val, datetime.datetime):
-                        width = 18.0
-                    elif isinstance(cell_val, datetime.date):
-                        width = 10.14
-                    else:
-                        width = max(8.43, len(str(cell_val)) * 1.25 + 2)
-
-                    col_widths[col_idx] = max(col_widths[col_idx], min(width, 255))
-
-            rows_analyzed += 1
-
-        return col_widths
-
     @staticmethod
     def _format_object_xml(cfvo) -> str:
         attrs = f'type="{cfvo.type}"'
         if cfvo.value is not None:
             attrs += f' val="{saxutils.escape(str(cfvo.value), {"\"": "&quot;"})}"'
         return f"<cfvo {attrs}/>"
+
+    def _extra_cf_rule_parts(self, rule) -> tuple[str, str | None]:
+        """``(cfRule attributes, formula or None)`` for the rules beyond the original five."""
+        first_col, first_row, _, _ = parse_cell_range(rule.sqref)
+        corner = f"{self._letters[first_col]}{first_row + 1}"
+        if isinstance(rule, TopBottomRule):
+            attrs = f'type="top10" rank="{rule.rank}"'
+            if rule.percent:
+                attrs += ' percent="1"'
+            if rule.bottom:
+                attrs += ' bottom="1"'
+            return attrs, None
+        if isinstance(rule, AboveAverageRule):
+            attrs = 'type="aboveAverage"'
+            if rule.below:
+                attrs += ' aboveAverage="0"'
+            if rule.equal_average:
+                attrs += ' equalAverage="1"'
+            if rule.std_dev is not None:
+                attrs += f' stdDev="{rule.std_dev}"'
+            return attrs, None
+        if isinstance(rule, DuplicateRule):
+            return f'type="{"uniqueValues" if rule.unique else "duplicateValues"}"', None
+        if isinstance(rule, TextRule):
+            kind, operator, template = CF_TEXT_RULES[rule.operator]
+            quoted = '"' + rule.text.replace('"', '""') + '"'
+            attrs = (
+                f'type="{kind}" operator="{operator}" '
+                f'text="{saxutils.escape(rule.text, {chr(34): "&quot;"})}"'
+            )
+            return attrs, template.format(t=quoted, c=corner)
+        if isinstance(rule, TimePeriodRule):
+            return (
+                f'type="timePeriod" timePeriod="{rule.period}"',
+                CF_TIME_PERIOD_FORMULAS[rule.period].format(c=corner),
+            )
+        kind, template = CF_BLANK_RULES[rule.kind]
+        return f'type="{kind}"', template.format(c=corner)
 
     def _cf_rule_xml(self, rule, table_ranges: set[tuple]) -> str:
         priority = self._claim_cf_priority(rule)
@@ -1371,6 +1415,13 @@ class XlsxWriter(StagedWriter):
             return (
                 f'<cfRule type="expression" priority="{priority}"'
                 f'{dxf_part}{stop}>{formulas}</cfRule>'
+            )
+        if isinstance(rule, EXTRA_CF_RULES):
+            attrs, formula = self._extra_cf_rule_parts(rule)
+            formula_xml = f"<formula>{saxutils.escape(formula)}</formula>" if formula else ""
+            return (
+                f'<cfRule {attrs} priority="{priority}"{dxf_part}{stop}'
+                + (f">{formula_xml}</cfRule>" if formula_xml else "/>")
             )
         if isinstance(rule, ColorScaleRule):
             if rule.midpoint is None:
@@ -1490,6 +1541,9 @@ class XlsxWriter(StagedWriter):
         num_rows = 0
         max_cols = 0
         buf = io.StringIO()
+        row_style_ids_cache = {}
+        ss_dict, ss_list = self._shared_strings_dict, self._shared_strings
+        use_sst, fmt_xf = self._useSharedStrings, self._fmt_xf
         if table_headers:
             data = capture_table_headers(data, table_headers, header_rows)
         for row_idx, row in enumerate(data):
@@ -1499,25 +1553,32 @@ class XlsxWriter(StagedWriter):
             if len(row) > max_cols:
                 max_cols = len(row)
             row_attrs = self._row_attrs(row_idx, heights, hidden_row_set, row_outline)
-            # The C encoder hands back rows it cannot write (formulas,
-            # hyperlinks, other objects, text needing escapes) as None.
-            if not has_styles and not row_attrs:
-                c_row = accel_encode_xlsx_row(
-                    row, self._shared_strings_dict, self._shared_strings,
-                    self._sst_unique_count, self._sst_all_count,
-                    row_idx, self._useSharedStrings,
-                )
-                if c_row is not None:
-                    row_xml, self._sst_unique_count, self._sst_all_count = c_row
-                    buf.write(row_xml)
-                    if buf.tell() >= _FLUSH_CHARS:
-                        spool.write(buf.getvalue().encode('utf-8'))
-                        buf = io.StringIO()
-                    continue
             row_styles = (
                 styles_for_row(row_idx, len(row), style_ranges, header_style)
                 if has_styles else _EMPTY_ROW_STYLES
             )
+            # The C encoder handles common scalar rows with optional style ids
+            # and <row> attributes; it hands back rows it cannot write as None
+            # for the Python path.
+            style_ids = (
+                _style_ids_for_row(
+                    row_styles, len(row), self._register_style,
+                    row_style_ids_cache,
+                )
+                if row_styles else None
+            )
+            c_row = accel_encode_xlsx_row(
+                row, ss_dict, ss_list,
+                self._sst_unique_count, self._sst_all_count,
+                row_idx, use_sst, style_ids, fmt_xf or None, row_attrs or None,
+            )
+            if c_row is not None:
+                row_xml, self._sst_unique_count, self._sst_all_count = c_row
+                buf.write(row_xml)
+                if buf.tell() >= _FLUSH_CHARS:
+                    spool.write(buf.getvalue().encode('utf-8'))
+                    buf = io.StringIO()
+                continue
             buf.write(f'<row r="{row_idx + 1}"{row_attrs}>')
             self._write_row_cells(buf, row, row_idx, row_styles, hyperlinks)
             buf.write('</row>')
@@ -1574,25 +1635,41 @@ class XlsxWriter(StagedWriter):
                     buf.write(f'<c r="{cell_ref}" s="{xf_index}"/>')
                 continue
 
-            fmt_string = _get_format(cell)
-            if fmt_string is not None:
-                cell = _unwrap_cell(cell)
+            # (value, format) and (value, Style) cells: the overlay goes on
+            # top of the range style.
+            overlay = None
+            if _is_formatted_cell(cell):
+                cell, overlay = cell
                 if isinstance(cell, Hyperlink):
-                    raise TypeError("a hyperlink cell cannot carry a number format; style the cell instead")
-                if cell_style is not None:
-                    cell_style = merge_styles(cell_style, Style(number_format=fmt_string))
-            if isinstance(cell, Hyperlink):
+                    if isinstance(overlay, str):
+                        raise TypeError("a hyperlink cell cannot carry a number format; style the cell instead")
+                    cell_style = merge_styles(cell_style, overlay)
+                    overlay = None
+            if overlay is None and isinstance(cell, Hyperlink):
                 hyperlinks.append((row_idx, col_idx, cell))
                 cell = cell.display_text
-                cell_style = _HYPERLINK_STYLE if cell_style is None else merge_styles(_HYPERLINK_STYLE, cell_style)
+                cell_style = HYPERLINK_STYLE if cell_style is None else merge_styles(HYPERLINK_STYLE, cell_style)
 
-            if cell_style is not None:
-                if cell_style is uniform_style:
-                    xf_index = uniform_xf
+            if overlay is not None:
+                if cell_style is not None:
+                    xf_index = _xf_for_style_format(
+                        cell_style, overlay, self._register_style,
+                        self._style_format_xf,
+                    )
+                    # Only a registered style has the id the C encoder sees.
+                    base_xf = self._style_xf_map.get(cell_style)
+                    if base_xf is not None:
+                        _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
+                                        base_xf, overlay, xf_index)
                 else:
-                    xf_index = self._register_style(cell_style)
-            elif fmt_string is not None:
-                xf_index = self._register_format(fmt_string)
+                    if isinstance(overlay, str):
+                        xf_index = self._register_format(overlay)
+                    else:
+                        xf_index = self._register_style(overlay)
+                    _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
+                                    None, overlay, xf_index)
+            elif cell_style is not None:
+                xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
             else:
                 xf_index = None
 
@@ -1632,6 +1709,8 @@ class XlsxWriter(StagedWriter):
                     excel_date = datetime_to_serial(cell)
                     style_ref = xf_index if xf_index is not None else 1
                     buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
+            elif isinstance(cell, CellRichText):
+                self._write_rich_cell(buf, cell, row_idx == 0, xf_index)
             else:
                 self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
 
@@ -1683,17 +1762,26 @@ class XlsxWriter(StagedWriter):
         return link_rels
 
     def _sheet_head(self, body, sheet_index, split_freeze, freeze_panes, widths,
-                    hidden_cols, print_spec, row_outline=None, col_outline=None):
+                    hidden_cols, print_spec, row_outline=None, col_outline=None,
+                    show_grid_lines=True, width_styles=((), None), filter_cells=(),
+                    tab_key=None, zoom=None):
         """Everything before ``<sheetData>`` content: properties, views, widths."""
         sheet_id = sheet_index + 1
         parts = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                  '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
                  'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">']
+        sheet_pr = ""
+        if tab_key is not None:
+            sheet_pr += f'<tabColor {self._color_attrs(tab_key)}/>'
         if print_spec is not None and print_spec.fit_to_page:
-            parts.append('<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>')
+            sheet_pr += '<pageSetUpPr fitToPage="1"/>'
+        if sheet_pr:
+            parts.append(f'<sheetPr>{sheet_pr}</sheetPr>')
         if body.num_rows > 0 and body.max_cols > 0:
             parts.append(f'<dimension ref="A1:{self._letters[body.max_cols - 1]}{body.num_rows}"/>')
-        parts.append(self._sheet_views_xml(sheet_index, split_freeze, freeze_panes))
+        parts.append(self._sheet_views_xml(
+            sheet_index, split_freeze, freeze_panes, show_grid_lines, zoom,
+        ))
         max_row_level = row_outline.max_level if row_outline is not None else 0
         max_col_level = col_outline.max_level if col_outline is not None else 0
         if max_row_level or max_col_level:
@@ -1703,7 +1791,12 @@ class XlsxWriter(StagedWriter):
             if max_col_level:
                 level_attrs += f' outlineLevelCol="{max_col_level}"'
             parts.append(f'<sheetFormatPr defaultRowHeight="15"{level_attrs}/>')
-        col_widths = self._calculate_column_widths(iter(body.head), body.max_cols)
+        style_ranges, header_style = width_styles
+        col_widths = estimate_column_widths(
+            body.head, body.max_cols,
+            lambda row_idx, length: styles_for_row(row_idx, length, style_ranges, header_style),
+            filter_cells,
+        )
         for col, width in widths.items():
             if 0 <= col < body.max_cols:
                 col_widths[col] = width
@@ -1711,8 +1804,13 @@ class XlsxWriter(StagedWriter):
         parts.append('<sheetData>')
         return "".join(parts)
 
-    def _sheet_views_xml(self, sheet_index, split_freeze, freeze_panes) -> str:
+    def _sheet_views_xml(self, sheet_index, split_freeze, freeze_panes,
+                         show_grid_lines=True, zoom=None) -> str:
         tab = ' tabSelected="1"' if sheet_index == 0 else ""
+        if not show_grid_lines:
+            tab = ' showGridLines="0"' + tab
+        if zoom is not None:
+            tab += f' zoomScale="{zoom}" zoomScaleNormal="{zoom}"'
         if split_freeze is None and freeze_panes is None:
             return (
                 f'<sheetViews><sheetView{tab} workbookViewId="0">'
@@ -1760,7 +1858,8 @@ class XlsxWriter(StagedWriter):
                 parts.append(f'<col min="{i + 1}" max="{i + 1}" width="{explicit:.2f}" bestFit="1" customWidth="1"{hidden_attr}{outline_attr}/>')
                 emitted.add(i)
             elif width != 8.43:
-                parts.append(f'<col min="{i + 1}" max="{i + 1}" width="{width:.2f}" bestFit="1" customWidth="1"{hidden_attr}{outline_attr}/>')
+                # Automatic widths count characters; the file adds the cell padding.
+                parts.append(f'<col min="{i + 1}" max="{i + 1}" width="{file_width(width):.2f}" bestFit="1" customWidth="1"{hidden_attr}{outline_attr}/>')
                 emitted.add(i)
             elif hidden_attr or outline_attr:
                 parts.append(f'<col min="{i + 1}" max="{i + 1}" width="8.43" customWidth="0"{hidden_attr}{outline_attr}/>')
@@ -1781,12 +1880,16 @@ class XlsxWriter(StagedWriter):
 
     def _sheet_tail(self, body, sheet_index, merge_refs, cf_rules, table_specs,
                     table_bounds, validations, link_rels, auto_filter, drawing_rid,
-                    print_spec, *, auto_filter_ref=None):
+                    print_spec, *, auto_filter_ref=None, header_rows=1):
         """Everything after the row data, in schema order."""
         parts = ['</sheetData>']
         data_filter = None
-        if body.num_rows > 1 and body.max_cols > 0:
-            data_filter = f"{self._letters[0]}1:{self._letters[body.max_cols - 1]}{body.num_rows}"
+        if body.num_rows > header_rows and body.max_cols > 0:
+            # The filter buttons sit on the last header row.
+            data_filter = (
+                f"{self._letters[0]}{header_rows}:"
+                f"{self._letters[body.max_cols - 1]}{body.num_rows}"
+            )
         if auto_filter_ref is not None:
             data_filter = auto_filter_ref
         if auto_filter is False:
@@ -1920,6 +2023,27 @@ class XlsxWriter(StagedWriter):
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
             '<sheetData/></worksheet>',
         )
+
+    def _write_rich_cell(self, buffer, rich: CellRichText, is_header: bool, xf_index):
+        runs = rich.runs_xml()
+        if xf_index is not None:
+            style_ref = f' s="{xf_index}"'
+        else:
+            style_ref = ' s="3"' if is_header else ''
+        if not self._useSharedStrings:
+            buffer.write(f'<c t="inlineStr"{style_ref}><is>{runs}</is></c>')
+            return
+        # Rich entries share the table with plain strings; a tuple key never
+        # equals a str, so the same text plain and formatted stays two entries.
+        key = ("rich", runs)
+        self._sst_all_count += 1
+        string_index = self._shared_strings_dict.get(key)
+        if string_index is None:
+            string_index = self._sst_unique_count
+            self._shared_strings_dict[key] = string_index
+            self._shared_strings.append(key)
+            self._sst_unique_count += 1
+        buffer.write(f'<c t="s"{style_ref}><v>{string_index}</v></c>')
 
     def _write_string_cell(self, buffer: io.StringIO, cell_value: str, is_header: bool = False, xf_index: int = None):
         check_cell_text(cell_value)

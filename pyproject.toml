@@ -11,7 +11,7 @@ where = ["src"]
 
 [project]
 name = "xlspy"
-version = "0.8.1"
+version = "0.9.0"
 authors = [
   { name="Krzysztof Duśko"},
 ]
@@ -63,6 +63,7 @@ addopts = "-ra --strict-markers --strict-config"
 markers = [
     "slow: longer-running tests (skipped by default only with -m 'not slow')",
     "com: requires Microsoft Excel via COM (set XLSPY_RUN_EXCEL_COM=1)",
+    "printer: reads or sets Excel's PageSetup, which needs a reachable default printer (set XLSPY_RUN_EXCEL_PRINT=1)",
 ]
 filterwarnings = [
     "error",

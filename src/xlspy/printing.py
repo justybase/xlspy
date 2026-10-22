@@ -185,6 +185,15 @@ class PrintSettings:
         return self.fit_to_width is not None or self.fit_to_height is not None
 
 
+def normalize_print_settings(settings) -> PrintSettings | None:
+    """The ``print_settings`` option of ``write_sheet``."""
+    if settings is None:
+        return None
+    if not isinstance(settings, PrintSettings):
+        raise TypeError("print_settings must be a PrintSettings or None")
+    return settings
+
+
 def print_area_name(sheet_name: str, area: str) -> str:
     """Defined-name value for a print area, one absolute reference per part."""
     parts = []

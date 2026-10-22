@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
 
+from .styles import Style
+
+# Formats of date and datetime cells written without one (XLSX and XLSB).
+DEFAULT_DATE_FORMAT = 'yyyy-mm-dd'
+DEFAULT_DATETIME_FORMAT = 'yyyy-mm-dd hh:mm'
+
 
 class F:
     """Format string constants for cell number formatting.
@@ -47,7 +53,9 @@ class F:
 
 
 def _is_formatted_cell(cell):
-    return isinstance(cell, tuple) and len(cell) == 2 and isinstance(cell[1], str)
+    """A ``(value, format string)`` or ``(value, Style)`` cell."""
+    return (isinstance(cell, tuple) and len(cell) == 2
+            and isinstance(cell[1], (str, Style)))
 
 
 def _unwrap_cell(cell):
@@ -57,6 +65,14 @@ def _unwrap_cell(cell):
 
 
 def _get_format(cell):
-    if _is_formatted_cell(cell):
+    """The number format of a ``(value, format)`` cell, else ``None``."""
+    if _is_formatted_cell(cell) and isinstance(cell[1], str):
+        return cell[1]
+    return None
+
+
+def _get_cell_style(cell):
+    """The ``Style`` of a ``(value, Style)`` cell, else ``None``."""
+    if _is_formatted_cell(cell) and isinstance(cell[1], Style):
         return cell[1]
     return None

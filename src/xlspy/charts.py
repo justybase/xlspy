@@ -11,7 +11,13 @@ from dataclasses import dataclass
 
 from .refs import parse_cell_range
 
-CHART_TYPES = frozenset({"bar", "barh", "line", "pie", "scatter"})
+CHART_TYPES = frozenset({"area", "bar", "barh", "doughnut", "line", "pie", "scatter"})
+# Chart.grouping values and the chart types that accept them.
+GROUPINGS = {"stacked": "stacked", "percent_stacked": "percentStacked"}
+_GROUPED_TYPES = frozenset({"area", "bar", "barh", "line"})
+# Types without markers, lines or axes of their own.
+_FILLED_TYPES = frozenset({"area", "bar", "barh", "doughnut", "pie"})
+_ROUND_TYPES = frozenset({"doughnut", "pie"})
 
 _RGB_RE = re.compile(r"[0-9A-Fa-f]{6}")
 MARKER_SYMBOLS = frozenset(
@@ -42,6 +48,9 @@ _LABEL_POSITIONS_BY_TYPE = {
     "line": {"center", "above", "below", "left", "right"},
     "scatter": {"center", "above", "below", "left", "right"},
     "pie": {"center", "inside_end", "outside_end", "best_fit"},
+    # Excel has no label positions for these two.
+    "area": set(),
+    "doughnut": set(),
 }
 
 
@@ -235,6 +244,10 @@ class Chart:
 
     ``legend`` accepts ``None`` (default, right-hand legend), ``False`` (no
     legend), ``True`` (default legend) or a ``ChartLegend``.
+
+    ``grouping`` stacks the series of a bar, horizontal bar, line or area
+    chart: ``"stacked"`` adds them up, ``"percent_stacked"`` shows each
+    category as 100%. ``None`` (default) draws them side by side.
     """
 
     chart_type: str
@@ -250,6 +263,7 @@ class Chart:
     data_labels: DataLabels | None = None
     show_data_labels: bool = False
     title_size: float | None = None
+    grouping: str | None = None
 
     def __post_init__(self):
         if self.chart_type not in CHART_TYPES:
@@ -293,6 +307,17 @@ class Chart:
         ))
         if not isinstance(self.show_data_labels, bool):
             raise TypeError("show_data_labels must be a bool")
+        if self.grouping is not None:
+            if self.grouping not in GROUPINGS:
+                raise ValueError(
+                    f"invalid chart grouping {self.grouping!r}; "
+                    f"expected None, {', '.join(repr(g) for g in GROUPINGS)}"
+                )
+            if self.chart_type not in _GROUPED_TYPES:
+                raise ValueError(
+                    f"grouping is only valid for {sorted(_GROUPED_TYPES)} charts, "
+                    f"not {self.chart_type!r}"
+                )
 
     def _check_series_for_type(self, series) -> None:
         kind = self.chart_type
@@ -303,12 +328,12 @@ class Chart:
             else:
                 if item.x_values is not None:
                     raise ValueError(f"x_values are only valid for scatter charts, not {kind!r}")
-            if kind in ("bar", "barh", "pie") and item.marker is not None:
+            if kind in _FILLED_TYPES and item.marker is not None:
                 raise ValueError(f"marker is only valid for line and scatter charts, not {kind!r}")
-            if kind in ("bar", "barh", "pie") and item.line is not None:
+            if kind in _FILLED_TYPES and item.line is not None:
                 raise ValueError(f"line is only valid for line and scatter charts, not {kind!r}")
-            if kind == "pie" and item.color is not None:
-                raise ValueError("pie charts colour slices from the theme; series color is not supported")
+            if kind in _ROUND_TYPES and item.color is not None:
+                raise ValueError(f"{kind} charts colour slices from the theme; series color is not supported")
             if kind == "line" and item.line is False and item.marker is None:
                 raise ValueError("a line series with line=False needs a marker")
 
@@ -317,8 +342,8 @@ class Chart:
             value = getattr(self, name)
             if value is not None and not isinstance(value, ChartAxis):
                 raise TypeError(f"{name} must be a ChartAxis or None")
-        if self.chart_type == "pie" and (self.x_axis or self.y_axis):
-            raise ValueError("pie charts have no axes; x_axis and y_axis are not valid")
+        if self.chart_type in _ROUND_TYPES and (self.x_axis or self.y_axis):
+            raise ValueError(f"{self.chart_type} charts have no axes; x_axis and y_axis are not valid")
 
     def _check_legend(self) -> None:
         legend = self.legend
@@ -348,7 +373,9 @@ class Chart:
         The XLSB writer uses this to reject, rather than silently drop, the
         options it does not serialize.
         """
-        if self.chart_type in ("barh", "scatter"):
+        if self.chart_type in ("area", "barh", "doughnut", "scatter"):
+            return True
+        if self.grouping is not None:
             return True
         if self.x_axis is not None or self.y_axis is not None:
             return True

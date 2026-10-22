@@ -4,6 +4,7 @@ Each feature is checked two ways: the XML that xlspy writes, and what openpyxl
 reads back. openpyxl is the reference reader for XLSX here.
 """
 
+import io
 import struct
 import zipfile
 import zlib
@@ -400,11 +401,68 @@ def test_image_sizes_come_from_the_file_when_not_given(tmp_path):
     assert (proportional.pixel_width, proportional.pixel_height) == (32, 16)
 
 
+# A one-pixel red GIF.
+GIF_1X1 = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\x00\x00\x00\x00\x00"
+    b"!\xf9\x04\x00\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+)
+
+
+def bmp_bytes(width, height):
+    """A 24-bit bottom-up BMP filled with blue."""
+    row = b"\xff\x00\x00" * width
+    row += b"\x00" * (-len(row) % 4)
+    pixels = row * height
+    return (
+        b"BM" + struct.pack("<IHHI", 54 + len(pixels), 0, 0, 54)
+        + struct.pack("<IiiHHIIiiII", 40, width, height, 1, 24, 0, len(pixels), 2835, 2835, 0, 0)
+        + pixels
+    )
+
+
+def test_images_from_memory_gif_and_bmp(tmp_path):
+    png = _png_bytes(20, 10)
+    images = [
+        Image(png, anchor="A1"),
+        Image(bytearray(png), anchor="A5", width=40),
+        Image(io.BytesIO(png), anchor="A10"),
+        Image(GIF_1X1, anchor="C1", width=30),
+        Image(bmp_bytes(6, 3), anchor="C5"),
+    ]
+    assert [(i.extension, i.pixel_width, i.pixel_height) for i in images] == [
+        ("png", 20, 10), ("png", 40, 20), ("png", 20, 10), ("gif", 30, 30), ("bmp", 6, 3),
+    ]
+    path = tmp_path / "memory_images.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("Pictures")
+        writer.write_sheet([["x"]], images=images)
+    with zipfile.ZipFile(path) as archive:
+        names = archive.namelist()
+        types = archive.read("[Content_Types].xml").decode()
+        drawing = archive.read("xl/drawings/drawing1.xml").decode()
+    # Identical bytes are stored once.
+    assert sorted(n for n in names if n.startswith("xl/media/")) == [
+        "xl/media/image1.png", "xl/media/image2.gif", "xl/media/image3.bmp",
+    ]
+    assert 'Extension="gif" ContentType="image/gif"' in types
+    assert 'Extension="bmp" ContentType="image/bmp"' in types
+    # openpyxl needs Pillow to load pictures, which CI does not install.
+    assert drawing.count("</pic>") == 5
+
+
 def test_image_refuses_unsupported_formats_and_bad_input(tmp_path):
+    tiff = tmp_path / "x.tif"
+    tiff.write_bytes(b"II*\x00" + b"\x00" * 20)
+    with pytest.raises(ValueError, match="not a PNG, JPEG, GIF or BMP"):
+        Image(tiff)
     gif = tmp_path / "x.gif"
     gif.write_bytes(b"GIF89a" + b"\x00" * 20)
-    with pytest.raises(ValueError, match="not a PNG or JPEG"):
+    with pytest.raises(ValueError, match="empty image size"):
         Image(gif)
+    with pytest.raises(TypeError, match="binary mode"):
+        Image(io.StringIO("text"))
+    with pytest.raises(TypeError, match="image bytes"):
+        Image(42)
     truncated = tmp_path / "t.png"
     truncated.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 4)
     with pytest.raises(ValueError, match="truncated|IHDR"):
@@ -584,7 +642,8 @@ def test_axis_and_legend_defaults_stay_byte_compatible(tmp_path):
         writer.write_sheet([["a", "b"], ["x", 1]],
                            charts=[Chart("bar", [ChartSeries("B2:B2", categories="A2:A2")])])
     xml = _zip_text(path, "xl/charts/chart1.xml")
-    assert "<legend><legendPos val=\"r\"/></legend>" in xml
+    # The legend says explicitly that it does not overlay the plot area.
+    assert "<legend><legendPos val=\"r\"/><overlay val=\"0\"/></legend>" in xml
     assert "<majorGridlines/>" in xml
 
 

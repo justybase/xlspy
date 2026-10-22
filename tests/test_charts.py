@@ -2,7 +2,7 @@ import zipfile
 
 import pytest
 
-from xlspy import Chart, ChartSeries, ExcelReader, XlsxWriter
+from xlspy import Chart, ChartSeries, ExcelReader, XlsbWriter, XlsxWriter
 
 
 def _chart_parts(path):
@@ -99,7 +99,8 @@ def test_charts_round_trip_through_openpyxl(tmp_path):
     by_title = {}
     for ws in wb.worksheets:
         for chart in ws._charts:
-            title = chart.title.tx.rich.p[0].r[0].t if chart.title else None
+            # A single-series chart without a title keeps Excel's empty automatic title.
+            title = (chart.title.tx.rich.p[0].r[0].t if chart.title else None) or None
             by_title[(ws.title, title)] = chart
     assert set(by_title) == {
         ("Data", "Sales & <Costs>"), ("Data", "Trend"), ("Data", "Share"), ("Other", None),
@@ -154,7 +155,8 @@ def test_chart_xml_matches_openpyxl_shape(tmp_path):
     assert "<tx><v>Lit</v></tx>" in chart
     assert "<barDir val=\"col\"/>" in chart
     assert "<gapWidth val=\"150\"/>" in chart
-    assert "<legend><legendPos val=\"r\"/></legend>" in chart
+    # An absent overlay element would let Excel draw the legend over the plot.
+    assert "<legend><legendPos val=\"r\"/><overlay val=\"0\"/></legend>" in chart
 
     with zipfile.ZipFile(path) as archive:
         content_types = archive.read("[Content_Types].xml").decode()
@@ -167,6 +169,20 @@ def test_chart_xml_matches_openpyxl_shape(tmp_path):
         assert '<drawing r:id="rId1"/>' in sheet_xml
         workbook_rels = archive.read("xl/_rels/workbook.xml.rels").decode()
         assert 'Target="theme/theme1.xml"' in workbook_rels
+
+
+def test_pie_chart_keeps_its_categories(tmp_path):
+    path = tmp_path / "pie.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(
+            _sample_data(),
+            charts=[Chart("pie", [ChartSeries("B2:B4", categories="A2:A4")], anchor="E2")],
+        )
+
+    chart = _chart_parts(path)["xl/charts/chart1.xml"]
+    # The categories name the slices in the legend.
+    assert "<cat><numRef><f>'Data'!$A$2:$A$4</f></numRef></cat>" in chart
 
 
 def test_drawing_element_follows_tables_and_plain_sheets(tmp_path):
@@ -225,3 +241,20 @@ def test_plain_write_stays_free_of_drawing_parts(tmp_path):
         assert "drawing" not in archive.read("[Content_Types].xml").decode()
         assert "theme" not in archive.read("[Content_Types].xml").decode()
         assert "theme" not in archive.read("xl/_rels/workbook.xml.rels").decode()
+
+
+@pytest.mark.parametrize("writer_cls", [XlsxWriter, XlsbWriter])
+def test_untitled_single_series_chart_keeps_the_automatic_title(tmp_path, writer_cls):
+    path = tmp_path / f"auto.{'xlsb' if writer_cls is XlsbWriter else 'xlsx'}"
+    with writer_cls(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(
+            [["k", "a", "b"], ["x", 1, 2], ["y", 3, 4]],
+            charts=[Chart("bar", [ChartSeries("B2:B3", title_cell="B1")], anchor="E2"),
+                    Chart("bar", [ChartSeries("B2:B3"), ChartSeries("C2:C3")], anchor="E20")],
+        )
+    with zipfile.ZipFile(path) as archive:
+        single, double = (archive.read(f"xl/charts/chart{i}.xml").decode() for i in (1, 2))
+    # As Excel saves it: an empty title, shown as the series name.
+    assert '<chart><title><overlay val="0"/></title><autoTitleDeleted val="0"/>' in single
+    assert "<title>" not in double and '<autoTitleDeleted val="0"/>' in double
