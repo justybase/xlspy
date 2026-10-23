@@ -12,7 +12,7 @@ from ._accel import encode_xlsb_row, encode_xlsb_row_inline
 from ._widths import estimate_column_widths, file_width
 from ._accel import xlsb_row_has_formatted as accel_row_has_formatted
 from ._accel import encode_xlsb_sst as accel_encode_xlsb_sst
-from .formats import _is_formatted_cell, _unwrap_cell
+from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell, _unwrap_cell
 from .excel_dates import datetime_to_serial
 from ._xlsb_writer import XlsbWriterMetadata
 from . import chart_parts
@@ -36,6 +36,7 @@ from .styles import (
     parse_cell_range,
     split_style,
     styles_for_row,
+    _date_cell_xf,
     _record_cell_xf,
     _style_ids_for_row,
     _xf_for_style_format,
@@ -227,6 +228,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         self._format_registry: dict[str, int] = {}
         self._format_xf_map: dict[str, int] = {}
         self._style_xf_map: dict[Style, int] = {}
+        self._xf_styles: dict[int, Style] = {}
         self._style_format_xf: dict[tuple, tuple] = {}
         # xf of each (value, format) cell the C row encoder may reuse: keyed
         # by the format, or by (cell style xf, format) for a styled cell.
@@ -357,6 +359,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         xf_index = self._next_xf_index
         self._next_xf_index += 1
         self._style_xf_map[style] = xf_index
+        self._xf_styles[xf_index] = style
         self._style_components[xf_index] = (
             font_id, fill_id, border_id, numfmt_id, alignment, protection,
         )
@@ -1931,7 +1934,10 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
                                         xf_index if has_custom_fmt else None)
                     else:
                         excel_date = datetime_to_serial(cell)
-                        style_ref = xf_index if has_custom_fmt else 1
+                        style_ref = 1 if not has_custom_fmt else _date_cell_xf(
+                            self._fmt_xf, self._xf_styles, self._register_style,
+                            xf_index, DEFAULT_DATETIME_FORMAT, True,
+                        )
                         buffer.write(b'\x05\x10')
                         buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
                 elif isinstance(cell, datetime.date):
@@ -1940,7 +1946,10 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
                                         xf_index if has_custom_fmt else None)
                     else:
                         excel_date = datetime_to_serial(cell)
-                        style_ref = xf_index if has_custom_fmt else 2
+                        style_ref = 2 if not has_custom_fmt else _date_cell_xf(
+                            self._fmt_xf, self._xf_styles, self._register_style,
+                            xf_index, DEFAULT_DATE_FORMAT, False,
+                        )
                         buffer.write(b'\x05\x10')
                         buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
                 else:
@@ -2189,7 +2198,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
             shared_strings_append(key)
             self._sst_unique_count += 1
             self._sst_has_rich = True
-        buffer.write(b'')
+        buffer.write(b'\x07\x0C')
         buffer.write(struct.pack('<III', col_idx, style_ref, string_index))
 
     def _write_str(self, buffer, cell, shared_strings_dict, shared_strings_append, row_idx, col_idx, style_override=None):

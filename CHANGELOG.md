@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-10-23
+
+### Added
+
+- Hyperlinks on a loaded workbook: links set, removed or moved by
+  `insert_rows()`, `delete_rows()` and `move_range()` are saved instead of
+  raising `NotImplementedError`, and new sheets of a loaded workbook keep
+  their links. `XlsxUpdater.set_hyperlinks()` edits links directly.
+- `load_workbook()` reads a sheet's print area, print titles, page setup,
+  fit-to-page, centring, header and footer into the model.
+
+### Fixed
+
+- A date in a styled cell (a range style, a `(value, Style)` cell, or a model
+  cell with a font) was written with the General format and showed as a
+  serial number in Excel. It now gets the default date or date-time format
+  unless its style sets one; both writers and their C encoders. Assigning a
+  date to a model cell sets that format, as for times.
+- Clearing print settings on a loaded sheet (`ws.print_area = None`, default
+  margins, no fit to page, an empty header) removed nothing from the file.
+- Rich text in shared strings was escaped twice, so `\r`, control characters
+  and literal `_xHHHH_` text came back as escape codes.
+- `load_workbook(rich_text=True)` failed on runs with `u val="none"` or an
+  out-of-range font size written by other programs.
+- Saving row metadata of a loaded sheet dropped `collapsed="1"` from a
+  collapsed group's summary row.
+- XLSB charts whose categories were only rich-text cells got an invalid
+  numeric cache.
+
 ## [Unreleased]
 
 ## [0.9.1] - 2026-10-22

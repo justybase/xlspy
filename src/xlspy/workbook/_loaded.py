@@ -346,6 +346,17 @@ def _patch_cells(xml: str, patch) -> str:
     return xml[:match.start()] + body + xml[match.end():]
 
 
+def _save_hyperlinks(updater, sheet: Worksheet, name: str) -> None:
+    if not sheet._dirty_hyperlinks:
+        return
+    links = {}
+    for ref in sheet._dirty_hyperlinks:
+        col, row, _, _ = parse_cell_range(ref)
+        cell = sheet._existing_cell(row + 1, col + 1)
+        links[ref] = cell.hyperlink if cell is not None else None
+    updater.set_hyperlinks(name, links)
+
+
 def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
     if not styles:
         return
@@ -747,18 +758,21 @@ def save_loaded(workbook: Workbook, filename) -> None:
                     cell = sheet._existing_cell(row + 1, col + 1)
                     comments[ref] = cell.comment if cell is not None else None
                 updater.set_comments(name, comments)
-            if sheet._dirty_hyperlinks:
-                raise NotImplementedError(
-                    "editing hyperlinks in a loaded workbook is not implemented yet; "
-                    "the original hyperlinks are preserved when other cells are edited"
-                )
-        elif sheet._dirty_comments:
-            comments = {}
-            for ref in sheet._dirty_comments:
-                col, row, _, _ = parse_cell_range(ref)
-                cell = sheet._existing_cell(row + 1, col + 1)
-                comments[ref] = cell.comment if cell is not None else None
-            updater.set_comments(name, comments)
+            _save_hyperlinks(updater, sheet, name)
+        else:
+            if sheet._dirty_comments:
+                comments = {}
+                for ref in sheet._dirty_comments:
+                    col, row, _, _ = parse_cell_range(ref)
+                    cell = sheet._existing_cell(row + 1, col + 1)
+                    comments[ref] = cell.comment if cell is not None else None
+                updater.set_comments(name, comments)
+            # A new sheet's part has no links yet: write all of them.
+            sheet._dirty_hyperlinks.update(
+                cell.coordinate for cells in sheet._cells.values() for cell in cells.values()
+                if cell._hyperlink is not None
+            )
+            _save_hyperlinks(updater, sheet, name)
 
     _reorder_and_state(workbook, updater)
     _remap_local_names(updater, sheet_order, renamed)

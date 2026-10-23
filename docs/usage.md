@@ -922,6 +922,11 @@ or unsupported VML relationships/shapes cause an error before changes are staged
 Deleting the last note removes unused comment parts and drawing references;
 VML parts containing controls are retained.
 
+`set_hyperlinks(sheet_name, {"A2": Hyperlink(...), "B5": None})` sets or
+removes the links of the given XLSX cells and keeps the others; a link whose
+range starts at a given cell is replaced whole. Only the link changes, not the
+cell's value or style, and a removed link's relationship goes with it.
+
 `update_cells(sheet_name, cells)` accepts a mapping from single-cell addresses
 to strings, finite numbers, booleans, dates/datetimes, `Formula`, or `None`.
 Existing styles and notes stay attached to the same addresses. Dates are stored
@@ -1294,11 +1299,19 @@ theirs), a new picture joins the sheet's drawing, a new table gets a free id
 and must not share its name with another table in the workbook or overlap a
 table on its sheet (`ValueError`). Print settings change only what was set:
 setting the orientation keeps the sheet's paper size, and setting the footer
-keeps its header. Each object is saved once; saving again writes only the
-objects added since.
+keeps its header. The file's print setup (print area and titles, page setup,
+fit to page, centring, header and footer) is loaded into the model, so
+clearing a setting (`ws.print_area = None`, default margins, an empty footer)
+removes it from the file. Each object is saved once; saving again writes only
+the objects added since.
 
-Limitations: editing hyperlinks in a loaded workbook, named styles, saving a
-new `.xlsm` and template formats raise `NotImplementedError`/`ValueError`.
+Hyperlinks set, removed or moved (by `insert_rows`, `delete_rows` and
+`move_range`) on a loaded sheet are saved; the sheet's other links stay as
+they are. Links that `Hyperlink` cannot represent, such as relative file
+paths, are kept in the file but do not move with their cells.
+
+Limitations: named styles, saving a new `.xlsm` and template formats raise
+`NotImplementedError`/`ValueError`.
 Loading XLSB for editing is not supported; use `XlsbUpdater` for sparse
 binary edits. Like openpyxl, `load_workbook()` returns formula text by default
 (`data_only=False`).

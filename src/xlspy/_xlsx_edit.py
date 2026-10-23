@@ -23,12 +23,23 @@ from .comments import (
 )
 from .excel_dates import datetime_to_serial
 from .formulas import Formula
+from .hyperlinks import Hyperlink
 from .refs import parse_cell_range, column_label
 from .updater_utils import unwrap_cell, replace_or_add_xml_attribute
 
 
 def _bytes(root):
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+_HYPERLINK_TYPE = REL + "/hyperlink"
+# The <worksheet> children that follow <hyperlinks> (CT_Worksheet).
+_AFTER_HYPERLINKS = (
+    "printOptions", "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks",
+    "customProperties", "cellWatches", "ignoredErrors", "smartTags", "drawing",
+    "legacyDrawing", "legacyDrawingHF", "drawingHF", "picture", "oleObjects", "controls",
+    "webPublishItems", "tableParts", "extLst",
+)
 
 
 class XlsxEditMixin:
@@ -156,6 +167,84 @@ class XlsxEditMixin:
         elif rp in names:
             removed.append(rp)
         updates["[Content_Types].xml"] = _bytes(types)
+        self._apply_parts(updates, removed)
+
+    def set_hyperlinks(self, sheet_name: str, links: Mapping[str, Hyperlink | None]) -> None:
+        """Set selected cells' hyperlinks; None removes one, other links are kept.
+
+        Only the link changes: the cell's value and style stay as they are. A
+        link whose range starts at a given cell is replaced as a whole.
+        """
+        changes = {}
+        for ref, link in links.items():
+            if link is not None and not isinstance(link, Hyperlink):
+                raise TypeError("hyperlinks must be xlspy Hyperlink objects or None")
+            changes[cell_ref(ref)] = link
+        if not changes:
+            return
+        path, sheet = self._sheet_xml(sheet_name)
+        rp = rels_path(path)
+        names = self._package.names()
+        relationships = (
+            ET.fromstring(self._package.get(rp)) if rp in names
+            else ET.Element(f"{{{PKG_REL}}}Relationships")
+        )
+        prefix = self._tag_prefix(sheet, "worksheet")
+        container = element_pattern("hyperlinks").search(sheet)
+        kept, dropped = [], set()
+        if container:
+            for match in element_pattern("hyperlink").finditer(container[0]):
+                attrs = _attributes(match[0])
+                try:
+                    first_col, first_row, _, _ = parse_cell_range(attrs.get("ref", "").split()[0])
+                    start = f"{column_label(first_col)}{first_row + 1}"
+                except (IndexError, ValueError):
+                    start = None
+                if start in changes:
+                    dropped.update(value for key, value in attrs.items() if key.endswith(":id"))
+                else:
+                    kept.append(match[0])
+
+        used_ids = {node.get("Id") for node in relationships}
+        added = []
+        for ref, link in changes.items():
+            if link is None:
+                continue
+            text = f' ref="{ref}"'
+            if link.is_internal:
+                text += f" location={quoteattr(xml_text(link.location))}"
+            else:
+                index = 1
+                while f"rId{index}" in used_ids:
+                    index += 1
+                rid = f"rId{index}"
+                used_ids.add(rid)
+                ET.SubElement(relationships, f"{{{PKG_REL}}}Relationship", {
+                    "Id": rid, "Type": _HYPERLINK_TYPE,
+                    "Target": xml_text(link.target), "TargetMode": "External",
+                })
+                text += f' xmlns:r="{REL}" r:id="{rid}"'
+            if link.text is not None:
+                text += f" display={quoteattr(xml_text(link.text))}"
+            if link.tooltip is not None:
+                text += f" tooltip={quoteattr(xml_text(link.tooltip))}"
+            added.append(f"<{prefix}hyperlink{text}/>")
+
+        items = kept + added
+        fragment = f"<{prefix}hyperlinks>{''.join(items)}</{prefix}hyperlinks>" if items else ""
+        sheet = replace_element(sheet, "hyperlinks", fragment, before=_AFTER_HYPERLINKS)
+        # A dropped link's relationship goes unless something else uses it.
+        for node in list(relationships):
+            rid = node.get("Id")
+            if rid in dropped and node.get("Type") == _HYPERLINK_TYPE \
+                    and not re.search(rf"""[\w.-]+:id=["']{re.escape(rid)}["']""", sheet):
+                relationships.remove(node)
+        updates, removed = {path: sheet}, []
+        ET.register_namespace("", PKG_REL)
+        if len(relationships):
+            updates[rp] = _bytes(relationships)
+        elif rp in names:
+            removed.append(rp)
         self._apply_parts(updates, removed)
 
     def get_defined_names(self) -> list[DefinedName]:

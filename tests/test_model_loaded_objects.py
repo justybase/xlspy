@@ -9,7 +9,7 @@ import pytest
 
 from xlspy import (
     CellIsRule, Chart, ChartSeries, DataValidation, DifferentialStyle, ExcelTable, Font, Image,
-    PageMargins, PrintSettings, XlsxWriter, load_workbook,
+    Hyperlink, PageMargins, PrintSettings, XlsxWriter, load_workbook,
 )
 
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -253,6 +253,32 @@ def test_untouched_sheet_print_setup_is_not_rewritten(tmp_path, load):
     assert parts["xl/worksheets/sheet1.xml"] != first
 
 
+def test_collapsed_summary_row_survives_row_metadata_save(tmp_path, load):
+    """Excel marks a collapsed group's summary row with collapsed="1" alone;
+    rewriting the row metadata must keep it."""
+    plain = tmp_path / "plain.xlsx"
+    with XlsxWriter(plain) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(ROWS)
+    source = tmp_path / "collapsed.xlsx"
+    with zipfile.ZipFile(plain) as original, zipfile.ZipFile(source, "w") as archive:
+        for name in original.namelist():
+            data = original.read(name)
+            if name == "xl/worksheets/sheet1.xml":
+                data = data.replace(b'<row r="2">', b'<row r="2" outlineLevel="1" hidden="1">')
+                data = data.replace(b'<row r="3">', b'<row r="3" collapsed="1">')
+            archive.writestr(name, data)
+
+    workbook = load(source)
+    workbook["Data"].row_dimensions[4].height = 30
+    workbook.save(tmp_path / "out.xlsx")
+
+    sheet = _parts(tmp_path / "out.xlsx")["xl/worksheets/sheet1.xml"].decode()
+    row3 = re.search(r'<row r="3"[^>]*>', sheet)[0]
+    assert 'collapsed="1"' in row3
+    assert 'outlineLevel="1"' in re.search(r'<row r="2"[^>]*>', sheet)[0]
+
+
 def test_failed_save_does_not_repeat_objects_on_retry(tmp_path, load):
     workbook = load(_source(tmp_path / "source.xlsx"))
     workbook["Data"].add_chart(Chart("bar", [ChartSeries("B2:B4")]), "D10")
@@ -264,3 +290,157 @@ def test_failed_save_does_not_repeat_objects_on_retry(tmp_path, load):
     workbook.save(tmp_path / "out.xlsx")
     charts = [name for name in _parts(tmp_path / "out.xlsx") if name.startswith("xl/charts/")]
     assert charts == ["xl/charts/chart1.xml", "xl/charts/chart2.xml"]
+
+
+def _printed_source(path):
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(
+            [["a", "b"], [1, 2]],
+            print_settings=PrintSettings(
+                orientation="landscape",
+                margins=PageMargins(left=0.4),
+                print_area="A1:B2",
+                repeat_rows="1:1",
+                fit_to_width=1,
+                fit_to_height=0,
+                center_horizontally=True,
+                header="&CReport",
+                footer="&CPage &P",
+            ),
+        )
+    return path
+
+
+def test_cleared_print_settings_are_removed(tmp_path, load):
+    """Print settings the file had and the sheet no longer has must leave the file."""
+    workbook = load(_printed_source(tmp_path / "print.xlsx"))
+    ws = workbook["Data"]
+    ws.print_area = None
+    ws.print_title_rows = None
+    ws.page_setup.orientation = None
+    ws.sheet_properties.pageSetUpPr.fitToPage = False
+    ws.print_options.horizontalCentered = False
+    ws.page_margins.left = 0.7
+    ws.oddHeader.center.text = None
+    ws.oddFooter.center.text = None
+    workbook.save(tmp_path / "out.xlsx")
+
+    parts = _parts(tmp_path / "out.xlsx")
+    sheet = parts["xl/worksheets/sheet1.xml"].decode()
+    names = parts["xl/workbook.xml"].decode()
+    assert "_xlnm.Print_Area" not in names and "_xlnm.Print_Titles" not in names
+    assert 'left="0.7"' in re.search(r"<pageMargins\b[^>]*>", sheet)[0]
+    assert "orientation" not in sheet and "fitToWidth" not in sheet and "fitToPage" not in sheet
+    assert "horizontalCentered" not in sheet
+    assert "<oddHeader" not in sheet and "<oddFooter" not in sheet
+
+    reread = load(tmp_path / "out.xlsx")["Data"]
+    assert reread.print_area is None and reread.print_title_rows is None
+    assert not reread.sheet_properties.pageSetUpPr.fitToPage
+    check = openpyxl.load_workbook(tmp_path / "out.xlsx")["Data"]
+    assert check.page_margins.left == 0.7 and check.page_setup.orientation is None
+
+
+def test_partly_cleared_print_settings_keep_the_rest(tmp_path, load):
+    workbook = load(_printed_source(tmp_path / "print.xlsx"))
+    ws = workbook["Data"]
+    # The file's print setup is loaded into the model.
+    assert (ws.print_area, ws.print_title_rows) == ("A1:B2", "1:1")
+    assert ws.page_setup.orientation == "landscape" and ws.page_setup.fitToHeight == 0
+    assert ws.sheet_properties.pageSetUpPr.fitToPage and ws.print_options.horizontalCentered
+    assert (ws.oddHeader.center.text, ws.oddFooter.center.text) == ("Report", "Page &P")
+    ws.print_area = None
+    ws.oddFooter.center.text = None
+    workbook.save(tmp_path / "out.xlsx")
+
+    parts = _parts(tmp_path / "out.xlsx")
+    sheet = parts["xl/worksheets/sheet1.xml"].decode()
+    names = parts["xl/workbook.xml"].decode()
+    assert "_xlnm.Print_Area" not in names
+    assert "_xlnm.Print_Titles\" localSheetId=\"0\">'Data'!$1:$1<" in names
+    assert 'orientation="landscape"' in sheet and 'fitToPage="1"' in sheet
+    assert "<oddHeader>&amp;CReport</oddHeader>" in sheet and "<oddFooter" not in sheet
+
+
+def _linked_source(path):
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("Data")
+        rows = [[f"r{row}", None] for row in range(1, 13)]
+        rows[9][0] = Hyperlink("https://example.com/a", text="A link", tooltip="Tip")
+        rows[2][1] = Hyperlink("#Data!A1", text="Back")
+        rows[11][1] = Hyperlink("https://example.com/b")
+        writer.write_sheet(rows)
+        writer.add_sheet("Other")
+        writer.write_sheet([["x"]])
+    return path
+
+
+def _links(path, sheet="Data"):
+    book = openpyxl.load_workbook(path)
+    try:
+        return {
+            cell.coordinate: (cell.hyperlink.target or "#" + cell.hyperlink.location,
+                              cell.hyperlink.display, cell.hyperlink.tooltip)
+            for row in book[sheet].iter_rows() for cell in row if cell.hyperlink is not None
+        }
+    finally:
+        book.close()
+
+
+def _hyperlink_rels(parts, number=1):
+    rels = parts.get(f"xl/worksheets/_rels/sheet{number}.xml.rels", b"").decode()
+    return re.findall(r'Target="([^"]+)"[^>]*TargetMode="External"', rels)
+
+
+def test_hyperlinks_move_with_inserted_and_deleted_rows(tmp_path, load):
+    workbook = load(_linked_source(tmp_path / "links.xlsx"))
+    ws = workbook["Data"]
+    ws.insert_rows(2)
+    workbook.save(tmp_path / "inserted.xlsx")
+    assert _links(tmp_path / "inserted.xlsx") == {
+        "A11": ("https://example.com/a", None, "Tip"),
+        "B4": ("#Data!A1", None, None),
+        "B13": ("https://example.com/b", None, None),
+    }
+    check = openpyxl.load_workbook(tmp_path / "inserted.xlsx")["Data"]
+    assert (check["A11"].value, check["B4"].value, check["A10"].value) == ("A link", "Back", "r9")
+    parts = _parts(tmp_path / "inserted.xlsx")
+    _check_relationships(parts)
+    # The replaced links' relationships do not linger.
+    assert sorted(_hyperlink_rels(parts)) == ["https://example.com/a", "https://example.com/b"]
+
+    ws.delete_rows(1, 3)
+    ws.move_range("A8", rows=1, cols=2)
+    workbook.save(tmp_path / "deleted.xlsx")
+    assert _links(tmp_path / "deleted.xlsx") == {
+        "C9": ("https://example.com/a", None, "Tip"),
+        "B1": ("#Data!A1", None, None),
+        "B10": ("https://example.com/b", None, None),
+    }
+
+
+def test_hyperlinks_set_and_removed_on_a_loaded_sheet(tmp_path, load):
+    workbook = load(_linked_source(tmp_path / "links.xlsx"))
+    ws = workbook["Data"]
+    ws["A1"].hyperlink = Hyperlink("https://example.com/new", tooltip="New")
+    ws["A10"].hyperlink = None
+    ws["B3"].hyperlink = Hyperlink("#Other!A1")
+    new = workbook.create_sheet("Added")
+    new["A1"] = Hyperlink("https://example.com/added", text="Added")
+    workbook.save(tmp_path / "out.xlsx")
+
+    assert _links(tmp_path / "out.xlsx") == {
+        "A1": ("https://example.com/new", None, "New"),
+        "B3": ("#Other!A1", None, None),
+        "B12": ("https://example.com/b", None, None),
+    }
+    assert _links(tmp_path / "out.xlsx", "Added") == {
+        "A1": ("https://example.com/added", "Added", None),
+    }
+    parts = _parts(tmp_path / "out.xlsx")
+    _check_relationships(parts)
+    assert sorted(_hyperlink_rels(parts)) == ["https://example.com/b", "https://example.com/new"]
+    sheet = parts["xl/worksheets/sheet1.xml"].decode()
+    order = [sheet.index(tag) for tag in ("</sheetData>", "<hyperlinks>", "<pageMargins")]
+    assert order == sorted(order)

@@ -65,6 +65,7 @@ from .styles import (
     _font_is_empty,
     _font_key_from,
     _protection_key_from,
+    _date_cell_xf,
     _record_cell_xf,
     _style_ids_for_row,
     _xf_for_style_format,
@@ -197,6 +198,7 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
         self._format_registry: dict[str, int] = {DEFAULT_DATE_FORMAT: 164, DEFAULT_DATETIME_FORMAT: 165}
         self._format_xf_map: dict[str, int] = {}
         self._style_xf_map: dict[Style, int] = {}
+        self._xf_styles: dict[int, Style] = {}
         self._style_format_xf: dict[tuple, tuple] = {}
         # xf of each (value, format) cell the C row encoder may reuse: keyed
         # by the format, or by (cell style xf, format) for a styled cell.
@@ -727,6 +729,7 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
         xf_index = self._next_xf_index
         self._next_xf_index += 1
         self._style_xf_map[style] = xf_index
+        self._xf_styles[xf_index] = style
         self._style_components[xf_index] = (
             font_id, fill_id, border_id, numfmt_id, _align, _prot,
         )
@@ -1327,7 +1330,12 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
         parts: list[str] = []
         for s in self._shared_strings:
             if type(s) is tuple:  # ("rich", runs) from _write_rich_cell, already escaped
-                parts.append(f'<si>{s[1]}</si>')
+                # The runs already carry their _xHHHH_ escapes: escaping them
+                # with the chunk again would turn "_x000D_" into "_x005F_x000D_".
+                if parts:
+                    sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))
+                    parts.clear()
+                sst_file.write(f'<si>{s[1]}</si>'.encode('utf-8'))
                 continue
             # The same three replacements as xml.sax.saxutils.escape, minus its call overhead.
             text = s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
@@ -1700,14 +1708,20 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
                     if cell.tzinfo is not None:
                         cell = cell.replace(tzinfo=None)
                     excel_date = datetime_to_serial(cell)
-                    style_ref = xf_index if xf_index is not None else 2
+                    style_ref = 2 if xf_index is None else _date_cell_xf(
+                        self._fmt_xf, self._xf_styles, self._register_style,
+                        xf_index, DEFAULT_DATETIME_FORMAT, True,
+                    )
                     buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
             elif isinstance(cell, datetime.date):
                 if cell.year < 1900 or cell.year > 9999:
                     self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
                 else:
                     excel_date = datetime_to_serial(cell)
-                    style_ref = xf_index if xf_index is not None else 1
+                    style_ref = 1 if xf_index is None else _date_cell_xf(
+                        self._fmt_xf, self._xf_styles, self._register_style,
+                        xf_index, DEFAULT_DATE_FORMAT, False,
+                    )
                     buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
             elif isinstance(cell, CellRichText):
                 self._write_rich_cell(buf, cell, row_idx == 0, xf_index)

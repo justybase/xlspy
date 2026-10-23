@@ -236,6 +236,49 @@ def _read_sheet_relationships(package, sheet_path: str) -> dict[str, tuple[str, 
     return result
 
 
+def _read_page_setup(sheet: Worksheet, node) -> None:
+    """The ``<pageSetup>`` values the writers can write back."""
+    setup = sheet.page_setup
+    if node.get("orientation") in ("portrait", "landscape"):
+        setup.orientation = node.get("orientation")
+
+    def number(name, low, high):
+        try:
+            value = int(node.get(name))
+        except (TypeError, ValueError):
+            return None
+        return value if low <= value <= high else None
+
+    setup.paperSize = number("paperSize", 1, 255)
+    setup.scale = number("scale", 10, 400)
+    setup.fitToWidth = number("fitToWidth", 0, 32767)
+    setup.fitToHeight = number("fitToHeight", 0, 32767)
+
+
+_PRINT_NAME_PART = re.compile(r"(?:'(?:[^']|'')*'|[^,'!]+)!([^,]+)")
+
+
+def _read_print_names(sheet: Worksheet, names: dict[str, str]) -> None:
+    """Print area and print titles from the sheet's local defined names."""
+    area = names.get("_xlnm.Print_Area")
+    if area:
+        parts = [part.replace("$", "") for part in _PRINT_NAME_PART.findall(area)]
+        try:
+            for part in parts:
+                parse_cell_range(part)
+        except ValueError:
+            parts = []
+        if parts:
+            sheet.print_area = ",".join(parts)
+    titles = names.get("_xlnm.Print_Titles")
+    for part in _PRINT_NAME_PART.findall(titles or ""):
+        part = part.replace("$", "")
+        if re.fullmatch(r"\d+:\d+", part):
+            sheet.print_title_rows = part
+        elif re.fullmatch(r"[A-Za-z]{1,3}:[A-Za-z]{1,3}", part):
+            sheet.print_title_cols = part.upper()
+
+
 def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                      *, data_only: bool, date_1904: bool, package,
                      sheet_path: str, shared_strings: list[str],
@@ -257,7 +300,10 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                 next_row = row_number + 1
                 max_row = max(max_row, row_number)
                 attrs = node.attrib
-                if "ht" in attrs or "hidden" in attrs or "outlineLevel" in attrs:
+                # A group's summary row carries collapsed="1" alone; it has to
+                # be loaded too, or saving row metadata would drop the flag.
+                if ("ht" in attrs or "hidden" in attrs or "outlineLevel" in attrs
+                        or "collapsed" in attrs):
                     dimension = sheet.row_dimensions[row_number]
                     if "ht" in attrs:
                         dimension.height = float(attrs["ht"])
@@ -315,6 +361,20 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                         sheet._sheet_properties.tabColor = _read_color(tab)
                     except (TypeError, ValueError):
                         pass
+                setup = node.find(_q("pageSetUpPr"))
+                if setup is not None and _bool_attr(setup, "fitToPage", False):
+                    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+            elif tag == "pageSetup":
+                _read_page_setup(sheet, node)
+            elif tag == "printOptions":
+                options = sheet.print_options
+                if _bool_attr(node, "horizontalCentered", False):
+                    options.horizontalCentered = True
+                if _bool_attr(node, "verticalCentered", False):
+                    options.verticalCentered = True
+            elif tag in ("oddHeader", "oddFooter") and len(stack) >= 2 \
+                    and _local(stack[-2].tag) == "headerFooter":
+                getattr(sheet, tag).load_code(node.text)
             elif tag == "sheetView":
                 view = sheet._sheet_view
                 view.showGridLines = _bool_attr(node, "showGridLines", True)
@@ -699,7 +759,18 @@ def load_workbook(filename, *, read_only: bool = False, data_only: bool = False,
             active_tab = 0
 
     worksheet_entries = []
-    for sheet_node in workbook_root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet"):
+    sheet_nodes = workbook_root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
+    # localSheetId counts every sheet, chartsheets included.
+    print_names: dict[str, dict[str, str]] = {}
+    for node in workbook_root.findall(f"{{{MAIN}}}definedNames/{{{MAIN}}}definedName"):
+        if node.get("name") not in ("_xlnm.Print_Area", "_xlnm.Print_Titles"):
+            continue
+        try:
+            owner = sheet_nodes[int(node.get("localSheetId"))].get("name")
+        except (TypeError, ValueError, IndexError):
+            continue
+        print_names.setdefault(owner, {})[node.get("name")] = node.text or ""
+    for sheet_node in sheet_nodes:
         name = sheet_node.get("name")
         rid = sheet_node.get(f"{{{REL}}}id")
         if not name or not rid or rid not in relationships:
@@ -742,6 +813,7 @@ def load_workbook(filename, *, read_only: bool = False, data_only: bool = False,
             shared_strings=shared_strings,
             rich_text=rich_text,
         )
+        _read_print_names(sheet, print_names.get(name, {}))
         sheet._meta_signature = _meta_signature(sheet)
         sheet._saved_print_settings = print_settings_for(sheet)
         workbook._sheets.append(sheet)

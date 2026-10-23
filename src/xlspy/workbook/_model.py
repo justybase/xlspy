@@ -18,6 +18,7 @@ from typing import Any
 from ..charts import Chart
 from ..comments import Comment
 from ..data_validation import DataValidation
+from ..formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT
 from ..formulas import Formula
 from ..hyperlinks import Hyperlink
 from ..images import Image
@@ -388,6 +389,7 @@ class Cell:
                 self._hyperlink = value
                 self._value = value.display_text
                 self._data_type = "s"
+                self._sheet._dirty_hyperlinks.add(self.coordinate)
             else:
                 self._hyperlink = None
                 self._value = value
@@ -396,6 +398,12 @@ class Cell:
             self.number_format = "h:mm:ss"
         elif isinstance(value, _datetime.timedelta) and self.number_format == "General":
             self.number_format = "[h]:mm:ss"
+        elif isinstance(value, _datetime.date) and self.number_format == "General":
+            # The writers' defaults; a General date would show its serial.
+            self.number_format = (
+                DEFAULT_DATETIME_FORMAT if isinstance(value, _datetime.datetime)
+                else DEFAULT_DATE_FORMAT
+            )
         self._mark_dirty()
 
     @property

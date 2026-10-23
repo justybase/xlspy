@@ -100,3 +100,20 @@ def test_options_reach_the_xml(tmp_path):
     assert "autoTitleDeleted" not in _chart(tmp_path, CHARTS["title_size"])
     doughnut = _chart(tmp_path, CHARTS["doughnut"])
     assert doughnut.count("<dPt>") == 3 and '<holeSize val="50"/>' in doughnut
+
+
+def test_rich_text_categories_are_cached_as_strings(tmp_path):
+    from xlspy import CellRichText, InlineFont, TextBlock
+
+    rows = [list(row) for row in ROWS]
+    for row in rows[1:]:
+        # Only rich text: a strRef must not be taken for numbers.
+        row[0] = CellRichText("Q", TextBlock(InlineFont(b=True), row[0][1:]))
+    path = tmp_path / "rich.xlsb"
+    with XlsbWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(rows, charts=[Chart("bar", TWO_SERIES)])
+    with zipfile.ZipFile(path) as archive:
+        xml = archive.read("xl/charts/chart1.xml").decode()
+    assert "<cat><strRef><f>'Data'!$A$2:$A$4</f><strCache>" in xml
+    assert '<pt idx="0"><v>Q1</v></pt>' in xml

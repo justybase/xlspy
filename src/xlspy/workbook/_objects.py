@@ -14,13 +14,14 @@ import io
 import posixpath
 import re
 import zipfile
+from dataclasses import fields
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
 from .._metadata import CT, MAIN, PKG_REL, REL, append_child, element_pattern, replace_element
 from .._xlsx_edit import _attributes, _bytes
 from ..refs import parse_cell_range
-from ._print import print_settings_for
+from ._print import PageMargins, print_settings_for
 
 _XDR = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
 _A = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -356,6 +357,119 @@ def _add_print_setup(sheet: _Sheet, donor: str, settings) -> None:
         _merge_header_footer(sheet, _donor_elements(donor, "headerFooter")[0])
 
 
+# PrintSettings fields kept as <pageSetup> attributes.
+_PAGE_SETUP_ATTRIBUTES = {
+    "orientation": "orientation",
+    "paper_size": "paperSize",
+    "scale": "scale",
+    "fit_to_width": "fitToWidth",
+    "fit_to_height": "fitToHeight",
+}
+
+
+def _print_value_set(settings, name: str) -> bool:
+    if settings is None:
+        return False
+    value = getattr(settings, name)
+    # fitToWidth="0" (automatic) is a value; False and "" are not.
+    return value is not None and value is not False and value != ""
+
+
+def _cleared_print_fields(saved, settings) -> set[str]:
+    """The print settings the file had when loaded and the sheet no longer has."""
+    if saved is None:
+        return set()
+    return {
+        item.name for item in fields(saved)
+        if _print_value_set(saved, item.name) and not _print_value_set(settings, item.name)
+    }
+
+
+def _without_attributes(tag: str, names) -> str:
+    for name in names:
+        tag = re.sub(rf"""\s{name}=(?:"[^"]*"|'[^']*')""", "", tag)
+    return tag
+
+
+def _drop_attributes(sheet: _Sheet, tag: str, names) -> None:
+    match = sheet.find(tag)
+    if match is None:
+        return
+    opening = re.match(r"<[^>]*?(?=/?>)", match[0])[0]
+    sheet.replace(match, _without_attributes(opening, names) + match[0][len(opening):])
+
+
+def _drop_fit_to_page(sheet: _Sheet) -> None:
+    setup = sheet.find("sheetPr")
+    if setup is None:
+        return
+    body = setup[0]
+    existing = re.search(rf"<{re.escape(sheet.prefix)}pageSetUpPr\b[^>]*?(?=/?>)", body)
+    if existing is None:
+        return
+    tag = _without_attributes(existing[0], ["fitToPage"])
+    sheet.replace(setup, body[:existing.start()] + tag + body[existing.end():])
+
+
+def _drop_print_names(package: _Package, sheet_index: int, names) -> None:
+    xml = package.get("xl/workbook.xml").decode("utf-8")
+
+    def drop(match):
+        attributes = _attributes(match[0])
+        keep = not (attributes.get("name") in names and attributes.get("localSheetId") == str(sheet_index))
+        return match[0] if keep else ""
+
+    edited = element_pattern("definedName").sub(drop, xml)
+    if edited == xml:
+        return
+    # An emptied <definedNames> goes too.
+    edited = re.sub(r"<([\w.-]+:)?definedNames\b[^>]*>\s*</\1?definedNames\s*>", "", edited)
+    edited = re.sub(r"<([\w.-]+:)?definedNames\b[^>]*/>", "", edited)
+    package.set("xl/workbook.xml", edited)
+
+
+def _clear_print_setup(package: _Package, sheet: _Sheet, sheet_index: int, cleared: set[str], settings) -> None:
+    """Remove the print settings the sheet had when loaded and no longer has."""
+    names = []
+    if "print_area" in cleared:
+        names.append("_xlnm.Print_Area")
+    if cleared & {"repeat_rows", "repeat_columns"} and not (
+        _print_value_set(settings, "repeat_rows") or _print_value_set(settings, "repeat_columns")
+    ):
+        names.append("_xlnm.Print_Titles")
+    if names:
+        _drop_print_names(package, sheet_index, names)
+    if "margins" in cleared:
+        host = sheet.find("pageMargins")
+        if host is not None:
+            margins = PageMargins()
+            text = "".join(
+                f' {item.name}="{getattr(margins, item.name)}"' for item in fields(PageMargins)
+            )
+            sheet.replace(host, f"<{sheet.prefix}pageMargins{text}/>")
+    attributes = [attribute for name, attribute in _PAGE_SETUP_ATTRIBUTES.items() if name in cleared]
+    if attributes:
+        _drop_attributes(sheet, "pageSetup", attributes)
+    if cleared & {"fit_to_width", "fit_to_height"}:
+        _drop_fit_to_page(sheet)
+    centered = [
+        attribute for name, attribute in (
+            ("center_horizontally", "horizontalCentered"), ("center_vertically", "verticalCentered"),
+        ) if name in cleared
+    ]
+    if centered:
+        _drop_attributes(sheet, "printOptions", centered)
+    match = sheet.find("headerFooter")
+    if match is not None:
+        body = match[0]
+        p = re.escape(sheet.prefix)
+        for name, tag in (("header", "oddHeader"), ("footer", "oddFooter")):
+            if name in cleared:
+                body = re.sub(rf"<{p}{tag}\b[^>]*?(?:/>|>.*?</{p}{tag}\s*>)", "", body, flags=re.S)
+        if body != match[0]:
+            sheet.replace(match, body)
+
+
 def _set_print_names(package: _Package, scratch: dict[str, bytes], sheet_index: int, settings) -> None:
     wanted = []
     if settings.print_area:
@@ -525,26 +639,31 @@ def add_objects(updater, workbook, sheet, sheet_order: list[str]) -> None:
     """Move the sheet's pending objects into the loaded package."""
     objects = pending_objects(sheet)
     settings = print_settings_for(sheet)
-    if not any(objects.values()) and settings is None:
+    cleared = _cleared_print_fields(getattr(sheet, "_saved_print_settings", None), settings)
+    if not any(objects.values()) and settings is None and not cleared:
         return
-    scratch = _scratch(sheet, objects, settings)
-    donor = scratch["xl/worksheets/sheet1.xml"].decode("utf-8")
-    donor_rels = _sheet_rels(scratch)
 
     package = _Package(updater)
     sheet_path = updater._sheets[sheet.title]
     host = _Sheet(package.get(sheet_path).decode("utf-8"))
     sheet_rels = package.rels(sheet_path)
+    sheet_index = sheet_order.index(sheet.title)
 
-    # Tables first: their name and range checks are the steps that can fail,
-    # and nothing outside this package (the style table) is changed yet.
-    _add_tables(package, host, sheet_path, sheet_rels, scratch, donor_rels)
-    _add_drawing(package, host, sheet_path, sheet_rels, scratch, donor_rels)
-    _add_validations(host, donor)
-    if settings is not None:
-        _add_print_setup(host, donor, settings)
-        _set_print_names(package, scratch, sheet_order.index(sheet.title), settings)
-    _add_conditional_formats(host, scratch, donor, workbook._styles)
+    if any(objects.values()) or settings is not None:
+        scratch = _scratch(sheet, objects, settings)
+        donor = scratch["xl/worksheets/sheet1.xml"].decode("utf-8")
+        donor_rels = _sheet_rels(scratch)
+        # Tables first: their name and range checks are the steps that can fail,
+        # and nothing outside this package (the style table) is changed yet.
+        _add_tables(package, host, sheet_path, sheet_rels, scratch, donor_rels)
+        _add_drawing(package, host, sheet_path, sheet_rels, scratch, donor_rels)
+        _add_validations(host, donor)
+        if settings is not None:
+            _add_print_setup(host, donor, settings)
+            _set_print_names(package, scratch, sheet_index, settings)
+        _add_conditional_formats(host, scratch, donor, workbook._styles)
+    if cleared:
+        _clear_print_setup(package, host, sheet_index, cleared, settings)
 
     package.set(sheet_path, host.xml)
     if len(sheet_rels):

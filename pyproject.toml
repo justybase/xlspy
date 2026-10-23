@@ -11,7 +11,7 @@ where = ["src"]
 
 [project]
 name = "xlspy"
-version = "0.9.1"
+version = "0.9.2"
 authors = [
   { name="Krzysztof Duśko"},
 ]

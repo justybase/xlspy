@@ -211,3 +211,38 @@ def test_extra_conditional_formatting_in_excel(tmp_path, open_workbook):
     assert sheet.Range("A9").DisplayFormat.Font.Bold and not sheet.Range("A3").DisplayFormat.Font.Bold
     assert sheet.Range("B3").DisplayFormat.Font.Bold and not sheet.Range("B4").DisplayFormat.Font.Bold
     assert sheet.Range("C2").DisplayFormat.Font.Bold and not sheet.Range("C3").DisplayFormat.Font.Bold
+
+
+@pytest.mark.parametrize("writer_cls,ext", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
+def test_styled_dates_in_excel(tmp_path, open_workbook, writer_cls, ext):
+    from xlspy import Style
+
+    day, moment = datetime.date(2024, 1, 2), datetime.datetime(2024, 1, 2, 3, 4)
+    bold = Style(bold=True)
+    path = tmp_path / f"dates.{ext}"
+    with writer_cls(path) as writer:
+        writer.add_sheet("S")
+        rows = [["day", "moment", "ranged"]] + [[(day, bold), (moment, bold), day] for _ in range(4)]
+        writer.write_sheet(rows, styles={"C2:C5": Style(italic=True)})
+    sheet = open_workbook(path).Worksheets("S")
+    for row in range(2, 6):
+        assert [sheet.Cells(row, col).Text for col in (1, 2, 3)] == ["2024-01-02", "2024-01-02 03:04", "2024-01-02"]
+    assert sheet.Range("A2").Font.Bold and sheet.Range("C2").Font.Italic
+
+
+def test_model_dates_with_a_font_in_excel(tmp_path, open_workbook):
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "S"
+    ws["A1"] = datetime.date(2024, 1, 2)
+    ws["A1"].font = Font(bold=True)
+    ws.column_dimensions["A"].width = 20
+    workbook.save(tmp_path / "new.xlsx")
+    loaded = load_workbook(tmp_path / "new.xlsx")
+    loaded["S"]["A2"] = datetime.datetime(2024, 1, 2, 3, 4)
+    loaded["S"]["A2"].font = Font(italic=True)
+    loaded.save(tmp_path / "loaded.xlsx")
+    loaded.close()
+    sheet = open_workbook(tmp_path / "loaded.xlsx").Worksheets("S")
+    assert sheet.Range("A1").Text == "2024-01-02" and sheet.Range("A1").Font.Bold
+    assert sheet.Range("A2").Text == "2024-01-02 03:04" and sheet.Range("A2").Font.Italic

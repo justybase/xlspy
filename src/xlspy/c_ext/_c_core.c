@@ -1007,6 +1007,7 @@ static int _write_text_cell(unsigned char **buf, size_t *buf_size, size_t *buf_c
 static int _is_fmt_tuple(PyObject *cell, int *out);
 static int _xlsx_fmt_xf(PyObject *cell, PyObject *fmt_xf, unsigned int *style,
                         PyObject **value);
+static int _date_style_xf(PyObject *cell, PyObject *fmt_xf, unsigned int *style);
 
 static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObject *ss_list,
                                        unsigned int *sst_uniq_io, unsigned int *sst_all_io,
@@ -1115,6 +1116,7 @@ static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObjec
                 }
             }
         }
+        int explicit_fmt = 0;  /* a (value, "format") cell keeps its format */
         if (cell && PyTuple_Check(cell))
         {
             /* (value, format): the xf the Python writer recorded in fmt_xf,
@@ -1123,6 +1125,7 @@ static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObjec
             _is_fmt_tuple(cell, &fmt);
             if (fmt)
             {
+                explicit_fmt = (fmt == 1);
                 PyObject *value = NULL;
                 int xf_rc = PyTuple_CheckExact(cell)
                     ? _xlsx_fmt_xf(cell, fmt_xf, &cell_style, &value) : 0;
@@ -1132,6 +1135,12 @@ static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObjec
                 Py_DECREF(value);
                 cell = value;
             }
+        }
+        {
+            int date_rc = (cell && !explicit_fmt)
+                ? _date_style_xf(cell, fmt_xf, &cell_style) : 1;
+            if (date_rc < 0) { err = 1; break; }
+            if (date_rc == 0) { PyMem_Free(buf); Py_RETURN_NONE; }
         }
         if (!cell || cell == Py_None)
         {
@@ -1679,6 +1688,28 @@ static int _xlsx_fmt_xf(PyObject *cell, PyObject *fmt_xf, unsigned int *style,
     return 1;
 }
 
+/* Resolve the xf of a styled date or datetime cell through fmt_xf (1 ok,
+   0 row fallback, -1 error). A style without a number format needs a
+   variant with the default date format; the Python writer registers it and
+   records it under ("date" | "datetime", style xf). Other cells, and
+   unstyled dates (the built-in date xfs), are left as they are. */
+static int _date_style_xf(PyObject *cell, PyObject *fmt_xf, unsigned int *style)
+{
+    if (!*style) return 1;
+    if (!PyDate_Check(cell)) return 1;  /* datetime is a date subclass */
+    int is_dt = PyDateTime_Check(cell);
+    if (fmt_xf == Py_None) return 0;
+    PyObject *key = Py_BuildValue("(sI)", is_dt ? "datetime" : "date", *style);
+    if (!key) return -1;
+    PyObject *xf = PyDict_GetItemWithError(fmt_xf, key);  /* borrowed */
+    Py_DECREF(key);
+    if (!xf) return PyErr_Occurred() ? -1 : 0;
+    unsigned long xf_value = PyLong_AsUnsignedLong(xf);
+    if (PyErr_Occurred()) return -1;
+    *style = (unsigned int)xf_value;
+    return 1;
+}
+
 /* Encode one cell (1 ok, 0 row fallback, -1 OOM). */
 static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header,
                       unsigned int style_id, int use_sst,
@@ -1973,6 +2004,7 @@ static PyObject *C_encode_xlsx_row(PyObject *self, PyObject *args)
             }
         }
         PyObject *value = NULL;  /* owned: the value of a (value, format) cell */
+        int explicit_fmt = 0;    /* a (value, "format") cell keeps its format */
         if (cell != Py_None)
         {
             int fmt = 0;
@@ -1984,6 +2016,7 @@ static PyObject *C_encode_xlsx_row(PyObject *self, PyObject *args)
                    Python path writes the row and records it. */
                 int xf_rc = fmt ? _xlsx_fmt_xf(cell, fmt_xf, &cell_style, &value) : 1;
                 if (xf_rc < 0) goto oom;
+                explicit_fmt = (fmt == 1);
                 if (xf_rc == 0)
                 {
                     Py_DECREF(seq);
@@ -1993,7 +2026,9 @@ static PyObject *C_encode_xlsx_row(PyObject *self, PyObject *args)
                 }
             }
         }
-        int rc = _xlsx_cell(&b, value ? value : cell, row_idx == 0, cell_style,
+        int rc = explicit_fmt ? 1 : _date_style_xf(value ? value : cell, fmt_xf, &cell_style);
+        if (rc > 0)
+            rc = _xlsx_cell(&b, value ? value : cell, row_idx == 0, cell_style,
                             use_sst, ss_dict, ss_list, &sst_uniq, &sst_all);
         Py_XDECREF(value);
         if (rc == 0)

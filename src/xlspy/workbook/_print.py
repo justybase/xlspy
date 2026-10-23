@@ -77,6 +77,27 @@ class HeaderFooterItem:
         ]
         return "".join(parts) or None
 
+    def load_code(self, code: str | None) -> None:
+        """Split a header code such as ``&LTitle&RPage &P`` into the parts;
+        text before any ``&L``/``&C``/``&R`` is centred, as in Excel."""
+        texts = {"L": [], "C": [], "R": []}
+        current = "C"
+        index = 0
+        code = code or ""
+        while index < len(code):
+            if code[index] == "&" and index + 1 < len(code):
+                if code[index + 1] in texts:
+                    current = code[index + 1]
+                else:
+                    # Other codes (&P, &&, &"Font") stay in the part's text.
+                    texts[current].append(code[index:index + 2])
+                index += 2
+                continue
+            texts[current].append(code[index])
+            index += 1
+        for tag, part in (("L", self.left), ("C", self.center), ("R", self.right)):
+            part.text = "".join(texts[tag]) or None
+
 
 class HeaderFooter:
     """``ws.HeaderFooter``: the odd-page header and footer (used on every page)."""

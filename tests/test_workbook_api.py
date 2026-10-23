@@ -466,15 +466,6 @@ def test_unsupported_workbook_model_paths(tmp_path):
     with pytest.raises(NotImplementedError, match="named styles"):
         workbook.active["A1"].style = "Title"
 
-    source = _make_openpyxl_source(tmp_path / "source.xlsx")
-    workbook = load_workbook(source)
-    try:
-        workbook["Data"]["H2"].hyperlink = Hyperlink("https://example.com/x")
-        with pytest.raises(NotImplementedError, match="hyperlinks"):
-            workbook.save(tmp_path / "hyperlinks.xlsx")
-    finally:
-        workbook.close()
-
 
 def test_fast_path_modules_do_not_import_workbook_model():
     root = Path(__file__).resolve().parent.parent / "src"

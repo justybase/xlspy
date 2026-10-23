@@ -175,9 +175,16 @@ def _font_from_rpr(rpr) -> InlineFont:
         if name in ("b", "i", "strike", "outline", "shadow", "condense", "extend"):
             values[name] = val is None or val.lower() not in {"0", "false"}
         elif name == "u":
-            values["u"] = val or "single"
+            # val="none" (written by some producers) means no underline;
+            # other values InlineFont does not know are left out too, so
+            # loading a file never fails on a run's font.
+            underline = val or "single"
+            if underline in _UNDERLINES:
+                values["u"] = underline
         elif name == "sz" and val:
-            values["sz"] = float(val)
+            size = float(val)
+            if 1 <= size <= 409:
+                values["sz"] = size
         elif name == "rFont" and val:
             values["rFont"] = val
         elif name == "vertAlign" and val in _VERT_ALIGNS:

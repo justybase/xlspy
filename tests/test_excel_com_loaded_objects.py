@@ -105,3 +105,65 @@ def test_objects_added_to_a_loaded_excel_file_in_excel(tmp_path, excel, open_wor
     assert 4 in kinds  # xlDatabar
     assert sheet.Range("A2").Validation.Formula1 == "North,South,East"
     assert sheet.ChartObjects(1).Chart.ChartType == XL_CHART_TYPE_LINE
+
+
+def _names(sheet):
+    return {sheet.Names(i).Name.split("!")[-1] for i in range(1, sheet.Names.Count + 1)}
+
+
+def test_cleared_print_names_in_excel(tmp_path, open_workbook):
+    """Checked through the sheet's names only: PageSetup needs a printer."""
+    from test_model_loaded_objects import _printed_source
+
+    workbook = load_workbook(_printed_source(tmp_path / "print.xlsx"))
+    try:
+        ws = workbook["Data"]
+        ws.print_area = None
+        ws.page_margins.left = 0.7
+        ws.oddFooter.center.text = None
+        workbook.save(tmp_path / "area.xlsx")
+        ws.print_title_rows = None
+        workbook.save(tmp_path / "titles.xlsx")
+    finally:
+        workbook.close()
+    sheet = open_workbook(tmp_path / "area.xlsx").Worksheets("Data")
+    assert "Print_Area" not in _names(sheet)
+    assert sheet.Names("Print_Titles").RefersTo == "=Data!$1:$1"
+    assert sheet.Range("B2").Value == 2
+    sheet = open_workbook(tmp_path / "titles.xlsx").Worksheets("Data")
+    assert not {"Print_Area", "Print_Titles"} & _names(sheet)
+
+
+def _excel_links(sheet):
+    links = sheet.Hyperlinks
+    return {
+        links(i).Range.Address.replace("$", ""): (links(i).Address or "#" + links(i).SubAddress)
+        for i in range(1, links.Count + 1)
+    }
+
+
+def test_moved_and_edited_hyperlinks_in_excel(tmp_path, open_workbook):
+    from xlspy import Hyperlink
+    from test_model_loaded_objects import _linked_source
+
+    workbook = load_workbook(_linked_source(tmp_path / "links.xlsx"))
+    try:
+        ws = workbook["Data"]
+        ws.insert_rows(2)
+        ws.move_range("B13", rows=1, cols=1)
+        ws["A1"].hyperlink = Hyperlink("https://example.com/new", tooltip="New")
+        ws["B4"].hyperlink = None
+        workbook.create_sheet("Added")["A1"] = Hyperlink("#Data!A1", text="Back")
+        workbook.save(tmp_path / "out.xlsx")
+    finally:
+        workbook.close()
+    book = open_workbook(tmp_path / "out.xlsx")
+    sheet = book.Worksheets("Data")
+    assert _excel_links(sheet) == {
+        "A1": "https://example.com/new",
+        "A11": "https://example.com/a",
+        "C14": "https://example.com/b",
+    }
+    assert sheet.Range("A11").Value == "A link" and sheet.Range("C14").Value == "https://example.com/b"
+    assert sheet.Range("A1").Hyperlinks(1).ScreenTip == "New"
+    assert _excel_links(book.Worksheets("Added")) == {"A1": "#Data!A1"}

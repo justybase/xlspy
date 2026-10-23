@@ -1,6 +1,7 @@
 """openpyxl-style scripts on the workbook model: objects, printing, zoom,
 row/column moves, rich text and the extra conditional formatting rules."""
 
+import datetime
 import io
 import re
 import struct
@@ -16,7 +17,7 @@ from xlspy import (
     AboveAverageRule, BlanksRule, CellIsRule, CellRichText, Chart, ChartSeries, ExcelReader,
     DataValidation, DifferentialStyle, DuplicateRule, ExcelTable, Font, Image,
     InlineFont, TextBlock, TextRule, TimePeriodRule, TopBottomRule, Workbook,
-    XlsbWriter, XlsxWriter, load_workbook,
+    Style, XlsbWriter, XlsxWriter, load_workbook,
 )
 from xlspy.workbook._shift import translate_formula
 
@@ -280,6 +281,42 @@ def test_rich_text_in_the_model_and_loaded_files(tmp_path):
     assert edited["B2"].value[1].font.b
 
 
+@pytest.mark.parametrize("shared", [True, False])
+def test_rich_text_escapes_are_written_once(tmp_path, shared):
+    """Runs already hold their _xHHHH_ escapes; the shared-string table must
+    not escape them again."""
+    rich = CellRichText("a\rb_x0041_", TextBlock(InlineFont(b=True), "c\x01"))
+    path = tmp_path / "escaped.xlsx"
+    with XlsxWriter(path, useSharedStrings=shared) as writer:
+        writer.add_sheet("S")
+        writer.write_sheet([["head"], [rich], ["d\re"]])
+    loaded = load_workbook(path, rich_text=True)
+    assert str(loaded["S"]["A2"].value) == "a\rb_x0041_c\x01"
+    assert loaded["S"]["A3"].value == "d\re"
+    loaded.close()
+
+
+def test_rich_text_run_with_underline_none_loads(tmp_path):
+    """Fonts other producers write (u val="none", an out-of-range size) must
+    not make loading fail."""
+    source = tmp_path / "source.xlsx"
+    with XlsxWriter(source) as writer:
+        writer.add_sheet("S")
+        writer.write_sheet([[RICH]])
+    path = tmp_path / "underline_none.xlsx"
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(path, "w") as archive:
+        for name in original.namelist():
+            data = original.read(name)
+            if name == "xl/sharedStrings.xml":
+                data = data.replace(b"<b/>", b'<b/><u val="none"/>')
+                data = data.replace(b'<sz val="14"/>', b'<sz val="0.5"/>')
+            archive.writestr(name, data)
+    loaded = load_workbook(path, rich_text=True)
+    block = loaded["S"]["A1"].value[1]
+    assert block.font.b and block.font.u is None and block.font.sz is None
+    loaded.close()
+
+
 def test_rich_text_validation_and_xlsb(tmp_path):
     with pytest.raises(TypeError):
         CellRichText("a", 3)
@@ -355,3 +392,52 @@ def test_table_header_cells_may_carry_a_style(tmp_path, writer_cls, ext):
     with writer_cls(tmp_path / f"t.{ext}") as writer:
         writer.add_sheet("S")
         writer.write_sheet(rows, tables=[ExcelTable(display_name="T", ref="A1:B2")])
+
+
+@pytest.mark.parametrize("writer_cls, ext", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
+def test_styled_dates_keep_a_date_format(tmp_path, writer_cls, ext):
+    """A date in a styled cell (range style or (value, Style)) without its
+    own number format gets the default date format, not General."""
+    day, moment = datetime.date(2024, 1, 2), datetime.datetime(2024, 1, 2, 3, 4)
+    bold = Style(bold=True)
+    path = tmp_path / f"dates.{ext}"
+    with writer_cls(path) as writer:
+        writer.add_sheet("S")
+        rows = [["day", "moment", "ranged"]]
+        # Several rows: the C encoder takes over once the xfs are recorded.
+        rows += [[(day, bold), (moment, bold), day] for _ in range(5)]
+        rows += [[(day, Style(bold=True, number_format="0.00")), (day, "dd/mm/yyyy"), moment]]
+        writer.write_sheet(rows, styles={"C2:C7": Style(italic=True)})
+    with ExcelReader(str(path)) as reader:
+        values = reader.read_all("S")
+    for row in values[1:6]:
+        assert row == [datetime.datetime(2024, 1, 2), moment, datetime.datetime(2024, 1, 2)]
+    # An explicit number format still wins.
+    assert values[6][0] == 45293
+    assert values[6][1:] == [datetime.datetime(2024, 1, 2), moment]
+    if ext == "xlsx":
+        sheet = openpyxl.load_workbook(path)["S"]
+        assert [cell.number_format for cell in sheet[2]] == ["yyyy-mm-dd", "yyyy-mm-dd hh:mm", "yyyy-mm-dd"]
+        assert sheet["A2"].font.b and sheet["C2"].font.i
+
+
+def test_model_dates_with_a_font_keep_a_date_format(tmp_path):
+    workbook = Workbook()
+    ws = workbook.active
+    ws["A1"] = "head"
+    ws["A2"] = datetime.date(2024, 1, 2)
+    ws["A2"].font = Font(bold=True)
+    ws["A3"] = datetime.datetime(2024, 1, 2, 3, 4)
+    assert ws["A2"].number_format == "yyyy-mm-dd"
+    workbook.save(tmp_path / "new.xlsx")
+    loaded = load_workbook(tmp_path / "new.xlsx")
+    loaded.active["B2"] = datetime.date(2024, 5, 6)
+    loaded.active["B2"].font = Font(italic=True)
+    loaded.save(tmp_path / "loaded.xlsx")
+    loaded.close()
+    for name in ("new.xlsx", "loaded.xlsx"):
+        sheet = openpyxl.load_workbook(tmp_path / name).active
+        assert sheet["A2"].number_format == "yyyy-mm-dd" and sheet["A2"].font.b
+        assert sheet["A3"].number_format == "yyyy-mm-dd hh:mm"
+    sheet = openpyxl.load_workbook(tmp_path / "loaded.xlsx").active
+    assert sheet["B2"].number_format == "yyyy-mm-dd" and sheet["B2"].font.i

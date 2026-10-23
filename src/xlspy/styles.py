@@ -1615,6 +1615,28 @@ def _record_cell_xf(fmt_xf: dict, keep: list, base_xf, overlay, xf_index: int) -
             keep.append(overlay)
 
 
+def _date_cell_xf(fmt_xf: dict, xf_styles: dict, register_style, xf_index: int,
+                  date_format: str, is_datetime: bool) -> int:
+    """XF for a date cell whose style is ``xf_index``.
+
+    A style with no number format gets ``date_format`` on top, so Excel does
+    not show the serial number. The result is recorded in ``fmt_xf`` under
+    ``("date" | "datetime", xf_index)`` for the C row encoders. ``xf_styles``
+    maps registered style xfs to their ``Style``; other xfs (format-only
+    ones) already carry a number format and are kept.
+    """
+    key = ("datetime" if is_datetime else "date", xf_index)
+    cached = fmt_xf.get(key)
+    if cached is not None:
+        return cached
+    style = xf_styles.get(xf_index)
+    result = xf_index
+    if style is not None and style.number_format is None:
+        result = register_style(replace(style, number_format=date_format))
+    fmt_xf[key] = result
+    return result
+
+
 def _style_ids_for_row(row_styles, row_length: int, register_style, cache: dict):
     """Convert a shared row-style map once per distinct row-style pattern."""
     if not row_styles:

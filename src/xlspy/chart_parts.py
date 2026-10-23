@@ -188,12 +188,16 @@ def _cached_value(raw):
     from .formats import _unwrap_cell
     from .formulas import Formula
     from .hyperlinks import Hyperlink
+    from .rich_text import CellRichText
 
     value = _unwrap_cell(raw)
     if isinstance(value, Formula):
         return value.value
     if isinstance(value, Hyperlink):
         return value.display_text
+    if isinstance(value, CellRichText):
+        # Rich text is text: a strRef point, never a numCache value.
+        return str(value)
     return value
 
 
