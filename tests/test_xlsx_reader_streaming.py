@@ -19,6 +19,19 @@ def test_ragged_rows_do_not_lose_cells(tmp_path):
         assert reader.read_all("Sheet1") == [[], [1, 2, 3], [4]]
 
 
+def test_absent_rows_keep_their_positions(tmp_path):
+    path = tmp_path / "gaps.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.write_sheet([[1]])
+    xml = (b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+           b'<row r="2"><c r="A2"><v>1</v></c><c r="B2"><v>2</v></c></row>'
+           b'<row r="4"><c r="A4"><v>3</v></c></row>'
+           b'</sheetData></worksheet>')
+    replace_parts(path, {"xl/worksheets/sheet1.xml": xml})
+    with ExcelReader(str(path)) as reader:
+        assert reader.read_all("Sheet1") == [[], [1, 2], [None, None], [3, None]]
+
+
 def test_short_rows_keep_historical_padding(tmp_path):
     path = tmp_path / "padding.xlsx"
     with XlsxWriter(path) as writer:

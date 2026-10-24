@@ -4,6 +4,7 @@ HAVE_C_EXT = False
 _c_encode_xlsb_row = None
 _c_calc_column_widths = None
 _c_read_xlsb_worksheet = None
+_c_read_xlsx_worksheet = None
 _c_row_has_formatted = None
 _c_encode_xlsb_sst = None
 _c_read_sst = None
@@ -37,6 +38,10 @@ if _os.environ.get('XLSPY_DISABLE_C_EXT', '0') != '1':
         from xlspy._c_core import set_style_type as _c_set_style_type
     except ImportError:
         _c_set_style_type = None
+    try:
+        from xlspy._c_core import read_xlsx_worksheet as _c_read_xlsx_worksheet
+    except ImportError:
+        _c_read_xlsx_worksheet = None
     if _c_set_style_type is not None:
         # (value, Style) cells: the C encoders and width scan recognise them.
         from xlspy.styles import Style as _Style
@@ -83,6 +88,17 @@ def read_xlsb_worksheet(data, shared_strings, styles_list, date_num_fmts, date_1
     if HAVE_C_EXT:
         return _c_read_xlsb_worksheet(
             data, shared_strings, styles_list, date_num_fmts, date_1904
+        )
+    return None
+
+
+def read_xlsx_worksheet(stream, head, shared_strings, is_date_style, date_1904=False):
+    """Row iterator over an XLSX worksheet stream, or None to use the Python
+    fast path.  Items are ``(row_number, cells)``; a ``bytes`` item is a row
+    the caller must parse with ElementTree (then call ``rows.resume(n)``)."""
+    if _c_read_xlsx_worksheet is not None:
+        return _c_read_xlsx_worksheet(
+            stream, head, shared_strings, is_date_style, date_1904
         )
     return None
 

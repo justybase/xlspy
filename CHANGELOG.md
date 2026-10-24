@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- XLSX `get_rows()` / `read_all()` with the default `data_only=True` read sheets with a
+  fast path over the raw XML: 3.9 s → 2.1 s on a 50,000 × 20 sheet from the Python regex
+  reader, and 0.45 s with the optional C extension (`read_xlsx_worksheet`), which scans
+  the worksheet stream in bounded chunks. Rows the fast path cannot read exactly (rich
+  inline strings, entities in `str` cells, unusual markup) and sheets with prefixed tags
+  are read by the ElementTree path as before, so results are unchanged. Formula reads
+  (`data_only=False`) are unchanged, and without the extension nothing changes.
+
+### Fixed
+
+- XLSX `get_rows()` / `read_all()` keep worksheet row positions: rows absent from
+  the XML between present rows are now yielded as empty rows. Previously every
+  later row shifted up. Rows before the first row present in the XML are `[]`,
+  and rows after it are padded to the width of the first present row, as before.
+
 ## [0.9.2] - 2026-10-23
 
 ### Added

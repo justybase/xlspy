@@ -310,7 +310,7 @@ def test_strict_open_xml_reading(tmp_path, excel):
         assert reader.get_sheet_names() == ["Data"]
         rows = reader.read_all("Data")
         assert rows[0] == ["name", 2.5, 5, datetime.datetime(2024, 3, 5)]
-        assert rows[1][1] == 7
+        assert rows[3][1] == 7  # B4: rows 2-3 are absent from the XML but still occupy positions
         assert reader.read_all("Data", data_only=False)[0][2] == "=B1*2"
         assert reader.get_comments("Data")["A1"].text == "strict note"
         assert reader.get_defined_names() == [DefinedName("Amount", "Data!$B$1")]

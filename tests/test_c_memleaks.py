@@ -15,13 +15,16 @@ a per-call result (tens of KB-MBs) trips them within seconds.
 """
 import datetime
 import gc
+import io
 import tracemalloc
 import zipfile
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
-from xlspy import ExcelReader, XlsbWriter
+from xlspy import ExcelReader, XlsbWriter, XlsxWriter
+from xlspy import _xlsx_read
 from xlspy._accel import (
     HAVE_C_EXT,
     calc_column_widths,
@@ -30,6 +33,7 @@ from xlspy._accel import (
     encode_xlsx_row,
     read_xlsb_shared_strings,
     read_xlsb_worksheet,
+    read_xlsx_worksheet,
     xlsb_row_has_formatted,
 )
 
@@ -40,6 +44,17 @@ SHEET_BLOB = None
 SHARED = None
 STYLES = None
 DATE_FMTS = None
+XLSX_HEAD = None
+XLSX_REST = None
+XLSX_SHARED = None
+XLSX_FLAGS = None
+_XLSX_ROOT = ('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">')
+_XLSX_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+
+
+def _xlsx_stub():
+    return SimpleNamespace(_shared_string_array=[], _styles_cell_xfs_array=[],
+                           _number_formats_type_dict={}, _date_1904=False)
 
 
 def _mixed_row(i):
@@ -72,6 +87,25 @@ def workbook_parts(tmp_path_factory):
         STYLES = list(r._styles_cell_xfs_array)
         from xlspy.reader import _get_date_num_fmt_ids
         DATE_FMTS = set(_get_date_num_fmt_ids(r._number_formats_type_dict))
+    return path
+
+
+@pytest.fixture(scope="module")
+def xlsx_parts(tmp_path_factory):
+    """A real .xlsx plus the bytes and tables the C scanner takes."""
+    global XLSX_HEAD, XLSX_REST, XLSX_SHARED, XLSX_FLAGS
+    path = str(tmp_path_factory.mktemp("memleak-xlsx") / "leak.xlsx")
+    with XlsxWriter(path) as w:
+        w.write_sheet([_mixed_row(i) for i in range(2000)])
+    with zipfile.ZipFile(path) as zf:
+        blob = zf.read("xl/worksheets/sheet1.xml")
+    stream = io.BytesIO(blob)
+    probe = _xlsx_read._probe_fast(stream)
+    XLSX_HEAD = probe[4]
+    XLSX_REST = blob[stream.tell():]
+    with ExcelReader(path) as r:
+        XLSX_SHARED = list(r._shared_string_array)
+        XLSX_FLAGS = _xlsx_read._date_style_flags(r)
     return path
 
 
@@ -394,6 +428,52 @@ def test_encoders_with_format_ids_fall_back_cleanly():
     run()
     assert_no_tracemalloc_growth(run, iters=100, allowance_kb=256.0)
     assert_no_gc_growth(run, iters=100, allowance=10)
+
+
+@needs_c_ext
+def test_xlsx_worksheet_iterator_no_growth(xlsx_parts):
+    def run():
+        rows = read_xlsx_worksheet(io.BytesIO(XLSX_REST), XLSX_HEAD, XLSX_SHARED, XLSX_FLAGS)
+        assert sum(1 for _row in rows) == 2000
+
+    run()
+    assert_no_rss_growth(run, iters=25, allowance_mb=6.0)
+    assert_no_tracemalloc_growth(run, iters=25, allowance_kb=512.0)
+
+
+@needs_c_ext
+def test_xlsx_worksheet_iterator_abandoned_no_growth(xlsx_parts):
+    def run():
+        rows = read_xlsx_worksheet(io.BytesIO(XLSX_REST), XLSX_HEAD, XLSX_SHARED, XLSX_FLAGS)
+        next(rows)
+
+    assert_no_tracemalloc_growth(run, iters=200, allowance_kb=512.0)
+
+
+@needs_c_ext
+def test_xlsx_fallback_rows_no_growth():
+    head = (b'<row r="1"><c r="A1" t="inlineStr"><is><r><t>a</t></r></is></c></row>'
+            b'<row r="2"><c r="A2" t="str"><v>a &amp; b</v></c></row>')
+
+    def run():
+        rows = read_xlsx_worksheet(io.BytesIO(b""), head, [], [])
+        got = list(_xlsx_read._c_rows(_xlsx_stub(), rows, _XLSX_ROOT, _XLSX_NS))
+        assert got == [(1, [(0, "a")]), (2, [(0, "a & b")])]
+
+    run()
+    assert_no_tracemalloc_growth(run, iters=100, allowance_kb=256.0)
+    assert_no_gc_growth(run, iters=100, allowance=10)
+
+
+@needs_c_ext
+def test_xlsx_iterator_error_path_no_growth():
+    def run():
+        rows = read_xlsx_worksheet(
+            io.BytesIO(b""), b'<row r="1"><c r="A1"><v>abc</v></c></row>', [], [])
+        with pytest.raises(ValueError):
+            list(rows)
+
+    assert_no_tracemalloc_growth(run, iters=100, allowance_kb=256.0)
 
 
 @needs_c_ext

@@ -2,6 +2,7 @@
 #include <Python.h>
 #include <structmember.h>
 #include <datetime.h>
+#include <limits.h>
 #include <math.h>
 #include <pystrtod.h>
 
@@ -2587,12 +2588,1140 @@ static PyObject *C_read_xlsb_worksheet(PyObject *self_mod, PyObject *args)
     return (PyObject *)reader;
 }
 
+/* ===== Streaming XLSX worksheet scanner (iterator type) =====
+
+   Mirrors `_xlsx_read._fast_row` over the raw worksheet part.  The part is
+   read in bounded chunks, so peak memory stays at the regex path's level.
+   A row the scanner cannot reproduce exactly is returned as its raw bytes
+   (`<row ...>...</row>`): the caller parses it with ElementTree and then
+   calls resume(row_number), because ElementTree derives the number with
+   int(r), which differs from the scanner's ` r="(\d+)"` rule for inputs
+   such as r="12 ".  Rows are (row_number, [(column, value), ...]) with
+   1-based rows and 0-based columns, like the Python fast path. */
+
+#define _XLSX_CHUNK (1 << 18)
+
+typedef struct {
+    PyObject_HEAD
+    PyObject *stream;
+    PyObject *shared_strings;
+    Py_ssize_t ss_len;
+    unsigned char *is_date_style;
+    Py_ssize_t style_len;
+    int date_1904;
+    /* Column letters already seen, as in _FastSheet.columns: refs whose
+       letters were cached are accepted without re-validating the digits. */
+    long *columns;
+
+    char *buf;
+    Py_ssize_t len;
+    Py_ssize_t cap;
+    Py_ssize_t pos;        /* first byte not yet scanned */
+    Py_ssize_t validated;  /* bytes known to be valid UTF-8 */
+    int eof;
+    int done;
+    long next_row;
+    int next_row_valid;
+} XlsxReader;
+
+static Py_ssize_t _xr_find(const char *hay, Py_ssize_t hlen, const char *needle,
+                           Py_ssize_t nlen, Py_ssize_t from)
+{
+    if (nlen <= 0 || from < 0 || from > hlen - nlen) return -1;
+    const char *p = hay + from;
+    const char *end = hay + hlen - nlen;
+    while (p <= end)
+    {
+        p = (const char *)memchr(p, needle[0], (size_t)(end - p + 1));
+        if (!p) return -1;
+        if (memcmp(p, needle, (size_t)nlen) == 0) return p - hay;
+        p++;
+    }
+    return -1;
+}
+
+/* Word and space classes of the Python patterns: `\w` and `\s` are Unicode
+   there, so non-ASCII bytes never count as word bytes here; a cell that
+   needs one falls back and lets ElementTree read it. */
+static int _xr_word_byte(unsigned char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+}
+
+static int _xr_space_byte(unsigned char c)
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
+static int _xr_hex_value(unsigned char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return c - 'a' + 10;
+}
+
+static PyObject *_xr_str(const char *p, Py_ssize_t n)
+{
+    return PyUnicode_DecodeUTF8(p, n, NULL);
+}
+
+/* xlspy._text.xstring_unescape: every `_xHHHH_` becomes that code point. */
+static PyObject *_xr_unescape(const char *p, Py_ssize_t n)
+{
+    if (_xr_find(p, n, "_x", 2, 0) < 0) return _xr_str(p, n);
+
+    _XBuf b = {NULL, 0, 0};
+    Py_ssize_t i = 0, run = 0;
+    while (i + 7 <= n)
+    {
+        if (p[i] == '_' && p[i + 1] == 'x' &&
+            _is_hex_byte((unsigned char)p[i + 2]) && _is_hex_byte((unsigned char)p[i + 3]) &&
+            _is_hex_byte((unsigned char)p[i + 4]) && _is_hex_byte((unsigned char)p[i + 5]) &&
+            p[i + 6] == '_')
+        {
+            unsigned int cp =
+                ((unsigned int)_xr_hex_value((unsigned char)p[i + 2]) << 12) |
+                ((unsigned int)_xr_hex_value((unsigned char)p[i + 3]) << 8) |
+                ((unsigned int)_xr_hex_value((unsigned char)p[i + 4]) << 4) |
+                (unsigned int)_xr_hex_value((unsigned char)p[i + 5]);
+            unsigned char enc[3];
+            int elen;
+            if (cp < 0x80) { enc[0] = (unsigned char)cp; elen = 1; }
+            else if (cp < 0x800)
+            {
+                enc[0] = (unsigned char)(0xC0 | (cp >> 6));
+                enc[1] = (unsigned char)(0x80 | (cp & 0x3F));
+                elen = 2;
+            }
+            else
+            {
+                enc[0] = (unsigned char)(0xE0 | (cp >> 12));
+                enc[1] = (unsigned char)(0x80 | ((cp >> 6) & 0x3F));
+                enc[2] = (unsigned char)(0x80 | (cp & 0x3F));
+                elen = 3;
+            }
+            if (!_xbuf_put(&b, p + run, (size_t)(i - run)) ||
+                !_xbuf_put(&b, enc, (size_t)elen))
+            {
+                PyMem_Free(b.data);
+                PyErr_NoMemory();
+                return NULL;
+            }
+            i += 7;
+            run = i;
+        }
+        else i++;
+    }
+    if (!_xbuf_put(&b, p + run, (size_t)(n - run)))
+    {
+        PyMem_Free(b.data);
+        PyErr_NoMemory();
+        return NULL;
+    }
+    PyObject *out = b.size
+        ? PyUnicode_DecodeUTF8((const char *)b.data, (Py_ssize_t)b.size, "surrogatepass")
+        : PyUnicode_FromStringAndSize("", 0);
+    PyMem_Free(b.data);
+    return out;
+}
+
+/* `_xr_plain_float`: [+-]? (digits [. digits?] | . digits) ([eE] [+-]? digits)? */
+static int _xr_plain_float(const char *p, Py_ssize_t n)
+{
+    Py_ssize_t i = 0, digits = 0;
+    if (i < n && (p[i] == '-' || p[i] == '+')) i++;
+    while (i < n && p[i] >= '0' && p[i] <= '9') { i++; digits++; }
+    if (i < n && p[i] == '.')
+    {
+        i++;
+        while (i < n && p[i] >= '0' && p[i] <= '9') { i++; digits++; }
+    }
+    if (digits == 0) return 0;
+    if (i < n && (p[i] == 'e' || p[i] == 'E'))
+    {
+        Py_ssize_t exp_digits = 0;
+        i++;
+        if (i < n && (p[i] == '-' || p[i] == '+')) i++;
+        while (i < n && p[i] >= '0' && p[i] <= '9') { i++; exp_digits++; }
+        if (exp_digits == 0) return 0;
+    }
+    return i == n;
+}
+
+/* int(text): plain values from a small integer; anything else (spaces,
+   underscores, huge numbers) goes through int() itself. */
+static PyObject *_xr_int(const char *p, Py_ssize_t n)
+{
+    Py_ssize_t i = 0, digits = 0;
+    int neg = 0;
+    if (i < n && p[i] == '-') { neg = 1; i++; }
+    Py_ssize_t start = i;
+    while (i < n && p[i] >= '0' && p[i] <= '9') { i++; digits++; }
+    if (i == n && digits > 0 && digits <= 18)
+    {
+        unsigned long long value = 0;
+        for (Py_ssize_t k = start; k < n; k++)
+            value = value * 10 + (unsigned long long)(p[k] - '0');
+        return PyLong_FromLongLong(neg ? -(long long)value : (long long)value);
+    }
+    PyObject *text = _xr_str(p, n);
+    if (!text) return NULL;
+    PyObject *out = PyLong_FromUnicodeObject(text, 10);
+    Py_DECREF(text);
+    return out;
+}
+
+/* float(text): plain decimal text is converted by the same routine float()
+   uses; the rest goes through float() so nan/inf/underscores/whitespace and
+   error messages stay identical. */
+static PyObject *_xr_float(const char *p, Py_ssize_t n)
+{
+    if (_xr_plain_float(p, n))
+    {
+        char stack[64];
+        char *buf = stack;
+        if ((size_t)n + 1 > sizeof(stack))
+        {
+            buf = (char *)PyMem_Malloc((size_t)n + 1);
+            if (!buf) return PyErr_NoMemory();
+        }
+        memcpy(buf, p, (size_t)n);
+        buf[n] = '\0';
+        char *end = NULL;
+        double value = PyOS_string_to_double(buf, &end, NULL);
+        int ok = (end == buf + n) && !PyErr_Occurred();
+        if (ok)
+        {
+            PyObject *out = PyFloat_FromDouble(value);
+            if (buf != stack) PyMem_Free(buf);
+            return out;
+        }
+        PyErr_Clear();
+        if (buf != stack) PyMem_Free(buf);
+    }
+    PyObject *text = _xr_str(p, n);
+    if (!text) return NULL;
+    PyObject *out = PyFloat_FromString(text);
+    Py_DECREF(text);
+    return out;
+}
+
+static PyObject *_xr_number(const char *p, Py_ssize_t n)
+{
+    if (memchr(p, '.', (size_t)n) || memchr(p, 'e', (size_t)n) ||
+        memchr(p, 'E', (size_t)n))
+        return _xr_float(p, n);
+    return _xr_int(p, n);
+}
+
+/* 1 = a date style, 0 = not a date style, -1 = Python error. */
+static int _xr_date_style(XlsxReader *self, int has_s, const char *sattr, Py_ssize_t s_len)
+{
+    Py_ssize_t style = 0;
+    if (has_s)
+    {
+        PyObject *number = _xr_int(sattr, s_len);
+        if (!number) return -1;
+        style = PyLong_AsSsize_t(number);
+        Py_DECREF(number);
+        if (style == -1 && PyErr_Occurred())
+        {
+            if (PyErr_ExceptionMatches(PyExc_OverflowError))
+            {
+                PyErr_Clear();
+                return 0;  /* out of range: not a date style */
+            }
+            return -1;
+        }
+    }
+    if (style < 0) style += self->style_len;
+    if (style < 0)
+    {
+        /* Python's `style < len(...)` passes for any negative index, so a
+           too-negative one raises IndexError from the list access. */
+        PyErr_SetString(PyExc_IndexError, "list index out of range");
+        return -1;
+    }
+    if (style >= self->style_len) return 0;
+    return self->is_date_style[style] ? 1 : 0;
+}
+
+/* Howard Hinnant's civil_from_days (inverse of _days_from_civil). */
+static void _xr_civil_from_days(long long z, long long *y, long long *m, long long *d)
+{
+    z += 719468;
+    const long long era = (z >= 0 ? z : z - 146096) / 146097;
+    const long long doe = z - era * 146097;
+    const long long yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const long long yy = yoe + era * 400;
+    const long long doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const long long mp = (5 * doy + 2) / 153;
+    *d = doy - (153 * mp + 2) / 5 + 1;
+    *m = mp < 10 ? mp + 3 : mp - 9;
+    *y = *m <= 2 ? yy + 1 : yy;
+}
+
+/* excel_dates.serial_to_datetime: datetime + timedelta(days=serial), with
+   CPython's trick of keeping the fractional day separate.  NULL + error when
+   Python would raise; the caller then keeps the raw cell text. */
+static PyObject *_xr_serial_datetime(double serial, int date_1904)
+{
+    double s = serial;
+    if (!date_1904 && s >= 1.0 && s < 60.0) s += 1.0;
+    if (!isfinite(s))
+    {
+        PyErr_SetString(PyExc_ValueError, "cannot convert float NaN to integer");
+        return NULL;
+    }
+    double whole = floor(s);
+    if (whole < -999999999.0 || whole > 999999999.0)
+    {
+        PyErr_SetString(PyExc_OverflowError, "days out of range for timedelta");
+        return NULL;
+    }
+    double frac = s - whole;
+    long long us = (long long)rint(frac * 86400000000.0);
+    long long days = (long long)whole;
+    if (us >= 86400000000LL) { days += 1; us -= 86400000000LL; }
+    else if (us < 0) { days -= 1; us += 86400000000LL; }
+
+    long long epoch = date_1904
+        ? _days_from_civil(1904, 1, 1) + 719163
+        : _days_from_civil(1899, 12, 30) + 719163;
+    long long ordinal = epoch + days;
+    long long max_ordinal = _days_from_civil(9999, 12, 31) + 719163;
+    if (ordinal < 1 || ordinal > max_ordinal)
+    {
+        PyErr_SetString(PyExc_OverflowError, "date value out of range");
+        return NULL;
+    }
+    long long y, m, d;
+    _xr_civil_from_days(ordinal - 719163, &y, &m, &d);
+    long long secs = us / 1000000LL;
+    long long micro = us % 1000000LL;
+    return PyDateTime_FromDateAndTime(
+        (int)y, (int)m, (int)d,
+        (int)(secs / 3600), (int)((secs / 60) % 60), (int)(secs % 60), (int)micro);
+}
+
+/* One cell value, following `_fast_row` + `_fast_value` exactly.
+   Returns 1 with *out set, 0 when the row needs ElementTree, -1 on error. */
+static int _xr_value(XlsxReader *self,
+                     int has_s, const char *sattr, Py_ssize_t s_len,
+                     int has_t, const char *tattr, Py_ssize_t t_len,
+                     int has_v, const char *v, Py_ssize_t v_len,
+                     int has_inl, const char *inl, Py_ssize_t inl_len,
+                     PyObject **out)
+{
+    /* Common case: an untyped, non-empty value with no date style. */
+    if (has_v && v_len > 0 && !has_t)
+    {
+        int date = _xr_date_style(self, has_s, sattr, s_len);
+        if (date < 0) return -1;
+        if (!date)
+        {
+            PyObject *number = _xr_number(v, v_len);
+            if (!number) return -1;
+            *out = number;
+            return 1;
+        }
+    }
+
+    if (has_t && t_len == 9 && memcmp(tattr, "inlineStr", 9) == 0)
+    {
+        if (!has_inl)
+        {
+            *out = PyUnicode_FromStringAndSize("", 0);
+            return *out ? 1 : -1;
+        }
+        if (inl_len > 0 && (memchr(inl, '&', (size_t)inl_len) ||
+                            memchr(inl, '\r', (size_t)inl_len)))
+            return 0;
+        if (inl_len < 7 || inl[0] != '<' || inl[1] != 't') return 0;
+        Py_ssize_t q = 2;
+        if (q < inl_len && inl[q] == ' ')
+        {
+            while (q < inl_len && inl[q] != '>') q++;
+            if (q >= inl_len) return 0;
+        }
+        if (q >= inl_len || inl[q] != '>') return 0;
+        q++;
+        Py_ssize_t start = q;
+        while (q < inl_len && inl[q] != '<') q++;
+        if (q + 4 != inl_len || memcmp(inl + q, "</t>", 4) != 0) return 0;
+        *out = _xr_unescape(inl + start, q - start);
+        return *out ? 1 : -1;
+    }
+
+    if (has_t && t_len == 1 && tattr[0] == 's')
+    {
+        long index = 0;
+        int overflow = 0;
+        if (has_v && v_len > 0)
+        {
+            PyObject *number = _xr_int(v, v_len);
+            if (!number) return -1;
+            index = PyLong_AsLong(number);
+            if (index == -1 && PyErr_Occurred())
+            {
+                if (PyErr_ExceptionMatches(PyExc_OverflowError))
+                {
+                    PyErr_Clear();
+                    overflow = 1;
+                }
+                else
+                {
+                    Py_DECREF(number);
+                    return -1;
+                }
+            }
+            Py_DECREF(number);
+        }
+        if (!overflow && index >= 0 && index < self->ss_len)
+        {
+            *out = PyList_GET_ITEM(self->shared_strings, (Py_ssize_t)index);
+            Py_INCREF(*out);
+            return 1;
+        }
+        *out = _xr_str(v, has_v ? v_len : 0);
+        return *out ? 1 : -1;
+    }
+
+    if (has_t && t_len == 1 && tattr[0] == 'b')
+    {
+        *out = (has_v && v_len == 1 && v[0] == '1') ? Py_True : Py_False;
+        Py_INCREF(*out);
+        return 1;
+    }
+
+    if (has_t && t_len == 1 && tattr[0] == 'e')
+    {
+        PyObject *tail = _xr_str(v, has_v ? v_len : 0);
+        if (!tail) return -1;
+        PyObject *prefix = PyUnicode_FromString("error:");
+        if (!prefix)
+        {
+            Py_DECREF(tail);
+            return -1;
+        }
+        *out = PyUnicode_Concat(prefix, tail);
+        Py_DECREF(prefix);
+        Py_DECREF(tail);
+        return *out ? 1 : -1;
+    }
+
+    if (has_t && t_len == 3 && memcmp(tattr, "str", 3) == 0)
+    {
+        if (has_v && v_len > 0 && (memchr(v, '&', (size_t)v_len) ||
+                                  memchr(v, '\r', (size_t)v_len)))
+            return 0;
+        *out = _xr_unescape(v, has_v ? v_len : 0);
+        return *out ? 1 : -1;
+    }
+
+    if (has_t && t_len == 1 && tattr[0] == 'd')
+    {
+        if (!has_v || v_len == 0)
+        {
+            *out = Py_None;
+            Py_INCREF(*out);
+            return 1;
+        }
+        if (!datetime_type) return 0;  /* ElementTree reads it the same way */
+        PyObject *text = _xr_str(v, v_len);
+        if (!text) return -1;
+        *out = PyObject_CallMethod(datetime_type, "fromisoformat", "O", text);
+        Py_DECREF(text);
+        return *out ? 1 : -1;
+    }
+
+    /* Default numeric path, including t="n" and unknown types. */
+    if (!has_v || v_len == 0)
+    {
+        *out = Py_None;
+        Py_INCREF(*out);
+        return 1;
+    }
+    int date = _xr_date_style(self, has_s, sattr, s_len);
+    if (date < 0) return -1;
+    if (date)
+    {
+        PyObject *number = _xr_float(v, v_len);
+        if (!number)
+        {
+            if (PyErr_ExceptionMatches(PyExc_ValueError))
+            {
+                PyErr_Clear();
+                *out = _xr_str(v, v_len);
+                return *out ? 1 : -1;
+            }
+            return -1;
+        }
+        double serial = PyFloat_AS_DOUBLE(number);
+        Py_DECREF(number);
+        PyObject *moment = _xr_serial_datetime(serial, self->date_1904);
+        if (!moment)
+        {
+            if (PyErr_ExceptionMatches(PyExc_ValueError) ||
+                PyErr_ExceptionMatches(PyExc_OverflowError))
+            {
+                PyErr_Clear();
+                *out = _xr_str(v, v_len);
+                return *out ? 1 : -1;
+            }
+            return -1;
+        }
+        *out = moment;
+        return 1;
+    }
+    PyObject *number = _xr_number(v, v_len);
+    if (!number) return -1;
+    *out = number;
+    return 1;
+}
+
+/* Mirrors _PREFIXED: `</?[A-Za-z_][\w.-]*:`. */
+static int _xr_has_prefix(const char *p, Py_ssize_t n)
+{
+    for (Py_ssize_t i = 0; i + 1 < n; i++)
+    {
+        if (p[i] != '<') continue;
+        Py_ssize_t j = i + 1;
+        if (j < n && p[j] == '/') j++;
+        if (j >= n) continue;
+        unsigned char c = (unsigned char)p[j];
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'))
+            continue;
+        j++;
+        while (j < n && (_xr_word_byte((unsigned char)p[j]) || p[j] == '.' ||
+                         p[j] == '-' || (unsigned char)p[j] >= 0x80))
+            j++;
+        if (j < n && p[j] == ':') return 1;
+    }
+    return 0;
+}
+
+/* One `<c ...>` element at body[*pos].  Returns 1 parsed, 0 fallback, -1 error. */
+static int _xr_parse_cell(XlsxReader *self, const char *body, Py_ssize_t body_len,
+                          Py_ssize_t *pos, long *next_col, PyObject *cells)
+{
+    Py_ssize_t i = *pos + 2;
+    const char *ref = NULL, *sattr = NULL, *tattr = NULL;
+    Py_ssize_t ref_len = 0, s_len = 0, t_len = 0;
+    int has_ref = 0, has_s = 0, has_t = 0;
+
+    while (i < body_len && body[i] == ' ')
+    {
+        Py_ssize_t mark = i;
+        Py_ssize_t name = ++i;
+        while (i < body_len && _xr_word_byte((unsigned char)body[i])) i++;
+        Py_ssize_t name_len = i - name;
+        if (name_len == 0 || i + 1 >= body_len || body[i] != '=' || body[i + 1] != '"')
+        {
+            /* Not an attribute pair: let the terminator check below decide,
+               exactly like the regex's trailing \s* (so `<c />` and
+               `<c r="A1" >` stay on the fast path). */
+            i = mark;
+            break;
+        }
+        i += 2;
+        Py_ssize_t value = i;
+        while (i < body_len && body[i] != '"') i++;
+        if (i >= body_len) return 0;
+        Py_ssize_t value_len = i - value;
+        i++;
+        if (name_len == 1 && body[name] == 'r') { ref = body + value; ref_len = value_len; has_ref = 1; }
+        else if (name_len == 1 && body[name] == 's') { sattr = body + value; s_len = value_len; has_s = 1; }
+        else if (name_len == 1 && body[name] == 't') { tattr = body + value; t_len = value_len; has_t = 1; }
+    }
+    while (i < body_len && _xr_space_byte((unsigned char)body[i])) i++;
+    if (i >= body_len) return 0;
+
+    const char *v = NULL, *inl = NULL;
+    Py_ssize_t v_len = 0, inl_len = 0;
+    int has_v = 0, has_inl = 0;
+
+    if (body[i] == '/')
+    {
+        if (i + 1 >= body_len || body[i + 1] != '>') return 0;
+        i += 2;
+    }
+    else if (body[i] == '>')
+    {
+        i++;
+        if (i + 2 < body_len && body[i] == '<' && body[i + 1] == 'f' &&
+            !_xr_word_byte((unsigned char)body[i + 2]))
+        {
+            Py_ssize_t gt = i + 2;
+            while (gt < body_len && body[gt] != '>') gt++;
+            if (gt >= body_len) return 0;
+            if (body[gt - 1] == '/') i = gt + 1;
+            else
+            {
+                Py_ssize_t close = _xr_find(body, body_len, "</f>", 4, gt + 1);
+                if (close < 0) return 0;
+                Py_ssize_t lt = _xr_find(body, body_len, "<", 1, gt + 1);
+                if (lt >= 0 && lt < close) return 0;
+                i = close + 4;
+            }
+        }
+        if (i + 3 <= body_len && body[i] == '<' && body[i + 1] == 'v' && body[i + 2] == '>')
+        {
+            Py_ssize_t start = i + 3, end = start;
+            while (end < body_len && body[end] != '<') end++;
+            if (end + 4 > body_len || memcmp(body + end, "</v>", 4) != 0) return 0;
+            v = body + start;
+            v_len = end - start;
+            has_v = 1;
+            i = end + 4;
+        }
+        else if (i + 4 <= body_len && memcmp(body + i, "<is>", 4) == 0)
+        {
+            Py_ssize_t close = _xr_find(body, body_len, "</is>", 5, i + 4);
+            if (close < 0) return 0;
+            inl = body + i + 4;
+            inl_len = close - (i + 4);
+            has_inl = 1;
+            i = close + 5;
+        }
+        if (i + 4 > body_len || memcmp(body + i, "</c>", 4) != 0) return 0;
+        i += 4;
+    }
+    else return 0;
+
+    long col;
+    if (!has_ref || ref_len == 0)
+    {
+        col = *next_col;
+    }
+    else
+    {
+        Py_ssize_t digits = 0;
+        while (digits < ref_len &&
+               ref[ref_len - 1 - digits] >= '0' && ref[ref_len - 1 - digits] <= '9')
+            digits++;
+        Py_ssize_t letters = ref_len - digits;
+        if (letters < 1 || letters > 3) return 0;
+        long key = 0;
+        for (Py_ssize_t k = 0; k < letters; k++)
+        {
+            unsigned char ch = (unsigned char)ref[k];
+            if (ch < 'A' || ch > 'Z') return 0;
+            key = key * 26 + (ch - 'A' + 1);
+        }
+        if (self->columns[key]) col = self->columns[key] - 1;
+        else
+        {
+            if (digits == 0) return 0;
+            col = key - 1;
+            self->columns[key] = col + 1;
+        }
+    }
+    *next_col = col + 1;
+
+    PyObject *value = NULL;
+    int ok = _xr_value(self, has_s, sattr, s_len, has_t, tattr, t_len,
+                       has_v, v, v_len, has_inl, inl, inl_len, &value);
+    if (ok <= 0) return ok;
+
+    PyObject *cell = PyTuple_New(2);
+    if (!cell)
+    {
+        Py_DECREF(value);
+        return -1;
+    }
+    PyObject *col_obj = PyLong_FromLong(col);
+    if (!col_obj)
+    {
+        Py_DECREF(value);
+        Py_DECREF(cell);
+        return -1;
+    }
+    PyTuple_SET_ITEM(cell, 0, col_obj);
+    PyTuple_SET_ITEM(cell, 1, value);
+    if (PyList_Append(cells, cell) < 0)
+    {
+        Py_DECREF(cell);
+        return -1;
+    }
+    Py_DECREF(cell);
+    *pos = i;
+    return 1;
+}
+
+/* One complete row.  Returns 1 with *out set, 0 fallback, -1 error. */
+static int _xr_parse_row(XlsxReader *self, const char *attrs, Py_ssize_t attrs_len,
+                         const char *body, Py_ssize_t body_len, PyObject **out)
+{
+    if (body && _xr_has_prefix(body, body_len)) return 0;
+
+    long row_number = -1;
+    int space_r = _xr_find(attrs, attrs_len, " r=", 3, 0) >= 0;
+    for (Py_ssize_t i = 0; i + 4 <= attrs_len; i++)
+    {
+        if (attrs[i] != ' ' || attrs[i + 1] != 'r' || attrs[i + 2] != '=' ||
+            attrs[i + 3] != '"')
+            continue;
+        Py_ssize_t j = i + 4, digits = 0;
+        unsigned long long value = 0;
+        int overflow = 0;
+        while (j < attrs_len && attrs[j] >= '0' && attrs[j] <= '9')
+        {
+            if (++digits > 18) overflow = 1;
+            else if (!overflow) value = value * 10 + (unsigned long long)(attrs[j] - '0');
+            j++;
+        }
+        if (digits > 0 && j < attrs_len && attrs[j] == '"')
+        {
+            if (overflow || value > (unsigned long long)(LONG_MAX - 1)) return 0;
+            row_number = (long)value;
+            break;
+        }
+    }
+    if (row_number < 0)
+    {
+        if (space_r || !self->next_row_valid) return 0;
+        row_number = self->next_row;
+    }
+
+    PyObject *cells = PyList_New(0);
+    if (!cells) return -1;
+
+    long next_col = 0;
+    Py_ssize_t i = 0;
+    while (i < body_len)
+    {
+        const char *lt = (const char *)memchr(body + i, '<', (size_t)(body_len - i));
+        if (!lt) break;
+        i = lt - body;
+        if (i + 1 < body_len && body[i + 1] == 'c')
+        {
+            int ok = _xr_parse_cell(self, body, body_len, &i, &next_col, cells);
+            if (ok <= 0)
+            {
+                Py_DECREF(cells);
+                self->next_row = row_number + 1;
+                self->next_row_valid = 1;
+                return ok;
+            }
+        }
+        else i++;
+    }
+
+    PyObject *row = PyTuple_New(2);
+    if (!row)
+    {
+        Py_DECREF(cells);
+        return -1;
+    }
+    PyObject *number = PyLong_FromLong(row_number);
+    if (!number)
+    {
+        Py_DECREF(cells);
+        Py_DECREF(row);
+        return -1;
+    }
+    PyTuple_SET_ITEM(row, 0, number);
+    PyTuple_SET_ITEM(row, 1, cells);
+    self->next_row = row_number + 1;
+    self->next_row_valid = 1;
+    *out = row;
+    return 1;
+}
+
+/* Locate the next complete <row> element.  1 found, 0 need more bytes (or,
+   at EOF, no other row), -1 on a Python error. */
+static int _xr_next_row(XlsxReader *self, Py_ssize_t *start, Py_ssize_t *end,
+                        const char **attrs, Py_ssize_t *attrs_len,
+                        const char **body, Py_ssize_t *body_len, int *self_closing)
+{
+    const char *buf = self->buf;
+    Py_ssize_t len = self->len;
+    Py_ssize_t i = self->pos;
+    for (;;)
+    {
+        Py_ssize_t lt = _xr_find(buf, len, "<", 1, i);
+        if (lt < 0) return 0;
+        i = lt;
+        if (i + 4 > len) return 0;  /* need more bytes to test <row */
+        if (memcmp(buf + i, "<row", 4) != 0) { i++; continue; }
+        if (i + 4 == len) return 0;
+        unsigned char boundary = (unsigned char)buf[i + 4];
+        if (_xr_word_byte(boundary) || boundary >= 0x80) { i++; continue; }
+        Py_ssize_t gt = _xr_find(buf, len, ">", 1, i + 4);
+        if (gt < 0) return 0;
+        *start = i;
+        *attrs = buf + i + 4;
+        if (gt > i + 4 && buf[gt - 1] == '/')
+        {
+            *attrs_len = gt - 1 - (i + 4);
+            *end = gt + 1;
+            *body = NULL;
+            *body_len = 0;
+            *self_closing = 1;
+            return 1;
+        }
+        Py_ssize_t close = _xr_find(buf, len, "</row>", 6, gt + 1);
+        if (close < 0) return 0;
+        *attrs_len = gt - (i + 4);
+        *body = buf + gt + 1;
+        *body_len = close - (gt + 1);
+        *end = close + 6;
+        *self_closing = 0;
+        return 1;
+    }
+}
+
+/* Decode the bytes not yet validated.  A truncated character at the very end
+   is not an error; it is re-checked together with the next chunk. */
+static int _xr_validate(XlsxReader *self)
+{
+    if (self->validated >= self->len) return 1;
+    const char *start = self->buf + self->validated;
+    Py_ssize_t n = self->len - self->validated;
+    PyObject *text = PyUnicode_DecodeUTF8(start, n, NULL);
+    if (text)
+    {
+        Py_DECREF(text);
+        self->validated = self->len;
+        return 1;
+    }
+    if (PyErr_ExceptionMatches(PyExc_UnicodeDecodeError))
+    {
+        PyObject *type, *value, *tb;
+        PyErr_Fetch(&type, &value, &tb);
+        PyObject *reason = PyUnicodeDecodeError_GetReason(value);
+        int partial = reason && PyUnicode_Check(reason) &&
+            PyUnicode_CompareWithASCIIString(reason, "unexpected end of data") == 0;
+        Py_XDECREF(reason);
+        if (partial)
+        {
+            Py_XDECREF(type);
+            Py_XDECREF(value);
+            Py_XDECREF(tb);
+            return 1;
+        }
+        PyErr_Restore(type, value, tb);
+    }
+    return 0;
+}
+
+/* Final UTF-8 check: `_xr_validate` tolerates a truncated character at the
+   end of the buffer because the next chunk may complete it.  Once iteration
+   stops no chunk can, so the Python reader's final decode would raise; do the
+   same instead of silently dropping the bytes. */
+static int _xr_finish(XlsxReader *self)
+{
+    if (self->validated >= self->len) return 1;
+    const char *start = self->buf + self->validated;
+    Py_ssize_t n = self->len - self->validated;
+    PyObject *text = PyUnicode_DecodeUTF8(start, n, NULL);
+    if (!text) return 0;
+    Py_DECREF(text);
+    self->validated = self->len;
+    return 1;
+}
+
+static int _xr_fill(XlsxReader *self)
+{
+    if (self->eof) return 1;
+    if (self->pos > 0)
+    {
+        memmove(self->buf, self->buf + self->pos, (size_t)(self->len - self->pos));
+        self->len -= self->pos;
+        self->validated -= self->pos;
+        if (self->validated < 0) self->validated = 0;
+        self->pos = 0;
+    }
+    Py_ssize_t need = self->len + _XLSX_CHUNK;
+    if (need > self->cap)
+    {
+        Py_ssize_t cap = self->cap > 0 ? self->cap : _XLSX_CHUNK;
+        while (cap < need) cap *= 2;
+        char *nb = (char *)PyMem_Realloc(self->buf, (size_t)cap);
+        if (!nb)
+        {
+            PyErr_NoMemory();
+            return 0;
+        }
+        self->buf = nb;
+        self->cap = cap;
+    }
+    PyObject *chunk = PyObject_CallMethod(self->stream, "read", "n",
+                                          (Py_ssize_t)_XLSX_CHUNK);
+    if (!chunk) return 0;
+    Py_buffer view;
+    if (PyObject_GetBuffer(chunk, &view, PyBUF_SIMPLE) < 0)
+    {
+        Py_DECREF(chunk);
+        return 0;
+    }
+    Py_ssize_t n = view.len;
+    if (n > 0)
+    {
+        /* A conforming read() never returns more than requested; keep the
+           copy safe if some other stream object does. */
+        if (self->len + n > self->cap)
+        {
+            Py_ssize_t cap = self->cap > 0 ? self->cap : _XLSX_CHUNK;
+            while (cap < self->len + n) cap *= 2;
+            char *nb = (char *)PyMem_Realloc(self->buf, (size_t)cap);
+            if (!nb)
+            {
+                PyBuffer_Release(&view);
+                Py_DECREF(chunk);
+                PyErr_NoMemory();
+                return 0;
+            }
+            self->buf = nb;
+            self->cap = cap;
+        }
+        memcpy(self->buf + self->len, view.buf, (size_t)n);
+    }
+    PyBuffer_Release(&view);
+    Py_DECREF(chunk);
+    if (n == 0)
+    {
+        self->eof = 1;
+        return 1;
+    }
+    self->len += n;
+    return _xr_validate(self);
+}
+
+static void XlsxReader_dealloc(XlsxReader *self)
+{
+    PyMem_Free(self->buf);
+    PyMem_Free(self->is_date_style);
+    PyMem_Free(self->columns);
+    Py_XDECREF(self->stream);
+    Py_XDECREF(self->shared_strings);
+    Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static PyObject *XlsxReader_iternext(PyObject *self_ptr)
+{
+    XlsxReader *self = (XlsxReader *)self_ptr;
+    if (self->done) return NULL;
+    for (;;)
+    {
+        Py_ssize_t start, end, attrs_len, body_len;
+        const char *attrs, *body;
+        int self_closing = 0;
+        int found = _xr_next_row(self, &start, &end, &attrs, &attrs_len,
+                                 &body, &body_len, &self_closing);
+        if (found < 0)
+        {
+            self->done = 1;
+            return NULL;
+        }
+        if (found)
+        {
+            PyObject *row = NULL;
+            int ok = _xr_parse_row(self, attrs, attrs_len,
+                                   self_closing ? NULL : body,
+                                   self_closing ? 0 : body_len, &row);
+            self->pos = end;
+            if (ok < 0)
+            {
+                self->done = 1;
+                return NULL;
+            }
+            if (ok == 0)
+            {
+                PyObject *raw = PyBytes_FromStringAndSize(self->buf + start,
+                                                          end - start);
+                if (!raw)
+                {
+                    self->done = 1;
+                    return NULL;
+                }
+                return raw;
+            }
+            return row;
+        }
+        if (self->eof)
+        {
+            self->done = 1;
+            if (!_xr_finish(self)) return NULL;
+            return NULL;
+        }
+        if (_xr_find(self->buf, self->len, "</sheetData>", 12, self->pos) >= 0)
+        {
+            self->done = 1;
+            if (!_xr_finish(self)) return NULL;
+            return NULL;
+        }
+        if (!_xr_fill(self))
+        {
+            self->done = 1;
+            return NULL;
+        }
+    }
+}
+
+/* resume(row_number): the caller parsed a fallback row and knows its number. */
+static PyObject *XlsxReader_resume(XlsxReader *self, PyObject *arg)
+{
+    long value = PyLong_AsLong(arg);
+    if (value == -1 && PyErr_Occurred())
+    {
+        if (!PyErr_ExceptionMatches(PyExc_OverflowError)) return NULL;
+        PyErr_Clear();
+        self->next_row_valid = 0;
+        Py_RETURN_NONE;
+    }
+    if (value < 0 || value >= LONG_MAX)
+    {
+        self->next_row_valid = 0;
+        Py_RETURN_NONE;
+    }
+    self->next_row = value + 1;
+    self->next_row_valid = 1;
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef XlsxReader_methods[] = {
+    {"resume", (PyCFunction)XlsxReader_resume, METH_O,
+     "resume(row_number): continue after a fallback row handled by the caller."},
+    {NULL, NULL, 0, NULL}
+};
+
+static PyTypeObject XlsxReader_Type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "_c_core.XlsxReader",
+    .tp_basicsize = sizeof(XlsxReader),
+    .tp_dealloc = (destructor)XlsxReader_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "Streaming XLSX worksheet scanner (iterator)",
+    .tp_iter = PyObject_SelfIter,
+    .tp_iternext = XlsxReader_iternext,
+    .tp_methods = XlsxReader_methods,
+};
+
+static PyObject *C_read_xlsx_worksheet(PyObject *self_mod, PyObject *args)
+{
+    PyObject *stream, *head, *shared_strings, *styles;
+    int date_1904 = 0;
+
+    if (!PyArg_ParseTuple(args, "OOOO|p", &stream, &head, &shared_strings,
+                          &styles, &date_1904))
+        return NULL;
+    if (!PyBytes_Check(head))
+    {
+        PyErr_SetString(PyExc_TypeError, "head must be bytes");
+        return NULL;
+    }
+    if (!PyList_Check(shared_strings))
+    {
+        PyErr_SetString(PyExc_TypeError, "shared_strings must be a list");
+        return NULL;
+    }
+    if (!PyList_Check(styles))
+    {
+        PyErr_SetString(PyExc_TypeError, "is_date_style must be a list");
+        return NULL;
+    }
+    if (!PyObject_HasAttrString(stream, "read"))
+    {
+        PyErr_SetString(PyExc_TypeError, "stream must have a read method");
+        return NULL;
+    }
+
+    _ensure_types();
+
+    XlsxReader *reader = PyObject_New(XlsxReader, &XlsxReader_Type);
+    if (!reader) return NULL;
+    reader->stream = NULL;
+    reader->shared_strings = NULL;
+    reader->ss_len = 0;
+    reader->is_date_style = NULL;
+    reader->style_len = 0;
+    reader->date_1904 = date_1904;
+    reader->columns = NULL;
+    reader->buf = NULL;
+    reader->len = 0;
+    reader->cap = 0;
+    reader->pos = 0;
+    reader->validated = 0;
+    reader->eof = 0;
+    reader->done = 0;
+    reader->next_row = 1;
+    reader->next_row_valid = 1;
+
+    Py_ssize_t style_len = PyList_Size(styles);
+    if (style_len > 0)
+    {
+        reader->is_date_style = (unsigned char *)PyMem_Malloc((size_t)style_len);
+        if (!reader->is_date_style)
+        {
+            Py_DECREF(reader);
+            return PyErr_NoMemory();
+        }
+        for (Py_ssize_t i = 0; i < style_len; i++)
+        {
+            int is_date = PyObject_IsTrue(PyList_GET_ITEM(styles, i));
+            if (is_date < 0)
+            {
+                Py_DECREF(reader);
+                return NULL;
+            }
+            reader->is_date_style[i] = (unsigned char)(is_date != 0);
+        }
+    }
+    reader->style_len = style_len;
+
+    /* 26 + 26^2 + 26^3 keys plus slot 0, which means "not cached"; column
+       numbers are stored as col + 1 so that a zeroed array is a valid empty
+       cache. */
+    reader->columns = (long *)PyMem_Calloc(26 * 26 * 26 + 26 * 26 + 26 + 1,
+                                           sizeof(long));
+    if (!reader->columns)
+    {
+        Py_DECREF(reader);
+        return PyErr_NoMemory();
+    }
+
+    Py_ssize_t head_len = PyBytes_GET_SIZE(head);
+    if (head_len > 0)
+    {
+        reader->buf = (char *)PyMem_Malloc((size_t)head_len);
+        if (!reader->buf)
+        {
+            Py_DECREF(reader);
+            return PyErr_NoMemory();
+        }
+        memcpy(reader->buf, PyBytes_AS_STRING(head), (size_t)head_len);
+        reader->len = head_len;
+        reader->cap = head_len;
+    }
+
+    Py_INCREF(stream);
+    reader->stream = stream;
+    Py_INCREF(shared_strings);
+    reader->shared_strings = shared_strings;
+    reader->ss_len = PyList_Size(shared_strings);
+
+    if (!_xr_validate(reader))
+    {
+        Py_DECREF(reader);
+        return NULL;
+    }
+    return (PyObject *)reader;
+}
+
 /* ===== Module definition ===== */
 static PyMethodDef CMethods[] = {
     {"read_xlsb_worksheet", C_read_xlsb_worksheet, METH_VARARGS,
      "Read an XLSB worksheet from raw bytes. Returns an iterator of rows.\n\n"
      "Args: (data, shared_strings, styles_list, date_num_fmts)\n"
      "Yields: rows one at a time"},
+    {"read_xlsx_worksheet", C_read_xlsx_worksheet, METH_VARARGS,
+     "Scan an XLSX worksheet from a stream. Returns an iterator of rows.\n\n"
+     "Args: (stream, head, shared_strings, is_date_style, date_1904)\n"
+     "Yields: (row_number, [(column, value), ...]) tuples, or the raw row\n"
+     "bytes for a row the caller must parse with ElementTree."},
     {"encode_xlsb_row", C_encode_xlsb_row, METH_VARARGS,
      "Encode a single XLSB row. Returns (bytes, sst_uniq, sst_all)."},
     {"encode_xlsb_row_inline", C_encode_xlsb_row_inline, METH_VARARGS,
@@ -2624,6 +3753,8 @@ PyMODINIT_FUNC PyInit__c_core(void)
 {
     PyDateTime_IMPORT;
     if (PyType_Ready(&XlsbReader_Type) < 0)
+        return NULL;
+    if (PyType_Ready(&XlsxReader_Type) < 0)
         return NULL;
     PyObject *m = PyModule_Create(&c_core_module);
     return m;
