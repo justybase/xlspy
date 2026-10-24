@@ -173,7 +173,7 @@ def _protection_xml(prot) -> str:
 
 
 class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
-    def __init__(self, file: str | io.IOBase, compressionLevel: int = 4, useSharedStrings: bool = True,
+    def __init__(self, file: str | io.IOBase, compressionLevel: int = 3, useSharedStrings: bool = True,
                  spool_max_bytes: int = DEFAULT_SPOOL_BYTES):
         self._file = file
         self._worksheet_data: list[Tuple[str, Iterable[list[any]], bool]] = []

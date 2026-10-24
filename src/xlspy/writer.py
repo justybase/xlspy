@@ -204,7 +204,7 @@ def _capture_cells(rows, store: dict):
 
 
 class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
-    def __init__(self, file: str | io.IOBase, compressionLevel:int = 4,
+    def __init__(self, file: str | io.IOBase, compressionLevel:int = 3,
                  useSharedStrings: bool = True):
         self._file = file
         self._useSharedStrings = useSharedStrings
