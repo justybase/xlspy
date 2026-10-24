@@ -51,6 +51,13 @@ def _load_cases() -> list[dict]:
     return json.loads(SPEC_PATH.read_text(encoding="utf-8"))["cases"]
 
 
+if not SPEC_PATH.exists():
+    pytest.skip(
+        "comparison/com/cases.json not found; run the Excel COM conformance suite "
+        "from the comparison workspace",
+        allow_module_level=True,
+    )
+
 CASES = _load_cases()
 FORMATS = ("xlsx", "xlsb")
 
