@@ -381,7 +381,8 @@ impl Row<'_, '_> {
                 if d.abs() >= 9_007_199_254_740_992.0 {
                     return Ok(false);
                 }
-                self.out.extend_from_slice((d as i64).to_string().as_bytes());
+                self.out
+                    .extend_from_slice((d as i64).to_string().as_bytes());
             } else {
                 write_repr(py, &mut self.out, d)?;
             }
@@ -404,12 +405,7 @@ fn py_float(cell: &Bound<'_, PyAny>) -> Option<f64> {
 }
 
 /// (row_xml, sst_uniq, sst_all, hyperlinks) as returned to the Python writer.
-type EncodedRow<'py> = (
-    Bound<'py, PyBytes>,
-    u32,
-    u32,
-    Bound<'py, PyList>,
-);
+type EncodedRow<'py> = (Bound<'py, PyBytes>, u32, u32, Bound<'py, PyList>);
 
 /// Encode one XLSX sheet row.  Returns (row_xml, sst_uniq, sst_all, hyperlinks), or None
 /// when the Python row writer must handle the row; then the strings this

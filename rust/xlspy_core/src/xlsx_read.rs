@@ -369,9 +369,7 @@ impl State {
             return text(py, &v).map(Some);
         }
         if c.t_is(b"b") {
-            return Ok(Some(
-                PyBool::new(py, &v[..] == b"1").to_owned().into_any(),
-            ));
+            return Ok(Some(PyBool::new(py, &v[..] == b"1").to_owned().into_any()));
         }
         if c.t_is(b"e") {
             let t = PyString::new(

@@ -645,7 +645,9 @@ pub fn xlsb_load_cells<'py>(
         };
         let xf = le_u32(data, cell_body + 4).unwrap_or(0) & 0xFF_FFFF;
         if !(0..16384).contains(&column) {
-            return Err(invalid_file_error("XLSB column exceeds Excel limits".to_string()));
+            return Err(invalid_file_error(
+                "XLSB column exceeds Excel limits".to_string(),
+            ));
         }
         previous_column = column;
 

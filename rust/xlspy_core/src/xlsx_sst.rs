@@ -180,7 +180,11 @@ fn declares_utf8(declaration: &str) -> bool {
     let Some(quote @ ('"' | '\'')) = chars.next() else {
         return false;
     };
-    chars.as_str().split(quote).next().is_some_and(|v| v.eq_ignore_ascii_case("utf-8"))
+    chars
+        .as_str()
+        .split(quote)
+        .next()
+        .is_some_and(|v| v.eq_ignore_ascii_case("utf-8"))
 }
 
 #[cfg(test)]
@@ -189,7 +193,9 @@ mod tests {
 
     #[test]
     fn declarations() {
-        assert!(declares_utf8(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes""#));
+        assert!(declares_utf8(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes""#
+        ));
         assert!(declares_utf8(r#"<?xml version="1.0" encoding='utf-8'"#));
         assert!(declares_utf8(r#"<?xml version="1.0""#));
         assert!(!declares_utf8(r#"<?xml version="1.0" encoding="UTF-16""#));

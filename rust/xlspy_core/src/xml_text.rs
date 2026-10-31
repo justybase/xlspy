@@ -64,7 +64,9 @@ fn char_reference(digits: &[u8], radix: u32) -> Option<char> {
     }
     // Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
     match value {
-        0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF => char::from_u32(value),
+        0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF => {
+            char::from_u32(value)
+        }
         _ => None,
     }
 }
@@ -79,13 +81,18 @@ mod tests {
 
     #[test]
     fn plain_text_is_borrowed_unchanged() {
-        assert!(matches!(decode(b"plain text"), Some(std::borrow::Cow::Borrowed(_))));
+        assert!(matches!(
+            decode(b"plain text"),
+            Some(std::borrow::Cow::Borrowed(_))
+        ));
     }
 
     #[test]
     fn predefined_entities() {
-        assert_eq!(text(b"a &amp; b &lt; c &gt; d &quot;e&quot; &apos;f&apos;").unwrap(),
-                   "a & b < c > d \"e\" 'f'".as_bytes());
+        assert_eq!(
+            text(b"a &amp; b &lt; c &gt; d &quot;e&quot; &apos;f&apos;").unwrap(),
+            "a & b < c > d \"e\" 'f'".as_bytes()
+        );
     }
 
     #[test]
@@ -93,7 +100,10 @@ mod tests {
         assert!(text(b"&#X44;").is_none()); // an uppercase X is not XML
         assert_eq!(text(b"&#65;&#x42;&#x0063;").unwrap(), b"ABc");
         assert_eq!(text("&#xe9;&#233;".as_bytes()).unwrap(), "éé".as_bytes());
-        assert_eq!(text("&#x1F600;".as_bytes()).unwrap(), "\u{1F600}".as_bytes());
+        assert_eq!(
+            text("&#x1F600;".as_bytes()).unwrap(),
+            "\u{1F600}".as_bytes()
+        );
     }
 
     #[test]
