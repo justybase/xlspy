@@ -25,7 +25,7 @@ from ..xlsb_updater import XlsbUpdater
 from ..chart_reader import read_drawing
 from ._objects import note_unread
 from ..updater_utils import resolve_zip_target
-from ._model import CELL_SLOTS, AutoFilter, Cell, DefinedNameList, Workbook, Worksheet
+from ._model import CELL_SLOTS, AutoFilter, Cell, DefinedNameList, NamedStyleList, Workbook, Worksheet
 from ._reader import _read_custom_properties, _read_print_names, _read_properties, _read_sheet_relationships
 from ._xlsb_layout import builtin_names
 from ._xlsb_loaded import remember_saved_state, remember_workbook_state
@@ -134,6 +134,8 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         )
         workbook._styles = XlsbStyleTable.from_bin(styles_bin)
         workbook._xlsb_styles_path = styles_path if styles_bin is not None else None
+        named_styles = list(workbook._styles.named_style_defs.values())
+        workbook.named_styles = NamedStyleList(named_styles or list(workbook._styles.named_styles) or ["Normal"])
         formula_context = None
         for name in updater.get_sheet_names():
             sheet = Worksheet(workbook, name)
