@@ -125,9 +125,9 @@ SUPPORTED_BODIES = {
                             '<c r="B1" t="inlineStr"><is><t xml:space="preserve"> spaced </t></is></c></row>',
     "xstring_escape_in_inline": '<row r="1"><c r="A1" t="inlineStr"><is><t>x_x000D_y</t></is></c></row>',
     "rich_inline_string_falls_back": '<row r="1"><c r="A1" t="inlineStr"><is><r><t>a</t></r><r><t>b</t></r></is></c></row>',
-    "entities_in_inline_fall_back": '<row r="1"><c r="A1" t="inlineStr"><is><t>a &amp; b</t></is></c></row>',
-    "entities_in_str_fall_back": '<row r="1"><c r="A1" t="str"><v>x &lt; y</v></c></row>',
-    "carriage_return_in_str_falls_back": '<row r="1"><c r="A1" t="str"><v>a\r\nb</v></c></row>',
+    "entities_in_inline_decoded": '<row r="1"><c r="A1" t="inlineStr"><is><t>a &amp; b</t></is></c></row>',
+    "entities_in_str_decoded": '<row r="1"><c r="A1" t="str"><v>x &lt; y</v></c></row>',
+    "carriage_return_in_str_decoded": '<row r="1"><c r="A1" t="str"><v>a\r\nb</v></c></row>',
     "unknown_child_falls_back": '<row r="1"><c r="A1"><v>1</v><extLst/></c><c r="B1"><v>2</v></c></row>',
     "lowercase_reference_falls_back": '<row r="1"><c r="a1"><v>1</v></c></row>',
     "whitespace_before_cell_end": '<row r="1"><c /><c r="B1" ><v>1</v></c>'
@@ -199,9 +199,6 @@ def test_native_reader_declines_prefixed_sheets(tmp_path, monkeypatch, name):
 # Bodies the native scanner must hand to ElementTree instead of guessing.
 FALLBACK_BODIES = {
     "rich_inline_string_falls_back",
-    "entities_in_inline_fall_back",
-    "entities_in_str_fall_back",
-    "carriage_return_in_str_falls_back",
     "unknown_child_falls_back",
     "lowercase_reference_falls_back",
     "prefixed_cell_falls_back",

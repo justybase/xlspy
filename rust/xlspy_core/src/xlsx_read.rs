@@ -21,6 +21,7 @@ use crate::bytes::ByteView;
 use crate::dates::serial_datetime;
 use crate::model::{self, CellClass};
 use crate::types::{error_type, invalid_file_error};
+use crate::xml_text;
 
 const CHUNK: usize = 1 << 18;
 /// 26 + 26^2 + 26^3 column keys, plus slot 0 meaning "not cached".
@@ -101,7 +102,7 @@ fn hex(c: u8) -> u32 {
 }
 
 /// `xlspy._text.xstring_unescape`: every `_xHHHH_` becomes that code point.
-fn unescape<'py>(py: Python<'py>, p: &[u8]) -> PyResult<Bound<'py, PyAny>> {
+pub(crate) fn unescape<'py>(py: Python<'py>, p: &[u8]) -> PyResult<Bound<'py, PyAny>> {
     if memmem::find(p, b"_x").is_none() {
         return text(py, p);
     }
@@ -253,10 +254,6 @@ impl RawCell<'_> {
     fn v_or_empty(&self) -> &[u8] {
         self.v.unwrap_or(b"")
     }
-
-    fn has_value(&self) -> bool {
-        self.v.is_some_and(|v| !v.is_empty())
-    }
 }
 
 /// Model-mode state (workbook/_fast_sheet.py).
@@ -320,47 +317,44 @@ impl State {
 
     /// One cell value, following `_fast_row` + `_fast_value` exactly.
     fn value<'py>(&self, py: Python<'py>, c: &RawCell<'_>) -> Scan<Bound<'py, PyAny>> {
+        // The text as the XML parser reads it: references and line breaks decoded.
+        // None (ElementTree decides) when that cannot be done exactly.
+        let Some(v) = xml_text::decode(c.v_or_empty()) else {
+            return Ok(None);
+        };
+        let has_value = !v.is_empty();
         // Common case: an untyped, non-empty value with no date style.
-        if c.has_value() && c.t.is_none() && !self.date_style(py, c.s)? {
-            return py_number(py, c.v_or_empty()).map(Some);
+        if has_value && c.t.is_none() && !self.date_style(py, c.s)? {
+            return py_number(py, &v).map(Some);
         }
         if c.t_is(b"inlineStr") {
             let Some(inl) = c.inl else {
                 return Ok(Some(PyString::new(py, "").into_any()));
             };
-            if contains(inl, b'&') || contains(inl, b'\r') {
+            // One text element, plain or with xml:space="preserve"; anything else
+            // (rich runs, other attributes) goes to ElementTree.
+            let body = if let Some(body) = inl.strip_prefix(b"<t>") {
+                body
+            } else if let Some(body) = inl.strip_prefix(b"<t xml:space=\"preserve\">") {
+                body
+            } else {
+                return Ok(None);
+            };
+            let Some(text_bytes) = body.strip_suffix(b"</t>") else {
+                return Ok(None);
+            };
+            if contains(text_bytes, b'<') {
                 return Ok(None);
             }
-            let n = inl.len();
-            if n < 7 || inl[0] != b'<' || inl[1] != b't' {
+            let Some(decoded) = xml_text::decode(text_bytes) else {
                 return Ok(None);
-            }
-            let mut q = 2;
-            if inl[q] == b' ' {
-                while q < n && inl[q] != b'>' {
-                    q += 1;
-                }
-                if q >= n {
-                    return Ok(None);
-                }
-            }
-            if inl[q] != b'>' {
-                return Ok(None);
-            }
-            q += 1;
-            let start = q;
-            while q < n && inl[q] != b'<' {
-                q += 1;
-            }
-            if q + 4 != n || &inl[q..] != b"</t>" {
-                return Ok(None);
-            }
-            return unescape(py, &inl[start..q]).map(Some);
+            };
+            return unescape(py, &decoded).map(Some);
         }
         if c.t_is(b"s") {
             let mut index: Option<i64> = Some(0);
-            if c.has_value() {
-                match py_int(py, c.v_or_empty())?.extract::<i64>() {
+            if has_value {
+                match py_int(py, &v)?.extract::<i64>() {
                     Ok(v) => index = Some(v),
                     Err(e) if e.is_instance_of::<PyOverflowError>(py) => index = None,
                     Err(e) => return Err(e),
@@ -372,20 +366,17 @@ impl State {
             {
                 return Ok(Some(self.shared_strings.bind(py).get_item(i as usize)?));
             }
-            return text(py, c.v_or_empty()).map(Some);
+            return text(py, &v).map(Some);
         }
         if c.t_is(b"b") {
             return Ok(Some(
-                PyBool::new(py, c.v == Some(b"1")).to_owned().into_any(),
+                PyBool::new(py, &v[..] == b"1").to_owned().into_any(),
             ));
         }
         if c.t_is(b"e") {
             let t = PyString::new(
                 py,
-                &format!(
-                    "error:{}",
-                    text(py, c.v_or_empty())?.cast::<PyString>()?.to_str()?
-                ),
+                &format!("error:{}", text(py, &v)?.cast::<PyString>()?.to_str()?),
             );
             return Ok(Some(match error_type(py) {
                 Some(e) => e.call1((t,))?,
@@ -393,27 +384,22 @@ impl State {
             }));
         }
         if c.t_is(b"str") {
-            if c.has_value() && (contains(c.v_or_empty(), b'&') || contains(c.v_or_empty(), b'\r'))
-            {
-                return Ok(None);
-            }
-            return unescape(py, c.v_or_empty()).map(Some);
+            return unescape(py, &v).map(Some);
         }
         if c.t_is(b"d") {
-            if !c.has_value() {
+            if !has_value {
                 return Ok(Some(py.None().into_bound(py)));
             }
-            return fromisoformat(py, c.v_or_empty()).map(Some);
+            return fromisoformat(py, &v).map(Some);
         }
         // Default numeric path, including t="n" and unknown types.
-        if !c.has_value() {
+        if !has_value {
             return Ok(Some(py.None().into_bound(py)));
         }
-        let v = c.v_or_empty();
         if self.date_style(py, c.s)? {
-            let serial = match py_float_value(py, v) {
+            let serial = match py_float_value(py, &v) {
                 Ok(f) => f,
-                Err(e) if e.is_instance_of::<PyValueError>(py) => return text(py, v).map(Some),
+                Err(e) if e.is_instance_of::<PyValueError>(py) => return text(py, &v).map(Some),
                 Err(e) => return Err(e),
             };
             return match serial_datetime(py, serial, self.date_1904) {
@@ -422,12 +408,12 @@ impl State {
                     if e.is_instance_of::<PyValueError>(py)
                         || e.is_instance_of::<PyOverflowError>(py) =>
                 {
-                    text(py, v).map(Some)
+                    text(py, &v).map(Some)
                 }
                 Err(e) => Err(e),
             };
         }
-        py_number(py, v).map(Some)
+        py_number(py, &v).map(Some)
     }
 
     /// A numeric value under a date format, as workbook/_reader._number_value:
@@ -492,13 +478,16 @@ impl State {
             }
             style = s.iter().fold(0, |v, &d| v * 10 + i64::from(d - b'0'));
         }
+        let Some(v) = xml_text::decode(c.v_or_empty()) else {
+            return Ok(None);
+        };
         let m = self.model.as_ref().unwrap();
         let typed = matches!(c.t, Some(b"s" | b"b" | b"e" | b"d" | b"str" | b"inlineStr"));
         let (value, data_type) = if !typed {
-            let value = if !c.has_value() {
+            let value = if v.is_empty() {
                 py.None().into_bound(py)
             } else {
-                let serial = match py_float_value(py, c.v_or_empty()) {
+                let serial = match py_float_value(py, &v) {
                     Ok(f) => f,
                     Err(e) if e.is_instance_of::<PyValueError>(py) => return Ok(None),
                     Err(e) => return Err(e),
@@ -541,8 +530,7 @@ impl State {
             (value, if c.t_is(b"str") { &m.type_s } else { &m.type_b })
         } else if c.t_is(b"s") {
             let mut value = None;
-            if c.has_value() {
-                let v = c.v_or_empty();
+            if !v.is_empty() {
                 if v.len() > 9 || !v.iter().all(u8::is_ascii_digit) {
                     return Ok(None);
                 }
@@ -555,25 +543,22 @@ impl State {
             }
             let value = match value {
                 Some(v) => v,
-                None => text(py, c.v_or_empty())?,
+                None => text(py, &v)?,
             };
             (value, &m.type_s)
         } else {
             // e, d: the text itself (d parsed when present).
             let is_e = c.t_is(b"e");
-            if c.has_value() && contains(c.v_or_empty(), b'&') {
-                return Ok(None);
-            }
-            let value = if !is_e && c.has_value() {
-                match fromisoformat(py, c.v_or_empty()) {
-                    Ok(v) => v,
+            let value = if !is_e && !v.is_empty() {
+                match fromisoformat(py, &v) {
+                    Ok(parsed) => parsed,
                     Err(e) if e.is_instance_of::<PyValueError>(py) => return Ok(None),
                     Err(e) => return Err(e),
                 }
             } else if !is_e {
                 py.None().into_bound(py)
             } else {
-                text(py, c.v_or_empty())?
+                text(py, &v)?
             };
             (value, if is_e { &m.type_e } else { &m.type_d })
         };
@@ -653,6 +638,11 @@ impl State {
             }
             let value = &body[start..i];
             i += 1;
+            // Attributes read as values are not decoded: a reference, a style id or a
+            // type written with an entity goes to ElementTree.
+            if matches!(name, b"r" | b"s" | b"t") && contains(value, b'&') {
+                return Ok(None);
+            }
             match name {
                 b"r" => r = Some(value),
                 b"s" => c.s = Some(value),
@@ -935,7 +925,7 @@ impl State {
 }
 
 /// Mirrors `_PREFIXED`: `</?[A-Za-z_][\w.-]*:`.
-fn has_prefix(p: &[u8]) -> bool {
+pub(crate) fn has_prefix(p: &[u8]) -> bool {
     let n = p.len();
     let mut i = 0;
     while i + 1 < n {

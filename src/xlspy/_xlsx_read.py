@@ -33,7 +33,7 @@ _CELL = re.compile(
 )
 _ATTR = re.compile(r' (\w+)="([^"]*)"')
 _REF = re.compile(r"[A-Z]{1,3}[0-9]+")
-_INLINE_T = re.compile(r"<t(?: [^>]*)?>([^<]*)</t>")
+_INLINE_T = re.compile(r'<t(?: xml:space="preserve")?>([^<]*)</t>')
 _PREFIXED = re.compile(r"</?[A-Za-z_][\w.-]*:")
 _XMLNS = re.compile(r'xmlns="([^"]+)"')
 _ENCODING = re.compile(r'encoding="([^"]+)"')
@@ -287,6 +287,9 @@ def _fast_row(sheet, attrs, body, next_row):
     for cell in _CELL.finditer(body):
         matched += 1
         attrs_text, v, inline = cell.group(1, 2, 3)
+        if (attrs_text and "&" in attrs_text) or (v and ("&" in v or "\r" in v)):
+            # Entities and carriage returns in values are decoded by the XML parser only.
+            raise _Fallback
         attributes = dict(_ATTR.findall(attrs_text)) if attrs_text else {}
         ref = attributes.get("r")
         if ref:

@@ -19,6 +19,7 @@ mod xlsb_read;
 mod xlsb_write;
 mod xlsx_read;
 mod xlsx_write;
+mod xml_text;
 
 #[pymodule(gil_used = true)]
 fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {

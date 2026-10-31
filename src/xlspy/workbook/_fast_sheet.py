@@ -134,6 +134,9 @@ def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
             for cell in cell_pattern.finditer(body):
                 matched += 1
                 attrs_text, v, inline = cell.group(1, 2, 3)
+                if (attrs_text and "&" in attrs_text) or (v and ("&" in v or "\r" in v)):
+                    # Entities and carriage returns in values are decoded by the XML parser only.
+                    raise _Fallback
                 attributes = dict(attr_pattern.findall(attrs_text)) if attrs_text else {}
                 ref = attributes.get("r")
                 if ref:

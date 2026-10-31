@@ -112,7 +112,10 @@ def _walk(rows, count_cells=True):
         row_count += 1
         if count_cells:
             filled += sum(1 for value in row if value is not None and value != "")
-            digest.update(repr(tuple(row)).encode("utf-8", "surrogatepass"))
+            # A whole float and the int with the same value are the same number: the
+            # writer stores whole numbers as "1.0", and the readers differ on that type.
+            normal = tuple(int(v) if type(v) is float and v.is_integer() else v for v in row)
+            digest.update(repr(normal).encode("utf-8", "surrogatepass"))
     if not count_cells:
         return row_count, None, None
     return row_count, filled, digest.hexdigest()

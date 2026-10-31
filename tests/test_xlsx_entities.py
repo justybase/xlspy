@@ -1,9 +1,9 @@
 """Entities, carriage returns and character references in XLSX cell values must read
 the same on every path: the native scanner, the Python fast path and ElementTree.
 
-The guard tests cover text the fast paths already hand to ElementTree. The xfail
-tests cover typed values (t="e", t="d", t="b", numbers) with entities, which the
-native scanner did not decode before C1.
+Inline strings and str cells with entities are decoded by the native scanner (C1);
+the typed values (t="e", t="d", t="b", numbers) with entities were read wrongly
+or raised before C1, and must now match ElementTree.
 """
 
 import pytest
@@ -46,7 +46,6 @@ def test_entity_text_reads_the_same_on_every_path(tmp_path, monkeypatch, name):
     _read_all(path, monkeypatch)
 
 
-@pytest.mark.xfail(strict=True, reason="native reader does not decode entities in typed values yet (C1)")
 @pytest.mark.parametrize("name", sorted(TYPED_ENTITY_BODIES))
 def test_typed_values_with_entities_read_the_same_on_every_path(tmp_path, monkeypatch, name):
     path = _base_file(tmp_path)
