@@ -520,6 +520,10 @@ class FilterColumn:
     showButton: bool = True
     vals: list[str] = field(default_factory=list)
     blank: bool = False
+    # Criteria other than a value list (customFilters, top10, dynamicFilter,
+    # colorFilter, iconFilter), kept as the XML they were read from. A column
+    # holds either a value list or one of these, so the writer emits them alone.
+    criteria: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -1,4 +1,5 @@
 import datetime
+import math
 from decimal import Decimal
 import zipfile
 import struct
@@ -1684,6 +1685,8 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                         buffer.write(b'\x05\x10')
                         buffer.write(struct.pack('<IId', col_idx, style_ref, float(cell)))
                 elif isinstance(cell, (float, Decimal)):
+                    if not math.isfinite(float(cell)):
+                        raise ValueError("numeric cell values must be finite")
                     style_ref = xf_index if has_custom_fmt else 0
                     buffer.write(b'\x05\x10')
                     buffer.write(struct.pack('<IId', col_idx, style_ref, float(cell)))

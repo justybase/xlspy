@@ -4,12 +4,37 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import re
 import zipfile
 from pathlib import Path
 
 import pytest
 
 IGNORED_PARTS = {"docProps/core.xml"}
+
+# The parity table lists every gap with an ID (A1, C6, ...). A row marked
+# **done** is no longer a gap, so a test that still reports it as missing fails.
+_PARITY_DOC = Path(__file__).resolve().parents[2] / "docs" / "openpyxl-parity.md"
+_PARITY_ROW = re.compile(r"^\|\s*([A-Z]\d+)\s*\|(.*)$", re.MULTILINE)
+
+
+def _open_gaps() -> frozenset[str]:
+    text = _PARITY_DOC.read_text(encoding="utf-8")
+    return frozenset(gap for gap, row in _PARITY_ROW.findall(text) if "**done**" not in row)
+
+
+OPEN_GAPS = _open_gaps()
+
+
+def gap_xfail(message: str) -> None:
+    """Expected failure for an open gap; any other missing feature fails the test."""
+    gap = message.split(":", 1)[0]
+    if gap in OPEN_GAPS:
+        pytest.xfail(message)
+    pytest.fail(
+        f"{message} (gap {gap!r} is not an open gap in docs/openpyxl-parity.md)",
+        pytrace=False,
+    )
 
 
 def openpyxl_load(path, **kwargs):
@@ -64,7 +89,7 @@ def normalize(value):
 def require(obj, attr: str, gap: str):
     """Return ``obj.attr`` or xfail with the gap ID when it is missing."""
     if not hasattr(obj, attr):
-        pytest.xfail(f"{gap}: {type(obj).__name__}.{attr} is missing")
+        gap_xfail(f"{gap}: {type(obj).__name__}.{attr} is missing")
     return getattr(obj, attr)
 
 
@@ -86,7 +111,7 @@ def fail_mismatch(gap: str, label: str, actual, expected):
 
 def xfail_mismatch(gap: str, label: str, actual, expected):
     if normalize(actual) != normalize(expected):
-        pytest.xfail(f"{gap}: {label}: {actual!r} != {expected!r}")
+        gap_xfail(f"{gap}: {label}: {actual!r} != {expected!r}")
 
 
 def assert_close(actual, expected, *, rel_tol=1e-9, abs_tol=1e-9):

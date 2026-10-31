@@ -1221,6 +1221,7 @@ static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObjec
             unsigned int style_ref = cell_style ? cell_style : zero;
             memcpy(buf + buf_size, &style_ref, 4); buf_size += 4;
             double fval = PyFloat_AsDouble(cell);
+            if (!isfinite(fval)) { PyMem_Free(buf); Py_RETURN_NONE; }  /* Python encoder raises */
             memcpy(buf + buf_size, &fval, 8); buf_size += 8;
         }
         else if (decimal_type && PyObject_IsInstance(cell, decimal_type) == 1)
@@ -1228,6 +1229,7 @@ static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObjec
             PyObject *f = PyObject_CallMethod(cell, "__float__", NULL);
             if (!f) { PyErr_Clear(); goto fallback; }
             double fval = PyFloat_AsDouble(f); Py_DECREF(f);
+            if (!isfinite(fval)) { PyMem_Free(buf); Py_RETURN_NONE; }  /* Python encoder raises */
             buf[buf_size++] = 0x05; buf[buf_size++] = 0x10;
             memcpy(buf + buf_size, &ci, 4); buf_size += 4;
             unsigned int style_ref = cell_style ? cell_style : zero;
@@ -1362,9 +1364,8 @@ static PyObject *C_encode_xlsb_row_inline(PyObject *self, PyObject *args)
    - strings go through shared-strings dedup (or inline-escaped cells when
      shared strings are off), with `s="3"` on the header row, like
      `_write_string_cell`;
-   - `float('nan')`/`inf` become the strings "NaN"/"\u221e"/"-\u221e"
-     (Decimal NaN stays a numeric NaN, like the Python path, which only
-     special-cases float instances);
+   - `float('nan')`/`inf` (and non-finite Decimals) are not encoded: the row
+     falls back to the Python writer, which raises ValueError;
    - out-of-range years become strings; any other object becomes
      `str(cell)`;
    - a row containing a `(value, format)` tuple returns None (no error) so
@@ -1829,16 +1830,8 @@ static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header,
                 neg_inf = (e2 == 1);
             }
         }
-        if (nan_like || pos_inf || neg_inf)
-        {
-            PyObject *s = PyUnicode_FromString(
-                nan_like ? "NaN" : (pos_inf ? "\xe2\x88\x9e" : "-\xe2\x88\x9e"));
-            if (!s) return -1;
-            int rc = _xlsx_string_cell(b, s, is_header, style_id, use_sst,
-                                       ss_dict, ss_list, uniq, all);
-            Py_DECREF(s);
-            return rc;
-        }
+        /* Row fallback: the Python writer raises for NaN and infinities. */
+        if (nan_like || pos_inf || neg_inf) return 0;
         if (!_xlsx_open_value(b, style_id)) return -1;
         if (!_xbuf_double(b, d)) return -1;
         if (!_xbuf_cstr(b, "</v></c>")) return -1;
@@ -1850,6 +1843,7 @@ static int _xlsx_cell(_XBuf *b, PyObject *cell, int is_header,
         if (!f) { PyErr_Clear(); return 0; }
         double d = PyFloat_AsDouble(f);
         Py_DECREF(f);
+        if (!isfinite(d)) return 0;  /* row fallback: the Python writer raises */
         if (!_xlsx_open_value(b, style_id)) return -1;
         if (!_xbuf_double(b, d)) return -1;
         if (!_xbuf_cstr(b, "</v></c>")) return -1;

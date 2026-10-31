@@ -49,6 +49,7 @@ test = [
     "pytest-cov",
     "pytest-randomly",
     "hypothesis",
+    "psutil",
     "xlsxwriter",
 ]
 examples = [

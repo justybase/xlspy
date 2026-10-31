@@ -28,7 +28,7 @@ from ._objects import note_unread
 from ..updater_utils import resolve_zip_target
 from ._model import CELL_SLOTS, AutoFilter, Cell, DefinedNameList, NamedStyleList, Workbook, Worksheet
 from ._reader import _read_custom_properties, _read_print_names, _read_properties, _read_sheet_relationships
-from ._xlsb_layout import builtin_names
+from ._xlsb_layout import BEGIN_FILTER, END_FILTER, builtin_names
 from ._xlsb_loaded import remember_saved_state, remember_workbook_state
 from .._xlsb_cf import (
     BRT_BEGIN_CF_RULE, BRT_BEGIN_CONDITIONAL_FORMATTING, SCALE_RECORDS, _CF_RULE_EXT,
@@ -152,6 +152,7 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
             metadata = []
             conditional = []
             list_parts = []
+            filter_records = None
             # The C loader has read the sheet data (with its row headers):
             # only the records around it are left.
             outside = (
@@ -160,6 +161,11 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
                             iter_record_payloads(sheet_data[span[1]:]))
             )
             for record_id, payload in outside:
+                if filter_records is not None:
+                    filter_records.append((record_id, payload))
+                    if record_id == END_FILTER:
+                        sheet._saved_filter_records = filter_records
+                        filter_records = None
                 if record_id == ROW_HEADER:
                     if len(payload) > ROW_FLAGS and payload[ROW_FLAGS] & 0x7F:
                         row_header(sheet, payload)
@@ -184,7 +190,8 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
                     sheet._max_row = max(sheet._max_row, r2 + 1)
                     sheet._max_column = max(sheet._max_column, c2 + 1)
                     continue
-                if record_id == 0xA1 and len(payload) >= 16:  # BrtBeginAFilter
+                if record_id == BEGIN_FILTER and len(payload) >= 16:
+                    filter_records = [(record_id, payload)]
                     r1, r2, c1, c2 = struct.unpack_from("<4I", payload)
                     if r1 <= r2 < 1048576 and c1 <= c2 < 16384:
                         sheet._auto_filter = AutoFilter(

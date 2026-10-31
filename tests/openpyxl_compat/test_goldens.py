@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import openpyxl
-import pytest
 
-from ._util import close_quietly, golden_dir, xlspy_load
+from ._util import close_quietly, golden_dir, xlspy_load, gap_xfail
 
 
 def test_manifest_matches_installed_openpyxl(manifest):
@@ -27,7 +26,7 @@ def test_xlspy_reads_every_golden(golden):
     try:
         workbook = xlspy_load(golden)
     except Exception as exc:  # pragma: no cover - baseline marker
-        pytest.xfail(f"golden cannot be loaded yet: {type(exc).__name__}: {exc}")
+        gap_xfail(f"golden cannot be loaded yet: {type(exc).__name__}: {exc}")
     try:
         assert workbook.sheetnames
     finally:

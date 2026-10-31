@@ -39,7 +39,7 @@ from ._model import (
     WriteOnlyCell,
     WriteOnlyWorksheet,
 )
-from ._reader import ReadOnlyWorksheet, load_workbook
+from ._reader import ReadOnlyCell, ReadOnlyWorksheet, load_workbook
 from ._styles import XlsxStyleTable
 
 __all__ = [
@@ -62,6 +62,7 @@ __all__ = [
     "NamedStyleList",
     "Outline",
     "Pane",
+    "ReadOnlyCell",
     "ReadOnlyWorksheet",
     "RowDimension",
     "Selection",

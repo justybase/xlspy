@@ -2,6 +2,7 @@ import datetime
 from dataclasses import dataclass, field
 from decimal import Decimal
 import io
+import math
 import shutil
 import tempfile
 import zipfile
@@ -1858,16 +1859,8 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 s_attr = f' s="{xf_index}"' if xf_index is not None else ''
                 buf.write(f'<c t="b"{s_attr}><v>{"1" if cell else "0"}</v></c>')
             elif isinstance(cell, (int, float, Decimal)):
-                if isinstance(cell, float):
-                    if cell != cell:
-                        self._write_string_cell(buf, "NaN", row_idx == 0, xf_index)
-                        continue
-                    elif cell == float('inf'):
-                        self._write_string_cell(buf, "∞", row_idx == 0, xf_index)
-                        continue
-                    elif cell == float('-inf'):
-                        self._write_string_cell(buf, "-∞", row_idx == 0, xf_index)
-                        continue
+                if isinstance(cell, (float, Decimal)) and not math.isfinite(float(cell)):
+                    raise ValueError("numeric cell values must be finite")
                 s_attr = f' s="{xf_index}"' if xf_index is not None else ''
                 buf.write(f'<c{s_attr}><v>{float(cell)}</v></c>')
             elif isinstance(cell, datetime.datetime):

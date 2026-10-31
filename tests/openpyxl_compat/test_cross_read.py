@@ -5,11 +5,10 @@ from __future__ import annotations
 import datetime as dt
 
 import openpyxl
-import pytest
 
 from xlspy import ExcelReader, XlsxWriter
 
-from ._util import close_quietly, normalize, xlspy_load
+from ._util import close_quietly, normalize, xlspy_load, gap_xfail
 
 
 def _openpyxl_workbook(path):
@@ -65,10 +64,10 @@ def test_xlspy_reads_openpyxl_styles_objects(tmp_path):
         assert cell.font is not None and cell.font.bold is True
         assert cell.fill is not None
         if ws["B3"].hyperlink is None:
-            pytest.xfail("hyperlink round-trip is not exposed by the model")
+            gap_xfail("hyperlink round-trip is not exposed by the model")
         assert ws["B3"].hyperlink.target == "https://example.com"
         if ws["B4"].comment is None:
-            pytest.xfail("comment round-trip is not exposed by the model")
+            gap_xfail("comment round-trip is not exposed by the model")
         assert ws["B4"].comment.text == "hello"
     finally:
         close_quietly(wb)

@@ -15,6 +15,7 @@ from ..styles import Style
 from ..writer import XlsbWriter
 from ..xlsx_writer import XlsxWriter
 from ._loaded import save_loaded
+from ._objects import _as_excel_table
 from ._print import print_settings_for
 from ._model import Workbook, Worksheet, WriteOnlyWorksheet
 
@@ -173,7 +174,7 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
         "tab_color": sheet.sheet_properties.tabColor,
         "zoom": sheet.sheet_view.zoomScale,
         "charts": sheet.charts or None,
-        "tables": sheet.tables or None,
+        "tables": [_as_excel_table(table) for table in sheet.tables] or None,
         "conditional_formats": list(sheet.conditional_formatting.all_rules()) or None,
     }
     print_settings = print_settings_for(sheet)
@@ -276,4 +277,12 @@ def save_workbook(workbook: Workbook, filename) -> None:
         else:
             _save_loaded_to_path(workbook, filename)
     else:
+        added = [name for name in workbook._styles.named_style_defs if name != "Normal"]
+        if added:
+            # The new-file writers build their own styles.xml and do not write
+            # these styles; refuse instead of dropping them silently.
+            raise NotImplementedError(
+                f"named styles {added!r} can only be written to a loaded workbook: save the "
+                "new workbook first, load it, call add_named_style() and save again"
+            )
         _save_new(workbook, filename)

@@ -16,6 +16,11 @@ CHART_TYPES = frozenset({
     "line", "line3d", "pie", "pie3d", "projected_pie", "radar", "scatter",
     "stock", "surface", "surface3d",
 })
+# The types the DrawingML writer can serialise. The rest of CHART_TYPES is
+# refused when a chart is built, rather than being saved as some other chart.
+SUPPORTED_CHART_TYPES = frozenset({
+    "area", "bar", "barh", "doughnut", "line", "pie", "radar", "scatter",
+})
 # Chart.grouping values and the chart types that accept them.
 GROUPINGS = {"stacked": "stacked", "percent_stacked": "percentStacked"}
 _GROUPED_TYPES = frozenset({"area", "bar", "barh", "line"})
@@ -62,9 +67,10 @@ _LABEL_POSITIONS_BY_TYPE = {
     "line": {"center", "above", "below", "left", "right"},
     "scatter": {"center", "above", "below", "left", "right"},
     "pie": {"center", "inside_end", "outside_end", "best_fit"},
-    # Excel has no label positions for these two.
+    # Excel has no label positions for these three.
     "area": set(),
     "doughnut": set(),
+    "radar": set(),
 }
 
 
@@ -502,6 +508,11 @@ class Chart:
             raise ValueError(
                 f"invalid chart type {self.chart_type!r}; "
                 f"expected one of {sorted(CHART_TYPES)}"
+            )
+        if self.chart_type not in SUPPORTED_CHART_TYPES:
+            raise ValueError(
+                f"chart type {self.chart_type!r} is not supported yet; "
+                f"use one of {sorted(SUPPORTED_CHART_TYPES)}"
             )
         if not isinstance(self.series, (list, tuple)) or not self.series:
             raise ValueError("a chart needs at least one series")

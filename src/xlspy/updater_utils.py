@@ -18,6 +18,7 @@ import shutil
 import sqlite3
 import struct
 import tempfile
+import weakref
 import zipfile
 from contextlib import contextmanager
 from io import BytesIO
@@ -25,6 +26,8 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 from xml.parsers import expat
 from xml.sax import saxutils
+
+from ._text import check_cell_text, xstring_escape
 
 
 STREAM_BUFFER_SIZE = 1024 * 1024
@@ -341,10 +344,15 @@ def strip_invalid_xml_characters(value: str) -> str:
 
 
 def escape_xml_text(value: Any) -> str:
-    """Escape a value for use as XML text or an XML attribute value."""
+    """Escape a value for use as XML text or an XML attribute value.
 
-    text = strip_invalid_xml_characters(str(value))
-    return saxutils.escape(text, {"\"": "&quot;", "'": "&apos;"})
+    Control characters are written as ``_xHHHH_`` escapes, as the writers write
+    them, so they survive; text over Excel's cell limit is refused.
+    """
+
+    text = str(value)
+    check_cell_text(text)
+    return saxutils.escape(xstring_escape(text), {"\"": "&quot;", "'": "&apos;"})
 
 
 def unescape_xml_text(value: str) -> str:
@@ -562,7 +570,13 @@ class ZipPackage:
                 self._entries.append(copied_info)
                 self._indices[info.filename] = len(self._entries) - 1
         self._overrides: dict[int, bytes | Path] = {}
-        self._temporary_directory = tempfile.TemporaryDirectory(prefix="xlspy-updater-")
+        self._temporary_directory = tempfile.mkdtemp(prefix="xlspy-updater-")
+        # A weakref.finalize rather than TemporaryDirectory's own finalizer: in a
+        # reference cycle CPython clears weak references before __del__ runs, so
+        # TemporaryDirectory warned ("Implicitly cleaning up") when collected.
+        self._temporary_directory_finalizer = weakref.finalize(
+            self, shutil.rmtree, self._temporary_directory, ignore_errors=True
+        )
         self._package_transaction: tuple[
             list[zipfile.ZipInfo],
             dict[str, int],
@@ -573,17 +587,8 @@ class ZipPackage:
     def close(self) -> None:
         """Remove the temporary directory holding staged package parts."""
 
-        self._temporary_directory.cleanup()
-
-    def __del__(self):
-        # TemporaryDirectory warns ("Implicitly cleaning up ...") when only its
-        # own finalizer gets to clean it.  Doing it here makes the cleanup
-        # explicit, so dropping an updater no longer emits a ResourceWarning
-        # on Python 3.12+.
-        try:
-            self._temporary_directory.cleanup()
-        except Exception:
-            pass
+        if self._temporary_directory_finalizer.detach() is not None:
+            shutil.rmtree(self._temporary_directory)
 
     def has(self, name: str) -> bool:
         return name in self._indices
@@ -634,7 +639,7 @@ class ZipPackage:
         """Create a named temporary file owned by this package."""
 
         descriptor, path = tempfile.mkstemp(
-            prefix="part-", suffix=suffix, dir=self._temporary_directory.name
+            prefix="part-", suffix=suffix, dir=self._temporary_directory
         )
         os.close(descriptor)
         return Path(path)
@@ -643,7 +648,7 @@ class ZipPackage:
     def temporary_directory(self) -> Path:
         """Return the private directory used for staged package parts."""
 
-        return Path(self._temporary_directory.name)
+        return Path(self._temporary_directory)
 
     def begin_transaction(self) -> None:
         """Start a transaction for staged package replacements."""

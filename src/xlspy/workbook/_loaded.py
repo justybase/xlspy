@@ -257,6 +257,7 @@ def _cols_xml(sheet: Worksheet, prefix: str) -> str:
             and not dimension.hidden
             and not dimension.outlineLevel
             and not dimension.collapsed
+            and getattr(dimension, "style", None) is None
         ):
             continue
         index = parse_cell_range(f"{letter}1")[0] + 1
@@ -562,12 +563,16 @@ def _auto_filter_xml(sheet: Worksheet, prefix: str) -> str:
             column_attrs.append('hiddenButton="1"')
         if not column.showButton:
             column_attrs.append('showButton="0"')
-        values = "".join(
-            f'<{prefix}filter val={quoteattr(str(value))}/>' for value in column.vals
-        )
-        if values or column.blank:
-            blank = ' blank="1"' if column.blank else ""
-            values = f'<{prefix}filters{blank}>{values}</{prefix}filters>'
+        if column.criteria:
+            # Read criteria replace the value list: a column holds one kind of criterion.
+            values = "".join(column.criteria)
+        else:
+            values = "".join(
+                f'<{prefix}filter val={quoteattr(str(value))}/>' for value in column.vals
+            )
+            if values or column.blank:
+                blank = ' blank="1"' if column.blank else ""
+                values = f'<{prefix}filters{blank}>{values}</{prefix}filters>'
         children.append(f'<{prefix}filterColumn {" ".join(column_attrs)}>{values}</{prefix}filterColumn>')
     sort = filter_.sortState
     if sort is not None:
@@ -803,12 +808,18 @@ def _sheet_xml(sheet: Worksheet, date_1904: bool, *, prefix: str = "") -> str:
     cols = _cols_xml(sheet, prefix)
     merges = _merge_xml(sheet, prefix)
     auto = _auto_filter_xml(sheet, prefix)
+    protection = _protection_xml(sheet, prefix)
+    sheet_format = _sheet_format_xml(sheet, prefix) or f'<{prefix}sheetFormatPr defaultRowHeight="15"/>'
+    row_breaks = _breaks_xml(sheet.row_breaks, "rowBreaks", prefix, 16383)
+    col_breaks = _breaks_xml(sheet.col_breaks, "colBreaks", prefix, 1048575)
+    ignored = ignored_errors_xml(sheet.ignored_errors, prefix)
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<{prefix}worksheet xmlns="{MAIN}" xmlns:r="{REL}">'
-        f"{sheet_pr}{dimension}{views}<{prefix}sheetFormatPr defaultRowHeight=\"15\"/>"
-        f"{cols}{sheet_data}{auto}{merges}<{prefix}pageMargins left=\"0.7\" right=\"0.7\" "
+        f"{sheet_pr}{dimension}{views}{sheet_format}"
+        f"{cols}{sheet_data}{protection}{auto}{merges}<{prefix}pageMargins left=\"0.7\" right=\"0.7\" "
         f'top="0.75" bottom="0.75" header="0.3" footer="0.3"/>'
+        f"{row_breaks}{col_breaks}{ignored}"
         f"</{prefix}worksheet>"
     )
 

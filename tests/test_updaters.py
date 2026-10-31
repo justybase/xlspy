@@ -1,5 +1,4 @@
 import datetime
-import os
 import struct
 import zipfile
 
@@ -166,8 +165,9 @@ def test_xlsx_updater_supports_inline_strings_and_general_fallback(tmp_path):
         assert "xl/sharedStrings.xml" not in names
         assert 't="inlineStr"' in xml
         assert "&lt;&amp;&quot;&apos;" in xml
+        assert "_x0001_" in xml
         assert ' s="' not in xml
-    assert _read_sheet(path, "Sheet1")[0][0] == "<&\"'"
+    assert _read_sheet(path, "Sheet1")[0][0] == "<&\"'\x01"
 
 
 def test_xlsx_updater_inherits_date_and_header_styles(tmp_path):

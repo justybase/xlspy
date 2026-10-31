@@ -728,11 +728,20 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
             f"<doughnutChart><varyColors val=\"1\"/>{series_xml}{labels}"
             f"<firstSliceAng val=\"0\"/><holeSize val=\"{hole}\"/></doughnutChart>"
         )
-    else:
+    elif chart.chart_type == "radar":
+        parts.append(
+            f"<radarChart><radarStyle val=\"marker\"/>{vary}{series_xml}{labels}"
+            "<axId val=\"10\"/><axId val=\"100\"/></radarChart>"
+            f"{_axes_xml(chart, xlsb)}"
+        )
+    elif chart.chart_type == "pie":
         parts.append(
             f"<pieChart><varyColors val=\"1\"/>{series_xml}{labels}"
             "<firstSliceAng val=\"0\"/></pieChart>"
         )
+    else:
+        # Never fall through to a pie: a type without a serialiser must fail.
+        raise ValueError(f"chart type {chart.chart_type!r} cannot be written yet")
     return _finish_chart(parts, chart)
 
 

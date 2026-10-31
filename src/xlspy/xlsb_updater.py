@@ -29,10 +29,10 @@ from .updater_utils import (
     materialize_rows,
     parse_relationships_xml,
     resolve_zip_target,
-    strip_invalid_xml_characters,
     trim_trailing_empty_rows,
     unwrap_cell,
 )
+from ._text import check_cell_text
 from .excel_dates import datetime_to_serial
 
 
@@ -784,10 +784,10 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
             return build_record(0x05, payload)
         if isinstance(value, (float, Decimal)):
             numeric_value = float(value)
-            if math.isfinite(numeric_value):
-                payload = struct.pack("<IId", column, style, numeric_value)
-                return build_record(0x05, payload)
-            return self._string_cell_bytes(column, style, str(value))
+            if not math.isfinite(numeric_value):
+                raise ValueError("numeric cell values must be finite")
+            payload = struct.pack("<IId", column, style, numeric_value)
+            return build_record(0x05, payload)
         if isinstance(value, (_datetime.datetime, _datetime.date)):
             serial = self._date_to_serial(value)
             if math.isfinite(serial):
@@ -797,7 +797,9 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
         return self._string_cell_bytes(column, style, "" if value is None else str(value))
 
     def _string_cell_bytes(self, column: int, style: int, text: str) -> bytes:
-        text = strip_invalid_xml_characters(text)
+        # XLSB stores text as UTF-16 records, not XML: control characters are kept,
+        # as the XLSB writer keeps them.
+        check_cell_text(text)
         if self._shared_strings_data is None and self._stream_shared_strings is None:
             encoded = text.encode("utf-16le")
             payload = struct.pack("<III", column, style, len(encoded) // 2) + encoded

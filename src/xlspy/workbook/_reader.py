@@ -77,6 +77,15 @@ def _q(tag: str) -> str:
     return f"{{{MAIN}}}{tag}"
 
 
+def _element_xml(element) -> str:
+    """The XML of one element, without the text that follows it."""
+    tail, element.tail = element.tail, None
+    try:
+        return ET.tostring(element, encoding="unicode")
+    finally:
+        element.tail = tail
+
+
 def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
@@ -854,6 +863,10 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                             if item.get("val") is not None
                         ]
                         column.blank = _bool_attr(filters, "blank", False)
+                    # Any other criterion is kept verbatim: the model does not interpret it.
+                    column.criteria = [
+                        _element_xml(item) for item in child if item.tag != _q("filters")
+                    ]
                     filter_.filterColumn.append(column)
                 sort = node.find(_q("sortState"))
                 if sort is not None:

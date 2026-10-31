@@ -41,9 +41,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   range").
 - XLSX pivot tables with several values and a column field list the data field in the repeated column items,
   as Excel does.
+- Radar charts (`Chart("radar", ...)`) are written as radar charts. They used to be written as pie charts, and so
+  were `area3d`, `bar3d`, `bubble`, `line3d`, `pie3d`, `projected_pie`, `stock`, `surface` and `surface3d`; those
+  types now raise `ValueError` when the chart is created.
+- `to_xlsx()` and `to_xlsb()` no longer delete an existing file at `path` when the conversion fails; the file is
+  left as it was.
+- A loaded XLSX keeps its autofilter criteria other than value lists (such as custom filters) when another edit
+  rewrites the sheet, and keeps style-only column definitions (`<col style=...>`) when a column width changes.
+- A sheet added to a loaded XLSX keeps the sheet protection, ignored errors, row and column breaks and the default
+  row height that were set on it.
+- `Workbook()` saves tables added as openpyxl-style `Table` objects (it raised `TypeError`).
+- `XlsxUpdater` and `XlsbUpdater` keep control characters in text. XLSX stores them as `_xHHHH_` escapes, as
+  Excel does; XLSB stores them as they are. Text longer than Excel's 32,767-character limit raises `ValueError`
+  instead of being written.
+- `ReadOnlyCell` is exported from `xlspy`.
+- An unclosed workbook opened by an updater no longer emits a `ResourceWarning` for its temporary directory when it
+  is garbage collected; the directory is removed by `close()` or when the updater is collected.
 
 ### Changed
 
+- `XlsxUpdater` and `XlsbUpdater` raise `ValueError` for NaN and infinite numbers, as `update_cells` already did.
+  They used to write them into the file.
+- `XlsxWriter` and `XlsbWriter` raise `ValueError` for NaN and infinite numbers. XLSX used to write them as text
+  (`NaN`, `∞`) in the cell.
+- A loaded XLSB whose auto filter has custom criteria (such as `> 2`, not a value list) keeps the criteria when the
+  file is saved unchanged, and the filter can be removed. Changing that filter raises `NotImplementedError` on save;
+  it used to drop the criteria and leave a blank-match filter in Excel.
+- `add_named_style()` on a new workbook (one not loaded from a file) raises `NotImplementedError` on save, because
+  the new-file writers do not write named styles. Save the workbook first, load it, add the style and save again.
+  Loaded XLSX and XLSB workbooks keep named styles.
 - Renaming a sheet rewrites the sparkline formulas that refer to it.
 - Removing a sheet that holds table slicers from a loaded workbook (XLSX or XLSB) raises `NotImplementedError`
   before anything is written.

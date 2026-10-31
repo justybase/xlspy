@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 
 from ._util import (
+    gap_xfail,
     close_quietly,
     golden_path,
     normalize,
@@ -19,7 +19,7 @@ def _pair(name):
     try:
         xwb = xlspy_load(golden_path(name))
     except Exception as exc:
-        pytest.xfail(f"xlspy cannot load {name}: {type(exc).__name__}: {exc}")
+        gap_xfail(f"xlspy cannot load {name}: {type(exc).__name__}: {exc}")
     owb = openpyxl_load(golden_path(name), data_only=False)
     return xwb, owb
 
@@ -95,7 +95,7 @@ def test_sheet_view(manifest):
             for name in ("xSplit", "ySplit", "topLeftCell", "activePane", "state"):
                 xfail_mismatch("B1", f"pane.{name}", require(xp, name, "B1"), getattr(op, name))
         else:
-            pytest.xfail("B1: openpyxl golden has no pane")
+            gap_xfail("B1: openpyxl golden has no pane")
         xfail_mismatch("B1", "show_gridlines", require(xwb["Meta"], "show_gridlines", "B1"), owb["Meta"].show_gridlines)
         xfail_mismatch("B1", "active_cell", require(xwb["Meta"], "active_cell", "B1"), owb["Meta"].active_cell)
         xfail_mismatch("B1", "selected_cell", require(xwb["Meta"], "selected_cell", "B1"), owb["Meta"].selected_cell)
@@ -224,7 +224,7 @@ def test_defined_names(manifest):
             try:
                 entry = xnames[name]
             except Exception as exc:
-                pytest.xfail(f"A4: defined_names[{name!r}] failed: {exc}")
+                gap_xfail(f"A4: defined_names[{name!r}] failed: {exc}")
             try:
                 oentry = owb.defined_names[name]
             except KeyError:
@@ -284,7 +284,7 @@ def test_tables(manifest):
         try:
             xtable = xt["ObjectsTable"]
         except (TypeError, KeyError, IndexError):
-            pytest.xfail("C1: tables are not a name-keyed collection")
+            gap_xfail("C1: tables are not a name-keyed collection")
         xfail_mismatch(
             "C1", "table names",
             sorted(getattr(item, "displayName", str(item)) for item in xt),
@@ -349,7 +349,7 @@ def test_named_styles(manifest):
     try:
         xstyles = require(xwb, "named_styles", "C4")
         if not hasattr(xstyles, "names"):
-            pytest.xfail("C4: named_styles has no names collection")
+            gap_xfail("C4: named_styles has no names collection")
         xnames = sorted(xstyles.names)
         onames = sorted(
             item if isinstance(item, str) else item.name

@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import importlib
 
-import pytest
 
 import xlspy
 
-from ._util import close_quietly, golden_path, require_path, xlspy_load
+from ._util import close_quietly, golden_path, require_path, xlspy_load, gap_xfail
 
 
 def _check(obj, path: str, gap: str):
@@ -160,7 +159,7 @@ def test_write_only_surface():
     try:
         from xlspy.workbook import WriteOnlyCell
     except ImportError:
-        pytest.xfail("A10: WriteOnlyCell is missing")
+        gap_xfail("A10: WriteOnlyCell is missing")
     wb = xlspy.Workbook(write_only=True)
     ws = wb.create_sheet()
     try:
@@ -175,7 +174,7 @@ def test_read_only_cell_surface():
     try:
         wb = xlspy.load_workbook(golden_path("objects.xlsx"), read_only=True)
     except Exception as exc:
-        pytest.xfail(f"A10: read-only load failed: {exc}")
+        gap_xfail(f"A10: read-only load failed: {exc}")
     try:
         ws = wb["Objects"]
         cell = ws["B2"]
@@ -196,14 +195,14 @@ def test_utils_surface():
         try:
             importlib.import_module(module)
         except ImportError:
-            pytest.xfail(f"D2: {module} is missing")
+            gap_xfail(f"D2: {module} is missing")
 
 
 def test_styles_numbers_surface():
     try:
         numbers = importlib.import_module("xlspy.styles.numbers")
     except ImportError:
-        pytest.xfail("D1: xlspy.styles.numbers is missing")
+        gap_xfail("D1: xlspy.styles.numbers is missing")
     for name in (
         "FORMAT_GENERAL", "FORMAT_TEXT", "FORMAT_DATE_YYYYMMDD2",
         "builtin_format_code", "builtin_format_id", "is_builtin",
@@ -216,7 +215,7 @@ def test_formula_surface():
     try:
         formula = importlib.import_module("xlspy.formula")
     except ImportError:
-        pytest.xfail("D3: xlspy.formula is missing")
+        gap_xfail("D3: xlspy.formula is missing")
     _check(formula, "Tokenizer", "D3")
     _check(formula, "Translator", "D3")
 
@@ -240,7 +239,7 @@ def test_tables_surface():
         try:
             table = tables["ObjectsTable"]
         except (TypeError, KeyError, IndexError):
-            pytest.xfail("C1: tables are not a name-keyed collection")
+            gap_xfail("C1: tables are not a name-keyed collection")
         for name in (
             "displayName", "ref", "tableColumns", "tableStyleInfo",
             "totalsRowCount", "autoFilter", "sortState",
@@ -260,7 +259,7 @@ def test_data_validation_surface():
         _check(validations, "remove", "C2")
         rules = list(validations)
         if not rules:
-            pytest.xfail("C2: validations are not loaded from the workbook")
+            gap_xfail("C2: validations are not loaded from the workbook")
         rule = rules[0]
         for name in (
             "allowBlank", "showDropDown", "showErrorMessage",
@@ -280,11 +279,11 @@ def test_conditional_formatting_surface():
         _check(formatting, "__getitem__", "C3")
         _check(formatting, "remove", "C3")
         if len(formatting) < 3:
-            pytest.xfail("C3: conditional formatting rules are not loaded")
+            gap_xfail("C3: conditional formatting rules are not loaded")
         try:
             from xlspy.styles import Rule
         except ImportError:
-            pytest.xfail("C3: generic Rule is missing")
+            gap_xfail("C3: generic Rule is missing")
         _check(Rule, "type", "C3")
     finally:
         close_quietly(wb)
@@ -305,13 +304,13 @@ def test_charts_surface():
     for chart_type in ("radar", "bubble", "stock", "surface", "surface3d",
                        "bar3d", "line3d", "pie3d", "area3d"):
         if chart_type not in CHART_TYPES:
-            pytest.xfail(f"C6: chart type {chart_type!r} is missing")
+            gap_xfail(f"C6: chart type {chart_type!r} is missing")
 
     wb = xlspy_load(golden_path("charts.xlsx"))
     try:
         counts = {ws.title: len(list(ws.charts)) for ws in wb.worksheets}
         if sum(counts.values()) != 15:
-            pytest.xfail(f"C6: loaded charts {counts}")
+            gap_xfail(f"C6: loaded charts {counts}")
     finally:
         close_quietly(wb)
 
@@ -321,7 +320,7 @@ def test_images_surface():
     try:
         images = list(wb["Images"].images)
         if len(images) != 4:
-            pytest.xfail(f"C7: loaded images {len(images)}")
+            gap_xfail(f"C7: loaded images {len(images)}")
     finally:
         close_quietly(wb)
 

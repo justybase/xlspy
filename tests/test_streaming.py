@@ -397,7 +397,7 @@ class Odd:
 
 rows = [
     ["text", "\U0001D11E astral", "\u00e9t\u00e9", ""],
-    [1, -1, 2 ** 40, 2 ** 70, 1.5, -0.0, float("nan"), 536870911, -536870912],
+    [1, -1, 2 ** 40, 2 ** 70, 1.5, -0.0, 2.5, 536870911, -536870912],
     [True, False, None, decimal.Decimal("1.25"), datetime.date(2024, 1, 2),
      datetime.datetime(2024, 1, 2, 3, 4, 5)],
     [Odd(), "x" * 300, 7],

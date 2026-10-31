@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import datetime
 import importlib
-import os
 from decimal import Decimal
 from typing import Any, Iterator
 
@@ -233,15 +232,6 @@ def dataframe_to_rows(
         yield [_convert_cell(cell, fmt, na_rep, pd, np) for cell, fmt in zip(row, format_for)]
 
 
-def _remove_partial_file(path) -> None:
-    """Delete an output file left behind by a failed conversion."""
-    if isinstance(path, (str, os.PathLike)) and os.path.exists(path):
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-
-
 def to_xlsx(
     df,
     path,
@@ -270,27 +260,24 @@ def to_xlsx(
 ):
     """Write a DataFrame straight to an ``.xlsx`` file and return ``path``.
 
-    If the conversion fails, a partially written file is removed.
+    A failed conversion leaves ``path`` as it was: the writer stages the file
+    and publishes it only on success.
     """
     from .xlsx_writer import XlsxWriter
 
-    try:
-        with XlsxWriter(path, **writer_kwargs) as writer:
-            writer.add_sheet(sheet_name)
-            writer.write_dataframe(
-                df, include_index=include_index, na_rep=na_rep, formats=formats,
-                header_style=header_style, styles=styles,
-                merges=merges, conditional_formats=conditional_formats,
-                tables=tables, column_widths=column_widths,
-                hidden_columns=hidden_columns, row_heights=row_heights,
-                hidden_rows=hidden_rows, row_groups=row_groups,
-                column_groups=column_groups, freeze_panes=freeze_panes,
-                auto_filter=auto_filter, charts=charts,
-                comments=comments, sheet_protection=sheet_protection,
-            )
-    except Exception:
-        _remove_partial_file(path)
-        raise
+    with XlsxWriter(path, **writer_kwargs) as writer:
+        writer.add_sheet(sheet_name)
+        writer.write_dataframe(
+            df, include_index=include_index, na_rep=na_rep, formats=formats,
+            header_style=header_style, styles=styles,
+            merges=merges, conditional_formats=conditional_formats,
+            tables=tables, column_widths=column_widths,
+            hidden_columns=hidden_columns, row_heights=row_heights,
+            hidden_rows=hidden_rows, row_groups=row_groups,
+            column_groups=column_groups, freeze_panes=freeze_panes,
+            auto_filter=auto_filter, charts=charts,
+            comments=comments, sheet_protection=sheet_protection,
+        )
     return path
 
 def to_xlsb(
@@ -321,25 +308,22 @@ def to_xlsb(
 ):
     """Write a DataFrame straight to an ``.xlsb`` file and return ``path``.
 
-    If the conversion fails, a partially written file is removed.
+    A failed conversion leaves ``path`` as it was: the writer stages the file
+    and publishes it only on success.
     """
     from .writer import XlsbWriter
 
-    try:
-        with XlsbWriter(path, **writer_kwargs) as writer:
-            writer.add_sheet(sheet_name)
-            writer.write_dataframe(
-                df, include_index=include_index, na_rep=na_rep, formats=formats,
-                header_style=header_style, styles=styles,
-                merges=merges, column_widths=column_widths,
-                hidden_columns=hidden_columns, row_heights=row_heights,
-                hidden_rows=hidden_rows, row_groups=row_groups,
-                column_groups=column_groups, freeze_panes=freeze_panes,
-                auto_filter=auto_filter, charts=charts, tables=tables,
-                conditional_formats=conditional_formats,
-                comments=comments, sheet_protection=sheet_protection,
-            )
-    except Exception:
-        _remove_partial_file(path)
-        raise
+    with XlsbWriter(path, **writer_kwargs) as writer:
+        writer.add_sheet(sheet_name)
+        writer.write_dataframe(
+            df, include_index=include_index, na_rep=na_rep, formats=formats,
+            header_style=header_style, styles=styles,
+            merges=merges, column_widths=column_widths,
+            hidden_columns=hidden_columns, row_heights=row_heights,
+            hidden_rows=hidden_rows, row_groups=row_groups,
+            column_groups=column_groups, freeze_panes=freeze_panes,
+            auto_filter=auto_filter, charts=charts, tables=tables,
+            conditional_formats=conditional_formats,
+            comments=comments, sheet_protection=sheet_protection,
+        )
     return path

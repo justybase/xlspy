@@ -27,11 +27,11 @@ from .updater_utils import (
     replace_or_add_xml_attribute,
     rewrite_shared_strings_xml,
     resolve_zip_target,
-    strip_invalid_xml_characters,
     trim_trailing_empty_rows,
     unescape_xml_text,
     unwrap_cell,
 )
+from ._text import check_cell_text
 from .excel_dates import datetime_to_serial
 from ._xlsx_edit import XlsxEditMixin
 
@@ -892,10 +892,12 @@ class XlsxUpdater(XlsxEditMixin):
             return f"{cell_prefix}><{prefix}v>{serial:.15g}</{prefix}v></{prefix}c>"
         if isinstance(value, numbers.Real) or isinstance(value, Decimal):
             numeric_value = float(value)
-            if math.isfinite(numeric_value):
-                return f"{cell_prefix}><{prefix}v>{numeric_value:.15g}</{prefix}v></{prefix}c>"
+            if not math.isfinite(numeric_value):
+                raise ValueError("numeric cell values must be finite")
+            return f"{cell_prefix}><{prefix}v>{numeric_value:.15g}</{prefix}v></{prefix}c>"
 
-        text = strip_invalid_xml_characters(str(value))
+        text = str(value)
+        check_cell_text(text)
         if self._use_shared_strings:
             index = self._shared_string_index(text)
             return f'{cell_prefix} t="s"><{prefix}v>{index}</{prefix}v></{prefix}c>'

@@ -34,6 +34,8 @@ BEGIN_COL_INFOS, COL_INFO, END_COL_INFOS = 0x186, 0x3C, 0x187
 BEGIN_SHEET_DATA, END_SHEET_DATA, ROW_HEADER = 0x91, 0x92, 0x00
 SHEET_PROTECTION, SHEET_PROTECTION_ISO = 0x217, 0x218
 BEGIN_FILTER, END_FILTER = 0xA1, 0xA2
+# Records of a value-list or blank-only auto filter; any other record means custom criteria.
+_VALUE_FILTER_RECORDS = frozenset({0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7})
 BEGIN_FILTER_COLUMN, END_FILTER_COLUMN, BEGIN_FILTERS, END_FILTERS, FILTER = 0xA3, 0xA4, 0xA5, 0xA6, 0xA7
 BEGIN_SORT_STATE = 0x1BB
 END_SHEET = 0x82
@@ -607,6 +609,12 @@ def patch_layout(data: bytes, sheet, groups) -> bytes:
             data = replace_records(data, {SHEET_PROTECTION, SHEET_PROTECTION_ISO}, block,
                                    before=_AFTER_PROTECTION)
     if "filter" in groups:
+        loaded = getattr(sheet, "_saved_filter_records", None) or ()
+        if sheet.auto_filter.ref and any(record_id not in _VALUE_FILTER_RECORDS for record_id, _ in loaded):
+            raise NotImplementedError(
+                "custom auto-filter criteria cannot be changed in a loaded XLSB workbook yet; "
+                "keep the filter as it is or remove it"
+            )
         data = _replace_filter(data, _filter_block(sheet))
     if "print" in groups:
         data = replace_records(data, _PRINT_RECORDS, _print_block(sheet, data), before=_AFTER_PRINT)
