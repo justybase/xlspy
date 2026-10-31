@@ -13,6 +13,7 @@ class CellType(IntEnum):
     stringVal = 2
     sharedString = 3
     nullValue = 4
+    errorVal = 5
 
 
 class BiffReader:
@@ -63,6 +64,7 @@ class BiffReader:
         self.shared_string_unique_count = 0
 
         self.cell_type = CellType.nullValue
+        self.error_code = 0
         self.int_value = 0
         self.double_val = 0.0
         self.bool_value = False
@@ -254,9 +256,18 @@ class BiffReader:
                 self.row_index = -1
         elif len(buffer) < 8:
             pass
-        elif record_id in (self._blank, self._boolError, self._formulaError):
+        elif record_id == self._blank:
             self.read_cell = True
             self.cell_type = CellType.nullValue
+        elif record_id in (self._boolError, self._formulaError):
+            # BrtCellError / BrtFmlaError: one byte after the cell header holds the error code.
+            if len(buffer) >= 9:
+                self.error_code = buffer[8]
+                self.read_cell = True
+                self.cell_type = CellType.errorVal
+            else:
+                self.read_cell = True
+                self.cell_type = CellType.nullValue
         elif record_id == self._number:
             if len(buffer) >= 12:
                 self.double_val = self._get_rk_number(buffer, 8)

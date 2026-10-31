@@ -179,6 +179,12 @@ static int _date_failed(int *fatal, int *is_date)
     return 0;
 }
 
+/* xlspy._errors.CellError, registered by set_error_type: the str subclass
+   of "error:#N/A" values, so that text starting with "error:" stays text. */
+static PyObject *g_error_type = NULL;
+
+static const char *_xlsb_error_text(unsigned char code);
+
 /* ===== Read a single cell's value from a worksheet cell record ===== */
 static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_len,
                                     Py_ssize_t body_start, long rec_id, long rec_len,
@@ -192,9 +198,34 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
     *fatal = 0;
     *skip = 0;
 
-    if (rec_id == 0x01 || rec_id == 0x03 || rec_id == 0x0B)
+    if (rec_id == 0x01)
     {
         cell_val = Py_None;
+    }
+    else if (rec_id == 0x03 || rec_id == 0x0B)
+    {
+        /* BrtCellError / BrtFmlaError: the error code byte follows the cell
+           header. It is an error value, not a blank cell. */
+        if (rec_len < 9)
+        {
+            cell_val = Py_None;
+        }
+        else
+        {
+            PyObject *text = PyUnicode_FromFormat(
+                "error:%s", _xlsb_error_text(data[body_start + 8]));
+            if (!text) { *fatal = 1; return NULL; }
+            if (g_error_type)
+            {
+                cell_val = PyObject_CallOneArg(g_error_type, text);
+                Py_DECREF(text);
+                if (!cell_val) { *fatal = 1; return NULL; }
+            }
+            else
+            {
+                cell_val = text;
+            }
+        }
     }
     else if (rec_id == 0x02)
     {
@@ -392,10 +423,6 @@ static int _cell_overlay_kind(PyObject *item)
     if (g_style_type && PyObject_TypeCheck(item, (PyTypeObject *)g_style_type)) return 2;
     return 0;
 }
-
-/* xlspy._errors.CellError, registered by set_error_type: the str subclass
-   of "error:#N/A" values, so that text starting with "error:" stays text. */
-static PyObject *g_error_type = NULL;
 
 static PyObject *C_set_error_type(PyObject *self, PyObject *type)
 {

@@ -1,4 +1,5 @@
 import datetime
+import os
 import re
 import zipfile
 from enum import IntEnum
@@ -12,6 +13,7 @@ from .excel_dates import serial_to_datetime as _serial_to_datetime
 from ._accel import HAVE_C_EXT, read_xlsb_worksheet as _c_read_xlsb_worksheet
 from ._accel import read_xlsb_shared_strings as _accel_read_sst
 from ._text import xstring_unescape
+from ._xlsb_formulas import ERRORS as _XLSB_ERRORS
 
 _SST_ITEM = re.compile(r"<si>(.*?)</si>", re.DOTALL)
 _SST_TEXT = re.compile(r"<t(?:\s[^>]*)?>(.*?)</t>", re.DOTALL)
@@ -173,12 +175,13 @@ class ExcelReader:
         self._shared_strings_location: Optional[str] = None
         self._styles_location: Optional[str] = None
         self._date_1904 = False
-        self._path: Optional[str] = path
+        self._path: Optional[str] = None if path is None else os.fspath(path)
         self.use_memory_stream_for_xlsb = use_memory_stream_for_xlsb
 
-    def open(self, path: str):
+    def open(self, path: "str | os.PathLike[str]"):
         # Re-opening the same instance must not leak the previous archive nor
         # accumulate worksheet/style/shared-string state from the previous file.
+        path = os.fspath(path)
         self.close()
         self._worksheet_id_to_name = {}
         self._worksheet_name_to_id = {}
@@ -637,6 +640,8 @@ class ExcelReader:
                         inner_row[tmp_len] = reader.string_value
                     elif reader.cell_type == CellType.boolVal:
                         inner_row[tmp_len] = reader.bool_value
+                    elif reader.cell_type == CellType.errorVal:
+                        inner_row[tmp_len] = CellError("error:" + _XLSB_ERRORS.get(reader.error_code, "#VALUE!"))
                     elif reader.cell_type == CellType.doubleVal:
                         double_val = reader.double_val
                         style_index = reader.xf_index
