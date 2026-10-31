@@ -121,38 +121,45 @@ gap is implemented the same test starts passing without changes.
 - Excel COM tests (`tests/test_excel_com_xlsb_loaded.py`) open the saved files
   and check styles, merges, hyperlinks and validations.
 
+**Sprint 0.11 — 2026-10-29**
+- XLSB sheet management in a loaded workbook (and `XlsbUpdater`): add, remove,
+  rename, reorder, hide, active sheet. Defined names, XTI entries and the
+  workbook view follow; renaming rewrites formulas, validation formulas and
+  defined names (XLSX too).
+- XLSB layout edits are written into the sheet's own records: dimensions,
+  views, panes and selections, tab colour, sheet format, protection (with
+  password), autofilter with filter columns, print setup, header/footer,
+  breaks, print areas and titles. Document properties are saved for loaded
+  XLSX and XLSB.
+- XLSB conditional formats: colour scales, data bars and icon sets are read,
+  formula thresholds are written, and CF edits are saved into loaded XLSB
+  (new `dxf` records are added once; equal styles are shared). Loaded XLSX
+  reuses equal `dxf` entries instead of appending copies.
+- Removing loaded charts and images (XLSX and XLSB); `create_chartsheet()`
+  for XLSX; new `.xlsm`/`.xltx`/`.xltm` workbooks and `keep_vba`/`vba_archive`.
+- `IconSetRule.type == "iconSet"` (threshold type: `cfvo_type`);
+  `copy_worksheet()` copies dimensions and settings instead of sharing them.
+- `load_workbook()` builds cells in C: 50k x 20 cells load in 0.39 s (XLSX)
+  and 0.55 s (XLSB), 0.47 s/0.71 s for files saved by Excel.
+- Every change was checked by opening the files in Excel through COM.
+
 ### Remaining
 
-**Phase 3 — remaining XLSB parity**
-- Editing sheet layout, print setup, CF, tables, charts and images inside a
-  loaded XLSB; named styles in XLSB; loading XLSB colour scales, data bars and
-  icon sets.
-- `IconSetRule` keeps its existing `type` field for the cfvo type and exposes
-  the rule type as `rule_type`; openpyxl uses `.type == "iconSet"`.
-- A conditional-formatting edit rebuilds the sheet's CF blocks and appends the
-  corresponding `dxf` records; old orphaned `dxf` entries may accumulate across
-  repeated edits (harmless, but a future cleanup can compact them).
+**XLSB**
+- Adding tables, charts, images or chartsheets to a loaded XLSB (removing
+  charts and images works); named styles in XLSB; loading XLSB chartsheets.
+- A CF edit in a loaded XLSB drops the Excel 2010 extension of the sheet's
+  rules (negative bar colours, gradient settings); it refuses the edit when the
+  extension holds rules the model cannot read.
 
-**Phase 4 — remaining edit/removal**
-- Loaded charts are preserved, not yet editable field-by-field; loaded images
-  cannot yet be removed. Adding new charts/images already works.
-- Chart options beyond the existing builder (combined charts, secondary axis,
-  error bars, trendlines, data tables) and chartsheet creation remain.
-- XLSB drawings are loaded; XLSB chartsheets are not loaded yet.
+**Charts and drawings**
+- Loaded charts are preserved, not editable field-by-field. Chart options
+  beyond the builder (combined charts, secondary axis, error bars,
+  trendlines, data tables) remain. New chartsheets go after the other sheets.
 
-**Phase 6 — XLSB edit core**
-- Cell values, styles, merges, hyperlinks, validations, comments and defined
-  names are written through `XlsbUpdater` (`update_cells(..., styles=...)`,
-  `set_merged_cells`, `set_hyperlinks`, `set_data_validations`,
-  `set_comments`, `set_defined_name`/`remove_defined_name`); no-op saves remain
-  byte-identical.
-- Still missing: sheet add/remove/rename/reorder, protection/print/views, and
-  table/CF/chart/image editing in XLSB.
-
-**Phase 7 — long tail**
-- External links, pivots, OLE/controls, templates, phonetics, custom
-  `app.xml`/`custom.xml` writing, sheet backgrounds, ignored errors and
-  custom/built-in table styles remain to be implemented.
+**Long tail**
+- External links, pivots, OLE/controls, phonetics, sheet backgrounds, ignored
+  errors and custom/built-in table styles remain to be implemented.
 
 ## P0/P1 gaps
 
@@ -162,10 +169,10 @@ gap is implemented the same test starts passing without changes.
 | A2 | Loaded worksheet objects | tables, validations, CF, charts, images are invisible after load | L3 | 3–4 |
 | A3 | Workbook metadata | no `security`, `calculation`, `views`, `epoch`, `template`, `vba_archive` | L3 | 2 |
 | A4 | Defined names | read-only list; `DefinedName(name, formula, scope)` | L3 | 1 |
-| A5 | New `.xlsm` / templates | `ValueError` | L2/L3 | 7 |
+| A5 | New `.xlsm` / templates | `ValueError` → **done** (content types, `keep_vba`/`vba_archive`) | L2/L3 | 7 |
 | A6 | External links | preservation only | L2 | 7 |
 | A7 | Pivot tables | preservation/retarget only | L2 | 7 |
-| A8 | Chartsheets | preserved but not loaded into the model | L2/L3 | 4 |
+| A8 | Chartsheets | preserved but not loaded into the model → **done** for XLSX (read, `create_chartsheet()`) | L2/L3 | 4 |
 | A9 | OLE / controls / shapes | preservation only | L1/L2 | 7 |
 | A10 | read-only / write-only | no `ReadOnlyCell.number_format`, no `WriteOnlyCell` | L3 | 1 |
 | A11 | Custom document properties | writer-only; model does not read/write `custom.xml` | L3 | 2 |
@@ -191,7 +198,7 @@ gap is implemented the same test starts passing without changes.
 | C5 | Table styles | only `style_name` | L2/L3 | 7 |
 | C6 | Charts | 7 types; no read/preserve/edit; no combined/3D/error bars | L2/L3 practical | 4 |
 | C7 | Images | 4 formats; cell anchor + pixels only; no read/edit | L3 | 4 |
-| C8 | Chartsheets | absent | L2/L3 | 4 |
+| C8 | Chartsheets | absent → XLSX read and create | L2/L3 | 4 |
 | C9 | Drawings/shapes/connectors | preservation only | L1/L2 preserve | 7 |
 | D1 | `styles.numbers` | absent | L3 | 1 |
 | D2 | `utils.*` | internal helpers only | L3 | 1 |
@@ -201,12 +208,12 @@ gap is implemented the same test starts passing without changes.
 | D6 | Rich text phonetics | absent | L2 | 7 |
 | D7 | Error representation | `ExcelReader` uses `error:#DIV/0!`; model uses `#DIV/0!` | L3 consistent | 1 |
 | D8 | Date/time behaviour | mostly covered; public helpers missing | L3 | 1–2 |
-| E1 | XLSB model read | absent → **done** (values, styles, metadata, objects; not CF colour scales/data bars/icon sets, chartsheets) | L2 | 5 |
-| E2 | XLSB model edit | sparse `update_cells` only → values, styles, merges, hyperlinks, DV, comments, names; other edits raise | L3 | 6 |
+| E1 | XLSB model read | absent → **done** (values, styles, metadata, objects, all CF families; not chartsheets) | L2 | 5 |
+| E2 | XLSB model edit | sparse `update_cells` only → values, styles, merges, hyperlinks, DV, CF, comments, names, layout, print, protection, properties | L3 | 6 |
 | E3 | XLSB styles | mostly number formats → **done** (read, lazy; new styles appended on save) | L3 | 5–6 |
 | E4 | XLSB objects read | absent → **done** (DV, CF, tables, charts, images) | L2 | 5 |
-| E5 | XLSB objects edit | writer can create; updater cannot edit → DV edits saved; tables/CF/charts/images refused | L3 | 6 |
-| E6 | XLSB sheet management | no add/remove/rename/reorder in updater | L3 | 6 |
+| E5 | XLSB objects edit | writer can create; updater cannot edit → DV and CF edits saved, charts/images removable; adding tables/charts/images refused | L3 | 6 |
+| E6 | XLSB sheet management | no add/remove/rename/reorder in updater → **done** | L3 | 6 |
 
 ## Long tail
 
@@ -215,7 +222,7 @@ gap is implemented the same test starts passing without changes.
 | F1 | External links | L2 | 7 |
 | F2 | Pivot tables | L2 | 7 |
 | F3 | OLE / controls | L1/L2 | 7 |
-| F4 | Templates / new `.xlsm` | L2/L3 | 7 |
+| F4 | Templates / new `.xlsm` | L2/L3 → **done** (see A5) | 7 |
 | F5 | Themes / custom themes | L1/L2 | 7 |
 | F6 | Encryption | out of scope (openpyxl has none) | — |
 | F7 | Legacy `.xls` | out of scope (openpyxl has none) | — |

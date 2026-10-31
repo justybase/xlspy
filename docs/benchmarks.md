@@ -79,22 +79,27 @@ Median wall time to read the 50,000 × 50 workbook back. Each library reads the 
 
 `benchmarks/bench_io.py` compares the read modes described in
 [Read modes](usage.md#read-modes-which-one-to-use) on a 50,000 × 20 workbook
-(Windows, Python 3.14, C extension on, median of three runs, 2026-10-27,
+(Windows, Python 3.14, C extension on, median of three runs, 2026-10-29,
+[`results-2026-10-29-sprint.json`](../benchmarks/results-2026-10-29-sprint.json);
+before the 0.11 sprint in brackets,
 [`results-write-final.json`](../benchmarks/results-write-final.json)):
 
 | Case | XLSX | XLSB |
 | :--- | ---: | ---: |
-| `ExcelReader.get_rows()` (values, no styles) | 0.29 s | 0.19 s |
-| `load_workbook()` | 2.30 s | 2.56 s |
-| `load_workbook()`, every 10th row bold | 2.69 s | 2.93 s |
-| Save a loaded styled workbook after 1,000 value and style edits | — | 2.42 s |
-| Build the model and save it | 1.88 s | 1.77 s |
+| `ExcelReader.get_rows()` (values, no styles) | 0.28 s | 0.19 s |
+| `load_workbook()` | 0.40 s (2.30 s) | 0.55 s (2.56 s) |
+| `load_workbook()`, every 10th row bold | 0.82 s (2.69 s) | 0.90 s (2.93 s) |
+| Save a loaded styled workbook after 1,000 value and style edits | — | 2.43 s |
+| Build the model and save it | 1.91 s | 1.77 s |
 
-- `ExcelReader` is **8–14× faster** than `load_workbook()`, because it creates
-  no `Cell` objects. Use it when you only need values.
-- `load_workbook()` keeps only a style index per cell, so loading a styled file
-  costs 15–18% more than an unstyled one, and style objects are built only for
-  the cells whose style you read.
+- The C extension builds the model's cells itself (0.11): `load_workbook()` is
+  now only **1.4–3×** slower than `ExcelReader`, which creates no `Cell`
+  objects; use `ExcelReader` when you only need values.
+  Files saved by Excel itself load in 0.47 s (XLSX) and 0.71 s (XLSB).
+- `load_workbook()` keeps only a style index per cell, and style objects are
+  built only for the cells whose style you read.
+- Against the pre-sprint baseline, no other case changed by more than 5%
+  (`--compare ... --max-slowdown 1.05`).
 - A loaded XLSB is saved by patching the binary worksheet in place: the time
   depends mostly on the size of the edited sheet, not on the number of edits.
 

@@ -16,15 +16,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keep an explicit auto-filter range, and loaded `.xlsb` models read it.
 - `load_workbook()` reads XLSB into the same model as XLSX: cell styles (from
   `styles.bin`, resolved lazily on first access), row/column dimensions, sheet
-  properties, views and panes, sheet protection, print setup, data
-  validations, conditional formatting (except colour scales, data bars and
-  icon sets), tables, charts, images and document properties.
-- Saving a loaded `.xlsb` workbook now writes cell style changes (new styles
-  are appended to `styles.bin`), merged cells, hyperlinks and data validations,
-  besides values, formulas, comments and defined names. Every other edit
-  (sheet layout, print setup, CF, tables, charts/images, document properties,
-  sheet rename/add/remove/reorder) raises `NotImplementedError` at `save()`
-  instead of being dropped silently.
+  properties, views and panes, selections, sheet format, sheet protection,
+  print setup (with print areas and titles), autofilter columns, data
+  validations, conditional formatting (colour scales, data bars and icon sets
+  included), tables, charts, images, sheet states, the active sheet and
+  document properties.
+- Saving a loaded `.xlsb` workbook writes cell style changes (new styles are
+  appended to `styles.bin`), merged cells, hyperlinks, data validations,
+  conditional formats (new differential styles are added once), sheet
+  layout (column/row dimensions, views, freeze panes, tab colour, sheet
+  format), autofilter, sheet protection, print setup, print areas and titles,
+  document properties (core and custom), removed charts and images, and sheet
+  management: add, remove, rename (formulas, validations and defined names
+  follow), reorder, hide and the active sheet. Adding tables, charts, images
+  or chartsheets still raises `NotImplementedError` at `save()` instead of
+  being dropped silently.
+- `XlsbUpdater` sheet management: `add_sheet()`, `remove_sheet()`,
+  `rename_sheet()`, `reorder_sheets()`, `set_sheet_state()`,
+  `set_active_sheet()`, `get_sheet_states()`, `get_active_sheet()`, and
+  `set_conditional_formats()`.
+- XLSB colour scales, data bars and icon sets are read and written with
+  formula thresholds (`FormatObject("formula", ...)`), which the XLSB writer
+  used to reject.
+- Conditional formats accept multi-range sqrefs (`"A1:A5 C1:C5"`), as Excel
+  writes them; both loaders used to drop such rules.
+- Removing a chart or image from `ws._charts` / `ws._images` (as in openpyxl)
+  removes it from a loaded XLSX or XLSB file, with the parts only it used.
+- `Workbook.create_chartsheet()` for XLSX (new and loaded workbooks).
+- New `.xlsm`, `.xltx` and `.xltm` workbooks; `load_workbook(...,
+  keep_vba=True)` sets `vba_archive`, whose VBA project a new `.xlsm` takes.
+- `Workbook.move_sheet()`; renaming a sheet rewrites formulas, validation
+  formulas and defined names that refer to it (`xlspy.formula.sheets`).
+- `SheetProtection.password` hashes a plain password as openpyxl does
+  (`set_password()`, `enable()`, `disable()`).
+- `py.typed`; a CI "lint" job with ruff and mypy (`pyproject.toml` lists the
+  modules still waiting for type fixes).
 - `XlsbUpdater.update_cells(..., styles={ref: xf})`, `set_merged_cells()`,
   `set_hyperlinks()` and `set_data_validations()`.
 - Benchmark cases `load_xlsb_styled` and `save_loaded_xlsb_styled`.
@@ -63,11 +89,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Much faster `load_workbook()` (50k x 20 cells: XLSX 6.5 s to 2.3 s, XLSB
-  5.5 s to 2.5 s). XLSX rows are matched with regular expressions
-  (`workbook/_fast_sheet.py`), and any row they cannot reproduce exactly goes
-  through the element reader; XLSB sheets are read once and walked with
-  `biff_utils.iter_record_payloads`. A differential test compares both paths.
+- Much faster `load_workbook()` (50k x 20 cells: XLSX 6.5 s to 0.39 s, XLSB
+  5.5 s to 0.55 s; files saved by Excel: 0.47 s and 0.71 s). The C extension
+  builds the model's cells directly (`XlsxReader` model mode,
+  `xlsb_load_cells`), setting their slots without Python per-cell code;
+  formulas, rich text and unusual rows go back to Python. Without the C
+  extension XLSX rows are matched with regular expressions
+  (`workbook/_fast_sheet.py`) and XLSB sheets are walked once with
+  `biff_utils.iter_record_payloads`. Differential tests compare the paths.
+- `IconSetRule.type` is the rule type, `"iconSet"`, as in openpyxl; the
+  threshold type is `cfvo_type`. `IconSetRule(type=...)` still works with a
+  `DeprecationWarning`.
+- `copy_worksheet()` gives the copy its own dimensions, view, properties,
+  autofilter and print settings instead of sharing the source's objects.
+- Loaded XLSX: repeated conditional format edits reuse equal `dxf` entries
+  instead of appending copies to `styles.xml`.
+- The writers share their argument checks and sheet bookkeeping
+  (`_writer_common.WriterFrontEnd`).
 - Faster cell writes on the model (`Cell.value` for plain int/float/bool/str and
   memoised number-format changes): building 1M cells 5.5 s to 3.5 s.
 - A regex fast path for XLSX shared strings in `ExcelReader`, with expat as the
@@ -102,6 +140,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- XLSB sheet protection permissions were read inverted (the file stores
+  "allowed" flags as "protected" bits); a new workbook ignored
+  `ws.protection`.
+- The XLSB writer used record ids 0x86/0x87 for BrtBeginColInfos and
+  BrtEndColInfos instead of 0x186/0x187; loading such a file and editing
+  column widths now drops the old wrappers.
+- XLSB icon sets: `reverse` was written inverted, and `4Rating`/`5Rating`
+  were rejected; data bars without lengths now use Excel's 10%/90%.
+- XLSX dataBar `showValue`/`minLength`/`maxLength` were read from `<cfRule>`
+  instead of `<dataBar>`; numeric CF thresholds are read as numbers.
+- Loaded XLSX workbooks dropped edits to document properties on save.
+- Loaded XLSB cells had `data_type` `"n"` whatever their value.
 - The regular-expression path for XLSX shared strings kept literal CR and
   CRLF line breaks (as Excel writes multi-line text) instead of turning them
   into `\n` as the XML parser does; it now applies XML end-of-line handling.
