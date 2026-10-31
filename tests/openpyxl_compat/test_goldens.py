@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import openpyxl
+import pytest
 
 from ._util import close_quietly, golden_dir, xlspy_load, gap_xfail
 
@@ -45,6 +46,8 @@ def test_golden_object_counts(golden):
             charts = sum(len(ws._charts) for ws in workbook.worksheets)
             assert charts == 15
         elif golden.name == "images.xlsx":
+            # openpyxl drops images when Pillow is missing.
+            pytest.importorskip("PIL")
             assert len(workbook["Images"]._images) == 4
         elif golden.name == "chartsheet.xlsx":
             assert [sheet.title for sheet in workbook.chartsheets] == ["ChartSheet"]
