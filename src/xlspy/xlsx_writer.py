@@ -49,6 +49,7 @@ from .pivots import (
     tee_rows,
 )
 from .hyperlinks import Hyperlink
+from ._scalars import numpy_value
 from .images import Image, MediaParts, normalize_images
 from .outline import build_outline
 from .printing import (
@@ -1829,6 +1830,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                         raise TypeError("a hyperlink cell cannot carry a number format; style the cell instead")
                     cell_style = merge_styles(cell_style, overlay)
                     overlay = None
+            cell = numpy_value(cell)
             if overlay is None and isinstance(cell, Hyperlink):
                 hyperlinks.append((row_idx, col_idx, cell))
                 cell = cell.display_text

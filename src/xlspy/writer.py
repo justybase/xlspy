@@ -67,6 +67,7 @@ from .rich_text import CellRichText, InlineFont, TextBlock
 from ._text import check_cell_text
 from .formulas import Formula
 from .hyperlinks import Hyperlink
+from ._scalars import numpy_value
 from .images import Image, MediaParts, normalize_images
 from ._xlsb_slicers import (
     CT_SLICER_BIN, CT_SLICER_CACHE_BIN, sheet_slicers_bin, slicer_cache_bin, slicers_part_bin,
@@ -1619,6 +1620,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                 overlay = None
                 if _is_formatted_cell(cell):
                     cell, overlay = cell
+                cell = numpy_value(cell)
                 cell_style = row_styles.get(col_idx)
                 if isinstance(cell, Hyperlink):
                     if isinstance(overlay, str):

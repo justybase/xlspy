@@ -1287,9 +1287,14 @@ Values are converted to the types the writers understand:
 | `pandas.Timestamp`, `datetime.datetime` | date/time cell |
 | `pandas.Timedelta`, `datetime.timedelta` | day fraction (Excel duration; apply `F.TIME_*` for display) |
 | `datetime.time` (incl. `polars.Time`) | day fraction (apply `F.TIME_*` for display) |
-| `numpy` scalars (`int64`, `float32`, `bool_`, ...) | native Python value |
+| `numpy` scalars (`int64`, `float32`, `bool_`, ...) | native Python value (`.item()`) |
 | `None`, `NaN`, `NaT`, `NA` | empty cell (or `na_rep`) |
 | MultiIndex columns | flattened by joining the levels with a space |
+
+Plain rows given to `write_sheet` follow the same rule for numpy integers, `bool_` and
+float16/float32 scalars: they are written as the Python value they hold (`int`, `bool` or
+`float`), so `float32(0.1)` is written as `0.10000000149011612`. A `NaN` among them raises
+`ValueError`, as a `float` NaN does.
 
 See [`examples/dataframe_*.py`](../examples/) and
 [`examples/polars_to_xlsx_xlsb.py`](../examples/polars_to_xlsx_xlsb.py) for full,

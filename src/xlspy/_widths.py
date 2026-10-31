@@ -18,6 +18,7 @@ import re
 import unicodedata
 from decimal import Decimal
 
+from ._scalars import numpy_value
 from .formulas import Formula
 from .hyperlinks import Hyperlink
 
@@ -236,6 +237,7 @@ def _number_text(value: float, number_format: str) -> str:
 
 def cell_text(value, number_format: str | None = None) -> str | None:
     """The text a cell shows in Excel, approximately; ``None`` for no value."""
+    value = numpy_value(value)  # written as the Python value it holds
     if isinstance(value, Hyperlink):
         value = value.display_text
     elif isinstance(value, Formula):

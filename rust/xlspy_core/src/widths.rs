@@ -26,6 +26,42 @@ fn unwrap_overlay<'py>(
     cell.get_item(0).ok()
 }
 
+/// A numpy scalar of kind int, unsigned, bool, or float16/float32, as `.item()`
+/// gives it (the Python value the writers store); any other cell as it is.
+/// numpy is not imported: the class's module and the scalar's dtype identify
+/// it.  The Python twin is xlspy/_scalars.py.
+fn numpy_item<'py>(cell: Bound<'py, PyAny>) -> Bound<'py, PyAny> {
+    let py = cell.py();
+    let is_numpy = cell
+        .get_type()
+        .as_any()
+        .getattr(pyo3::intern!(py, "__module__"))
+        .and_then(|m| m.extract::<String>())
+        .is_ok_and(|m| m == "numpy");
+    if !is_numpy {
+        return cell;
+    }
+    let converts = (|| -> PyResult<bool> {
+        if cell.getattr(pyo3::intern!(py, "shape"))?.len()? != 0 {
+            return Ok(false);
+        }
+        let dtype = cell.getattr(pyo3::intern!(py, "dtype"))?;
+        let kind: String = dtype.getattr(pyo3::intern!(py, "kind"))?.extract()?;
+        let itemsize: usize = dtype.getattr(pyo3::intern!(py, "itemsize"))?.extract()?;
+        Ok(match kind.as_str() {
+            "i" | "u" | "b" => true,
+            "f" => itemsize < 8,
+            _ => false,
+        })
+    })()
+    .unwrap_or(false);
+    if !converts {
+        return cell;
+    }
+    cell.call_method0(pyo3::intern!(py, "item"))
+        .unwrap_or_else(|_| cell.clone())
+}
+
 fn cell_width(cell: &Bound<'_, PyAny>) -> Option<f64> {
     if cell.is_instance_of::<PyDateTime>() {
         return Some(18.0);
@@ -38,8 +74,9 @@ fn cell_width(cell: &Bound<'_, PyAny>) -> Option<f64> {
 /// Calculate column widths from row data.
 ///
 /// Mirrors the Python fallback: unwrap (value, format) tuples, measure
-/// Decimal as float(cell), datetimes as 18, anything else by the code points
-/// of the first line of str(cell); cells that raise are skipped.
+/// Decimal as float(cell) and numpy scalars as their item(), datetimes as 18,
+/// anything else by the code points of the first line of str(cell); cells that
+/// raise are skipped.
 #[pyfunction]
 pub fn calc_column_widths<'py>(
     py: Python<'py>,
@@ -79,6 +116,7 @@ pub fn calc_column_widths<'py>(
                 };
                 cell = PyFloat::new(py, f).into_any();
             }
+            cell = numpy_item(cell);
             if let Some(w) = cell_width(&cell) {
                 max_width = max_width.max(w);
             }
