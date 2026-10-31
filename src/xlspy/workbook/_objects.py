@@ -55,11 +55,16 @@ def _object_values(sheet, name: str) -> list:
 
 def pending_objects(sheet) -> dict[str, list]:
     """The objects added since the sheet was loaded or last saved."""
+    from ._drawings import new_drawing_objects
+
     saved = sheet._saved_object_counts
-    return {
+    pending = {
         name: _object_values(sheet, name)[saved.get(name, 0):]
         for name in _OBJECT_LISTS
     }
+    # Charts and images can be removed: the new ones are those not in the file.
+    pending.update(new_drawing_objects(sheet))
+    return pending
 
 
 def has_pending_objects(sheet) -> bool:
@@ -70,6 +75,9 @@ def has_pending_objects(sheet) -> bool:
 
 
 def mark_objects_saved(sheet) -> None:
+    from ._drawings import remember_drawing_objects
+
+    remember_drawing_objects(sheet)
     sheet._saved_object_counts = {
         name: len(_object_values(sheet, name)) for name in _OBJECT_LISTS
     }

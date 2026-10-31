@@ -97,9 +97,13 @@ def read_drawing(package, sheet, drawing_part: str) -> None:
         return
     relationships = _relationships(package, drawing_part)
     root = ET.fromstring(package.get(drawing_part))
+    # Where each object is in the file, so that a save can remove it.
+    sources = sheet.__dict__.setdefault("_drawing_sources", [])
+    position = -1
     for anchor in root:
         if _local(anchor.tag) not in {"oneCellAnchor", "twoCellAnchor", "absoluteAnchor"}:
             continue
+        position += 1
         cell = _anchor_cell(anchor)
         for node in anchor.iter():
             name = _local(node.tag)
@@ -113,6 +117,7 @@ def read_drawing(package, sheet, drawing_part: str) -> None:
                 sheet._charts.append(
                     LoadedChart(chart_type, title, series, cell, part, chart_xml)
                 )
+                sources.append((drawing_part, position, sheet._charts[-1]))
             elif name == "pic":
                 blip = next(
                     (item for item in node.iter() if _local(item.tag) == "blip"), None
@@ -134,6 +139,7 @@ def read_drawing(package, sheet, drawing_part: str) -> None:
                 except (TypeError, ValueError):
                     continue
                 sheet._images.append(image)
+                sources.append((drawing_part, position, image))
 
 
 def read_chartsheet(package, part: str, title: str, chartsheet) -> None:

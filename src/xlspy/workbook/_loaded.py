@@ -17,6 +17,7 @@ from .._metadata import MAIN, REL, PKG_REL, CT, element_pattern, replace_element
 from .._xlsx_edit import _attributes, _bytes, _cell_value
 from ..formula.sheets import rename_sheet_references
 from ..formulas import Formula
+from ._drawings import check_removals, remove_drawing_objects
 from ._objects import add_objects, has_pending_objects, mark_objects_saved, sync_objects
 from ..refs import column_label, parse_cell_range
 from ..styles import _coerce_color, _color_key
@@ -1281,6 +1282,9 @@ def save_loaded(workbook: Workbook, filename) -> None:
     # After the sheets have their final order: print names count it.
     final_order = _sheet_order(updater)
     for sheet in workbook._sheets:
+        check_removals(sheet)
+    for sheet in workbook._sheets:
+        remove_drawing_objects(updater, sheet)
         sync_objects(updater, workbook, sheet)
         if has_pending_objects(sheet):
             if workbook._styles_dirty:
