@@ -1,0 +1,316 @@
+{
+  "python": "3.14.10",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "rows": 50000,
+  "cols": 20,
+  "repeat": 7,
+  "c_ext": true,
+  "accel": {
+    "mode": "auto",
+    "have_native": true,
+    "backends": {
+      "encode_xlsb_row": "rust",
+      "encode_xlsb_row_inline": "rust",
+      "calc_column_widths": "rust",
+      "read_xlsb_worksheet": "rust",
+      "read_xlsx_worksheet": "rust",
+      "xlsb_row_has_formatted": "rust",
+      "encode_xlsb_sst": "rust",
+      "read_xlsb_shared_strings": "rust",
+      "encode_xlsx_row": "rust",
+      "set_style_type": "rust",
+      "set_error_type": "rust",
+      "xlsb_load_cells": "rust"
+    }
+  },
+  "results": {
+    "write_xlsx": {
+      "seconds": 0.42492810000112513,
+      "size_mb": 3.153667449951172,
+      "peak_rss_delta_mb": 16.89453125,
+      "iqr": 0.015219500000966946,
+      "runs": [
+        0.419,
+        0.421,
+        0.414,
+        0.432,
+        0.439,
+        0.425,
+        0.438
+      ]
+    },
+    "write_xlsb": {
+      "seconds": 0.3054162999978871,
+      "size_mb": 2.6456174850463867,
+      "peak_rss_delta_mb": 17.33984375,
+      "iqr": 0.006558350003615487,
+      "runs": [
+        0.299,
+        0.303,
+        0.315,
+        0.298,
+        0.305,
+        0.306,
+        0.309
+      ]
+    },
+    "read_xlsx": {
+      "seconds": 0.2816700999974273,
+      "cells": 1000000,
+      "peak_rss_delta_mb": 0.02734375,
+      "iqr": 0.002413300004263874,
+      "runs": [
+        0.284,
+        0.282,
+        0.281,
+        0.282,
+        0.28,
+        0.278,
+        0.284
+      ]
+    },
+    "read_xlsb": {
+      "seconds": 0.049878799996804446,
+      "cells": 1000000,
+      "peak_rss_delta_mb": 0.12109375,
+      "iqr": 0.004984600000170758,
+      "runs": [
+        0.049,
+        0.047,
+        0.05,
+        0.05,
+        0.056,
+        0.047,
+        0.057
+      ]
+    },
+    "load_xlsx": {
+      "seconds": 0.3859104000002844,
+      "peak_rss_delta_mb": 181.10546875,
+      "iqr": 0.002918500002124347,
+      "runs": [
+        0.382,
+        0.389,
+        0.384,
+        0.386,
+        0.386,
+        0.404,
+        0.386
+      ]
+    },
+    "load_xlsb": {
+      "seconds": 0.2371707000056631,
+      "peak_rss_delta_mb": 178.23828125,
+      "iqr": 0.0074940999984391965,
+      "runs": [
+        0.232,
+        0.241,
+        0.237,
+        0.233,
+        0.254,
+        0.237,
+        0.244
+      ]
+    },
+    "load_xlsx_styled": {
+      "seconds": 0.8244130999955814,
+      "peak_rss_delta_mb": 0.0,
+      "iqr": 0.013234999998530839,
+      "runs": [
+        0.812,
+        0.832,
+        0.818,
+        0.83,
+        0.824,
+        0.817,
+        0.844
+      ]
+    },
+    "load_xlsb_styled": {
+      "seconds": 0.24495359999855282,
+      "peak_rss_delta_mb": 178.875,
+      "iqr": 0.0076571000063268,
+      "runs": [
+        0.238,
+        0.252,
+        0.244,
+        0.252,
+        0.245,
+        0.251,
+        0.243
+      ]
+    },
+    "save_loaded_xlsb_styled": {
+      "seconds": 2.8758240999959526,
+      "peak_rss_delta_mb": 0.0,
+      "iqr": 0.03822039999795379,
+      "runs": [
+        2.856,
+        2.865,
+        2.876,
+        3.008,
+        2.842,
+        2.902,
+        2.896
+      ]
+    },
+    "write_model_xlsx": {
+      "seconds": 1.9245662999965134,
+      "size_mb": 3.1541566848754883,
+      "peak_rss_delta_mb": 318.421875,
+      "iqr": 0.020196100002067396,
+      "runs": [
+        1.904,
+        1.892,
+        1.945,
+        1.925,
+        1.929,
+        1.91,
+        1.925
+      ]
+    },
+    "write_model_xlsb": {
+      "seconds": 1.8063149000008707,
+      "size_mb": 2.6413259506225586,
+      "peak_rss_delta_mb": 317.95703125,
+      "iqr": 0.04137840000112192,
+      "runs": [
+        1.842,
+        1.791,
+        1.826,
+        1.897,
+        1.79,
+        1.794,
+        1.806
+      ]
+    },
+    "write_formula_hyperlink_xlsx": {
+      "seconds": 3.095754300004046,
+      "size_mb": 5.979043006896973,
+      "peak_rss_delta_mb": 31.203125,
+      "iqr": 0.025310699998954078,
+      "runs": [
+        3.038,
+        3.124,
+        3.076,
+        3.097,
+        3.113,
+        3.083,
+        3.096
+      ]
+    },
+    "read_xlsx_entities": {
+      "seconds": 2.931579900003271,
+      "cells": 1000000,
+      "peak_rss_delta_mb": 0.01953125,
+      "iqr": 0.02945000000181608,
+      "runs": [
+        2.932,
+        2.936,
+        2.905,
+        2.939,
+        2.911,
+        2.987,
+        2.898
+      ]
+    },
+    "load_xlsx_entities": {
+      "seconds": 4.1229643000042415,
+      "peak_rss_delta_mb": 241.8984375,
+      "iqr": 0.02883720000318135,
+      "runs": [
+        4.141,
+        4.119,
+        4.079,
+        4.124,
+        4.066,
+        4.123,
+        4.132
+      ]
+    },
+    "xlsx_fallback_rate": {
+      "rows": 50000,
+      "fallback_rows": 0,
+      "fallback_pct": 0.0,
+      "peak_rss_delta_mb": 18.5703125
+    },
+    "xlsx_fallback_rate_model": {
+      "rows": 50000,
+      "fallback_rows": 0,
+      "fallback_pct": 0.0,
+      "peak_rss_delta_mb": 200.421875
+    },
+    "xlsx_entities_fallback_rate": {
+      "rows": 50000,
+      "fallback_rows": 50000,
+      "fallback_pct": 100.0,
+      "peak_rss_delta_mb": 16.19921875
+    },
+    "xlsx_entities_fallback_rate_model": {
+      "rows": 50000,
+      "fallback_rows": 50000,
+      "fallback_pct": 100.0,
+      "peak_rss_delta_mb": 259.0859375
+    },
+    "zlib1": {
+      "seconds": 0.36738099999638507,
+      "size_mb": 4.425880432128906,
+      "peak_rss_delta_mb": 17.28125,
+      "iqr": 0.0070308999966073316,
+      "runs": [
+        0.367,
+        0.367,
+        0.388,
+        0.367,
+        0.374,
+        0.373,
+        0.362
+      ]
+    },
+    "zlib3": {
+      "seconds": 0.3938390999974217,
+      "size_mb": 3.153667449951172,
+      "peak_rss_delta_mb": 17.30078125,
+      "iqr": 0.008666550002089934,
+      "runs": [
+        0.414,
+        0.394,
+        0.397,
+        0.384,
+        0.391,
+        0.392,
+        0.403
+      ]
+    },
+    "zlib6": {
+      "seconds": 0.4346573000002536,
+      "size_mb": 2.6164255142211914,
+      "peak_rss_delta_mb": 17.09765625,
+      "iqr": 0.007365149998804554,
+      "runs": [
+        0.449,
+        0.43,
+        0.435,
+        0.427,
+        0.443,
+        0.433,
+        0.435
+      ]
+    },
+    "zlib9": {
+      "seconds": 0.6131477000017185,
+      "size_mb": 2.341848373413086,
+      "peak_rss_delta_mb": 16.828125,
+      "iqr": 0.007462350000423612,
+      "runs": [
+        0.613,
+        0.618,
+        0.631,
+        0.612,
+        0.612,
+        0.61,
+        0.622
+      ]
+    }
+  }
+}

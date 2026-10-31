@@ -1,0 +1,201 @@
+{
+  "python": "3.14.10",
+  "rows": 50000,
+  "cols": 50,
+  "repeat": 7,
+  "c_ext": true,
+  "accel": {
+    "mode": "auto",
+    "have_native": true,
+    "backends": {
+      "encode_xlsb_row": "rust",
+      "encode_xlsb_row_inline": "rust",
+      "calc_column_widths": "rust",
+      "read_xlsb_worksheet": "rust",
+      "read_xlsx_worksheet": "rust",
+      "xlsb_row_has_formatted": "rust",
+      "encode_xlsb_sst": "rust",
+      "read_xlsb_shared_strings": "rust",
+      "encode_xlsx_row": "rust",
+      "set_style_type": "rust",
+      "set_error_type": "rust",
+      "xlsb_load_cells": "rust"
+    }
+  },
+  "versions": {
+    "python": "3.14.10",
+    "xlspy": "0.12.0",
+    "openpyxl": "3.1.5",
+    "xlsxwriter": "3.2.9",
+    "python-calamine": "0.9.0",
+    "fastexcel": "0.21.0",
+    "pyarrow": "26.0.0",
+    "pyxlsb": "1.0.10",
+    "psutil": "7.2.2"
+  },
+  "results": {
+    "xlspy ExcelReader, XLSX": {
+      "seconds": 0.6825275999945006,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "digest": "c15eeb746e37e6210579e05d2b7b5c3276bb38a56a380ecfbce164d7a03d517d",
+      "peak_rss_delta_mb": 2.3125,
+      "fallback_rows": 0,
+      "fallback_pct": 0.0,
+      "iqr": 0.01886084999932791,
+      "runs": [
+        0.684,
+        0.678,
+        0.683,
+        0.666,
+        0.668,
+        0.721,
+        0.699
+      ]
+    },
+    "xlspy ExcelReader, XLSB": {
+      "seconds": 0.0995690999989165,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "digest": "cef3ac883114475803e59055a2c863955c1973fce7348318e5540babb6ab762b",
+      "peak_rss_delta_mb": 0.8984375,
+      "iqr": 0.007928949995402945,
+      "runs": [
+        0.113,
+        0.098,
+        0.099,
+        0.099,
+        0.108,
+        0.1,
+        0.106
+      ]
+    },
+    "xlspy ExcelReader, xlsxwriter file": {
+      "seconds": 0.6925905999960378,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "digest": "6a6d02c75cd0b0f9596b96c7f0b4f351c93c7ee4af073931881a3dcccf8f9631",
+      "peak_rss_delta_mb": 0.35546875,
+      "fallback_rows": 0,
+      "fallback_pct": 0.0,
+      "iqr": 0.0060402000017347746,
+      "runs": [
+        0.719,
+        0.693,
+        0.695,
+        0.683,
+        0.688,
+        0.693,
+        0.688
+      ]
+    },
+    "xlspy load_workbook, XLSX": {
+      "seconds": 1.8869096000053105,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "digest": "cef3ac883114475803e59055a2c863955c1973fce7348318e5540babb6ab762b",
+      "peak_rss_delta_mb": 488.56640625,
+      "fallback_rows": 0,
+      "fallback_pct": 0.0,
+      "iqr": 0.03729419999581296,
+      "runs": [
+        1.858,
+        1.817,
+        1.865,
+        1.91,
+        1.912,
+        1.888,
+        1.887
+      ]
+    },
+    "xlspy load_workbook, XLSB": {
+      "seconds": 1.1674285999979475,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "digest": "cef3ac883114475803e59055a2c863955c1973fce7348318e5540babb6ab762b",
+      "peak_rss_delta_mb": 483.8828125,
+      "iqr": 0.0671800499985693,
+      "runs": [
+        1.26,
+        1.175,
+        1.135,
+        1.244,
+        1.129,
+        1.15,
+        1.167
+      ]
+    },
+    "xlspy ExcelReader, entities XLSX": {
+      "seconds": 6.489743899997848,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "digest": "ec382647871580204c3dc74ef533a8d150832654d0e305f8a92ff3476b2e2e37",
+      "peak_rss_delta_mb": 0.2421875,
+      "fallback_rows": 50000,
+      "fallback_pct": 100.0,
+      "iqr": 0.08422644999518525,
+      "runs": [
+        6.61,
+        6.563,
+        6.412,
+        6.49,
+        6.461,
+        6.427,
+        6.493
+      ]
+    },
+    "xlspy load_workbook, entities XLSX": {
+      "seconds": 11.019198800000595,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "digest": "ec382647871580204c3dc74ef533a8d150832654d0e305f8a92ff3476b2e2e37",
+      "peak_rss_delta_mb": 638.76953125,
+      "fallback_rows": 50000,
+      "fallback_pct": 100.0,
+      "iqr": 0.10611770000105025,
+      "runs": [
+        11.009,
+        11.019,
+        10.845,
+        10.924,
+        11.191,
+        11.102,
+        11.044
+      ]
+    },
+    "python-calamine, entities XLSX": {
+      "seconds": 1.6305363999999827,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "digest": "8b37fdee2f2f7c00defe6ae764f7806e794d8f23b103e4e5c46f704a5f00ee58",
+      "peak_rss_delta_mb": 3.328125,
+      "iqr": 0.016077150001365226,
+      "runs": [
+        1.625,
+        1.632,
+        1.629,
+        1.655,
+        1.622,
+        1.631,
+        1.683
+      ]
+    },
+    "openpyxl read_only, entities XLSX": {
+      "seconds": 14.111996899999212,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "digest": "ec382647871580204c3dc74ef533a8d150832654d0e305f8a92ff3476b2e2e37",
+      "peak_rss_delta_mb": 6.23828125,
+      "iqr": 0.5087183000068762,
+      "runs": [
+        14.088,
+        16.697,
+        14.112,
+        14.225,
+        13.932,
+        14.108,
+        14.988
+      ]
+    }
+  }
+}

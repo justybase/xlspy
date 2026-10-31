@@ -1,0 +1,65 @@
+{
+  "python": "3.14.10",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "strings": 1000000,
+  "repeat": 7,
+  "accel": {
+    "mode": "auto",
+    "have_native": true,
+    "backends": {
+      "encode_xlsb_row": "rust",
+      "encode_xlsb_row_inline": "rust",
+      "calc_column_widths": "rust",
+      "read_xlsb_worksheet": "rust",
+      "read_xlsx_worksheet": "rust",
+      "xlsb_row_has_formatted": "rust",
+      "encode_xlsb_sst": "rust",
+      "read_xlsb_shared_strings": "rust",
+      "encode_xlsx_row": "rust",
+      "set_style_type": "rust",
+      "set_error_type": "rust",
+      "xlsb_load_cells": "rust"
+    }
+  },
+  "results": {
+    "regex": {
+      "seconds": 0.8488008999993326,
+      "iqr": 0.006210299998201663,
+      "runs": [
+        0.8495,
+        0.8489,
+        0.842,
+        0.8488,
+        0.844,
+        0.8611,
+        0.8312
+      ]
+    },
+    "reader": {
+      "seconds": 0.8600822000007611,
+      "iqr": 0.018343799998547183,
+      "runs": [
+        0.8601,
+        0.854,
+        0.852,
+        0.9049,
+        0.8672,
+        0.8759,
+        0.8524
+      ]
+    },
+    "expat": {
+      "seconds": 1.5942082999972627,
+      "iqr": 0.006639600000198698,
+      "runs": [
+        1.6198,
+        1.5942,
+        1.605,
+        1.5941,
+        1.5962,
+        1.5939,
+        1.5917
+      ]
+    }
+  }
+}
