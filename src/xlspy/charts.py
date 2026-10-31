@@ -22,6 +22,16 @@ _GROUPED_TYPES = frozenset({"area", "bar", "barh", "line"})
 # Types without markers, lines or axes of their own.
 _FILLED_TYPES = frozenset({"area", "bar", "barh", "doughnut", "pie"})
 _ROUND_TYPES = frozenset({"doughnut", "pie"})
+# Types a combined chart can mix, and that can use a secondary value axis.
+COMBINABLE_TYPES = frozenset({"area", "bar", "line"})
+TRENDLINE_TYPES = {
+    "linear": "linear", "exponential": "exp", "logarithmic": "log",
+    "polynomial": "poly", "power": "power", "moving_average": "movingAvg",
+}
+ERROR_BAR_KINDS = {
+    "fixed": "fixedVal", "percentage": "percentage", "std_dev": "stdDev", "std_err": "stdErr",
+}
+ERROR_BAR_DIRECTIONS = frozenset({"both", "plus", "minus"})
 
 _RGB_RE = re.compile(r"[0-9A-Fa-f]{6}")
 MARKER_SYMBOLS = frozenset(
@@ -265,6 +275,93 @@ class DataLabels:
 
 
 @dataclass(frozen=True, slots=True)
+class Trendline:
+    """A trendline fitted to a series.
+
+    ``order`` (2 to 6) is for ``"polynomial"`` and ``period`` (at least 2) for
+    ``"moving_average"``. ``forward`` and ``backward`` extend the line by that
+    many categories (X units on a scatter chart).
+    """
+
+    type: str = "linear"
+    order: int | None = None
+    period: int | None = None
+    forward: float | None = None
+    backward: float | None = None
+    display_equation: bool = False
+    display_r_squared: bool = False
+    name: str | None = None
+    color: str | None = None
+
+    def __post_init__(self):
+        if self.type not in TRENDLINE_TYPES:
+            raise ValueError(
+                f"invalid trendline type {self.type!r}; expected one of {sorted(TRENDLINE_TYPES)}"
+            )
+        if self.order is not None:
+            if self.type != "polynomial":
+                raise ValueError("trendline order is only valid for a polynomial trendline")
+            if isinstance(self.order, bool) or not isinstance(self.order, int) or not 2 <= self.order <= 6:
+                raise ValueError("trendline order must be an int between 2 and 6")
+        elif self.type == "polynomial":
+            object.__setattr__(self, "order", 2)
+        if self.period is not None:
+            if self.type != "moving_average":
+                raise ValueError("trendline period is only valid for a moving average")
+            if isinstance(self.period, bool) or not isinstance(self.period, int) or self.period < 2:
+                raise ValueError("trendline period must be an int of at least 2")
+        elif self.type == "moving_average":
+            object.__setattr__(self, "period", 2)
+        object.__setattr__(self, "forward", _check_number(self.forward, "trendline forward", minimum=0))
+        object.__setattr__(self, "backward", _check_number(self.backward, "trendline backward", minimum=0))
+        if not isinstance(self.display_equation, bool) or not isinstance(self.display_r_squared, bool):
+            raise TypeError("trendline display_equation and display_r_squared must be bools")
+        if self.name is not None and not isinstance(self.name, str):
+            raise TypeError("trendline name must be a string or None")
+        object.__setattr__(self, "color", _normalize_rgb(self.color, "trendline color"))
+
+
+@dataclass(frozen=True, slots=True)
+class ErrorBars:
+    """Error bars on a series.
+
+    ``kind`` is ``"fixed"`` (``value`` units), ``"percentage"`` (``value`` percent),
+    ``"std_dev"`` (``value`` standard deviations) or ``"std_err"`` (no value).
+    ``direction`` picks ``"both"``, ``"plus"`` or ``"minus"`` bars; ``axis`` is
+    ``"y"``, or ``"x"`` on a scatter series.
+    """
+
+    kind: str = "fixed"
+    value: float | None = None
+    direction: str = "both"
+    axis: str = "y"
+    end_cap: bool = True
+    color: str | None = None
+
+    def __post_init__(self):
+        if self.kind not in ERROR_BAR_KINDS:
+            raise ValueError(
+                f"invalid error bar kind {self.kind!r}; expected one of {sorted(ERROR_BAR_KINDS)}"
+            )
+        if self.kind == "std_err":
+            if self.value is not None:
+                raise ValueError("standard error bars take no value")
+        else:
+            if self.value is None and self.kind == "std_dev":
+                object.__setattr__(self, "value", 1.0)
+            elif self.value is None:
+                raise ValueError(f"{self.kind} error bars need a value")
+            object.__setattr__(self, "value", _check_number(self.value, "error bar value", minimum=0))
+        if self.direction not in ERROR_BAR_DIRECTIONS:
+            raise ValueError(f"invalid error bar direction {self.direction!r}; expected both, plus or minus")
+        if self.axis not in ("x", "y"):
+            raise ValueError("error bar axis must be 'x' or 'y'")
+        if not isinstance(self.end_cap, bool):
+            raise TypeError("error bar end_cap must be a bool")
+        object.__setattr__(self, "color", _normalize_rgb(self.color, "error bar color"))
+
+
+@dataclass(frozen=True, slots=True)
 class ChartSeries:
     """One data series of a ``Chart``.
 
@@ -272,6 +369,10 @@ class ChartSeries:
     gives the numeric X positions of a scatter series. ``color`` is the fill of
     bars and pie slices, and the line or marker colour of line and scatter
     series. ``marker`` and ``line`` apply to line and scatter series only.
+
+    In a combined chart ``chart_type`` (``"bar"``, ``"line"`` or ``"area"``)
+    draws this series as another type than the chart's, and ``secondary_axis``
+    reads it against a second value axis on the right.
     """
 
     values: str
@@ -282,6 +383,10 @@ class ChartSeries:
     color: str | None = None
     marker: ChartMarker | None = None
     line: bool | None = None
+    chart_type: str | None = None
+    secondary_axis: bool = False
+    trendline: Trendline | None = None
+    error_bars: ErrorBars | None = None
 
     def __post_init__(self):
         if not isinstance(self.values, str):
@@ -314,6 +419,16 @@ class ChartSeries:
             raise TypeError("series marker must be a ChartMarker or None")
         if self.line is not None and not isinstance(self.line, bool):
             raise TypeError("series line must be a bool or None")
+        if self.chart_type is not None and self.chart_type not in COMBINABLE_TYPES:
+            raise ValueError(
+                f"a series can be drawn as {sorted(COMBINABLE_TYPES)}, not {self.chart_type!r}"
+            )
+        if not isinstance(self.secondary_axis, bool):
+            raise TypeError("series secondary_axis must be a bool")
+        if self.trendline is not None and not isinstance(self.trendline, Trendline):
+            raise TypeError("series trendline must be a Trendline or None")
+        if self.error_bars is not None and not isinstance(self.error_bars, ErrorBars):
+            raise TypeError("series error_bars must be an ErrorBars or None")
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,6 +445,10 @@ class Chart:
     ``grouping`` stacks the series of a bar, horizontal bar, line or area
     chart: ``"stacked"`` adds them up, ``"percent_stacked"`` shows each
     category as 100%. ``None`` (default) draws them side by side.
+
+    A chart mixes types when some series set ``ChartSeries.chart_type`` (bar,
+    line and area only); series with ``secondary_axis`` use ``y2_axis``, the
+    value axis on the right.
     """
 
     chart_type: str
@@ -341,6 +460,7 @@ class Chart:
     style: int | None = None
     x_axis: ChartAxis | None = None
     y_axis: ChartAxis | None = None
+    y2_axis: ChartAxis | None = None
     legend: ChartLegend | bool | None = None
     data_labels: DataLabels | None = None
     show_data_labels: bool = False
@@ -402,8 +522,21 @@ class Chart:
                 )
 
     def _check_series_for_type(self, series) -> None:
-        kind = self.chart_type
         for item in series:
+            kind = item.chart_type or self.chart_type
+            if item.chart_type is not None and self.chart_type not in COMBINABLE_TYPES:
+                raise ValueError(
+                    f"series chart_type needs a bar, line or area chart, not {self.chart_type!r}"
+                )
+            if item.secondary_axis and kind not in COMBINABLE_TYPES:
+                raise ValueError(f"a secondary axis is only valid for bar, line and area series, not {kind!r}")
+            if item.trendline is not None and kind in _ROUND_TYPES:
+                raise ValueError(f"trendlines are not valid for {kind!r} charts")
+            if item.error_bars is not None:
+                if kind in _ROUND_TYPES:
+                    raise ValueError(f"error bars are not valid for {kind!r} charts")
+                if item.error_bars.axis == "x" and kind != "scatter":
+                    raise ValueError("x error bars are only valid for scatter series")
             if kind == "scatter":
                 if item.categories is not None:
                     raise ValueError("scatter series take x_values, not categories")
@@ -420,10 +553,12 @@ class Chart:
                 raise ValueError("a line series with line=False needs a marker")
 
     def _check_axes(self) -> None:
-        for name in ("x_axis", "y_axis"):
+        for name in ("x_axis", "y_axis", "y2_axis"):
             value = getattr(self, name)
             if value is not None and not isinstance(value, ChartAxis):
                 raise TypeError(f"{name} must be a ChartAxis or None")
+        if self.y2_axis is not None and not any(item.secondary_axis for item in self.series):
+            raise ValueError("y2_axis needs a series with secondary_axis=True")
         if self.chart_type in _ROUND_TYPES and (self.x_axis or self.y_axis):
             raise ValueError(f"{self.chart_type} charts have no axes; x_axis and y_axis are not valid")
 
@@ -437,12 +572,17 @@ class Chart:
         if self.data_labels is not None and not isinstance(self.data_labels, DataLabels):
             raise TypeError("data_labels must be a DataLabels or None")
         if self.data_labels is not None and self.data_labels.position is not None:
-            allowed = _LABEL_POSITIONS_BY_TYPE[self.chart_type]
-            if self.data_labels.position not in allowed:
-                raise ValueError(
-                    f"data label position {self.data_labels.position!r} is not valid "
-                    f"for {self.chart_type!r} charts"
-                )
+            for kind in self.series_types:
+                if self.data_labels.position not in _LABEL_POSITIONS_BY_TYPE[kind]:
+                    raise ValueError(
+                        f"data label position {self.data_labels.position!r} is not valid "
+                        f"for {kind!r} charts"
+                    )
+
+    @property
+    def series_types(self) -> list[str]:
+        """The distinct types the series are drawn as, in series order."""
+        return list(dict.fromkeys(item.chart_type or self.chart_type for item in self.series))
 
     @property
     def labels_enabled(self) -> bool:
@@ -463,10 +603,12 @@ class Chart:
             return True
         if self.legend is not None:
             return True
-        if self.labels_enabled or self.title_size is not None:
+        if self.labels_enabled or self.title_size is not None or self.y2_axis is not None:
             return True
         return any(
             item.x_values is not None or item.color is not None
             or item.marker is not None or item.line is not None
+            or item.chart_type is not None or item.secondary_axis
+            or item.trendline is not None or item.error_bars is not None
             for item in self.series
         )

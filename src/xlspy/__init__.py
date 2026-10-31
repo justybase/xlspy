@@ -38,6 +38,8 @@ from .charts import (
     ChartMarker,
     ChartSeries,
     DataLabels,
+    ErrorBars,
+    Trendline,
     LoadedChart,
 )
 from .data_validation import DataValidation
@@ -137,6 +139,8 @@ __all__ = [
     'ChartLegend',
     'ChartMarker',
     'DataLabels',
+    'ErrorBars',
+    'Trendline',
     'Formula',
     'Comment',
     'DefinedName',

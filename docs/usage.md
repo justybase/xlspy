@@ -698,6 +698,15 @@ The original chart options still work: `Chart("bar", ...)` is a column chart,
 - `grouping="stacked"` or `"percent_stacked"` stacks the series of a `"bar"`,
   `"barh"`, `"line"` or `"area"` chart (each category as 100% for
   `"percent_stacked"`).
+- Combined charts: `ChartSeries(chart_type="line")` draws that series as a line (or
+  `"bar"`, `"area"`) in a `"bar"`, `"line"` or `"area"` chart, and
+  `secondary_axis=True` reads it against a second value axis on the right
+  (`Chart(y2_axis=ChartAxis(title=...))`).
+- `ChartSeries(trendline=Trendline("linear"|"exponential"|"logarithmic"|"polynomial"|"power"|"moving_average",
+  order=, period=, forward=, backward=, display_equation=, display_r_squared=))` and
+  `ChartSeries(error_bars=ErrorBars("fixed"|"percentage"|"std_dev"|"std_err", value, direction=, axis=, end_cap=))`.
+- Loaded charts (XLSX and XLSB) keep their XML; `LoadedChart.title`, `x_axis_title`,
+  `y_axis_title` and `legend_position` can be changed.
 
 ```python
 Chart("bar", [ChartSeries("B2:B13", categories="A2:A13", title_cell="B1"),

@@ -27,9 +27,11 @@ from decimal import Decimal
 from xml.sax import saxutils
 
 from .charts import (
+    ERROR_BAR_KINDS,
     GROUPINGS,
     LABEL_POSITIONS,
     LEGEND_POSITIONS,
+    TRENDLINE_TYPES,
     ChartAxis,
     ChartMarker,
     DataLabels,
@@ -404,11 +406,65 @@ def _series_style_xml(series, chart_type: str, index: int, cells, xlsb: bool):
     return sp_pr, points, marker
 
 
+def _trendline_xml(trendline) -> str:
+    parts = ["<trendline>"]
+    if trendline.name is not None:
+        parts.append(f"<name>{saxutils.escape(trendline.name)}</name>")
+    if trendline.color is not None:
+        parts.append(
+            f'<spPr><a:ln w="19050">{_solid(trendline.color)}'
+            '<a:prstDash val="solid"/></a:ln></spPr>'
+        )
+    parts.append(f'<trendlineType val="{TRENDLINE_TYPES[trendline.type]}"/>')
+    if trendline.order is not None:
+        parts.append(f'<order val="{trendline.order}"/>')
+    if trendline.period is not None:
+        parts.append(f'<period val="{trendline.period}"/>')
+    if trendline.forward is not None:
+        parts.append(f'<forward val="{_chart_number_text(trendline.forward)}"/>')
+    if trendline.backward is not None:
+        parts.append(f'<backward val="{_chart_number_text(trendline.backward)}"/>')
+    parts.append(
+        f'<dispRSqr val="{int(trendline.display_r_squared)}"/>'
+        f'<dispEq val="{int(trendline.display_equation)}"/></trendline>'
+    )
+    return "".join(parts)
+
+
+def _error_bars_xml(bars) -> str:
+    parts = [
+        "<errBars>",
+        f'<errDir val="{bars.axis}"/>',
+        f'<errBarType val="{bars.direction}"/>',
+        f'<errValType val="{ERROR_BAR_KINDS[bars.kind]}"/>',
+        f'<noEndCap val="{int(not bars.end_cap)}"/>',
+    ]
+    if bars.value is not None and bars.kind != "std_err":
+        parts.append(f'<val val="{_chart_number_text(bars.value)}"/>')
+    if bars.color is not None:
+        parts.append(
+            f'<spPr><a:ln w="9525">{_solid(bars.color)}<a:prstDash val="solid"/></a:ln></spPr>'
+        )
+    parts.append("</errBars>")
+    return "".join(parts)
+
+
+def _series_extras_xml(series) -> str:
+    """Trendline and error bars, which sit between the data points and the values."""
+    extras = ""
+    if series.trendline is not None:
+        extras += _trendline_xml(series.trendline)
+    if series.error_bars is not None:
+        extras += _error_bars_xml(series.error_bars)
+    return extras
+
+
 def chart_series_xml(letters: list[str], series, sheet_name: str,
                      index: int, chart_type: str, cells=None,
                      xlsb: bool = False) -> str:
     title = _series_title_xml(letters, series, sheet_name, cells, xlsb)
     sp_pr, points, marker = _series_style_xml(series, chart_type, index, cells, xlsb)
+    extras = _series_extras_xml(series)
     if chart_type == "scatter":
         x_xml = ""
         if series.x_values is not None:
@@ -425,7 +481,7 @@ def chart_series_xml(letters: list[str], series, sheet_name: str,
             y_xml = _ref_xml("yVal", letters, sheet_name, series.values)
         return (
             f"<ser><idx val=\"{index}\"/><order val=\"{index}\"/>{title}"
-            f"{sp_pr}{marker}{x_xml}{y_xml}<smooth val=\"0\"/></ser>"
+            f"{sp_pr}{marker}{extras}{x_xml}{y_xml}<smooth val=\"0\"/></ser>"
         )
     categories = _categories_xml(letters, series, sheet_name, cells, xlsb)
     smooth = ""
@@ -441,7 +497,7 @@ def chart_series_xml(letters: list[str], series, sheet_name: str,
         values_xml = _ref_xml("val", letters, sheet_name, series.values)
     return (
         f"<ser><idx val=\"{index}\"/><order val=\"{index}\"/>{title}"
-        f"{sp_pr}{points}{marker}{categories}"
+        f"{sp_pr}{points}{marker}{extras}{categories}"
         f"{values_xml}{smooth}</ser>"
     )
 
@@ -475,7 +531,7 @@ def _axis_title_xml(text: str) -> str:
 
 def _axis_xml(kind: str, ax_id: int, cross_id: int, position: str, axis,
               default_gridlines: bool, cross_between: str = "between",
-              xlsb: bool = False) -> str:
+              xlsb: bool = False, crosses: str | None = None) -> str:
     """One ``catAx`` or ``valAx`` element for the extended chart model.
 
     The XLSB loader draws an axis only with an explicit ``delete val="0"``
@@ -506,6 +562,8 @@ def _axis_xml(kind: str, ax_id: int, cross_id: int, position: str, axis,
         '<tickLblPos val="nextTo"/>'
         f'<crossAx val="{cross_id}"/>'
     )
+    if crosses is not None:
+        parts.append(f'<crosses val="{crosses}"/>')
     if kind == "catAx":
         parts.append('<lblOffset val="100"/>')
     else:
@@ -607,6 +665,27 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
         if len(chart.series) == 1:
             parts.append("<title><overlay val=\"0\"/></title>")
         parts.append("<autoTitleDeleted val=\"0\"/>")
+    vary = "<varyColors val=\"0\"/>" if xlsb else ""
+    labels = ""
+    if chart.labels_enabled:
+        labels = _dlbls_xml(chart.data_labels or DataLabels())
+    parts.append("<plotArea>")
+    grouping = GROUPINGS.get(chart.grouping)
+    groups = _series_groups(chart)
+    if len(groups) > 1 or any(secondary for _kind, secondary in groups):
+        # Mixed types and/or a secondary axis: one plot element per (type, axis).
+        for (kind, secondary), indexes in groups.items():
+            group_xml = "".join(
+                chart_series_xml(
+                    letters, chart.series[index], sheet_name, index, kind,
+                    cells=cells, xlsb=xlsb,
+                )
+                for index in indexes
+            )
+            axes = '<axId val="20"/><axId val="200"/>' if secondary else '<axId val="10"/><axId val="100"/>'
+            parts.append(_group_xml(kind, group_xml, grouping, vary, labels, axes))
+        parts.append(_combined_axes_xml(chart, groups, xlsb))
+        return _finish_chart(parts, chart)
     series_xml = "".join(
         chart_series_xml(
             letters, item, sheet_name, index, chart.chart_type,
@@ -614,12 +693,6 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
         )
         for index, item in enumerate(chart.series)
     )
-    vary = "<varyColors val=\"0\"/>" if xlsb else ""
-    labels = ""
-    if chart.labels_enabled:
-        labels = _dlbls_xml(chart.data_labels or DataLabels())
-    parts.append("<plotArea>")
-    grouping = GROUPINGS.get(chart.grouping)
     if chart.chart_type in ("bar", "barh"):
         bar_dir = "col" if chart.chart_type == "bar" else "bar"
         # Stacked bars sit on top of each other: overlap 100%.
@@ -656,6 +729,47 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
             f"<pieChart><varyColors val=\"1\"/>{series_xml}{labels}"
             "<firstSliceAng val=\"0\"/></pieChart>"
         )
+    return _finish_chart(parts, chart)
+
+
+def _series_groups(chart) -> dict[tuple[str, bool], list[int]]:
+    """Series indexes by ``(type, on the secondary axis)``, in first-seen order."""
+    groups: dict[tuple[str, bool], list[int]] = {}
+    for index, item in enumerate(chart.series):
+        groups.setdefault((item.chart_type or chart.chart_type, item.secondary_axis), []).append(index)
+    return groups
+
+
+def _group_xml(kind: str, series_xml: str, grouping, vary: str, labels: str, axes: str) -> str:
+    if kind == "bar":
+        overlap = "<overlap val=\"100\"/>" if grouping else ""
+        return (
+            f"<barChart><barDir val=\"col\"/><grouping val=\"{grouping or 'clustered'}\"/>"
+            f"{vary}{series_xml}{labels}<gapWidth val=\"150\"/>{overlap}{axes}</barChart>"
+        )
+    tag = f"{kind}Chart"
+    return (
+        f"<{tag}><grouping val=\"{grouping or 'standard'}\"/>"
+        f"{vary}{series_xml}{labels}{axes}</{tag}>"
+    )
+
+
+def _combined_axes_xml(chart, groups, xlsb: bool) -> str:
+    only_areas = all(kind == "area" for kind, _secondary in groups)
+    cross_between = "midCat" if only_areas else "between"
+    xml = (
+        _axis_xml("catAx", 10, 100, "b", chart.x_axis, False, xlsb=xlsb)
+        + _axis_xml("valAx", 100, 10, "l", chart.y_axis, True, cross_between, xlsb)
+    )
+    if any(secondary for _kind, secondary in groups):
+        xml += (
+            _axis_xml("valAx", 200, 20, "r", chart.y2_axis, False, cross_between, xlsb, crosses="max")
+            + _axis_xml("catAx", 20, 200, "b", ChartAxis(visible=False), False, xlsb=xlsb, crosses="autoZero")
+        )
+    return xml
+
+
+def _finish_chart(parts: list, chart) -> str:
     parts.append("</plotArea>")
     parts.append(
         f"{_legend_xml(chart.legend)}"
