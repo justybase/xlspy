@@ -9,7 +9,8 @@ import tempfile
 from ..refs import parse_cell_range
 from . import _props
 from ._loaded import _value_for_save
-from ._drawings import check_removals, new_drawing_objects, remember_drawing_objects, remove_drawing_objects, save_chart_edits
+from ._drawings import check_removals, remember_drawing_objects, remove_drawing_objects, save_chart_edits
+from ._xlsb_drawings import add_drawing_objects
 from ._objects import _object_values, check_unread, object_signatures
 from ._xlsb_layout import changed_groups, layout_state, patch_layout, save_builtin_names
 
@@ -47,13 +48,9 @@ def _is_new(sheet) -> bool:
 
 def _reject_unsupported_sheet_edits(sheet) -> None:
     if _is_new(sheet):
-        for name in ("charts", "images", "tables"):
-            if _object_values(sheet, name):
-                raise _unsupported(f"{name.replace('_', ' ')} on a new sheet")
+        if _object_values(sheet, "tables"):
+            raise _unsupported("tables on a new sheet")
         return
-    for name, added in new_drawing_objects(sheet).items():
-        if added:
-            raise _unsupported(f"adding {name}")
     check_removals(sheet)
     saved = sheet._saved_object_signatures
     current = object_signatures(sheet)
@@ -233,6 +230,7 @@ def save_loaded_xlsb(workbook, filename) -> None:
         _save_sheet(sheet, updater)
         remove_drawing_objects(updater, sheet)
         save_chart_edits(updater, sheet)
+        add_drawing_objects(updater, sheet)
     _props.save_properties(updater, workbook)
     # After the sheets: their conditional formats may add differential styles.
     styles = workbook._styles
