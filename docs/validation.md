@@ -27,11 +27,12 @@ built side by side until the last step. Validated on Windows 11 with Python
 - A wheel built by maturin from the source distribution for Python 3.11
   passed `tools/wheel_smoke.py` in a clean virtual environment.
 - `tools/fuzz_native.py` (5,000 iterations per phase) through the Rust
-  backend: seeds 2–5 and 7–10 held every check. Seed 1 stops at an XLSX
-  cell with `r="A"` (no row number): the Python regex path reads it as column
-  A, while ElementTree, which gets the rows the native scanner declines,
-  raises `ValueError`. The C extension stops at the same case, so this is a
-  difference between the two Python paths, not the port. Seed 6 generates a
+  backend: seeds 1–5 and 7–10 held every check. Seed 1 first stopped at an
+  XLSX cell with `r="A"` (no row number): the regular-expression path read
+  it as column A, while ElementTree raised `ValueError`. The C extension
+  stopped at the same case, so the port was not the cause; the read paths
+  now share one rule for cell references (`refs.cell_position`), and the
+  seed passes. Seed 6 generates a
   row 463,132 cells wide repeated over many gap rows and runs for hours with
   either backend; it is a slow input, not a failure.
 - Speed, Rust time / C time on the same machine (below 1 is faster): XLSB

@@ -52,6 +52,30 @@ def parse_cell_range(reference: str) -> tuple[int, int, int, int]:
     return bounds
 
 
+_COLUMN_CACHE: dict[str, int] = {}
+
+
+def cell_position(ref: str) -> tuple[int, int]:
+    """Zero-based ``(column, row)`` of a worksheet cell reference (``r="B2"``).
+
+    Every XLSX reader path accepts the same references: column letters that
+    ``parse_cell_range`` accepts, then ASCII digits naming row 1-1048576
+    (leading zeros allowed). Anything else raises ValueError. Column letters
+    are validated once and cached.
+    """
+    letters = ref.rstrip("0123456789")
+    digits = ref[len(letters):]
+    column = _COLUMN_CACHE.get(letters)
+    if column is not None and digits:
+        row = int(digits)
+        if 1 <= row <= 1048576:
+            return column, row - 1
+    column, row, _, _ = parse_cell_range(f"{letters}{int(digits)}" if digits and int(digits) else ref)
+    if len(_COLUMN_CACHE) < 16384:
+        _COLUMN_CACHE[letters] = column
+    return column, row
+
+
 def quote_sheet_name(sheet_name: str) -> str:
     """Quote a sheet name for use in a formula or defined name."""
     return "'" + sheet_name.replace("'", "''") + "'"

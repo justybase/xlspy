@@ -21,7 +21,7 @@ from ..external_links import read_external_links
 from ..hyperlinks import Hyperlink
 from ..ignored_errors import FLAGS as IGNORED_ERROR_FLAGS, IgnoredError
 from ..reader import ExcelReader
-from ..refs import column_label, parse_cell_range
+from ..refs import cell_position, column_label, parse_cell_range
 from ..styles import (
     AboveAverageRule,
     BlanksRule,
@@ -110,25 +110,7 @@ _Q_C = f"{{{MAIN}}}c"
 _Q_F = f"{{{MAIN}}}f"
 _Q_V = f"{{{MAIN}}}v"
 _Q_IS = f"{{{MAIN}}}is"
-_COLUMN_CACHE: dict[str, int] = {}
-
-
-def _cell_position(ref: str) -> tuple[int, int]:
-    """Zero-based ``(column, row)`` of an A1 cell reference.
-
-    Column letters are validated once, through ``parse_cell_range``, and cached.
-    """
-    letters = ref.rstrip("0123456789")
-    digits = ref[len(letters):]
-    column = _COLUMN_CACHE.get(letters)
-    if column is not None and digits.isascii() and digits.isdigit():
-        row = int(digits)
-        if 1 <= row <= 1048576:
-            return column, row - 1
-    column, row, _, _ = parse_cell_range(ref)
-    if len(_COLUMN_CACHE) < 16384:
-        _COLUMN_CACHE[letters] = column
-    return column, row
+_cell_position = cell_position
 
 
 @functools.lru_cache(maxsize=1024)

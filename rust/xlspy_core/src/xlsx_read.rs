@@ -26,6 +26,7 @@ const CHUNK: usize = 1 << 18;
 /// 26 + 26^2 + 26^3 column keys, plus slot 0 meaning "not cached".
 const COLUMN_KEYS: usize = 26 * 26 * 26 + 26 * 26 + 26 + 1;
 const MAX_COLUMNS: i64 = 16384;
+const MAX_ROWS: i64 = 1_048_576;
 
 static DATETIME: PyOnceLock<Py<PyType>> = PyOnceLock::new();
 static TIMEDELTA: PyOnceLock<Py<PyType>> = PyOnceLock::new();
@@ -712,30 +713,36 @@ impl State {
                 if !(1..=3).contains(&letters) || !r[..letters].iter().all(u8::is_ascii_uppercase) {
                     return Ok(None);
                 }
+                // The XML parser (refs.cell_position) refuses a reference
+                // without a row, with row 0 or past the sheet, or with a
+                // column past XFD; those rows go to it, so it raises.
+                if digits == 0 || digits > 7 {
+                    return Ok(None);
+                }
+                let ref_row = r[letters..]
+                    .iter()
+                    .fold(0i64, |v, &d| v * 10 + i64::from(d - b'0'));
+                if !(1..=MAX_ROWS).contains(&ref_row) {
+                    return Ok(None);
+                }
                 let key = r[..letters]
                     .iter()
                     .fold(0usize, |k, &ch| k * 26 + usize::from(ch - b'A' + 1));
                 let col = if self.columns[key] != 0 {
                     self.columns[key] - 1
                 } else {
-                    if digits == 0 {
+                    if key as i64 > MAX_COLUMNS {
                         return Ok(None);
                     }
                     self.columns[key] = key as i64;
                     key as i64 - 1
                 };
-                if let Some(m) = &self.model {
-                    // The model keeps the row of the reference: a cell whose
-                    // reference names another row goes to the XML parser.
-                    if digits == 0 || digits > 7 || col >= MAX_COLUMNS {
-                        return Ok(None);
-                    }
-                    let ref_row = r[letters..]
-                        .iter()
-                        .fold(0i64, |v, &d| v * 10 + i64::from(d - b'0'));
-                    if ref_row != m.current_row {
-                        return Ok(None);
-                    }
+                // The model keeps the row of the reference: a cell whose
+                // reference names another row goes to the XML parser.
+                if let Some(m) = &self.model
+                    && ref_row != m.current_row
+                {
+                    return Ok(None);
                 }
                 col
             }
@@ -801,7 +808,7 @@ impl State {
         attrs: &[u8],
         body: Option<&[u8]>,
     ) -> Scan<()> {
-        if !(1..=1_048_576).contains(&row_number) {
+        if !(1..=MAX_ROWS).contains(&row_number) {
             return Ok(None);
         }
         if [&b" ht="[..], b" hidden=", b" outlineLevel=", b" collapsed="]

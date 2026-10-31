@@ -142,7 +142,10 @@ def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
                     if col is None:
                         if ref_pattern.fullmatch(ref) is None:
                             raise _Fallback
-                        col = columns[letters] = column_index(letters)
+                        col = column_index(letters)
+                        if col >= 16384:
+                            raise _Fallback
+                        columns[letters] = col
                     digits = ref[len(letters):]
                     if not (digits.isascii() and digits.isdigit()):
                         raise _Fallback

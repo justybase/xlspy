@@ -10,7 +10,7 @@ from ._metadata import MAIN, namespace_of
 from ._text import xstring_unescape
 from . import _accel
 from .excel_dates import serial_to_datetime
-from .refs import parse_cell_range, column_label
+from .refs import cell_position, parse_cell_range, column_label
 
 _TOKEN = re.compile(
     r'"(?:[^"]|"")*"|\x27(?:[^\x27]|\x27\x27)*\x27|\[[^\]]*\]'
@@ -32,7 +32,7 @@ _CELL = re.compile(
     re.S,
 )
 _ATTR = re.compile(r' (\w+)="([^"]*)"')
-_REF = re.compile(r"([A-Z]{1,3})\d+")
+_REF = re.compile(r"[A-Z]{1,3}[0-9]+")
 _INLINE_T = re.compile(r"<t(?: [^>]*)?>([^<]*)</t>")
 _PREFIXED = re.compile(r"</?[A-Za-z_][\w.-]*:")
 _XMLNS = re.compile(r'xmlns="([^"]+)"')
@@ -147,7 +147,7 @@ def _row_from_element(reader, node, ns, next_row, data_only, shared):
         if cell.tag != f"{{{ns}}}c":
             continue
         ref = cell.get("r")
-        col = parse_cell_range(ref)[0] if ref else next_col
+        col = cell_position(ref)[0] if ref else next_col
         ref = ref or f"{column_label(col)}{row_number}"
         next_col = col + 1
         formula = cell.find(f"{{{ns}}}f")
@@ -291,12 +291,20 @@ def _fast_row(sheet, attrs, body, next_row):
         ref = attributes.get("r")
         if ref:
             # Column letters are the reference without its trailing digits; only unseen letters are validated.
+            # References refs.cell_position refuses (no row, row 0 or past the sheet, a column past XFD) go
+            # to the XML parser, which raises for them.
             letters = ref.rstrip("0123456789")
             col = columns.get(letters)
             if col is None:
                 if _REF.fullmatch(ref) is None:
                     raise _Fallback
-                col = columns[letters] = _column_index(letters)
+                col = _column_index(letters)
+                if col >= 16384:
+                    raise _Fallback
+                columns[letters] = col
+            digits = len(ref) - len(letters)
+            if not digits or (digits > 6 or ref[len(letters)] == "0") and not 1 <= int(ref[len(letters):]) <= 1048576:
+                raise _Fallback
         else:
             col = next_col
         next_col = col + 1

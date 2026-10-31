@@ -344,3 +344,56 @@ def test_writer_output_matches_element_tree(tmp_path, monkeypatch):
         ])
     fast, slow = _both_paths(path, monkeypatch)
     assert fast == slow
+
+
+# Cell references every read path must treat alike: accepted ones give the same
+# cells, the others raise ValueError (the fast paths hand them to ElementTree).
+CELL_REFS = {
+    "B2": 1, "b2": 1, "$B$2": 1, "A01": 0, "XFD2": 16383, "A1048576": 0, "A2": 0,
+    "A": None, "B": None, "A0": None, "A00": None, "XFE2": None, "A1048577": None,
+    "AAAA2": None, "A\u0661": None, "\u00c12": None,
+}
+
+
+def _model_cells(path, monkeypatch, native, fast):
+    from xlspy.workbook import _reader as model_reader, load_workbook
+    with monkeypatch.context() as patch:
+        if not native:
+            patch.setattr(_accel, "_c_read_xlsx_worksheet", None)
+        patch.setattr(model_reader, "_FAST_SHEET_DATA", fast)
+        try:
+            workbook = load_workbook(path, data_only=True)
+        except ValueError:
+            return "ValueError"
+        try:
+            sheet = workbook.worksheets[0]
+            return sorted((cell.row, cell.column, cell.value) for row in sheet._cells.values()
+                          for cell in row.values())
+        finally:
+            workbook.close()
+
+
+@pytest.mark.parametrize("ref", CELL_REFS)
+def test_cell_references_read_alike_on_every_path(tmp_path, monkeypatch, ref):
+    path = _base_file(tmp_path)
+    # A1 first, so the column letters of the reference may already be cached.
+    replace_parts(path, {SHEET: _sheet(f'<row r="1"><c r="A1"><v>1</v></c></row>'
+                                       f'<row r="2"><c r="A2"><v>2</v></c><c r="{ref}"><v>3</v></c></row>')})
+    column = CELL_REFS[ref]
+    if column is None:
+        for mode in ("native", "python", "tree"):
+            with monkeypatch.context() as patch:
+                if mode != "native":
+                    patch.setattr(_xlsx_read._accel, "read_xlsx_worksheet", lambda *args: None)
+                if mode == "tree":
+                    patch.setattr(_xlsx_read, "_probe_fast", lambda stream: None)
+                with ExcelReader(str(path)) as reader, pytest.raises(ValueError):
+                    list(_xlsx_read.iter_indexed_rows(reader, "Sheet1", data_only=True))
+    else:
+        expected = [(1, [(0, 1)]), (2, [(0, 2), (column, 3)])]
+        assert list(_all_paths(path, monkeypatch)) == [expected] * 3
+    models = {(native, fast): _model_cells(path, monkeypatch, native, fast)
+              for native in (True, False) for fast in (True, False)}
+    assert len(set(map(repr, models.values()))) == 1, models
+    if column is None:
+        assert models[True, True] == "ValueError"
