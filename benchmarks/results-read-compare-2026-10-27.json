@@ -1,0 +1,107 @@
+{
+  "python": "3.14.7",
+  "rows": 50000,
+  "cols": 50,
+  "c_ext": true,
+  "results": {
+    "xlspy ExcelReader, XLSX": {
+      "seconds": 0.8215742000029422,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 15.328125,
+      "runs": [
+        0.793,
+        0.822,
+        0.853
+      ]
+    },
+    "xlspy ExcelReader, XLSB": {
+      "seconds": 0.6550005000026431,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 14.71484375,
+      "runs": [
+        0.656,
+        0.652,
+        0.655
+      ]
+    },
+    "xlspy ExcelReader, xlsxwriter file": {
+      "seconds": 0.8437399000031292,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 13.0390625,
+      "runs": [
+        0.844,
+        0.817,
+        0.85
+      ]
+    },
+    "xlspy load_workbook, XLSX": {
+      "seconds": 6.530183800001396,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 504.85546875,
+      "runs": [
+        6.573,
+        6.53,
+        6.488
+      ]
+    },
+    "xlspy load_workbook, XLSB": {
+      "seconds": 6.742576599994209,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 498.52734375,
+      "runs": [
+        7.153,
+        6.658,
+        6.743
+      ]
+    },
+    "openpyxl read_only, XLSX": {
+      "seconds": 4.954446600000665,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 28.55859375,
+      "runs": [
+        4.954,
+        4.93,
+        5.301
+      ]
+    },
+    "openpyxl read_only, xlsxwriter file": {
+      "seconds": 8.123737800000526,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 23.2890625,
+      "runs": [
+        8.184,
+        8.124,
+        7.902
+      ]
+    },
+    "openpyxl load_workbook, XLSX": {
+      "seconds": 11.84668740000052,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 891.671875,
+      "runs": [
+        13.208,
+        11.847,
+        11.644
+      ]
+    },
+    "openpyxl load_workbook, xlsxwriter file": {
+      "seconds": 14.606672199995955,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 994.9140625,
+      "runs": [
+        14.51,
+        14.675,
+        14.607
+      ]
+    }
+  }
+}

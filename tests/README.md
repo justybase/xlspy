@@ -25,6 +25,22 @@ To measure coverage (the configured branch-coverage threshold is 84%):
 python -m pytest --cov
 ```
 
+## openpyxl compatibility harness
+
+The parity harness compares xlspy with openpyxl-authored goldens. Regenerate
+the goldens after changing the generator, then run the harness:
+
+```bash
+python tools/make_openpyxl_goldens.py
+python -m pytest tests/openpyxl_compat -q
+python tools/compare_openpyxl_model.py LEFT.xlsx RIGHT.xlsx
+```
+
+The harness uses openpyxl 3.1.x (pinned to 3.1.5 in CI). A missing feature is
+reported as `xfail` with the ID from
+[`docs/openpyxl-parity.md`](../docs/openpyxl-parity.md), which also records the
+current implementation status and the remaining phases.
+
 The notes/template regression suites are `test_comments_and_editing.py` and
 `test_xlsx_reader_streaming.py`. For native Excel validation of notes, dimensions,
 named ranges, protection and preserved form controls:

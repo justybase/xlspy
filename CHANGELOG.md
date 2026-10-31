@@ -5,6 +5,124 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `benchmarks/bench_io.py`: subprocess-isolated read/write/model-load benchmark
+  for XLSX and XLSB with JSON output, fallback-rate and zlib-level cases, and
+  `--compare` regression gating.
+- `XlsbWriter.write_sheet(auto_filter_ref=...)`; model-built `.xlsb` files now
+  keep an explicit auto-filter range, and loaded `.xlsb` models read it.
+- `load_workbook()` reads XLSB into the same model as XLSX: cell styles (from
+  `styles.bin`, resolved lazily on first access), row/column dimensions, sheet
+  properties, views and panes, sheet protection, print setup, data
+  validations, conditional formatting (except colour scales, data bars and
+  icon sets), tables, charts, images and document properties.
+- Saving a loaded `.xlsb` workbook now writes cell style changes (new styles
+  are appended to `styles.bin`), merged cells, hyperlinks and data validations,
+  besides values, formulas, comments and defined names. Every other edit
+  (sheet layout, print setup, CF, tables, charts/images, document properties,
+  sheet rename/add/remove/reorder) raises `NotImplementedError` at `save()`
+  instead of being dropped silently.
+- `XlsbUpdater.update_cells(..., styles={ref: xf})`, `set_merged_cells()`,
+  `set_hyperlinks()` and `set_data_validations()`.
+- Benchmark cases `load_xlsb_styled` and `save_loaded_xlsb_styled`.
+- Usage guide: "Read modes" section (`ExcelReader`, `read_only=True`,
+  `load_workbook()`) and an XLSX/XLSB table of what a loaded workbook reads and
+  saves.
+- openpyxl compatibility harness (`tests/openpyxl_compat/`), six openpyxl-authored
+  goldens (`tests/data/openpyxl_parity/`), `tools/make_openpyxl_goldens.py` and
+  `tools/compare_openpyxl_model.py`.
+- Public `xlspy.utils` modules (`cell`, `datetime`, `escape`, `units`,
+  `exceptions`), `xlspy.styles.numbers` and `xlspy.formula` (`Tokenizer`,
+  `Translator`).
+- openpyxl-like model metadata: sheet format, full sheet views/panes/selection,
+  full page setup/print options/header-footer, page breaks, sheet/workbook
+  protection, calculation properties, workbook views, custom document
+  properties and `lastPrinted`.
+- Read support for tables, data validations, conditional formatting and named
+  styles in loaded workbooks.
+- Editing and removing loaded tables, data validations and conditional
+  formatting rules, with table parts, relationships and sheet elements rebuilt
+  from the model on save.
+- `NamedStyle` write support: `add_named_style()` appends to
+  `cellStyleXfs`/`cellStyles`, and `Cell.style = "Name"` applies a loaded or
+  newly added named style.
+- Model conveniences: `WriteOnlyCell`, `ReadOnlyCell.number_format`,
+  `Cell.is_date`/`encoding`/`base_date`, `append(dict)`, `copy_worksheet`
+  hyperlinks, and richer `CellRange`/`MultiCellRange`.
+- Chart/image/chartsheet reading: `LoadedChart`, `chart_reader.py`, image
+  anchors/descriptions and `Workbook.chartsheets`; the practical chart-type
+  catalogue now includes radar, bubble, stock, surface, 3D variants and
+  projected pie.
+- XLSB workbook model read: values, formulas, dates, errors, merged ranges,
+  hyperlinks, classic notes and defined names, with byte-identical no-op saves.
+- XLSB model edits: cell values, comments and defined-name additions/removals
+  through `XlsbUpdater`; existing cell XF styles are preserved.
+
+### Changed
+
+- Much faster `load_workbook()` (50k x 20 cells: XLSX 6.5 s to 2.3 s, XLSB
+  5.5 s to 2.5 s). XLSX rows are matched with regular expressions
+  (`workbook/_fast_sheet.py`), and any row they cannot reproduce exactly goes
+  through the element reader; XLSB sheets are read once and walked with
+  `biff_utils.iter_record_payloads`. A differential test compares both paths.
+- Faster cell writes on the model (`Cell.value` for plain int/float/bool/str and
+  memoised number-format changes): building 1M cells 5.5 s to 3.5 s.
+- A regex fast path for XLSX shared strings in `ExcelReader`, with expat as the
+  fallback.
+- `XlsbUpdater.update_cells()` walks the worksheet once instead of three times,
+  and BIFF12 record headers are decoded inline: saving 1,000 edits into a
+  50k x 20 loaded XLSB takes 2.4 s instead of 5.0 s.
+- XLSB style record encoders moved from `writer.py` to `_xlsb_style_records.py`
+  so the writer and the loaded-workbook saver share them.
+- Faster streaming writes (C extension): exact `date`/`datetime` values are
+  read through the C datetime API instead of attribute lookups, and whole
+  numbers below 1e16 skip the general float-to-text routine in XLSX. Per
+  million cells: XLSB datetimes 507 to 148 ms, XLSX dates 396 to 164 ms, XLSX
+  integers 233 to 168 ms. Output is byte-identical to the Python encoders.
+- XLSX shared strings are escaped a chunk at a time instead of string by
+  string (1M unique strings: 262 to 154 ms).
+- `Worksheet.append()` stores plain int/float/bool/str values, and dates with
+  their default format, directly when the row is new and the sheet has no
+  merged cells; saving the model reads each row once. Building and saving a
+  50k x 20 model: 3.5 s to 1.9 s (XLSX), 3.3 s to 1.8 s (XLSB).
+- Worksheets and shared strings are compressed on a worker thread while rows
+  are encoded (`_zip_threads.py`; zlib releases the GIL). An XLSX sheet's
+  rows are compressed as they are written and joined to its head and tail as
+  one deflate stream, as pigz does. Streaming XLSX writes are 15% faster
+  (50k x 20, level 3), more at higher levels (level 9: 25%); file sizes are
+  unchanged. The members hold the same bytes; XLSB members at levels 3-9 are
+  also byte-identical when compressed.
+- `xlspy.styles` is now a package with the original names re-exported from
+  `xlspy.styles.core`; `styles.py` remains import-compatible.
+- `ExcelReader` accepts `errors="openpyxl"` for bare `#DIV/0!`-style values;
+  the default remains the historical `error:#DIV/0!` form.
+
+### Fixed
+
+- The regular-expression path for XLSX shared strings kept literal CR and
+  CRLF line breaks (as Excel writes multi-line text) instead of turning them
+  into `\n` as the XML parser does; it now applies XML end-of-line handling.
+- The XLSB C encoder could store `datetime` values with microseconds one
+  unit in the last place away from `datetime_to_serial` (and from the Python
+  encoder and XLSX); it now computes the serial the same way, and leaves
+  datetimes beyond the exact range (after about 2185) to the Python encoder.
+- Loaded XLSX conditional formats lost the formulas of `cellIs` and
+  `expression` rules (the reader looked for `<f>` instead of `<formula>`), so
+  editing the sheet's conditional formats rewrote those rules without formulas.
+- A failed `load_workbook()` closes its temporary updater package instead of
+  leaking a `ResourceWarning`.
+- Theme colours accept indices `0..11` (hyperlink styles use theme 10).
+- A no-op save no longer rewrites `xl/workbook.xml`; untouched ZIP parts are
+  preserved.
+- Changing `freeze_panes` updates the model pane and selection so the saved
+  sheet reflects the new split.
+- Updaters/evaluators see conditional-formatting groups and flattened rules
+  correctly, so adding objects to a loaded sheet does not duplicate or reject
+  existing rules.
+
 ## [0.10.1] - 2026-10-24
 
 ### Changed

@@ -1,0 +1,84 @@
+{
+  "python": "3.14.7",
+  "rows": 50000,
+  "cols": 20,
+  "c_ext": true,
+  "results": {
+    "write_xlsx": {
+      "seconds": 0.4415134000009857,
+      "size_mb": 3.1536664962768555,
+      "peak_rss_delta_mb": 16.484375
+    },
+    "write_xlsb": {
+      "seconds": 0.29814900000201305,
+      "size_mb": 2.6456165313720703,
+      "peak_rss_delta_mb": 16.16796875
+    },
+    "read_xlsx": {
+      "seconds": 0.28917160000128206,
+      "cells": 1000000,
+      "peak_rss_delta_mb": 0.38671875
+    },
+    "read_xlsb": {
+      "seconds": 0.17429539999284316,
+      "cells": 1000000,
+      "peak_rss_delta_mb": 0.64453125
+    },
+    "load_xlsx": {
+      "seconds": 2.170510899995861,
+      "peak_rss_delta_mb": 186.92578125
+    },
+    "load_xlsb": {
+      "seconds": 2.4175298000045586,
+      "peak_rss_delta_mb": 178.9765625
+    },
+    "load_xlsx_styled": {
+      "seconds": 2.5331088000020827,
+      "peak_rss_delta_mb": 0.0
+    },
+    "load_xlsb_styled": {
+      "seconds": 2.771064500004286,
+      "peak_rss_delta_mb": 0.0
+    },
+    "save_loaded_xlsb_styled": {
+      "seconds": 2.300125499998103,
+      "peak_rss_delta_mb": 7.3125
+    },
+    "write_model_xlsx": {
+      "seconds": 1.799989800005278,
+      "size_mb": 3.154155731201172,
+      "peak_rss_delta_mb": 316.2109375
+    },
+    "write_model_xlsb": {
+      "seconds": 1.6638592000017525,
+      "size_mb": 2.6413259506225586,
+      "peak_rss_delta_mb": 316.1171875
+    },
+    "xlsx_fallback_rate": {
+      "rows": 50000,
+      "fallback_rows": 0,
+      "fallback_pct": 0.0,
+      "peak_rss_delta_mb": 16.67578125
+    },
+    "zlib1": {
+      "seconds": 0.36692069999844534,
+      "size_mb": 4.425877571105957,
+      "peak_rss_delta_mb": 16.203125
+    },
+    "zlib3": {
+      "seconds": 0.39640330000111135,
+      "size_mb": 3.1536664962768555,
+      "peak_rss_delta_mb": 16.50390625
+    },
+    "zlib6": {
+      "seconds": 0.4283534000060172,
+      "size_mb": 2.6164255142211914,
+      "peak_rss_delta_mb": 16.4609375
+    },
+    "zlib9": {
+      "seconds": 0.5871215000006487,
+      "size_mb": 2.341846466064453,
+      "peak_rss_delta_mb": 16.15625
+    }
+  }
+}

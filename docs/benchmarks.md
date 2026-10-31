@@ -75,6 +75,125 @@ Median wall time to read the 50,000 × 50 workbook back. Each library reads the 
 - The Mac mini M4 reads **1.8–2.2× faster** than the Windows machine, a larger gap than for writes.
 - WSL2 reads 18–31% faster than Windows, with the same filesystem caveat as for writes.
 
+### Read modes and the workbook model
+
+`benchmarks/bench_io.py` compares the read modes described in
+[Read modes](usage.md#read-modes-which-one-to-use) on a 50,000 × 20 workbook
+(Windows, Python 3.14, C extension on, median of three runs, 2026-10-27,
+[`results-write-final.json`](../benchmarks/results-write-final.json)):
+
+| Case | XLSX | XLSB |
+| :--- | ---: | ---: |
+| `ExcelReader.get_rows()` (values, no styles) | 0.29 s | 0.19 s |
+| `load_workbook()` | 2.30 s | 2.56 s |
+| `load_workbook()`, every 10th row bold | 2.69 s | 2.93 s |
+| Save a loaded styled workbook after 1,000 value and style edits | — | 2.42 s |
+| Build the model and save it | 1.88 s | 1.77 s |
+
+- `ExcelReader` is **8–14× faster** than `load_workbook()`, because it creates
+  no `Cell` objects. Use it when you only need values.
+- `load_workbook()` keeps only a style index per cell, so loading a styled file
+  costs 15–18% more than an unstyled one, and style objects are built only for
+  the cells whose style you read.
+- A loaded XLSB is saved by patching the binary worksheet in place: the time
+  depends mostly on the size of the edited sheet, not on the number of edits.
+
+### Comparison with openpyxl and xlsxwriter (2026-10-27)
+
+Re-run of every benchmark on one machine, so the numbers are directly comparable.
+Windows 11, AMD Ryzen 7 7840HS, Python 3.14.7, xlspy 0.10.1 (working tree at
+`0751ab0`, uncommitted changes), openpyxl 3.1.5, xlsxwriter 3.2.9. Median of three
+runs, 50,000 × 50 (2.5 million cells), `mixed` dataset. Raw data:
+[`results-write-compare-2026-10-27.json`](../benchmarks/results-write-compare-2026-10-27.json),
+[`results-read-compare-2026-10-27.json`](../benchmarks/results-read-compare-2026-10-27.json).
+
+**Write**, time in seconds (xlspy with C extension on, deflate level 3, its default;
+openpyxl and xlsxwriter use their own defaults):
+
+| Writer | Time | Peak working set | File |
+| :--- | ---: | ---: | ---: |
+| xlspy XLSB, inline strings | 0.77 s | 42.0 MB | 7.32 MiB |
+| xlspy XLSB, shared strings | 0.94 s | 103.1 MB | 8.10 MiB |
+| xlspy XLSX, inline strings | 1.24 s | 51.4 MB | 6.31 MiB |
+| xlspy XLSX, shared strings | 1.40 s | 104.0 MB | 7.25 MiB |
+| xlsxwriter XLSX (`constant_memory`) | 9.46 s | 29.1 MB | 11.55 MiB |
+| openpyxl XLSX (`write_only`) | 16.03 s | 42.3 MB | 11.71 MiB |
+
+- xlspy XLSX with shared strings is **6.8×** faster than xlsxwriter and **11.5×** faster than openpyxl.
+- xlspy writes smaller files (6.3–8.1 MiB against 11.5–11.7 MiB).
+- The trade-off is memory. Shared-string mode keeps the string table in Python
+  memory, so its peak is about 100 MB against 29–42 MB for the other two writers.
+  Inline mode, at 51 MB, stays in the same range.
+- Without the C extension, the xlspy times are 2.6–3.0 s, which is still faster than
+  xlsxwriter, but the margin is much smaller.
+
+**Read**, time in seconds, reading the whole sheet with `values_only` and counting
+the non-empty cells. Every reader returns the same 2,500,000 non-empty cells:
+
+| Reader | File | Time |
+| :--- | :--- | ---: |
+| xlspy `ExcelReader` | XLSX (xlspy) | 0.82 s |
+| xlspy `ExcelReader` | XLSB (xlspy) | 0.66 s |
+| xlspy `ExcelReader` | XLSX (xlsxwriter) | 0.84 s |
+| openpyxl `read_only=True` | XLSX (xlspy) | 4.95 s |
+| openpyxl `read_only=True` | XLSX (xlsxwriter) | 8.12 s |
+| xlspy `load_workbook` (model) | XLSX (xlspy) | 6.53 s |
+| xlspy `load_workbook` (model) | XLSB (xlspy) | 6.74 s |
+| openpyxl `load_workbook` (model) | XLSX (xlspy) | 11.85 s |
+| openpyxl `load_workbook` (model) | XLSX (xlsxwriter) | 14.61 s |
+
+- `ExcelReader` is **6.0×** faster than openpyxl `read_only` on the same file.
+- The loaded model is **1.8×** faster than openpyxl's on the same file.
+- xlsxwriter cannot read files, so it appears only as the producer of an input file.
+- XLSB has no openpyxl reader, so it is measured for xlspy only.
+
+**Regression check** against `results-write-final.json` (`bench_io.py`, 50,000 × 20):
+every case ran at 0.90–0.99× of the baseline time, so no case is slower than before
+(full results: [`results-2026-10-27.json`](../benchmarks/results-2026-10-27.json)).
+
+**Not measured in this run:** a full-model write of openpyxl (`Workbook().save()`)
+against `Workbook.save()` in xlspy, and read comparisons with other XLSX
+readers. The write table above uses the streaming writers only.
+
+### Feature comparison
+
+The table lists the API that each library exposes, checked against the installed
+versions. It is not a functional test suite. For the details and the list of gaps,
+see [openpyxl parity](openpyxl-parity.md).
+
+| Capability | xlspy 0.10.1 | openpyxl 3.1.5 | xlsxwriter 3.2.9 |
+| :--- | :---: | :---: | :---: |
+| Read XLSX | yes | yes | no |
+| Read XLSB | yes | no | no |
+| Write XLSX | yes | yes | yes |
+| Write XLSB | yes | no | no |
+| Streaming write | yes | yes (`write_only`) | yes (`constant_memory`) |
+| Streaming read | yes (`ExcelReader`) | yes (`read_only`) | n/a |
+| Modify and save an existing file | yes (XLSX; XLSB partly) | yes | no |
+| Cell styles (font, fill, border, number format) | yes | yes | yes |
+| Named styles | yes | yes | no |
+| Merged cells | yes | yes | yes |
+| Hyperlinks | yes | yes | yes |
+| Data validation | yes | yes | yes |
+| Conditional formatting | yes | yes | yes |
+| Tables | yes | yes | yes |
+| Charts | yes (14 types) | yes | yes |
+| Images | yes | yes | yes |
+| Comments | yes | yes | yes |
+| Rich text in cells | yes | yes | yes |
+| Defined names | yes | yes | yes |
+| Freeze panes, autofilter, print area | yes | yes | yes |
+| Sheet protection | yes | yes | yes |
+| Sparklines | no | no | yes |
+| Array formulas | yes (XLSX, `Formula(array_ref=...)`) | yes | yes |
+| Create `.xlsm` / VBA project | no (`ValueError`) | keeps `vba_archive` | yes (`add_vba_project`) |
+| Pivot tables | preserved only | preserved only | no |
+| Chartsheets | preserved, not loaded | yes | yes |
+
+XLSB support in xlspy follows the limits in [Usage](usage.md#loaded-xlsx-and-xlsb-workbooks).
+Some style features are not written to XLSB, so check that page before you rely on a
+particular style in XLSB output.
+
 ## Method
 
 - Every measurement runs in its own worker process. The writers are interleaved across three runs, and the medians are reported.
@@ -137,6 +256,17 @@ The read numbers come from `examples/performance_test.py`. It runs the write and
 
 ```bash
 python examples/performance_test.py --rows 50000 --cols 50
+```
+
+### Read modes and model benchmark
+
+`benchmarks/bench_io.py` runs each case in a fresh process and writes JSON.
+`--compare` checks a run against a saved one and exits non-zero when a case is
+slower than `--max-slowdown` times its baseline:
+
+```bash
+py -3.14 benchmarks/bench_io.py --out results.json
+py -3.14 benchmarks/bench_io.py --compare benchmarks/results-write-final.json --max-slowdown 1.2
 ```
 
 For correctness checks and platform test results, see [Validation](validation.md).

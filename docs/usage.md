@@ -247,6 +247,31 @@ columns whose longest values come later. `tools/score_column_widths.py`
 compares the estimate with Excel's AutoFit widths recorded by
 `tools/calibrate_column_widths.py`.
 
+#### Fixed widths
+
+`column_widths` sets the width of chosen columns and skips the automatic
+measurement for them. It is a mapping from a column to a width in Excel's
+character units (the value shown in *Column Width*):
+
+```python
+from xlspy import XlsbWriter, XlsxWriter  # both take the same parameter
+
+with XlsxWriter("report.xlsx") as writer:
+    writer.add_sheet("Data")
+    writer.write_sheet(
+        rows,
+        column_widths={"A": 8, "B": 30, "E": 60},   # column letters
+        # column_widths={0: 8, 1: 30, 4: 60},       # or 0-based indexes
+    )
+```
+
+- Keys are column letters (`"A"`, `"AB"`) or 0-based integers. Any other key
+  type raises `TypeError`.
+- Widths are numbers from `0.5` to `255`. Other values raise `ValueError`.
+- Columns that are not listed keep the automatic width described above.
+- `XlsbWriter.write_sheet()`, `write_dataframe()` and the `to_xlsx()` and
+  `to_xlsb()` helpers accept the same mapping.
+
 ### Grid lines
 
 `show_grid_lines=False` hides the sheet's grid lines, like Excel's
@@ -1204,6 +1229,32 @@ with ExcelReader("large_file.xlsb") as reader:
         print(row)
 ```
 
+### Read modes: which one to use
+
+Every read mode is fast by default; nothing has to be switched on or off. The
+modes differ in what they build, so pick the lightest one that does the job:
+
+| Mode | Builds | Styles | Use it for |
+|---|---|---|---|
+| `ExcelReader(path).get_rows()` | Nothing; rows of values, streamed | No | Bulk data extraction, ETL, DataFrames. Fastest, constant memory. |
+| `load_workbook(path, read_only=True)` | Nothing; openpyxl-style read-only sheets | No | openpyxl read-only code: worksheet coordinates, `iter_rows()`, `ReadOnlyCell`. |
+| `load_workbook(path)` | The full editable model | Yes, lazily | Random access, formatting, sheet metadata, objects, edits and save. |
+
+The same three modes work for XLSX, XLSM and XLSB. `data_only` selects stored
+values (`True`) or formula text (`False`) in all of them; the defaults follow
+the API each mirrors (`ExcelReader` returns values, `load_workbook()` returns
+formula text, as openpyxl does).
+
+`load_workbook()` keeps only the style index of each cell while it loads. The
+`Font`, `Fill`, `Border`, `Alignment`, `Protection` and number format objects
+are built the first time a cell's style is read (`cell.font`,
+`cell.number_format`, ...), and identical styles share one object. A workbook
+whose styles are never inspected therefore loads at nearly the same speed as an
+unstyled one; there is no separate "fast" or "styled" flag. When you only need
+values, `ExcelReader` is still several times faster than `load_workbook()`,
+because it does not create a `Cell` for each value (see
+[benchmarks](benchmarks.md)).
+
 Strict Open XML workbooks (Excel's "Strict Open XML Spreadsheet" format,
 ISO/IEC 29500 Strict namespaces) are readable through `ExcelReader`, including
 values, formula text, notes and defined names, and through
@@ -1311,10 +1362,50 @@ they are. Links that `Hyperlink` cannot represent, such as relative file
 paths, are kept in the file but do not move with their cells.
 
 Limitations: named styles, saving a new `.xlsm` and template formats raise
-`NotImplementedError`/`ValueError`.
-Loading XLSB for editing is not supported; use `XlsbUpdater` for sparse
-binary edits. Like openpyxl, `load_workbook()` returns formula text by default
-(`data_only=False`).
+`NotImplementedError`/`ValueError`. Like openpyxl, `load_workbook()` returns
+formula text by default (`data_only=False`).
+
+#### Loaded XLSX and XLSB workbooks
+
+`load_workbook()` reads XLSB into the same model as XLSX. Saving a loaded XLSB
+patches the binary parts in place, like `XlsxUpdater` does for XLSX, so fewer
+kinds of edits can be saved. An edit that a loaded XLSB cannot save raises
+`NotImplementedError` naming it when you call `save()`; nothing is dropped
+silently.
+
+| Feature | XLSX read | XLSX save | XLSB read | XLSB save |
+|---|---|---|---|---|
+| Values, formulas, comments | yes | yes | yes | yes |
+| Cell styles (font, fill, border, alignment, protection, number format) | yes | yes | yes | yes ¹ |
+| Merged cells, hyperlinks | yes | yes | yes | yes |
+| Data validation | yes | yes | yes | yes |
+| Defined names | yes | yes | yes | yes |
+| Column widths, row heights, hidden/outline | yes | yes | yes | no |
+| Freeze panes, sheet view, tab colour, sheet protection | yes | yes | yes | no |
+| Print setup (area, titles, page setup, margins, header/footer, breaks) | yes | yes | yes | no |
+| Conditional formatting | yes | yes | yes ² | no |
+| Tables | yes | yes | yes | no |
+| Charts, images | yes | add | yes | kept unchanged |
+| Document properties | yes | yes | yes | no |
+| Add, remove, rename, reorder sheets | yes | yes | yes | no |
+| Auto filter range | yes | yes | yes | no |
+
+¹ Styles that XLSB cannot store are refused as they are for new XLSB files:
+`Alignment.relative_indent` and the `vertical`, `horizontal`, `start`, `end`
+and `outline=False` border settings raise `NotImplementedError`; font names
+longer than 31 characters and number formats longer than 255 raise
+`ValueError`. The existing style sheet is extended, never reordered, and is
+copied byte for byte when no style changed.
+
+² Cell-value, formula, top/bottom, above-average, duplicate/unique, text,
+time-period and blank/error rules. Colour scales, data bars and icon sets stay
+in the file, but are not loaded into the model.
+
+"no" means the setting is loaded and can be read, and the file's own setting
+is saved unchanged, but changing it raises `NotImplementedError`. To change
+those settings, use `XlsbUpdater` for the metadata it supports, or build the
+workbook with `Workbook()` and save it as `.xlsb`; the XLSB writer supports
+everything in the table.
 
 ### Read-only mode
 

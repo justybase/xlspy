@@ -78,8 +78,11 @@ or `XlsmUpdater`. XLSM updates preserve the existing VBA project.
 [Update a workbook →](docs/usage.md#updating-an-existing-workbook)
 
 **Need to read the results?** Use `ExcelReader` for XLSB and XLSX, with the same
-API for both formats.
-[Read a workbook →](docs/usage.md#reading-xlsb-and-xlsx-files)
+API for both formats. It streams values without styles and is the fastest way in.
+For random access, formatting and edits, `load_workbook()` loads either format
+into an openpyxl-like model; styles are resolved only when you read them, so
+there is no flag to set.
+[Choose a read mode →](docs/usage.md#read-modes-which-one-to-use)
 
 ## Explore further
 
