@@ -4,9 +4,9 @@ Two native backends exist while the C extension is ported to Rust:
 ``xlspy._c_core`` (C) and ``xlspy._rs_core`` (Rust/PyO3).  ``XLSPY_ACCEL``
 chooses per function:
 
-- ``auto`` (default): C, else Rust.
-- ``rust``: Rust, else C (functions not ported yet still come from C).
-- ``c``: C only.
+- ``auto`` (default): Rust, else C.
+- ``rust``: Rust, else C.
+- ``c``: C only (kept as a fallback while the C extension is retired).
 - ``python``: no native code; same as ``XLSPY_DISABLE_C_EXT=1``.
 
 Every wrapper below returns None when no backend provides the function, and
@@ -22,7 +22,7 @@ _NATIVE_NAMES = (
     "set_style_type", "set_error_type", "xlsb_load_cells",
 )
 _MODULES = {"c": "xlspy._c_core", "rust": "xlspy._rs_core"}
-_ORDER = {"auto": ("c", "rust"), "rust": ("rust", "c"), "c": ("c",), "python": ()}
+_ORDER = {"auto": ("rust", "c"), "rust": ("rust", "c"), "c": ("c",), "python": ()}
 
 ACCEL_MODE = _os.environ.get("XLSPY_ACCEL", "auto").strip().lower() or "auto"
 if _os.environ.get("XLSPY_DISABLE_C_EXT", "0") == "1":

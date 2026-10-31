@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Python 3.11 and 3.15 support: `requires-python = ">=3.11"`, CI and wheels for 3.11–3.15.
 - Rust port of the native accelerator (`xlspy._rs_core`, PyO3), built next to the C extension while the port
-  proceeds. `XLSPY_ACCEL=auto|rust|c|python` picks the backend per function (`auto`: C first); functions not
-  ported yet come from C. Ported so far: shared-strings encoder and reader, column widths, the formatted-cell
+  proceeds. `XLSPY_ACCEL=auto|rust|c|python` picks the backend per function; `auto` now uses Rust for every
+  function. Ported so far: shared-strings encoder and reader, column widths, the formatted-cell
   pre-scan, the XLSB row encoders (shared and inline strings), the XLSX row encoder and the XLSB worksheet
   reader, the XLSX worksheet scanner (plain and workbook-model mode) and the XLSB workbook-model loader. `tests/test_accel_parity.py` checks the two
   backends give the same results. Building from source now needs a Rust toolchain.

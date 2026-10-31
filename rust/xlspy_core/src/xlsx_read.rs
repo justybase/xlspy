@@ -182,7 +182,9 @@ fn py_int<'py>(py: Python<'py>, p: &[u8]) -> PyResult<Bound<'py, PyAny>> {
         return Ok((if neg { -v } else { v }).into_pyobject(py)?.into_any());
     }
     let t = text(py, p)?;
-    unsafe { Bound::from_owned_ptr_or_err(py, ffi::PyLong_FromUnicodeObject(t.as_ptr(), 10)) }
+    // int(str) is PyLong_FromUnicodeObject(text, 10), which pyo3-ffi only
+    // exposes from 3.13.
+    py.get_type::<pyo3::types::PyInt>().call1((t,))
 }
 
 /// float(text): plain decimal text through the routine float() uses; the
