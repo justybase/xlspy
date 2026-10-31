@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] - not yet published
 
 ### Added
 
@@ -42,137 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The publish workflow runs on `v*` tags, refuses a tag that does not match the version in `pyproject.toml`, and
   installs and smoke-tests the source distribution in a clean virtual environment before it uploads.
 
-### Fixed
-
-- Files Excel would repair, or that held wrong data:
-  - XLSB `replace_sheet_data` wrote the sheet dimension into the selection record (0x98) and left the real
-    dimension (BrtWsDim, 0x94) stale. Both the in-memory and streaming paths are fixed.
-  - Chart formulas are XML-escaped: a sheet named `Q&A` produced a chart part that did not parse (XLSX and XLSB).
-  - Sheet names holding `"` are escaped in `workbook.xml`; control characters in sheet names are rejected.
-  - `replace_sheet_data` drops `calcChain` when formula cells change, so Excel no longer repairs the workbook for
-    entries that point at cells without formulas.
-  - `replace_sheet_data` writes formula cells as formulas in XLSX (it wrote their text before). In XLSB it raises
-    `UnsupportedFeatureError`; use `update_cells()` for formulas there.
-  - `replace_sheet_data` (XLSX and XLSB, both paths) raises `UnsupportedFeatureError` before writing anything when a
-    table's header cell would not equal its column name (ignoring case), or when the new data does not reach the
-    header row. Excel repairs such tables; the package is left unchanged.
-  - The pure-Python XLSB cell reader (used when the native module is not available) looped forever when a sheet
-    stream ended right after a cell record. The native reader was not affected.
-  - The native XLSX and XLSB row writers check the row length again before every element read.
-  - Built-in number formats 41–44 (accounting) are read and kept; they used to load as `General` and be lost on save.
-  - A sheet added without `write_sheet` gets its part in XLSB, as it already did in XLSX. A second `write_sheet` on
-    the same sheet raises: it used to write duplicate ZIP entries.
-  - Table names are compared without regard to case, as Excel compares them.
-  - A loaded sheet with an empty `<sheetData/>` keeps its new rows inside it. A missing `<dimension>` is inserted
-    after `<sheetPr>`, as the schema orders it.
-  - XLSB autofilters and column widths cover columns past the first 100 rows, and explicit widths for those columns
-    are kept.
-  - Charts: radar series reject trendlines and error bars; a fractional `title_size` is written as whole hundredths
-    of a point; control characters in chart, shape, image and hyperlink tooltip text raise `ValueError`;
-    `set_series_color(None)` raises `TypeError` instead of writing an empty colour.
-  - Formulas: the `_xlfn.` prefix is added to 30 more functions (for example `COT`, `SEC`, `FORECAST.ETS`,
-    `CONFIDENCE.NORM`); `FILTER` and `SORT` take `_xlfn._xlws.`.
-  - External links keep a placeholder for a reference that cannot be resolved, so later `[n]` numbers stay correct.
-- XLSX cell references are read the same way on every path (native scanner, regular-expression fast path,
-  ElementTree, workbook model). A reference without a row (`r="A"`), with row 0 or past row 1,048,576, or with a
-  column past `XFD` now raises `ValueError`; the fast paths used to accept some of them, reading only the column
-  letters, depending on which letters the sheet had used before. Leading zeros (`A01`) are accepted everywhere.
-- The type annotations of `PivotTable` (`source`, and `value_specs` for the normalised `values`) pass mypy.
-- XLSB tables are written with the same name and display name, as Excel does. The display name used to get a
-  trailing `_`, so Excel could not resolve the table by its name as a pivot source ("cannot retrieve data from
-  range").
-- XLSX pivot tables with several values and a column field list the data field in the repeated column items,
-  as Excel does.
-- Radar charts (`Chart("radar", ...)`) are written as radar charts. They used to be written as pie charts, and so
-  were `area3d`, `bar3d`, `bubble`, `line3d`, `pie3d`, `projected_pie`, `stock`, `surface` and `surface3d`; those
-  types now raise `ValueError` when the chart is created.
-- `to_xlsx()` and `to_xlsb()` no longer delete an existing file at `path` when the conversion fails; the file is
-  left as it was.
-- A loaded XLSX keeps its autofilter criteria other than value lists (such as custom filters) when another edit
-  rewrites the sheet, and keeps style-only column definitions (`<col style=...>`) when a column width changes.
-- A sheet added to a loaded XLSX keeps the sheet protection, ignored errors, row and column breaks and the default
-  row height that were set on it.
-- `Workbook()` saves tables added as openpyxl-style `Table` objects (it raised `TypeError`).
-- `XlsxUpdater` and `XlsbUpdater` keep control characters in text. XLSX stores them as `_xHHHH_` escapes, as
-  Excel does; XLSB stores them as they are. Text longer than Excel's 32,767-character limit raises `ValueError`
-  instead of being written.
-- `ReadOnlyCell` is exported from `xlspy`.
-- An unclosed workbook opened by an updater no longer emits a `ResourceWarning` for its temporary directory when it
-  is garbage collected; the directory is removed by `close()` or when the updater is collected.
-- The native XLSX reader decodes character references (`&amp;`, `&#65;`) and carriage returns in cell values itself.
-  Sheets that have them are no longer read by the slower ElementTree path, and typed values with references
-  (`t="e"`, `t="d"`, `t="b"`, numbers) read the same as ElementTree does; they used to differ.
-
-### Changed
-
-- Pivot tables no longer resize the columns of their sheet when Excel refreshes them on open, unless the
-  new `PivotTable(autofit_columns=True)` asks for it (Excel's "Autofit column widths on update", written for
-  XLSX and XLSB). Before, a pivot placed on its data sheet could narrow the columns the sheet had been given.
-- Plain rows given to `write_sheet` (XLSX and XLSB) write numpy integer, `bool_`, float16 and float32 scalars as the
-  Python value they hold, as the DataFrame path already did. They used to be written as text (`"1"`, `"True"`,
-  `"0.1"`). A float32 `0.1` is now written as `0.10000000149011612`, and a float32 `NaN` raises `ValueError`, as a
-  float `NaN` does. Auto column widths measure the value that is written.
-- `XlsxUpdater` and `XlsbUpdater` raise `ValueError` for NaN and infinite numbers, as `update_cells` already did.
-  They used to write them into the file.
-- `XlsxWriter` and `XlsbWriter` raise `ValueError` for NaN and infinite numbers. XLSX used to write them as text
-  (`NaN`, `∞`) in the cell.
-- A loaded XLSB whose auto filter has custom criteria (such as `> 2`, not a value list) keeps the criteria when the
-  file is saved unchanged, and the filter can be removed. Changing that filter raises `NotImplementedError` on save;
-  it used to drop the criteria and leave a blank-match filter in Excel.
-- `add_named_style()` on a new workbook (one not loaded from a file) raises `NotImplementedError` on save, because
-  the new-file writers do not write named styles. Save the workbook first, load it, add the style and save again.
-  Loaded XLSX and XLSB workbooks keep named styles.
-- Renaming a sheet rewrites the sparkline formulas that refer to it.
-- Removing a sheet that holds table slicers from a loaded workbook (XLSX or XLSB) raises `NotImplementedError`
-  before anything is written.
-- The native accelerator is now a Rust module (`xlspy._rs_core`, PyO3) instead of the C extension
-  (`xlspy._c_core`, removed). It covers the same paths with the same results: XLSB and XLSX reading and row
-  encoding, shared strings, column widths and workbook-model loading; the reads and writes are as fast or faster.
-  The build uses maturin, so installing from the source distribution needs a Rust toolchain. `XLSPY_ACCEL=python`
-  selects the pure-Python fallback (`XLSPY_DISABLE_C_EXT=1` still works); `xlspy._accel.HAVE_NATIVE` reports
-  the extension, and `HAVE_C_EXT` stays as an alias.
-- Native style and xf ids above 2**32 - 1 raise `OverflowError` on every platform (the C extension raised on
-  Windows and silently truncated them on Linux and macOS).
-- Errors from the native readers for data they cannot parse (a truncated XLSB record, a row index past the last row,
-  a column past Excel's limit, an XLSX worksheet with no row closed) raise `InvalidFileError` instead of a plain
-  `ValueError`. The message is unchanged.
-- `NotImplementedError` raised for unsupported features is now `UnsupportedFeatureError`, which is still a
-  `NotImplementedError`.
-- The minimum supported Rust toolchain is 1.88 (`rust-version` in `rust/xlspy_core/Cargo.toml`), and CI builds the
-  crate on it.
-- XLSX writing is faster for formula and hyperlink cells, which the native row encoder now writes. The sheets are the
-  same: the native and Python writers are compared package by package. A 50,000 × 20 sheet of formulas went from 0.86 s
-  to 0.29 s; a sheet of hyperlinks from 2.1 s to 1.3 s (its relationships are still written by Python).
-- XLSX shared strings are parsed natively: about 6× faster than the regular-expression parser on a million short
-  strings, and `ExcelReader` opens such a file in 0.16 s instead of 0.86 s.
-- Sheets whose text has character references or line breaks no longer fall back to ElementTree. `ExcelReader` reads
-  a 50,000 × 50 sheet of that kind in 0.69 s instead of 6.5 s, and `load_workbook` loads it about 8× faster.
-
-### Security
-
-- Rows wider than Excel's 16,384 columns are refused. The native XLSB reader used to accept 1,048,576, so a crafted
-  first row could make it allocate a million-cell row per record. The pure-Python XLSB reader raises the same
-  `ValueError`.
-- The XLSX streaming reader refuses a sheet part that grows past 64 MiB without closing a row, and it no longer
-  rescans a pending row from its start on every chunk.
-- Package parts declared above 2 GiB uncompressed are refused before they are read, on every archive open path.
-- The Rust module is built with `panic = "unwind"`: a panic inside a reader raises `PanicException` in Python
-  instead of ending the interpreter.
-
-### Changed
-
-- The mutation fuzzer is back as a bounded test, `tests/test_native_fuzz.py` (300 seeded cases per format; set
-  `XLSPY_FUZZ_ITERATIONS` for more). The unbounded tool, `tools/fuzz_native.py`, stays removed.
-
-### Fixed
-
-- Adding a sheet to a loaded workbook wrote `r:id` without declaring the `xmlns:r` prefix, so saving that workbook
-  failed with `ParseError: unbound prefix`.
-
-## [0.12.0] - 2026-10-29
-
-### Added
-
 - Loaded charts (XLSX and XLSB) can be edited: `LoadedChart.title`, `x_axis_title`,
   `y_axis_title` and `legend_position` (`None` removes the title or legend). The chart part is
   edited as text, so the rest of the file stays as Excel wrote it.
@@ -191,18 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loaded XLSB workbook.
 - Editing conditional formats in a loaded XLSB keeps the Excel 2010 extension (negative bar colours,
   axis, gradient) of rules that were not changed; extension rules the model cannot read are kept too.
-
-### Fixed
-
-- `load_workbook()` of an XLSB file with formulas that refer to another workbook raised
-  `NotImplementedError`; they now read as `='[1]Sheet'!A1`. Writing such a reference is still refused.
-- `LoadedChart.title` is the chart's own title, not the title of its first axis.
-- `load_workbook()` of an XLSB file with a chartsheet raised `KeyError`; chartsheets are now loaded
-  (`Workbook.chartsheets`) and kept when sheets are renamed, added or reordered.
-
-## [0.11.0] - 2026-10-29
-
-### Added
 
 - `benchmarks/bench_io.py`: subprocess-isolated read/write/model-load benchmark
   for XLSX and XLSB with JSON output, fallback-rate and zlib-level cases, and
@@ -284,6 +141,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pivot tables no longer resize the columns of their sheet when Excel refreshes them on open, unless the
+  new `PivotTable(autofit_columns=True)` asks for it (Excel's "Autofit column widths on update", written for
+  XLSX and XLSB). Before, a pivot placed on its data sheet could narrow the columns the sheet had been given.
+- Plain rows given to `write_sheet` (XLSX and XLSB) write numpy integer, `bool_`, float16 and float32 scalars as the
+  Python value they hold, as the DataFrame path already did. They used to be written as text (`"1"`, `"True"`,
+  `"0.1"`). A float32 `0.1` is now written as `0.10000000149011612`, and a float32 `NaN` raises `ValueError`, as a
+  float `NaN` does. Auto column widths measure the value that is written.
+- `XlsxUpdater` and `XlsbUpdater` raise `ValueError` for NaN and infinite numbers, as `update_cells` already did.
+  They used to write them into the file.
+- `XlsxWriter` and `XlsbWriter` raise `ValueError` for NaN and infinite numbers. XLSX used to write them as text
+  (`NaN`, `∞`) in the cell.
+- A loaded XLSB whose auto filter has custom criteria (such as `> 2`, not a value list) keeps the criteria when the
+  file is saved unchanged, and the filter can be removed. Changing that filter raises `NotImplementedError` on save;
+  it used to drop the criteria and leave a blank-match filter in Excel.
+- `add_named_style()` on a new workbook (one not loaded from a file) raises `NotImplementedError` on save, because
+  the new-file writers do not write named styles. Save the workbook first, load it, add the style and save again.
+  Loaded XLSX and XLSB workbooks keep named styles.
+- Renaming a sheet rewrites the sparkline formulas that refer to it.
+- Removing a sheet that holds table slicers from a loaded workbook (XLSX or XLSB) raises `NotImplementedError`
+  before anything is written.
+- The native accelerator is now a Rust module (`xlspy._rs_core`, PyO3) instead of the C extension
+  (`xlspy._c_core`, removed). It covers the same paths with the same results: XLSB and XLSX reading and row
+  encoding, shared strings, column widths and workbook-model loading; the reads and writes are as fast or faster.
+  The build uses maturin, so installing from the source distribution needs a Rust toolchain. `XLSPY_ACCEL=python`
+  selects the pure-Python fallback (`XLSPY_DISABLE_C_EXT=1` still works); `xlspy._accel.HAVE_NATIVE` reports
+  the extension, and `HAVE_C_EXT` stays as an alias.
+- Native style and xf ids above 2**32 - 1 raise `OverflowError` on every platform (the C extension raised on
+  Windows and silently truncated them on Linux and macOS).
+- Errors from the native readers for data they cannot parse (a truncated XLSB record, a row index past the last row,
+  a column past Excel's limit, an XLSX worksheet with no row closed) raise `InvalidFileError` instead of a plain
+  `ValueError`. The message is unchanged.
+- `NotImplementedError` raised for unsupported features is now `UnsupportedFeatureError`, which is still a
+  `NotImplementedError`.
+- The minimum supported Rust toolchain is 1.88 (`rust-version` in `rust/xlspy_core/Cargo.toml`), and CI builds the
+  crate on it.
+- XLSX writing is faster for formula and hyperlink cells, which the native row encoder now writes. The sheets are the
+  same: the native and Python writers are compared package by package. A 50,000 × 20 sheet of formulas went from 0.86 s
+  to 0.29 s; a sheet of hyperlinks from 2.1 s to 1.3 s (its relationships are still written by Python).
+- XLSX shared strings are parsed natively: about 6× faster than the regular-expression parser on a million short
+  strings, and `ExcelReader` opens such a file in 0.16 s instead of 0.86 s.
+- Sheets whose text has character references or line breaks no longer fall back to ElementTree. `ExcelReader` reads
+  a 50,000 × 50 sheet of that kind in 0.69 s instead of 6.5 s, and `load_workbook` loads it about 8× faster.
+
+
+- The mutation fuzzer is back as a bounded test, `tests/test_native_fuzz.py` (300 seeded cases per format; set
+  `XLSPY_FUZZ_ITERATIONS` for more). The unbounded tool, `tools/fuzz_native.py`, stays removed.
+
 - Much faster `load_workbook()` (50k x 20 cells: XLSX 6.5 s to 0.39 s, XLSB
   5.5 s to 0.55 s; files saved by Excel: 0.47 s and 0.71 s). The C extension
   builds the model's cells directly (`XlsxReader` model mode,
@@ -347,6 +251,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Files Excel would repair, or that held wrong data:
+  - XLSB `replace_sheet_data` wrote the sheet dimension into the selection record (0x98) and left the real
+    dimension (BrtWsDim, 0x94) stale. Both the in-memory and streaming paths are fixed.
+  - Chart formulas are XML-escaped: a sheet named `Q&A` produced a chart part that did not parse (XLSX and XLSB).
+  - Sheet names holding `"` are escaped in `workbook.xml`; control characters in sheet names are rejected.
+  - `replace_sheet_data` drops `calcChain` when formula cells change, so Excel no longer repairs the workbook for
+    entries that point at cells without formulas.
+  - `replace_sheet_data` writes formula cells as formulas in XLSX (it wrote their text before). In XLSB it raises
+    `UnsupportedFeatureError`; use `update_cells()` for formulas there.
+  - `replace_sheet_data` (XLSX and XLSB, both paths) raises `UnsupportedFeatureError` before writing anything when a
+    table's header cell would not equal its column name (ignoring case), or when the new data does not reach the
+    header row. Excel repairs such tables; the package is left unchanged.
+  - The pure-Python XLSB cell reader (used when the native module is not available) looped forever when a sheet
+    stream ended right after a cell record. The native reader was not affected.
+  - The native XLSX and XLSB row writers check the row length again before every element read.
+  - Built-in number formats 41–44 (accounting) are read and kept; they used to load as `General` and be lost on save.
+  - A sheet added without `write_sheet` gets its part in XLSB, as it already did in XLSX. A second `write_sheet` on
+    the same sheet raises: it used to write duplicate ZIP entries.
+  - Table names are compared without regard to case, as Excel compares them.
+  - A loaded sheet with an empty `<sheetData/>` keeps its new rows inside it. A missing `<dimension>` is inserted
+    after `<sheetPr>`, as the schema orders it.
+  - XLSB autofilters and column widths cover columns past the first 100 rows, and explicit widths for those columns
+    are kept.
+  - Charts: radar series reject trendlines and error bars; a fractional `title_size` is written as whole hundredths
+    of a point; control characters in chart, shape, image and hyperlink tooltip text raise `ValueError`;
+    `set_series_color(None)` raises `TypeError` instead of writing an empty colour.
+  - Formulas: the `_xlfn.` prefix is added to 30 more functions (for example `COT`, `SEC`, `FORECAST.ETS`,
+    `CONFIDENCE.NORM`); `FILTER` and `SORT` take `_xlfn._xlws.`.
+  - External links keep a placeholder for a reference that cannot be resolved, so later `[n]` numbers stay correct.
+- XLSX cell references are read the same way on every path (native scanner, regular-expression fast path,
+  ElementTree, workbook model). A reference without a row (`r="A"`), with row 0 or past row 1,048,576, or with a
+  column past `XFD` now raises `ValueError`; the fast paths used to accept some of them, reading only the column
+  letters, depending on which letters the sheet had used before. Leading zeros (`A01`) are accepted everywhere.
+- The type annotations of `PivotTable` (`source`, and `value_specs` for the normalised `values`) pass mypy.
+- XLSB tables are written with the same name and display name, as Excel does. The display name used to get a
+  trailing `_`, so Excel could not resolve the table by its name as a pivot source ("cannot retrieve data from
+  range").
+- XLSX pivot tables with several values and a column field list the data field in the repeated column items,
+  as Excel does.
+- Radar charts (`Chart("radar", ...)`) are written as radar charts. They used to be written as pie charts, and so
+  were `area3d`, `bar3d`, `bubble`, `line3d`, `pie3d`, `projected_pie`, `stock`, `surface` and `surface3d`; those
+  types now raise `ValueError` when the chart is created.
+- `to_xlsx()` and `to_xlsb()` no longer delete an existing file at `path` when the conversion fails; the file is
+  left as it was.
+- A loaded XLSX keeps its autofilter criteria other than value lists (such as custom filters) when another edit
+  rewrites the sheet, and keeps style-only column definitions (`<col style=...>`) when a column width changes.
+- A sheet added to a loaded XLSX keeps the sheet protection, ignored errors, row and column breaks and the default
+  row height that were set on it.
+- `Workbook()` saves tables added as openpyxl-style `Table` objects (it raised `TypeError`).
+- `XlsxUpdater` and `XlsbUpdater` keep control characters in text. XLSX stores them as `_xHHHH_` escapes, as
+  Excel does; XLSB stores them as they are. Text longer than Excel's 32,767-character limit raises `ValueError`
+  instead of being written.
+- `ReadOnlyCell` is exported from `xlspy`.
+- An unclosed workbook opened by an updater no longer emits a `ResourceWarning` for its temporary directory when it
+  is garbage collected; the directory is removed by `close()` or when the updater is collected.
+- The native XLSX reader decodes character references (`&amp;`, `&#65;`) and carriage returns in cell values itself.
+  Sheets that have them are no longer read by the slower ElementTree path, and typed values with references
+  (`t="e"`, `t="d"`, `t="b"`, numbers) read the same as ElementTree does; they used to differ.
+
+
+- Adding a sheet to a loaded workbook wrote `r:id` without declaring the `xmlns:r` prefix, so saving that workbook
+  failed with `ParseError: unbound prefix`.
+
+- `load_workbook()` of an XLSB file with formulas that refer to another workbook raised
+  `NotImplementedError`; they now read as `='[1]Sheet'!A1`. Writing such a reference is still refused.
+- `LoadedChart.title` is the chart's own title, not the title of its first axis.
+- `load_workbook()` of an XLSB file with a chartsheet raised `KeyError`; chartsheets are now loaded
+  (`Workbook.chartsheets`) and kept when sheets are renamed, added or reordered.
+
 - XLSB sheet protection permissions were read inverted (the file stores
   "allowed" flags as "protected" bits); a new workbook ignored
   `ws.protection`.
@@ -384,6 +357,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again, as in the streaming path.
 - `ExcelReader` and `ExcelReader.open()` accept `pathlib.Path` objects, not
   only strings.
+
+### Security
+
+- Rows wider than Excel's 16,384 columns are refused. The native XLSB reader used to accept 1,048,576, so a crafted
+  first row could make it allocate a million-cell row per record. The pure-Python XLSB reader raises the same
+  `ValueError`.
+- The XLSX streaming reader refuses a sheet part that grows past 64 MiB without closing a row, and it no longer
+  rescans a pending row from its start on every chunk.
+- Package parts declared above 2 GiB uncompressed are refused before they are read, on every archive open path.
+- The Rust module is built with `panic = "unwind"`: a panic inside a reader raises `PanicException` in Python
+  instead of ending the interpreter.
 
 ## [0.10.1] - 2026-10-24
 
