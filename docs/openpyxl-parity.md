@@ -146,8 +146,8 @@ gap is implemented the same test starts passing without changes.
 ### Remaining
 
 **XLSB**
-- Adding tables, charts, images or chartsheets to a loaded XLSB (removing
-  charts and images works); named styles in XLSB; loading XLSB chartsheets.
+- Adding tables or chartsheets to a loaded XLSB (charts and images can be added
+  and removed); named styles in XLSB; loading XLSB chartsheets.
 - A CF edit in a loaded XLSB drops the Excel 2010 extension of the sheet's
   rules (negative bar colours, gradient settings); it refuses the edit when the
   extension holds rules the model cannot read.
@@ -212,7 +212,7 @@ gap is implemented the same test starts passing without changes.
 | E2 | XLSB model edit | sparse `update_cells` only → values, styles, merges, hyperlinks, DV, CF, comments, names, layout, print, protection, properties | L3 | 6 |
 | E3 | XLSB styles | mostly number formats → **done** (read, lazy; new styles appended on save) | L3 | 5–6 |
 | E4 | XLSB objects read | absent → **done** (DV, CF, tables, charts, images) | L2 | 5 |
-| E5 | XLSB objects edit | writer can create; updater cannot edit → DV and CF edits saved, charts/images removable; adding tables/charts/images refused | L3 | 6 |
+| E5 | XLSB objects edit | writer can create; updater cannot edit → DV and CF edits saved, charts/images addable and removable; adding tables refused | L3 | 6 |
 | E6 | XLSB sheet management | no add/remove/rename/reorder in updater → **done** | L3 | 6 |
 
 ## Long tail
