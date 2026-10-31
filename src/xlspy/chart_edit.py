@@ -1,0 +1,193 @@
+"""Edit the title, axis titles and legend of a chart read from a workbook.
+
+The chart part is edited as text, not through an XML tree, so the prefixes and
+``mc:Ignorable`` declarations of the file stay as Excel wrote them.
+"""
+
+from __future__ import annotations
+
+import re
+from xml.sax.saxutils import escape, unescape
+
+from .charts import LEGEND_POSITIONS
+
+_ROOT = re.compile(r"<(?:(\w+):)?chartSpace\b")
+_AXES = ("catAx", "valAx", "dateAx", "serAx")
+
+
+def _prefix(xml: str) -> str:
+    match = _ROOT.search(xml)
+    return f"{match[1]}:" if match and match[1] else ""
+
+
+def _drawing_prefix(xml: str) -> str:
+    """Prefix of the DrawingML main namespace (``a:`` in Excel's files)."""
+    match = re.search(r'xmlns:(\w+)="http://schemas\.openxmlformats\.org/drawingml/2006/main"', xml)
+    return f"{match[1]}:" if match else ""
+
+
+def _title_xml(c: str, a: str, text: str) -> str:
+    return (
+        f"<{c}title><{c}tx><{c}rich><{a}bodyPr/><{a}p><{a}r><{a}t>{escape(text)}</{a}t>"
+        f"</{a}r></{a}p></{c}rich></{c}tx><{c}overlay val=\"0\"/></{c}title>"
+    )
+
+
+def _element(xml: str, c: str, name: str, start: int = 0) -> tuple[int, int] | None:
+    """``(start, end)`` of the first ``<c:name>`` element at or after ``start``."""
+    opening = re.compile(rf"<{c}{name}(?=[\s>/])[^>]*?(/?)>")
+    match = opening.search(xml, start)
+    if match is None:
+        return None
+    if match[1]:
+        return match.start(), match.end()
+    depth = 0
+    tag = re.compile(rf"<(/?){c}{name}(?=[\s>/])[^>]*?(/?)>")
+    for item in tag.finditer(xml, match.start()):
+        if item[2]:
+            continue
+        depth += -1 if item[1] else 1
+        if depth == 0:
+            return match.start(), item.end()
+    return None
+
+
+def _set_title_in(xml: str, c: str, a: str, span: tuple[int, int], text: str | None) -> str:
+    """Set the title element that starts at ``span`` (None removes it)."""
+    start, end = span
+    old = xml[start:end]
+    if text is None:
+        return xml[:start] + xml[end:]
+    run = re.search(rf"<{a}t>.*?</{a}t>|<{a}t/>", old, re.S)
+    if run is None:
+        return xml[:start] + _title_xml(c, a, text) + xml[end:]
+    # Keep the formatting of the first run: its text changes, other runs go.
+    paragraph = re.search(rf"<{a}p>.*?</{a}p>", old, re.S)
+    first_run = re.search(rf"<{a}r>.*?</{a}r>", old, re.S)
+    new = f"<{a}t>{escape(text)}</{a}t>"
+    edited = old[:run.start()] + new + old[run.end():]
+    if paragraph and first_run:
+        shift = len(new) - (run.end() - run.start())
+        runs = list(re.finditer(rf"<{a}r>.*?</{a}r>", edited, re.S))
+        for extra in reversed(runs[1:]):
+            if paragraph.start() <= extra.start() < paragraph.end() + shift:
+                edited = edited[:extra.start()] + edited[extra.end():]
+    return xml[:start] + edited + xml[end:]
+
+
+def _auto_title_deleted(xml: str, c: str, deleted: bool) -> str:
+    value = "1" if deleted else "0"
+    return re.sub(rf'(<{c}autoTitleDeleted\s+val=")[^"]*(")', rf"\g<1>{value}\2", xml, count=1)
+
+
+def set_chart_title(xml: bytes, text: str | None) -> bytes:
+    source = xml.decode("utf-8")
+    c = _prefix(source)
+    a = _drawing_prefix(source) or "a:"
+    chart = _element(source, c, "chart")
+    if chart is None:
+        raise ValueError("the chart part has no chart element")
+    body = re.compile(rf"<{c}chart(?=[\s>])[^>]*>").match(source, chart[0])
+    if body is None:
+        raise ValueError("the chart part has no chart element")
+    inner = body.end()
+    title = None
+    if re.compile(rf"\s*<{c}title(?=[\s>/])").match(source, inner):
+        found = _element(source, c, "title", inner)
+        title = found
+    if title is not None:
+        source = _set_title_in(source, c, a, title, text)
+    elif text is not None:
+        source = source[:inner] + _title_xml(c, a, text) + source[inner:]
+    return _auto_title_deleted(source, c, text is None).encode("utf-8")
+
+
+def _axis_span(source: str, c: str, index: int) -> tuple[int, int] | None:
+    spans = []
+    for name in _AXES:
+        position = 0
+        while (found := _element(source, c, name, position)) is not None:
+            spans.append(found)
+            position = found[1]
+    spans.sort()
+    return spans[index] if index < len(spans) else None
+
+
+def set_axis_title(xml: bytes, index: int, text: str | None) -> bytes:
+    """Set the title of the ``index``-th axis in document order (0: X, 1: Y)."""
+    source = xml.decode("utf-8")
+    c = _prefix(source)
+    a = _drawing_prefix(source) or "a:"
+    axis = _axis_span(source, c, index)
+    if axis is None:
+        raise ValueError("the chart has no such axis")
+    start, end = axis
+    body = source[start:end]
+    found = _element(body, c, "title")
+    if found is not None:
+        body = _set_title_in(body, c, a, found, text)
+    elif text is not None:
+        # Schema order: ... axPos, gridlines, title, numFmt, ...
+        anchor = re.search(
+            rf"<{c}(?:numFmt|majorTickMark|minorTickMark|tickLblPos|spPr|txPr|crossAx)\b", body,
+        )
+        at = anchor.start() if anchor else body.rindex(f"</{c}")
+        body = body[:at] + _title_xml(c, a, text) + body[at:]
+    return (source[:start] + body + source[end:]).encode("utf-8")
+
+
+def get_axis_title(xml: bytes, index: int) -> str | None:
+    source = xml.decode("utf-8")
+    c = _prefix(source)
+    a = _drawing_prefix(source) or "a:"
+    axis = _axis_span(source, c, index)
+    if axis is None:
+        return None
+    body = source[axis[0]:axis[1]]
+    found = _element(body, c, "title")
+    if found is None:
+        return None
+    runs = re.findall(rf"<{a}t>(.*?)</{a}t>", body[found[0]:found[1]], re.S)
+    return unescape("".join(runs)) or None
+
+
+def get_legend_position(xml: bytes) -> str | None:
+    source = xml.decode("utf-8")
+    c = _prefix(source)
+    found = _element(source, c, "legend")
+    if found is None:
+        return None
+    match = re.search(rf'<{c}legendPos\s+val="(\w+)"', source[found[0]:found[1]])
+    code = match[1] if match else "r"
+    for name, value in LEGEND_POSITIONS.items():
+        if value == code:
+            return name
+    return "right"
+
+
+def set_legend_position(xml: bytes, position: str | None) -> bytes:
+    """Move, add (``position`` given) or remove (None) the chart legend."""
+    if position is not None and position not in LEGEND_POSITIONS:
+        raise ValueError(
+            f"invalid legend position {position!r}; expected one of {sorted(LEGEND_POSITIONS)}"
+        )
+    source = xml.decode("utf-8")
+    c = _prefix(source)
+    found = _element(source, c, "legend")
+    if position is None:
+        if found is not None:
+            source = source[:found[0]] + source[found[1]:]
+        return source.encode("utf-8")
+    code = LEGEND_POSITIONS[position]
+    if found is not None:
+        body = source[found[0]:found[1]]
+        if re.search(rf"<{c}legendPos\b", body):
+            body = re.sub(rf'(<{c}legendPos\s+val=")[^"]*(")', rf"\g<1>{code}\2", body, count=1)
+        else:
+            body = re.sub(rf"(<{c}legend>)", rf'\1<{c}legendPos val="{code}"/>', body, count=1)
+        return (source[:found[0]] + body + source[found[1]:]).encode("utf-8")
+    plot = _element(source, c, "plotArea")
+    if plot is None:
+        raise ValueError("the chart has no plot area")
+    legend = f'<{c}legend><{c}legendPos val="{code}"/><{c}overlay val="0"/></{c}legend>'
+    return (source[:plot[1]] + legend + source[plot[1]:]).encode("utf-8")

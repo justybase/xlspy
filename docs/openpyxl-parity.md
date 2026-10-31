@@ -153,7 +153,7 @@ gap is implemented the same test starts passing without changes.
   extension holds rules the model cannot read.
 
 **Charts and drawings**
-- Loaded charts are preserved, not editable field-by-field. Chart options
+- Loaded charts keep their XML; only the title, axis titles and legend position are editable. Chart options
   beyond the builder (combined charts, secondary axis, error bars,
   trendlines, data tables) remain. New chartsheets go after the other sheets.
 

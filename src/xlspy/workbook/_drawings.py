@@ -193,3 +193,11 @@ def remove_drawing_objects(updater, sheet) -> None:
         shift = sum(1 for other in by_part.get(part, ()) if other < position)
         kept.append((part, position - shift, item))
     sheet._drawing_sources = kept
+
+
+def save_chart_edits(updater, sheet) -> None:
+    """Write the chart parts whose title, axes or legend were changed."""
+    for chart in sheet._charts:
+        if getattr(chart, "edited", False) and chart.part:
+            updater._package.set(chart.part, chart.xml)
+            chart._mark_saved()

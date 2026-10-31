@@ -16,7 +16,7 @@ from .._metadata import MAIN, REL, PKG_REL, CT, element_pattern, replace_element
 from .._xlsx_edit import _attributes, _bytes, _cell_value
 from ..formula.sheets import rename_sheet_references
 from ..formulas import Formula
-from ._drawings import check_removals, remove_drawing_objects
+from ._drawings import check_removals, remove_drawing_objects, save_chart_edits
 from ._objects import (
     add_objects, check_object_rewrites, has_pending_objects, mark_objects_saved, sync_objects,
 )
@@ -1293,6 +1293,7 @@ def save_loaded(workbook: Workbook, filename) -> None:
     final_order = _sheet_order(updater)
     for sheet in workbook._sheets:
         remove_drawing_objects(updater, sheet)
+        save_chart_edits(updater, sheet)
         sync_objects(updater, workbook, sheet)
         if has_pending_objects(sheet):
             if workbook._styles_dirty:
@@ -1303,6 +1304,8 @@ def save_loaded(workbook: Workbook, filename) -> None:
     from ._props import save_properties
 
     add_chartsheets(updater, workbook)
+    for chartsheet in workbook._chartsheets:
+        save_chart_edits(updater, chartsheet)
     save_properties(updater, workbook)
     updater.save(filename)
     for sheet in workbook._sheets:

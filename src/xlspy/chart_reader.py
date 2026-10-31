@@ -82,7 +82,8 @@ def _chart_facts(xml: bytes) -> tuple[str | None, str | None, int]:
             chart_type = _CHART_TAGS[_local(node.tag)]
             break
     title = None
-    title_node = next((node for node in chart.iter() if _local(node.tag) == "title"), None)
+    # The chart's own title, not that of an axis.
+    title_node = next((node for node in chart if _local(node.tag) == "title"), None)
     if title_node is not None:
         title = "".join(
             node.text or "" for node in title_node.iter() if _local(node.tag) == "t"

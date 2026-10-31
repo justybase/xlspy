@@ -9,7 +9,7 @@ import tempfile
 from ..refs import parse_cell_range
 from . import _props
 from ._loaded import _value_for_save
-from ._drawings import check_removals, new_drawing_objects, remember_drawing_objects, remove_drawing_objects
+from ._drawings import check_removals, new_drawing_objects, remember_drawing_objects, remove_drawing_objects, save_chart_edits
 from ._objects import _object_values, check_unread, object_signatures
 from ._xlsb_layout import changed_groups, layout_state, patch_layout, save_builtin_names
 
@@ -232,6 +232,7 @@ def save_loaded_xlsb(workbook, filename) -> None:
     for sheet in workbook._sheets:
         _save_sheet(sheet, updater)
         remove_drawing_objects(updater, sheet)
+        save_chart_edits(updater, sheet)
     _props.save_properties(updater, workbook)
     # After the sheets: their conditional formats may add differential styles.
     styles = workbook._styles

@@ -7,7 +7,7 @@ The models only validate and store settings. DrawingML serialization lives in
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .refs import parse_cell_range
 
@@ -88,9 +88,16 @@ def _check_number(value, kind: str, *, minimum=None, maximum=None):
     return float(value)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True, eq=False)
 class LoadedChart:
-    """A chart read back from a workbook, preserved as its original parts."""
+    """A chart read back from a workbook, preserved as its original parts.
+
+    The title, the axis titles and the legend position can be changed; the
+    rest of the chart is saved as it was read. ``x_axis_title`` is the title of
+    the category (or X) axis and ``y_axis_title`` that of the value axis;
+    ``legend_position`` is ``None`` when the chart has no legend. Setting
+    ``None`` removes the title or the legend.
+    """
 
     chart_type: str | None = None
     title: str | None = None
@@ -98,6 +105,65 @@ class LoadedChart:
     anchor: str | None = None
     part: str | None = None
     xml: bytes = b""
+    _saved_xml: bytes = field(default=b"", init=False, repr=False)
+
+    def __post_init__(self):
+        self._saved_xml = self.xml
+
+    @property
+    def edited(self) -> bool:
+        return self.xml != self._saved_xml
+
+    def _mark_saved(self) -> None:
+        self._saved_xml = self.xml
+
+    def __setattr__(self, name, value):
+        if name == "title" and getattr(self, "xml", b"") and hasattr(self, "_saved_xml"):
+            if value is not None and not isinstance(value, str):
+                raise TypeError("chart title must be a string or None")
+            from .chart_edit import set_chart_title
+
+            object.__setattr__(self, "xml", set_chart_title(self.xml, value or None))
+        object.__setattr__(self, name, value)
+
+    @property
+    def x_axis_title(self) -> str | None:
+        from .chart_edit import get_axis_title
+
+        return get_axis_title(self.xml, 0) if self.xml else None
+
+    @x_axis_title.setter
+    def x_axis_title(self, value: str | None) -> None:
+        self._set_axis_title(0, value)
+
+    @property
+    def y_axis_title(self) -> str | None:
+        from .chart_edit import get_axis_title
+
+        return get_axis_title(self.xml, 1) if self.xml else None
+
+    @y_axis_title.setter
+    def y_axis_title(self, value: str | None) -> None:
+        self._set_axis_title(1, value)
+
+    def _set_axis_title(self, index: int, value: str | None) -> None:
+        if value is not None and not isinstance(value, str):
+            raise TypeError("axis title must be a string or None")
+        from .chart_edit import set_axis_title
+
+        self.xml = set_axis_title(self.xml, index, value or None)
+
+    @property
+    def legend_position(self) -> str | None:
+        from .chart_edit import get_legend_position
+
+        return get_legend_position(self.xml) if self.xml else None
+
+    @legend_position.setter
+    def legend_position(self, value: str | None) -> None:
+        from .chart_edit import set_legend_position
+
+        self.xml = set_legend_position(self.xml, value)
 
 
 @dataclass(frozen=True, slots=True)

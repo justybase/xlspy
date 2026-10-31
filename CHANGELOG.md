@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Loaded charts (XLSX and XLSB) can be edited: `LoadedChart.title`, `x_axis_title`,
+  `y_axis_title` and `legend_position` (`None` removes the title or legend). The chart part is
+  edited as text, so the rest of the file stays as Excel wrote it.
+
+### Fixed
+
+- `LoadedChart.title` is the chart's own title, not the title of its first axis.
+
 ## [0.11.0] - 2026-10-29
 
 ### Added
