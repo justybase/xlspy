@@ -146,8 +146,8 @@ gap is implemented the same test starts passing without changes.
 ### Remaining
 
 **XLSB**
-- Adding chartsheets to a loaded XLSB, and changing or removing its tables
-  (tables, charts and images can be added; charts and images removed); named styles in XLSB; loading XLSB chartsheets.
+- Changing or removing the tables of a loaded XLSB (tables, charts and images can be
+  added; charts and images removed; chartsheets are loaded and can be added; named styles can be added).
 - A CF edit in a loaded XLSB keeps the Excel 2010 extension (negative bar colours,
   axes, gradient settings) of every rule left as it was read; a changed or removed
   rule loses its own extension. The settings are preserved, not modelled.

@@ -13,12 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `y_axis_title` and `legend_position` (`None` removes the title or legend). The chart part is
   edited as text, so the rest of the file stays as Excel wrote it.
 - Charts and images can be added to a loaded XLSB workbook, including on new sheets, and so can tables.
+- Named styles (`add_named_style()`) and new chartsheets (`create_chartsheet()`) can be saved into a
+  loaded XLSB workbook.
 - Editing conditional formats in a loaded XLSB keeps the Excel 2010 extension (negative bar colours,
   axis, gradient) of rules that were not changed; extension rules the model cannot read are kept too.
 
 ### Fixed
 
 - `LoadedChart.title` is the chart's own title, not the title of its first axis.
+- `load_workbook()` of an XLSB file with a chartsheet raised `KeyError`; chartsheets are now loaded
+  (`Workbook.chartsheets`) and kept when sheets are renamed, added or reordered.
 
 ## [0.11.0] - 2026-10-29
 

@@ -10,6 +10,8 @@ from ..refs import parse_cell_range
 from . import _props
 from ._loaded import _value_for_save
 from ._drawings import check_removals, remember_drawing_objects, remove_drawing_objects, save_chart_edits
+from ._chartsheets import check_chartsheets
+from ._xlsb_chartsheets import add_chartsheets_xlsb
 from ._xlsb_drawings import add_drawing_objects
 from ._xlsb_tables import add_tables
 from ._objects import _object_values, check_unread, object_signatures
@@ -74,8 +76,7 @@ def _reject_unsupported_edits(workbook) -> None:
         raise _unsupported("style changes (the file has no style sheet)")
     for sheet in workbook._sheets:
         _reject_unsupported_sheet_edits(sheet)
-    if any(sheet._part is None for sheet in workbook._chartsheets):
-        raise _unsupported("a new chartsheet")
+    check_chartsheets(workbook)
 
 
 def _sync_sheet_list(workbook, updater) -> None:
@@ -242,6 +243,12 @@ def save_loaded_xlsb(workbook, filename) -> None:
         save_chart_edits(updater, sheet)
         add_drawing_objects(updater, sheet)
         add_tables(updater, sheet)
+    add_chartsheets_xlsb(updater, workbook)
+    states = updater.get_sheet_states()
+    for chartsheet in workbook._chartsheets:
+        save_chart_edits(updater, chartsheet)
+        if states.get(chartsheet.title, "visible") != chartsheet.sheet_state:
+            updater.set_sheet_state(chartsheet.title, chartsheet.sheet_state)
     _props.save_properties(updater, workbook)
     # After the sheets: their conditional formats may add differential styles.
     styles = workbook._styles

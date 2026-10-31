@@ -170,6 +170,7 @@ class XlsbSheetsMixin:
         self._invalidate_calculation(parts, removed_parts)
         self._apply_parts(parts, dropped + removed_parts)
         del self._sheets[name]
+        self._chartsheets.discard(name)
 
     def rename_sheet(self, old: str, new: str) -> None:
         if old not in self._sheets:
@@ -186,6 +187,9 @@ class XlsbSheetsMixin:
         parts["xl/workbook.bin"] = self._rewrite_sheet_list(workbook, entries, parts)
         self._apply_parts(parts)
         self._sheets = {(new if name == old else name): path for name, path in self._sheets.items()}
+        if old in self._chartsheets:
+            self._chartsheets.discard(old)
+            self._chartsheets.add(new)
 
     def reorder_sheets(self, order) -> None:
         """Put the sheets in ``order`` (every sheet name, once)."""

@@ -137,7 +137,7 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         named_styles = list(workbook._styles.named_style_defs.values())
         workbook.named_styles = NamedStyleList(named_styles or list(workbook._styles.named_styles) or ["Normal"])
         formula_context = None
-        for name in updater.get_sheet_names():
+        for name in updater.get_worksheet_names():
             sheet = Worksheet(workbook, name)
             sheet._loaded = True
             sheet._path = updater._sheets[name]
@@ -282,7 +282,20 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         states = updater.get_sheet_states()
         for sheet in workbook._sheets:
             sheet._sheet_state = states.get(sheet.title, "visible")
-        workbook._active_index = min(updater.get_active_sheet(), len(workbook._sheets) - 1)
+        # The file counts every sheet entry, chartsheets included.
+        all_names = updater.get_sheet_names()
+        active_name = all_names[min(updater.get_active_sheet(), len(all_names) - 1)]
+        titles = [sheet.title for sheet in workbook._sheets]
+        workbook._active_index = titles.index(active_name) if active_name in titles else 0
+        from ..chart_reader import read_chartsheet
+        from ._model import Chartsheet
+
+        for index, name in enumerate(updater.get_chartsheet_names()):
+            chartsheet = Chartsheet(workbook, name, index=index)
+            chartsheet.sheet_state = states.get(name, "visible")
+            chartsheet._part = updater._sheets[name]
+            read_chartsheet(updater._package, chartsheet._part, name, chartsheet)
+            workbook._chartsheets.append(chartsheet)
         workbook._loaded_active_index = workbook._active_index
         workbook._properties = _read_properties(updater._package)
         workbook.custom_doc_props = _read_custom_properties(updater._package)

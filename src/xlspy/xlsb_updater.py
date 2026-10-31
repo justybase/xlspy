@@ -7,6 +7,7 @@ import math
 import os
 import re
 import struct
+from xml.etree import ElementTree as ET
 from decimal import Decimal
 from typing import Any, Iterable, Literal, Sequence
 from ._xlsb_edit import XlsbEditMixin
@@ -97,9 +98,18 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
             pass
 
     def get_sheet_names(self) -> list[str]:
-        """Return worksheet names in workbook order."""
+        """Return the names of all sheets (chartsheets included) in workbook order,
+        which is what the ExternSheet table and local names index."""
 
         return list(self._sheets)
+
+    def get_worksheet_names(self) -> list[str]:
+        """The names of the worksheets alone, in workbook order."""
+
+        return [name for name in self._sheets if name not in self._chartsheets]
+
+    def get_chartsheet_names(self) -> list[str]:
+        return [name for name in self._sheets if name in self._chartsheets]
 
     def replace_sheet_data(
         self,
@@ -377,6 +387,11 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
         if not self._package.has(rels_path):
             raise ValueError("XLSB workbook relationships were not found")
         relationships = parse_relationships_xml(self._package.get(rels_path))
+        chart_ids = {
+            node.get("Id") for node in ET.fromstring(self._package.get(rels_path))
+            if (node.get("Type") or "").endswith("/chartsheet")
+        }
+        self._chartsheets: set[str] = set()
         workbook_data = self._package.get("xl/workbook.bin")
         sheets: dict[str, str] = {}
 
@@ -404,6 +419,8 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
             if not self._package.has(sheet_path):
                 raise ValueError(f"Worksheet part was not found: {sheet_path}")
             sheets[sheet_name] = sheet_path
+            if relationship_id in chart_ids:
+                self._chartsheets.add(sheet_name)
 
         if not sheets:
             raise ValueError("No worksheets were found in workbook.bin")
