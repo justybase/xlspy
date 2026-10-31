@@ -18,6 +18,7 @@ _NATIVE_NAMES = (
     "encode_xlsb_row", "encode_xlsb_row_inline", "calc_column_widths",
     "read_xlsb_worksheet", "read_xlsx_worksheet", "xlsb_row_has_formatted",
     "encode_xlsb_sst", "read_xlsb_shared_strings", "encode_xlsx_row",
+    "read_xlsx_shared_strings",
     "set_style_type", "set_error_type", "xlsb_load_cells",
 )
 _MODULES = {"rust": "xlspy._rs_core"}
@@ -58,6 +59,7 @@ _c_read_xlsx_worksheet = _impl.get("read_xlsx_worksheet")
 _c_row_has_formatted = _impl.get("xlsb_row_has_formatted")
 _c_encode_xlsb_sst = _impl.get("encode_xlsb_sst")
 _c_read_sst = _impl.get("read_xlsb_shared_strings")
+_c_read_xlsx_sst = _impl.get("read_xlsx_shared_strings")
 _c_encode_xlsx_row = _impl.get("encode_xlsx_row")
 _c_encode_xlsb_row_inline = _impl.get("encode_xlsb_row_inline")
 # Workbook model loader for XLSB sheet data (see workbook/_xlsb_reader.py).
@@ -157,6 +159,14 @@ def read_xlsb_shared_strings(data):
     the Python reader."""
     if _c_read_sst is not None:
         return _c_read_sst(data)
+    return None
+
+
+def read_xlsx_shared_strings(data):
+    """Shared strings from an XLSX sharedStrings part (bytes), or None when the
+    native parser does not take the part; the regex and expat parsers then read it."""
+    if _c_read_xlsx_sst is not None:
+        return _c_read_xlsx_sst(data)
     return None
 
 

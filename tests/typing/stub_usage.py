@@ -14,6 +14,7 @@ def _accepted_calls() -> None:
     core.set_invalid_file_type(ValueError)
     core.encode_xlsb_sst(["a", "b"], 2, 2)
     core.read_xlsb_shared_strings(b"")
+    core.read_xlsx_shared_strings(b"")
     core.calc_column_widths([["a", 1.5]], 4)
     core.xlsb_row_has_formatted(["a"])
     core.encode_xlsb_row(["a"], {}, [], 0, 0, 0)

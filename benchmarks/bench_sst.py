@@ -4,8 +4,8 @@ One million short strings, three measurements:
 
   regex   ``reader._parse_shared_strings_fast`` on the decoded part (plain markup).
   reader  ``ExcelReader`` open on a file with those strings, the whole cost a user pays.
-  expat   ``ExcelReader`` open on a file where one string holds a character
-          reference, which sends the whole part to the XML parser.
+  expat   ``ExcelReader`` open on a file where one string holds a comment, which
+          the native and regex parsers refuse, so the whole part goes to expat.
 
 When the native parser is built, ``native`` reports ``_accel.read_xlsx_shared_strings``
 on the same bytes, and ``reader`` then uses it too.
@@ -36,7 +36,9 @@ def sst_xml(count, entity=False):
     """The sharedStrings part: ``count`` short plain strings, or with one character reference."""
     items = [f"<si><t>s{i}</t></si>" for i in range(count)]
     if entity:
-        items[0] = "<si><t>&#65;</t></si>"
+        # A comment: the regex parser and the native parser both refuse it, so the
+        # whole part goes to expat. (A character reference no longer does: C2 decodes it.)
+        items[0] = "<si><!-- note --><t>&#65;</t></si>"
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             f'<sst xmlns="{MAIN_NS}" count="{count}" uniqueCount="{count}">' + "".join(items) + "</sst>")
 

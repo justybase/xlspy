@@ -14,6 +14,7 @@ from .biff_utils import iter_records as _iter_biff_records
 from .excel_dates import serial_to_datetime as _serial_to_datetime
 from ._accel import HAVE_NATIVE, read_xlsb_worksheet as _c_read_xlsb_worksheet
 from ._accel import read_xlsb_shared_strings as _accel_read_sst
+from ._accel import read_xlsx_shared_strings as _accel_read_xlsx_sst
 from ._text import xstring_unescape
 from ._xlsb_formulas import ERRORS as _XLSB_ERRORS
 
@@ -367,7 +368,12 @@ class ExcelReader:
             return
         entry_path = self._resolve_path(self._shared_strings_location)
         with self._archive.open(entry_path) as f:
-            content = f.read().decode('utf-8')
+            raw = f.read()
+        native = _accel_read_xlsx_sst(raw)
+        if native is not None:
+            self._shared_string_array = native
+            return
+        content = raw.decode('utf-8')
 
         fast = _parse_shared_strings_fast(content)
         if fast is not None:
