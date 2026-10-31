@@ -10,7 +10,7 @@ import re
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
-from ._metadata import MAIN, REL, PKG_REL, cell_ref, xml_text, append_child, element_pattern, namespace_of
+from ._metadata import MAIN, PKG_REL, cell_ref, xml_text, append_child, element_pattern, namespace_of
 from ._text import check_cell_text, xstring_escape, xstring_unescape
 from .refs import parse_cell_range, column_label
 

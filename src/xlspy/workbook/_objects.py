@@ -16,7 +16,7 @@ import re
 import zipfile
 from dataclasses import fields
 from xml.etree import ElementTree as ET
-from xml.sax.saxutils import escape, quoteattr
+from xml.sax.saxutils import quoteattr
 
 from .._metadata import CT, MAIN, PKG_REL, REL, append_child, element_pattern, replace_element
 from .._xlsx_edit import _attributes, _bytes

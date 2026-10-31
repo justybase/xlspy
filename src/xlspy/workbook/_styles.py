@@ -9,7 +9,6 @@ appended to that table; existing component XML is left untouched.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-import re
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
@@ -28,7 +27,6 @@ from ..styles import (
     NamedStyle,
     Style,
     _border_key,
-    _color_key,
     _fill_key_from,
     _font_is_empty,
     _font_key_from,

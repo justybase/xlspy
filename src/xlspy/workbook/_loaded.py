@@ -8,7 +8,6 @@ byte-for-byte by ``ZipPackage``.
 from __future__ import annotations
 
 import datetime as _datetime
-import math
 import re
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
@@ -21,7 +20,7 @@ from ._drawings import check_removals, remove_drawing_objects
 from ._objects import add_objects, has_pending_objects, mark_objects_saved, sync_objects
 from ..refs import column_label, parse_cell_range
 from ..styles import _coerce_color, _color_key
-from ..updater_utils import replace_or_add_xml_attribute, resolve_zip_target
+from ..updater_utils import replace_or_add_xml_attribute
 from ._model import Workbook, Worksheet, _coordinate, _normalize_range
 from ._styles import XlsxStyleTable
 

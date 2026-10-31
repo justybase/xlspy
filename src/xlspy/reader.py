@@ -362,8 +362,6 @@ class ExcelReader:
             return
 
         self._shared_string_array = []
-        in_t = False
-        char_buf = []
 
         parser = ParserCreate(namespace_separator='}')
         parser.StartElementHandler = lambda tag, attrs: None

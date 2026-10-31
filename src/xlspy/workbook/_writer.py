@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime as _datetime
-import io
 import os
 import re
 import shutil
@@ -13,12 +12,11 @@ from .._metadata import SheetProtection as MetadataProtection
 from ..formulas import Formula
 from ..rich_text import CellRichText
 from ..styles import Style
-from ..refs import column_label
 from ..writer import XlsbWriter
 from ..xlsx_writer import XlsxWriter
 from ._loaded import save_loaded
 from ._print import print_settings_for
-from ._model import Workbook, Worksheet, WriteOnlyWorksheet, _coordinate
+from ._model import Workbook, Worksheet, WriteOnlyWorksheet
 
 
 def _serial_time(value: _datetime.time) -> float:

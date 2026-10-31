@@ -5,11 +5,36 @@ For recorded platform runs and compatibility checks, see
 
 ## Install and run
 
+xlspy needs Python 3.12 or later (`requires-python = ">=3.12"`); an older
+interpreter fails at import with a `SyntaxError` (PEP 701 f-strings). Where the
+default `python` is older, name the version, e.g. `py -3.14` on Windows.
+
 The test dependencies are optional and do not become runtime dependencies:
 
 ```bash
 python -m pip install -e '.[test]'
 python -m pytest
+```
+
+Without the C extension (the pure-Python fallback that CI also runs):
+
+```bash
+XLSPY_DISABLE_C_EXT=1 python -m pytest        # PowerShell: $env:XLSPY_DISABLE_C_EXT="1"
+```
+
+Tests that drive Microsoft Excel through COM (Windows, `pywin32`) are skipped
+unless `XLSPY_RUN_EXCEL_COM=1` is set; run them with `-p no:faulthandler`.
+
+## Lint and type checks
+
+CI runs both; the mypy configuration in `pyproject.toml` lists the modules
+that still have type errors, and every other module (new ones included) must
+pass:
+
+```bash
+python -m pip install ruff mypy
+ruff check src
+mypy
 ```
 
 The suite is configured to treat warnings as errors and uses `pytest-randomly`

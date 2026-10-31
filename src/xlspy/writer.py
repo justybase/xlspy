@@ -1,9 +1,8 @@
-from dataclasses import dataclass
 import datetime
 from decimal import Decimal
 import zipfile
 import struct
-from typing import  Tuple, Iterable, Mapping
+from typing import Any, Iterable, Tuple
 import io
 import itertools
 import uuid
@@ -22,7 +21,6 @@ from .styles import (
     Style,
     _FontKey,
     _color_key,
-    _column_index,
     merge_styles,
     capture_table_headers,
     check_header_rows,
@@ -65,7 +63,7 @@ from .images import Image, MediaParts, normalize_images
 from .printing import PrintSettings, normalize_print_settings
 from .data_validation import DataValidation, normalize_validations
 from .outline import build_outline
-from .refs import check_sheet_name
+from ._writer_common import FilterData, WriterFrontEnd
 
 
 # BIFF12 record identifiers used in xl/styles.bin ([MS-XLSB] section 2.1.4).
@@ -147,13 +145,6 @@ _PANE_ACTIVE = {"bottomRight": 0, "topRight": 1, "bottomLeft": 2, "topLeft": 3}
 
 
 
-@dataclass
-class FilterData:
-    sheet_index: int = 0
-    start_column: int = 0
-    end_column: int = 0  
-    start_row: int = 0
-    end_row: int = 0
 
 
 # The C row encoder hands rows with rich text to the Python encoder, which
@@ -173,7 +164,7 @@ def _capture_cells(rows, store: dict):
         yield row
 
 
-class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
+class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
     def __init__(self, file: str | io.IOBase, compressionLevel:int = 3,
                  useSharedStrings: bool = True):
         self._file = file
@@ -181,7 +172,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         self._aborted = False
         self._saved = False
         self._output = None  # StagedOutput while open
-        self._worksheet_data: list[Tuple[str, Iterable[list[any]],bool]] = []
+        self._worksheet_data: list[Tuple[str, Iterable[list[Any]],bool]] = []
         self._shared_strings: list[str] = []
         self._shared_strings_dict: dict[str, int] = {}
         self._sheet_count = 0
@@ -234,11 +225,6 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         self._sheet_comments = {}
         self._sheet_link_rels = {}
         self._workbook_protection = None
-
-    def add_sheet(self, sheet_name: str, hidden : bool = False):
-        check_sheet_name(sheet_name, (name for name, _data, _hidden in self._worksheet_data))
-        self._sheet_count += 1
-        self._worksheet_data.append((sheet_name, iter([]),hidden))
 
     def _register_numfmt(self, fmt_string: str) -> int:
         numfmt_id = self._format_registry.get(fmt_string)
@@ -334,127 +320,6 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
             font_id, fill_id, border_id, numfmt_id, alignment, protection,
         )
         return xf_index
-
-    @staticmethod
-    def _normalize_merges(merges):
-        if not merges:
-            return []
-        refs = []
-        for ref in merges:
-            first_col, first_row, last_col, last_row = parse_cell_range(ref)
-            refs.append((ref, first_col, first_row, last_col, last_row))
-        for i, (ref_a, c1a, r1a, c2a, r2a) in enumerate(refs):
-            for ref_b, c1b, r1b, c2b, r2b in refs[i + 1:]:
-                if c1a <= c2b and c1b <= c2a and r1a <= r2b and r1b <= r2a:
-                    raise ValueError(
-                        f"overlapping merged ranges {ref_a!r} and {ref_b!r}"
-                    )
-        return [ref for ref, *_ in refs]
-
-    @staticmethod
-    def _normalize_widths(mapping, kind):
-        if mapping is None:
-            return {}
-        if not isinstance(mapping, Mapping):
-            raise TypeError(f"{kind} must be a mapping or None")
-        result = {}
-        for key, value in mapping.items():
-            if isinstance(key, str):
-                col = _column_index(key)
-            elif isinstance(key, int) and not isinstance(key, bool):
-                col = key
-            else:
-                raise TypeError(f"{kind} keys must be column letters or 0-based ints")
-            if col < 0 or col >= 16384:
-                raise ValueError(f"{kind} column out of range: {key!r}")
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise TypeError(f"{kind} widths must be numbers")
-            if not 0.5 <= value <= 255:
-                raise ValueError(f"{kind} width must be 0.5..255")
-            result[col] = float(value)
-        return result
-
-    @staticmethod
-    def _normalize_row_heights(mapping):
-        if mapping is None:
-            return {}
-        if not isinstance(mapping, Mapping):
-            raise TypeError("row_heights must be a mapping or None")
-        result = {}
-        for key, value in mapping.items():
-            if not isinstance(key, int) or isinstance(key, bool) or key < 0:
-                raise TypeError("row_heights keys must be 0-based row ints")
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise TypeError("row_heights values must be numbers")
-            if value <= 0:
-                raise ValueError("row height must be > 0")
-            result[key] = float(value)
-        return result
-
-    @staticmethod
-    def _split_freeze_cell(ref: str) -> tuple[int, int]:
-        first_col, first_row, last_col, last_row = parse_cell_range(ref)
-        if (first_col, first_row) != (last_col, last_row):
-            raise ValueError(f"freeze_panes must be a single cell, got {ref!r}")
-        return first_col, first_row
-
-    @staticmethod
-    def _normalize_charts(charts) -> list:
-        if not charts:
-            return []
-        if not isinstance(charts, (list, tuple)):
-            raise TypeError("charts must be a list of Chart objects or None")
-        for chart in charts:
-            if not isinstance(chart, Chart):
-                raise TypeError("charts must be Chart instances")
-        return list(charts)
-
-    def _normalize_tables(self, tables):
-        from .styles import ExcelTable
-
-        if not tables:
-            return []
-        # Names are only checked here; write_sheet registers them once every
-        # option is valid, so a rejected call leaves no name behind.
-        names = set(self._table_names)
-        for table in tables:
-            if not isinstance(table, ExcelTable):
-                raise TypeError("tables must be ExcelTable instances")
-            if table.display_name in names:
-                raise ValueError(
-                    f"duplicate table display name {table.display_name!r}"
-                )
-            names.add(table.display_name)
-        return list(tables)
-
-    def _check_unknown_cf_rule(self, rule) -> None:
-        from .styles import ColorScaleRule, DataBarRule, IconSetRule
-        if hasattr(rule, "sqref") and not isinstance(
-            rule, FORMULA_RULES + (ColorScaleRule, DataBarRule, IconSetRule),
-        ):
-            raise TypeError(
-                f"unsupported conditional formatting rule {type(rule).__name__}; "
-                "use xlspy rule classes (CellIsRule, FormulaRule, "
-                "ColorScaleRule, DataBarRule, IconSetRule)"
-            )
-
-    def _claim_cf_priority(self, rule) -> int:
-        priority = rule.priority
-        if priority is None:
-            while (
-                self._next_cf_priority in self._seen_cf_priorities
-                or self._next_cf_priority in self._reserved_cf_priorities
-            ):
-                self._next_cf_priority += 1
-            priority = self._next_cf_priority
-            self._next_cf_priority += 1
-        elif priority in self._seen_cf_priorities:
-            raise ValueError(f"duplicate conditional formatting priority {priority}")
-        if priority <= 0:
-            raise ValueError("conditional formatting priority must be positive")
-        self._seen_cf_priorities.add(priority)
-        self._next_cf_priority = max(self._next_cf_priority, priority + 1)
-        return priority
 
     def _normalize_cf_rules(self, conditional_formats):
         from .styles import ColorScaleRule, DataBarRule, DifferentialStyle, IconSetRule
@@ -617,7 +482,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
 
     def write_sheet(
         self,
-        data: Iterable[list[any]],
+        data: Iterable[list[Any]],
         *,
         header_style: Style | None = None,
         styles: dict[str, Style] | None = None,
@@ -1312,7 +1177,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         buffer.write(build_record(_BRT_END_COL_INFOS, b''))
 
     def _write_worksheet_bin(
-        self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[any]],
+        self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[Any]],
         worksheet_index: int, *, style_ranges=(), header_style: Style | None = None,
         merge_refs=(), widths=None, hidden_cols=frozenset(), heights=None,
         hidden_row_set=frozenset(), freeze_panes: str | None = None,

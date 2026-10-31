@@ -6,10 +6,11 @@ import shutil
 import tempfile
 import zipfile
 import xml.sax.saxutils as saxutils
-from typing import Iterable, Mapping, Tuple
+from typing import Any, Iterable, Mapping, Tuple
 from . import _zip_threads, chart_parts
 from ._accel import encode_xlsx_row as accel_encode_xlsx_row
 from ._output import StagedWriter
+from ._writer_common import FilterData, WriterFrontEnd
 from .doc_properties import DocumentPropertiesMixin
 from ._text import check_cell_text, xstring_escape
 from .charts import Chart
@@ -19,7 +20,7 @@ from ._widths import estimate_column_widths, file_width
 from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell
 from .formulas import Formula
 from .comments import Comment, normalize_comments, comments_xml, vml_xml, COMMENTS_TYPE
-from ._metadata import MAIN, DefinedName, SheetProtection, WorkbookProtection, replace_element
+from ._metadata import DefinedName, SheetProtection, WorkbookProtection, replace_element
 from .hyperlinks import Hyperlink
 from .images import Image, MediaParts, normalize_images
 from .outline import build_outline
@@ -31,7 +32,7 @@ from .printing import (
     print_area_name,
     print_titles_name,
 )
-from .refs import check_sheet_name, quote_sheet_name
+from .refs import quote_sheet_name
 from .rich_text import CellRichText
 from .styles import (
     CF_BLANK_RULES,
@@ -60,7 +61,6 @@ from .styles import (
     tab_color_key,
     _alignment_key_from,
     _border_key,
-    _column_index,
     _fill_key_from,
     _font_is_empty,
     _font_key_from,
@@ -127,13 +127,6 @@ class _SheetBody:
     header_rows: dict = field(default_factory=dict)  # row index -> cells, for table headers
 
 
-@dataclass
-class FilterData:
-    sheet_index: int = 0
-    start_column: int = 0
-    end_column: int = 0
-    start_row: int = 0
-    end_row: int = 0
 
 def _format_number(value) -> str:
     """Shortest numeric literal: ``1.0`` -> ``"1"``, ``0.5`` -> ``"0.5"``."""
@@ -187,11 +180,11 @@ def _protection_xml(prot) -> str:
     return f'<protection {" ".join(attrs)}/>' if attrs else ""
 
 
-class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
+class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
     def __init__(self, file: str | io.IOBase, compressionLevel: int = 3, useSharedStrings: bool = True,
                  spool_max_bytes: int = DEFAULT_SPOOL_BYTES):
         self._file = file
-        self._worksheet_data: list[Tuple[str, Iterable[list[any]], bool]] = []
+        self._worksheet_data: list[Tuple[str, Iterable[list[Any]], bool]] = []
         self._shared_strings: list[str] = []
         self._shared_strings_dict: dict[str, int] = {}
         self._sheet_count = 0
@@ -295,11 +288,6 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
                     letters.append(chr(65 + i) + chr(65 + j) + chr(65 + k))
         return letters
 
-    def add_sheet(self, sheet_name: str, hidden: bool = False):
-        check_sheet_name(sheet_name, (name for name, _data, _hidden in self._worksheet_data))
-        self._sheet_count += 1
-        self._worksheet_data.append((sheet_name, iter([]), hidden))
-
     def _register_format(self, fmt_string: str) -> int:
         if fmt_string in self._format_xf_map:
             return self._format_xf_map[fmt_string]
@@ -317,54 +305,6 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
         self._format_xf_map[fmt_string] = xf_index
 
         return xf_index
-
-    def _check_unknown_cf_rule(self, rule) -> None:
-        if hasattr(rule, "sqref") and not isinstance(
-            rule,
-            (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule,
-             *EXTRA_CF_RULES),
-        ):
-            raise TypeError(
-                f"unsupported conditional formatting rule {type(rule).__name__}; "
-                "use xlspy rule classes (CellIsRule, FormulaRule, "
-                "ColorScaleRule, DataBarRule, IconSetRule, TopBottomRule, "
-                "AboveAverageRule, TextRule, DuplicateRule, TimePeriodRule, BlanksRule)"
-            )
-
-    def _claim_cf_priority(self, rule) -> int:
-        priority = rule.priority
-        if priority is None:
-            while (
-                self._next_cf_priority in self._seen_cf_priorities
-                or self._next_cf_priority in self._reserved_cf_priorities
-            ):
-                self._next_cf_priority += 1
-            priority = self._next_cf_priority
-            self._next_cf_priority += 1
-        elif priority in self._seen_cf_priorities:
-            # Explicit priorities are pre-registered per sheet, so reaching
-            # this branch means the same rule was claimed twice.
-            raise ValueError(f"duplicate conditional formatting priority {priority}")
-        if priority <= 0:
-            raise ValueError("conditional formatting priority must be positive")
-        self._seen_cf_priorities.add(priority)
-        self._next_cf_priority = max(self._next_cf_priority, priority + 1)
-        return priority
-
-    def _normalize_merges(self, merges):
-        if not merges:
-            return []
-        refs = []
-        for ref in merges:
-            first_col, first_row, last_col, last_row = parse_cell_range(ref)
-            refs.append((ref, first_col, first_row, last_col, last_row))
-        for i, (ref_a, c1a, r1a, c2a, r2a) in enumerate(refs):
-            for ref_b, c1b, r1b, c2b, r2b in refs[i + 1:]:
-                if c1a <= c2b and c1b <= c2a and r1a <= r2b and r1b <= r2a:
-                    raise ValueError(
-                        f"overlapping merged ranges {ref_a!r} and {ref_b!r}"
-                    )
-        return [ref for ref, *_ in refs]
 
     def _normalize_cf_rules(self, conditional_formats):
         if not conditional_formats:
@@ -385,85 +325,12 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
                 raise TypeError("dxf must be a DifferentialStyle or None")
         return list(conditional_formats)
 
-    def _normalize_tables(self, tables):
-        if not tables:
-            return []
-        # Names are only checked here; write_sheet registers them once every
-        # option is valid, so a rejected call leaves no name behind.
-        names = set(self._table_names)
-        for table in tables:
-            if not isinstance(table, ExcelTable):
-                raise TypeError("tables must be ExcelTable instances")
-            if table.display_name in names:
-                raise ValueError(
-                    f"duplicate table display name {table.display_name!r}"
-                )
-            names.add(table.display_name)
-        return list(tables)
-
-    @staticmethod
-    def _normalize_widths(mapping, kind):
-        if mapping is None:
-            return {}
-        if not isinstance(mapping, Mapping):
-            raise TypeError(f"{kind} must be a mapping or None")
-        result = {}
-        for key, value in mapping.items():
-            if isinstance(key, str):
-                col = _column_index(key)
-            elif isinstance(key, int) and not isinstance(key, bool):
-                col = key
-            else:
-                raise TypeError(f"{kind} keys must be column letters or 0-based ints")
-            if col < 0 or col >= 16384:
-                raise ValueError(f"{kind} column out of range: {key!r}")
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise TypeError(f"{kind} widths must be numbers")
-            if not 0.5 <= value <= 255:
-                raise ValueError(f"{kind} width must be 0.5..255")
-            result[col] = float(value)
-        return result
-
-    @staticmethod
-    def _normalize_row_heights(mapping):
-        if mapping is None:
-            return {}
-        if not isinstance(mapping, Mapping):
-            raise TypeError("row_heights must be a mapping or None")
-        result = {}
-        for key, value in mapping.items():
-            if not isinstance(key, int) or isinstance(key, bool) or key < 0:
-                raise TypeError("row_heights keys must be 0-based row ints")
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise TypeError("row_heights values must be numbers")
-            if value <= 0:
-                raise ValueError("row height must be > 0")
-            result[key] = float(value)
-        return result
-
     def _column_letter(self, index: int) -> str:
         return self._letters[index]
 
-    def _split_freeze_cell(self, ref: str) -> tuple[int, int]:
-        first_col, first_row, last_col, last_row = parse_cell_range(ref)
-        if (first_col, first_row) != (last_col, last_row):
-            raise ValueError(f"freeze_panes must be a single cell, got {ref!r}")
-        return first_col, first_row
-
-    @staticmethod
-    def _normalize_charts(charts) -> list:
-        if not charts:
-            return []
-        if not isinstance(charts, (list, tuple)):
-            raise TypeError("charts must be a list of Chart objects or None")
-        for chart in charts:
-            if not isinstance(chart, Chart):
-                raise TypeError("charts must be Chart instances")
-        return list(charts)
-
     def write_sheet(
         self,
-        data: Iterable[list[any]],
+        data: Iterable[list[Any]],
         *,
         header_style: Style | None = None,
         styles: dict[str, Style] | None = None,
@@ -1839,7 +1706,6 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
                     show_grid_lines=True, width_styles=((), None), filter_cells=(),
                     tab_key=None, zoom=None):
         """Everything before ``<sheetData>`` content: properties, views, widths."""
-        sheet_id = sheet_index + 1
         parts = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                  '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
                  'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">']

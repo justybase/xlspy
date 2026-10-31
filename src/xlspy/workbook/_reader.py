@@ -12,7 +12,7 @@ import re
 import zipfile
 from xml.etree import ElementTree as ET
 
-from .._metadata import MAIN, REL, PKG_REL, read_defined_names
+from .._metadata import MAIN, REL, read_defined_names
 from .._text import xstring_unescape
 from ..comments import find_comment_parts, read_comments, rels_path
 from ..data_validation import DataValidation, OPERATORS, VALIDATION_TYPES
@@ -34,33 +34,27 @@ from ..styles import (
     TimePeriodRule,
     TopBottomRule,
 )
-from ..updater_utils import parse_relationships_xml, parse_shared_strings_xml, resolve_zip_target
+from ..updater_utils import parse_shared_strings_xml, resolve_zip_target
 from ..xlsx_updater import XlsxUpdater
 from ._model import (
     AutoFilter,
     BookView,
     Break,
-    CalcProperties,
     Cell,
     Chartsheet,
     ColBreak,
     DefinedNameList,
     DocumentProperties,
     FilterColumn,
-    MultiCellRange,
     NamedStyleList,
     RowBreak,
     Selection,
-    SheetProperties,
-    SheetProtection,
-    SheetView,
     SortCondition,
     SortState,
     Table,
     TableColumn,
     TableStyleInfo,
     Workbook,
-    WorkbookSecurity,
     Worksheet,
     _coerce_column,
     _coordinate,

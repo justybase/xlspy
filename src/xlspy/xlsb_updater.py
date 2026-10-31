@@ -13,7 +13,6 @@ from ._xlsb_edit import XlsbEditMixin
 from ._xlsb_sheets import XlsbSheetsMixin
 
 from .biff_utils import (
-    Biff12Record,
     build_record,
     iter_records,
     iter_records_stream,
@@ -23,7 +22,6 @@ from .biff_utils import (
 from .updater_utils import (
     DiskStringIndex,
     ZipPackage,
-    column_index_to_letter,
     copy_file_range,
     copy_stream,
     local_xml_name,

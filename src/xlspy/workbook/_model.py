@@ -8,12 +8,10 @@ from __future__ import annotations
 
 import copy
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 import datetime as _datetime
 from decimal import Decimal
-import math
-import numbers
 import re
 from typing import Any
 

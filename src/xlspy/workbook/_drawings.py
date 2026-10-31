@@ -136,7 +136,10 @@ def remove_drawing_objects(updater, sheet) -> None:
     for part, position, _item in removed:
         by_part.setdefault(part, set()).add(position)
     for drawing, positions in by_part.items():
-        xml = package.get(drawing).decode("utf-8")
+        data = package.get(drawing)
+        if data is None:
+            continue
+        xml = data.decode("utf-8")
         spans = _top_level_anchors(xml)
         dropped = [spans[index] for index in sorted(positions) if index < len(spans)]
         references = {
@@ -152,8 +155,9 @@ def remove_drawing_objects(updater, sheet) -> None:
         for node in list(rels):
             if node.get("Id") in references and node.get("Id") not in still_used:
                 rels.remove(node)
-                if node.get("TargetMode") != "External":
-                    orphans.append((node.get("Type", ""), _resolve(drawing, node.get("Target"))))
+                target = node.get("Target")
+                if node.get("TargetMode") != "External" and target:
+                    orphans.append((node.get("Type", ""), _resolve(drawing, target)))
         ET.register_namespace("", PKG_REL)
         package.set(rels_path, _bytes(rels))
         for kind, target in orphans:
@@ -161,8 +165,8 @@ def remove_drawing_objects(updater, sheet) -> None:
                 continue
             if kind.endswith("/chart"):
                 companions = [
-                    _resolve(target, node.get("Target")) for node in package.rels(target)
-                    if node.get("Type", "").endswith(_CHART_COMPANIONS)
+                    _resolve(target, node.get("Target", "")) for node in package.rels(target)
+                    if node.get("Type", "").endswith(_CHART_COMPANIONS) and node.get("Target")
                 ]
                 _drop_part(package, target)
                 for companion in companions:

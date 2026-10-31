@@ -6,7 +6,6 @@ import re
 from functools import lru_cache
 
 from .exceptions import CellCoordinatesException
-from ..refs import column_label
 
 _COORD_RE = re.compile(r"^\$?([A-Za-z]{1,3})\$?(\d+)$")
 _ABS_RE = re.compile(

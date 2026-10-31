@@ -77,10 +77,12 @@ def add_chartsheets(updater, workbook) -> None:
     if not sheets:
         return
     package = _Package(updater)
-    workbook_xml = package.get("xl/workbook.xml").decode("utf-8")
+    workbook_xml = (package.get("xl/workbook.xml") or b"").decode("utf-8")
     workbook_rels = package.rels("xl/workbook.xml")
     letters = [column_label(index) for index in range(16384)]
     close = re.search(r"</([\w.-]+:)?sheets\s*>", workbook_xml)
+    if close is None:
+        raise ValueError("workbook.xml has no sheets element")
     tag = f"{close[1] or ''}sheet"
     rel_prefix = _prefix(workbook_xml, REL)
     sheet_id = max((int(value) for value in re.findall(r'\bsheetId="(\d+)"', workbook_xml)), default=0)
