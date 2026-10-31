@@ -44,6 +44,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Files Excel would repair, or that held wrong data:
+  - XLSB `replace_sheet_data` wrote the sheet dimension into the selection record (0x98) and left the real
+    dimension (BrtWsDim, 0x94) stale. Both the in-memory and streaming paths are fixed.
+  - Chart formulas are XML-escaped: a sheet named `Q&A` produced a chart part that did not parse (XLSX and XLSB).
+  - Sheet names holding `"` are escaped in `workbook.xml`; control characters in sheet names are rejected.
+  - `replace_sheet_data` drops `calcChain` when formula cells change, so Excel no longer repairs the workbook for
+    entries that point at cells without formulas.
+  - `replace_sheet_data` writes formula cells as formulas in XLSX (it wrote their text before). In XLSB it raises
+    `UnsupportedFeatureError`; use `update_cells()` for formulas there.
+  - `replace_sheet_data` (XLSX and XLSB, both paths) raises `UnsupportedFeatureError` before writing anything when a
+    table's header cell would not equal its column name (ignoring case), or when the new data does not reach the
+    header row. Excel repairs such tables; the package is left unchanged.
+  - Built-in number formats 41–44 (accounting) are read and kept; they used to load as `General` and be lost on save.
+  - A sheet added without `write_sheet` gets its part in XLSB, as it already did in XLSX. A second `write_sheet` on
+    the same sheet raises: it used to write duplicate ZIP entries.
+  - Table names are compared without regard to case, as Excel compares them.
+  - A loaded sheet with an empty `<sheetData/>` keeps its new rows inside it. A missing `<dimension>` is inserted
+    after `<sheetPr>`, as the schema orders it.
+  - XLSB autofilters and column widths cover columns past the first 100 rows, and explicit widths for those columns
+    are kept.
+  - Charts: radar series reject trendlines and error bars; a fractional `title_size` is written as whole hundredths
+    of a point; control characters in chart, shape, image and hyperlink tooltip text raise `ValueError`;
+    `set_series_color(None)` raises `TypeError` instead of writing an empty colour.
+  - Formulas: the `_xlfn.` prefix is added to 30 more functions (for example `COT`, `SEC`, `FORECAST.ETS`,
+    `CONFIDENCE.NORM`); `FILTER` and `SORT` take `_xlfn._xlws.`.
+  - External links keep a placeholder for a reference that cannot be resolved, so later `[n]` numbers stay correct.
 - XLSX cell references are read the same way on every path (native scanner, regular-expression fast path,
   ElementTree, workbook model). A reference without a row (`r="A"`), with row 0 or past row 1,048,576, or with a
   column past `XFD` now raises `ValueError`; the fast paths used to accept some of them, reading only the column
