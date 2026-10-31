@@ -10,22 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Sparklines (`SparklineGroup`): line, column and win/loss groups with colours, markers, high/low/first/last/negative
-  points, empty-cell handling and axis limits. XLSX only; XLSB raises `NotImplementedError`.
-- Table slicers (`Slicer`): a slicer on a table column, placed on the same sheet as the table, with a caption and
-  size. The slicer and its cache are written as Excel 2010+ extension parts. XLSX only; XLSB raises
-  `NotImplementedError`.
+  points, empty-cell handling and axis limits, in XLSX and XLSB. The XLSB records were mapped from files Excel
+  saved, one option at a time (`tools/capture_xlsb.py`).
+- Table slicers (`Slicer`): a slicer on a table column, placed on the same sheet as the table, with a caption,
+  size and column count, in XLSX and XLSB (binary slicer and cache parts, as Excel writes them).
+- Sheet view switches in both writers and the model: `show_row_col_headers`, `show_zero_values` and
+  `right_to_left`.
 - Shapes and text boxes (`Shape`): rectangles, rounded rectangles, ellipses and text boxes with fill, border, font,
   alignment and an optional `link_cell` that shows a cell's value live (KPI cards). XLSX and XLSB.
 - Chart formatting: `Chart.gap_width` and `hole_size` (doughnut), and chart-area and plot-area `fill`, `border`
   and `plot_fill`, plus `font_size` and `font_color`. XLSX and XLSB.
-- `examples/business_dashboard.py`: a sales dashboard with KPI cards, charts, a slicer and sparklines (XLSX), and
-  the same layout with static values for XLSB.
+- `examples/business_dashboard.py`: a sales dashboard with KPI cards, charts, a slicer and sparklines, written as
+  XLSX or XLSB from the same code. Its figures are `SUMIFS` over the rows the slicer leaves visible.
+- `tools/capture_xlsb.py`: builds sparkline and slicer variants in Excel (COM) and prints the XLSB record bytes
+  that differ from a base file.
 
 ### Changed
 
 - Renaming a sheet rewrites the sparkline formulas that refer to it.
-- Removing a sheet that holds table slicers from a loaded workbook raises `NotImplementedError` before anything is
-  written.
+- Removing a sheet that holds table slicers from a loaded workbook (XLSX or XLSB) raises `NotImplementedError`
+  before anything is written.
 
 ## [0.12.0] - 2026-10-29
 

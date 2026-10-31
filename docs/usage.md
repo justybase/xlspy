@@ -310,6 +310,18 @@ writer.write_sheet(data_rows, tab_color=Color(theme=4, tint=0.4))
 `zoom=85` (10-400 percent) sets the sheet's zoom in both writers and
 `write_dataframe()`; the workbook model saves `ws.sheet_view.zoomScale`.
 
+### Headings, zeros and right-to-left
+
+`show_row_col_headers=False` hides the row numbers and column letters,
+`show_zero_values=False` shows cells holding zero as empty, and
+`right_to_left=True` puts column A on the right. All three are bools in both
+writers and `write_dataframe()`, and the workbook model saves
+`ws.sheet_view.showRowColHeaders`, `showZeros` and `rightToLeft`:
+
+```python
+writer.write_sheet(rows, show_grid_lines=False, show_row_col_headers=False)  # a clean dashboard
+```
+
 ### Headers of several rows
 
 `header_rows=2` (or more) declares a header of several rows, for example group
@@ -746,7 +758,7 @@ Chart("doughnut", [ChartSeries("L22:L24", categories="K22:K24")],
 
 These work in XLSX and XLSB.
 
-### Sparklines (XLSX)
+### Sparklines
 
 A sparkline is a tiny chart inside one cell. `SparklineGroup(data, location, kind=)` draws one
 sparkline per row or column of `location`, reading the matching row or column of `data`:
@@ -766,14 +778,15 @@ writer.write_sheet(rows, sparklines=[
   `axis_color` are `"#RRGGBB"` colours.
 - `markers`, `high_point`, `low_point`, `first_point`, `last_point` and `negative_points` are booleans.
 - `empty_cells`: `"gap"` (default), `"zero"` or `"connect"`. `show_hidden`, `show_axis` and
-  `right_to_left` are booleans. `axis_min` and `axis_max` fix the vertical scale.
+  `right_to_left` are booleans. `axis_min` and `axis_max` take a number (a fixed end of the
+  vertical axis), `"group"` (one scale for the whole group) or `"individual"` (the default).
 
-Sparklines are part of the sheet's extension list, so they need XLSX. `XlsbWriter` raises
-`NotImplementedError` for them. Renaming the sheet rewrites the references in a loaded workbook.
+Both writers support sparklines; `data` may name another sheet (`"'Sales data'!B2:M2"`).
+Renaming the sheet rewrites the references in a loaded XLSX workbook.
 The library does not shift sparkline or slicer ranges when rows or columns are inserted or deleted
 in a loaded workbook; update those ranges yourself if the layout changes.
 
-### Table slicers (XLSX)
+### Table slicers
 
 A slicer filters a table by one of its columns. The table must have a header row and be on the
 same sheet as the slicer:
@@ -787,18 +800,21 @@ writer.write_sheet(rows, tables=[ExcelTable("Sprzedaz", "A1:H200")],
 ```
 
 `Slicer(table, column, anchor="H2", width=144, height=180, caption=None, name=None, columns=1)`.
-`column` is the header text. `name` defaults to `Slicer_<column>`, which must be unique in the
-workbook. Only one slicer per column is allowed. Validation runs before any rows are written, so a
-rejected call leaves no partial file.
+`column` is the header text; `name` and `caption` default to it. The slicer name must be unique
+in the workbook, and so must the cache name, `Slicer_<column>`, so one column name can carry only
+one slicer per workbook. Validation runs before any rows are written when the table lists its
+`columns`; when the names come from the header row, an unknown column fails the sheet once that
+row has streamed.
 
 The slicer's effect is on rows, not on formulas. A plain `SUM` or `SUMIFS` ignores the filter.
 To make totals react, add a helper column with `SUBTOTAL(103, A2)` (1 when the row is visible
 under the table's filter) and sum with `SUMIFS(..., Visible, 1)`. The dashboard example does this
 for its KPI cards.
 
-Slicers are XLSX only. `XlsbWriter` raises `NotImplementedError`. Removing a sheet that holds
-table slicers from a loaded workbook is refused, because the slicer parts would be left behind.
-Pivot-table slicers and timelines are not supported.
+Both writers support slicers; XLSB stores them in binary slicer and cache parts, as Excel does.
+A loaded workbook keeps its slicers when it is saved. Removing a sheet that holds table slicers
+from a loaded workbook is refused, because the slicer caches would be left behind. Pivot-table
+slicers and timelines are not supported.
 
 ### Shapes and KPI cards
 
@@ -993,8 +1009,9 @@ report.
 | Chart caches from streamed rows | n/a (no caches) | Yes (only chart cells are kept) |
 | Chart formatting (`gap_width`, `hole_size`, `fill`, `border`, `plot_fill`, `font_size`, `font_color`) | Yes | Yes |
 | Shapes and text boxes (`Shape`, `link_cell` KPI cards) | Yes | Yes |
-| Sparklines (`SparklineGroup`) | Yes | No (`NotImplementedError`) |
-| Table slicers (`Slicer`) | Yes | No (`NotImplementedError`) |
+| Sparklines (`SparklineGroup`) | Yes | Yes |
+| Table slicers (`Slicer`) | Yes | Yes |
+| Headings, zero values, right-to-left (`show_row_col_headers`, `show_zero_values`, `right_to_left`) | Yes | Yes |
 | Pivot-table slicers, timelines | No | No |
 
 ## Comments and template metadata (XLSX/XLSM/XLSB)
