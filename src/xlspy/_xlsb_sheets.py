@@ -21,6 +21,7 @@ from ._xlsb_formulas import SUP_SELF, FormulaContext, parsed_formula
 from ._xlsb_metadata import read_wide, records, wide_string
 from .biff_utils import build_record
 from .refs import check_sheet_name
+from .updater_utils import renamed_chart_parts
 
 BUNDLE_SH = 0x9C
 BOOK_VIEW = 0x9E
@@ -181,7 +182,7 @@ class XlsbSheetsMixin:
         for entry in entries:
             if entry.name == old:
                 entry.name = new
-        parts = {}
+        parts = renamed_chart_parts(self._package, old, new)
         parts["xl/workbook.bin"] = self._rewrite_sheet_list(workbook, entries, parts)
         self._apply_parts(parts)
         self._sheets = {(new if name == old else name): path for name, path in self._sheets.items()}

@@ -393,6 +393,22 @@ static int _cell_overlay_kind(PyObject *item)
     return 0;
 }
 
+/* xlspy._errors.CellError, registered by set_error_type: the str subclass
+   of "error:#N/A" values, so that text starting with "error:" stays text. */
+static PyObject *g_error_type = NULL;
+
+static PyObject *C_set_error_type(PyObject *self, PyObject *type)
+{
+    if (!PyType_Check(type))
+    {
+        PyErr_SetString(PyExc_TypeError, "set_error_type expects a class");
+        return NULL;
+    }
+    Py_INCREF(type);
+    Py_XSETREF(g_error_type, type);
+    Py_RETURN_NONE;
+}
+
 static PyObject *C_set_style_type(PyObject *self, PyObject *type)
 {
     if (!PyType_Check(type))
@@ -3060,9 +3076,16 @@ static int _xr_value(XlsxReader *self,
             Py_DECREF(tail);
             return -1;
         }
-        *out = PyUnicode_Concat(prefix, tail);
+        PyObject *text = PyUnicode_Concat(prefix, tail);
         Py_DECREF(prefix);
         Py_DECREF(tail);
+        if (text && g_error_type)
+        {
+            *out = PyObject_CallOneArg(g_error_type, text);
+            Py_DECREF(text);
+        }
+        else
+            *out = text;
         return *out ? 1 : -1;
     }
 
@@ -4478,6 +4501,8 @@ static PyMethodDef CMethods[] = {
      "Calculate column widths from row data."},
     {"xlsb_row_has_formatted", C_xlsb_row_has_formatted, METH_VARARGS,
      "Return True if a row contains any (value, format) or (value, Style) cell."},
+    {"set_error_type", C_set_error_type, METH_O,
+     "Register xlspy's CellError, the str subclass of error values."},
     {"set_style_type", C_set_style_type, METH_O,
      "Register xlspy.Style, the class of the second item of (value, Style) cells."},
     {"encode_xlsb_sst", C_encode_xlsb_sst, METH_VARARGS,

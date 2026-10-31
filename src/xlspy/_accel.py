@@ -48,6 +48,13 @@ if _os.environ.get('XLSPY_DISABLE_C_EXT', '0') != '1':
         from xlspy._c_core import read_xlsx_worksheet as _c_read_xlsx_worksheet
     except ImportError:
         _c_read_xlsx_worksheet = None
+    try:
+        from xlspy._c_core import set_error_type as _c_set_error_type
+    except ImportError:
+        pass
+    else:
+        from xlspy._errors import CellError as _CellError
+        _c_set_error_type(_CellError)
     if _c_set_style_type is not None:
         # (value, Style) cells: the C encoders and width scan recognise them.
         from xlspy.styles import Style as _Style

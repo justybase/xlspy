@@ -9,7 +9,11 @@ _UNESCAPE_RE = re.compile(r"_x([0-9A-Fa-f]{4})_")
 
 
 def escape(value: str) -> str:
-    """Escape control characters 0x01..0x1F as ``_xHHHH_``."""
+    """Escape control characters 0x01..0x19 as ``_xHHHH_``.
+
+    The range stops at 0x19, not 0x1F, exactly as openpyxl's ``escape`` does
+    (its pattern is the octal ``\\001-\\031``); the writers do not use this.
+    """
     return _ESCAPE_RE.sub(lambda match: f"_x{ord(match.group(0)):0>4x}_", value)
 
 

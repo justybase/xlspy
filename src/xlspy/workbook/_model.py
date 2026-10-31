@@ -23,7 +23,7 @@ from ..formulas import Formula
 from ..hyperlinks import Hyperlink
 from ..images import Image
 from .._metadata import DefinedName
-from ..refs import column_label, parse_cell_range, quote_sheet_name
+from ..refs import check_sheet_name, column_label, parse_cell_range, quote_sheet_name
 from ..rich_text import CellRichText
 from ..styles import (
     Alignment,
@@ -1384,13 +1384,8 @@ class Worksheet:
 
     @title.setter
     def title(self, value: str):
-        if not isinstance(value, str) or not value:
-            raise ValueError("sheet title must be a non-empty string")
-        if len(value) > 31 or any(char in value for char in "[]:*?/\\"):
-            raise ValueError(f"invalid sheet title {value!r}")
         if value != self._title:
-            if value in self._workbook.sheetnames:
-                raise ValueError(f"worksheet {value!r} already exists")
+            self._workbook._check_title(value, self)
             self._workbook._rename_sheet(self, value)
             self._title = value
             self._mark_dirty("title")
@@ -2047,7 +2042,7 @@ class Chartsheet:
 
     def __init__(self, workbook, title: str, index: int | None = None):
         self._workbook = workbook
-        self.title = title
+        self._title = title  # the caller checks the name
         self.sheet_state = "visible"
         self._index = index
         self._charts: list = []
@@ -2056,6 +2051,19 @@ class Chartsheet:
 
     def __repr__(self):
         return f"<Chartsheet {self.title!r}>"
+
+    @property
+    def title(self) -> str:
+        return self._title
+
+    @title.setter
+    def title(self, value: str):
+        if value == self._title:
+            return
+        if self._part is not None:
+            raise NotImplementedError("renaming a loaded chartsheet is not supported")
+        self._workbook._check_title(value, self)
+        self._title = value
 
     @property
     def charts(self):
@@ -2111,6 +2119,18 @@ class Workbook:
     def sheetnames(self) -> list[str]:
         return [sheet.title for sheet in self._sheets]
 
+    def _check_title(self, title: str, sheet=None) -> None:
+        """Raise unless ``title`` can name ``sheet`` (default: a new sheet).
+
+        Excel's naming rules apply, and no other worksheet or chartsheet may
+        have the name in any letter case.
+        """
+        check_sheet_name(title)
+        folded = title.casefold()
+        for other in (*self._sheets, *self._chartsheets):
+            if other is not sheet and other.title.casefold() == folded:
+                raise ValueError(f"a sheet named {other.title!r} already exists")
+
     @property
     def read_only(self) -> bool:
         return self._read_only
@@ -2161,9 +2181,8 @@ class Workbook:
             title = f"Sheet{len(self._sheets) + 1}"
         elif title is None:
             title = "Sheet"
-        if title in self.sheetnames:
-            raise ValueError(f"worksheet {title!r} already exists")
-        cls = WriteOnlyWorksheet if self.write_only else Worksheet
+        self._check_title(title)
+        cls =WriteOnlyWorksheet if self.write_only else Worksheet
         sheet = cls(self, title, index=index)
         if index is None:
             self._sheets.append(sheet)
@@ -2178,14 +2197,13 @@ class Workbook:
         """Add a chartsheet after the other sheets (XLSX only), as openpyxl does."""
         if self.write_only:
             raise TypeError("create_chartsheet is not available in write-only mode")
-        taken = set(self.sheetnames) | {sheet.title for sheet in self._chartsheets}
         if title is None:
+            taken = {sheet.title.casefold() for sheet in (*self._sheets, *self._chartsheets)}
             number = 1
-            while f"Chart{number}" in taken:
+            while f"chart{number}" in taken:
                 number += 1
             title = f"Chart{number}"
-        if title in taken:
-            raise ValueError(f"a sheet named {title!r} already exists")
+        self._check_title(title)
         count = len(self._sheets) + len(self._chartsheets)
         if index is not None and index < count:
             raise NotImplementedError("new chartsheets are added after the other sheets")
@@ -2223,7 +2241,8 @@ class Workbook:
         title = from_worksheet.title
         base = title
         counter = 1
-        while title in self.sheetnames:
+        taken = {sheet.title.casefold() for sheet in (*self._sheets, *self._chartsheets)}
+        while title.casefold() in taken:
             title = f"{base}{counter}"
             counter += 1
         target = self.create_sheet(title)
@@ -2275,7 +2294,8 @@ class Workbook:
         return self._defined_names
 
     def _rename_sheet(self, sheet: Worksheet, title: str):
-        """Point formulas, validations and defined names at the new title, as Excel does."""
+        """Point formulas, validations, conditional formats, internal links and
+        defined names at the new title, as Excel does (loaded charts: on save)."""
         from ..formula.sheets import rename_sheet_references
 
         old = sheet.title
@@ -2288,6 +2308,11 @@ class Workbook:
         for other in self._sheets:
             for row in other._cells.values():
                 for cell in row.values():
+                    link = cell._hyperlink
+                    if link is not None and link.is_internal:
+                        target = "#" + renamed(link.location)
+                        if target != link.target:
+                            cell.hyperlink = replace(link, target=target)
                     formula = cell._formula
                     if formula is None:
                         continue
@@ -2302,6 +2327,13 @@ class Workbook:
                 values = {name: renamed(getattr(rule, name)) for name in ("formula1", "formula2")}
                 if any(values[name] != getattr(rule, name) for name in values):
                     other._data_validations[index] = replace(rule, **values)
+            for item in other.conditional_formatting:
+                for index, rule in enumerate(item.rules):
+                    formulas = getattr(rule, "formula", None)
+                    if formulas:
+                        updated = tuple(renamed(text) for text in formulas)
+                        if updated != tuple(formulas):
+                            item.rules[index] = replace(rule, formula=updated)
         names = self.defined_names
         names._items = [
             DefinedName(

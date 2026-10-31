@@ -61,7 +61,7 @@ from ._model import (
     _normalize_range,
 )
 from ._loaded import _meta_signature, _workbook_meta_signature
-from ._objects import mark_objects_saved
+from ._objects import mark_objects_saved, note_unread
 from ._print import print_settings_for
 from ._styles import XlsxStyleTable, _read_color
 
@@ -445,6 +445,7 @@ def _read_data_validations(sheet: Worksheet, node) -> None:
     for child in node.findall(_q("dataValidation")):
         formula1 = child.findtext(_q("formula1"))
         if formula1 is None:
+            note_unread(sheet, "data_validations")
             continue
         kind = _OXML_VALIDATION_TYPES.get(child.get("type", "custom"), "custom")
         operator = (
@@ -476,6 +477,7 @@ def _read_data_validations(sheet: Worksheet, node) -> None:
                 ime_mode=child.get("imeMode"),
             )
         except (TypeError, ValueError):
+            note_unread(sheet, "data_validations")
             continue
         if prompt and not show_input:
             object.__setattr__(rule, "show_input_message", False)
@@ -693,8 +695,10 @@ def _read_conditional_formatting(sheet, node, style_table) -> None:
         try:
             rule = _cf_rule(sqref, child, style_table)
         except (TypeError, ValueError):
-            continue
-        if rule is not None:
+            rule = None
+        if rule is None:
+            note_unread(sheet, "conditional_formatting")
+        else:
             sheet._conditional_formats.add(sqref, rule)
 
 

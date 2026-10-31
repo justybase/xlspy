@@ -10,7 +10,7 @@ from ..refs import parse_cell_range
 from . import _props
 from ._loaded import _value_for_save
 from ._drawings import check_removals, new_drawing_objects, remember_drawing_objects, remove_drawing_objects
-from ._objects import _object_values, object_signatures
+from ._objects import _object_values, check_unread, object_signatures
 from ._xlsb_layout import changed_groups, layout_state, patch_layout, save_builtin_names
 
 
@@ -59,6 +59,10 @@ def _reject_unsupported_sheet_edits(sheet) -> None:
     current = object_signatures(sheet)
     if current["tables"] != saved.get("tables", ()):
         raise _unsupported("table changes")
+    check_unread(sheet, [
+        name for name in ("data_validations", "conditional_formatting")
+        if current[name] != saved.get(name, ())
+    ])
 
 
 def _reject_unsupported_edits(workbook) -> None:

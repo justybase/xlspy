@@ -727,6 +727,43 @@ def _as_excel_table(table):
     )
 
 
+_UNREAD_LABELS = {
+    "data_validations": "data validations",
+    "conditional_formatting": "conditional formatting rules",
+}
+
+
+def note_unread(sheet, name: str, count: int = 1) -> None:
+    """Count loaded ``name`` objects (data validations, conditional formats)
+    that the model could not read, so a save cannot drop them unnoticed."""
+    if count:
+        unread = sheet.__dict__.setdefault("_unread_objects", {})
+        unread[name] = unread.get(name, 0) + count
+
+
+def check_unread(sheet, names) -> None:
+    """Refuse to rewrite the ``names`` lists of a sheet that holds objects
+    of those kinds the model could not read: the rewrite would lose them."""
+    unread = getattr(sheet, "_unread_objects", {})
+    for name in names:
+        if unread.get(name):
+            label = _UNREAD_LABELS[name]
+            raise NotImplementedError(
+                f"sheet {sheet.title!r} holds {unread[name]} {label} that xlspy cannot read; "
+                f"saving changed {label} would drop them"
+            )
+
+
+def check_object_rewrites(sheet) -> None:
+    """Before an XLSX save: the checks of ``sync_objects``, which rewrites
+    the sheet's tables, validations and conditional formats together."""
+    saved = getattr(sheet, "_saved_object_signatures", None)
+    current = object_signatures(sheet)
+    if current == saved or saved is None or _only_appended(saved, current):
+        return
+    check_unread(sheet, _UNREAD_LABELS)
+
+
 def _mark_synced_objects(sheet) -> None:
     for name in ("tables", "data_validations", "conditional_formatting"):
         sheet._saved_object_counts[name] = len(_object_values(sheet, name))

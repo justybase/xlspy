@@ -56,17 +56,27 @@ def remember_drawing_objects(sheet) -> None:
 
 
 def check_removals(sheet) -> None:
-    """Objects added and saved in this session have no recorded place in the file."""
+    """Refuse removals that a save cannot make exactly."""
     saved = getattr(sheet, "_saved_drawing_objects", None)
     if saved is None:
         return
     current = _drawing_objects(sheet)
-    known = [entry[2] for entry in getattr(sheet, "_drawing_sources", ())]
+    sources = getattr(sheet, "_drawing_sources", ())
+    known = [entry[2] for entry in sources]
     for item in saved:
+        # Objects added and saved in this session have no recorded place in the file.
         if not _contains(current, item) and not _contains(known, item):
             raise NotImplementedError(
                 "a chart or image added by an earlier save cannot be removed in the same "
                 "session; load the saved workbook again to remove it"
+            )
+    # Removal drops a whole anchor, so a group must go as a whole.
+    removed = {(part, position) for part, position, _item in removed_drawing_objects(sheet)}
+    for part, position, item in sources:
+        if (part, position) in removed and _contains(current, item):
+            raise NotImplementedError(
+                "a chart or image that is grouped with other objects can only be removed "
+                "together with the rest of its group"
             )
 
 

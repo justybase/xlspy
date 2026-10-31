@@ -3,6 +3,7 @@
 import datetime
 import struct
 
+from ._errors import CellError
 from ._xlsb_formulas import FormulaContext, ERRORS, decode_formula, read_parsed
 from ._xlsb_metadata import read_wide
 from .biff_reader import BiffReader
@@ -20,7 +21,7 @@ def cached_cell(kind, payload, reader):
     elif kind == 2:
         value = BiffReader._get_rk_number(payload, 8)
     elif kind in (3, 11):
-        value = 'error:' + ERRORS.get(payload[8], '#VALUE!')
+        value = CellError('error:' + ERRORS.get(payload[8], '#VALUE!'))
         formula_offset = 11 if kind == 11 else None
     elif kind in (4, 10):
         value = bool(payload[8])

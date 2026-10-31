@@ -5,6 +5,7 @@ import datetime
 import re
 from xml.etree import ElementTree as ET
 
+from ._errors import CellError
 from ._metadata import MAIN, namespace_of
 from ._text import xstring_unescape
 from . import _accel
@@ -331,7 +332,7 @@ def _fast_value(sheet, attributes, v, inline):
     if kind == "b":
         return (v or "") == "1"
     if kind == "e":
-        return "error:" + (v or "")
+        return CellError("error:" + (v or ""))
     if kind == "str":
         if v and ("&" in v or "\r" in v):
             raise _Fallback
@@ -372,7 +373,7 @@ def _value(reader, cell, ns=MAIN):
     if kind == "b":
         return value == "1"
     if kind == "e":
-        return "error:" + value
+        return CellError("error:" + value)
     if kind == "str":
         return xstring_unescape(value)
     if kind == "d":

@@ -353,6 +353,31 @@ def unescape_xml_text(value: str) -> str:
     return html.unescape(value)
 
 
+_CHART_PART = re.compile(r"xl/charts/chart[^/]*\.xml")
+_CHART_FORMULA = re.compile(r"(<(?:\w+:)?f(?:\s[^>]*)?>)([^<]*)(</(?:\w+:)?f>)")
+
+
+def renamed_chart_parts(package, old: str, new: str) -> dict[str, bytes]:
+    """The chart parts whose formulas (``<c:f>``) name sheet ``old``, pointed at ``new``."""
+    from .formula.sheets import rename_sheet_references
+
+    def rename(match):
+        text = unescape_xml_text(match[2])
+        updated = rename_sheet_references(text, old, new)
+        if updated == text:
+            return match[0]
+        return match[1] + saxutils.escape(updated) + match[3]
+
+    parts = {}
+    for name in package.names():
+        if _CHART_PART.fullmatch(name):
+            xml = package.get(name).decode("utf-8")
+            updated = _CHART_FORMULA.sub(rename, xml)
+            if updated != xml:
+                parts[name] = updated.encode("utf-8")
+    return parts
+
+
 def column_index_to_letter(index: int) -> str:
     """Convert a zero-based column index to an Excel column name."""
 

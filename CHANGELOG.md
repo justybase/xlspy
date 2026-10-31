@@ -136,7 +136,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `xlspy.styles` is now a package with the original names re-exported from
   `xlspy.styles.core`; `styles.py` remains import-compatible.
 - `ExcelReader` accepts `errors="openpyxl"` for bare `#DIV/0!`-style values;
-  the default remains the historical `error:#DIV/0!` form.
+  the default remains the historical `error:#DIV/0!` form. Error values are
+  a `str` subclass, so text that starts with `error:` is never taken for an
+  error (by `errors="openpyxl"` or by `load_workbook()` on XLSB).
+- Renaming a sheet also updates both ends of 3D references (`Jan:Mar!B2`),
+  conditional-format formulas, internal hyperlinks and the series of loaded
+  charts.
+- Sheet and chartsheet names follow Excel's rules and are unique ignoring
+  case across worksheets and chartsheets. Renaming a loaded chartsheet
+  raises `NotImplementedError`.
+- Saving a loaded workbook refuses (`NotImplementedError`) to rewrite a
+  sheet's data validations or conditional formats while it holds rules the
+  model cannot read, such as a prompt-only validation, and to remove one
+  object of a grouped drawing; both would lose data.
 
 ### Fixed
 

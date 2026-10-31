@@ -11,6 +11,7 @@ _ERROR_CODES = (
     "#NUM!", "#N/A", "#GETTING_DATA",
 )
 _NUMBER_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?$")
+_MANTISSA_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)[Ee]")
 _OPERATORS = "+-*/^&=><"
 _OPERAND_END = set(',;}) +-*/^&=><%(')
 
@@ -176,7 +177,8 @@ class Tokenizer:
                 index += 1
                 continue
 
-            if char in "+-" and buffer and buffer[-1] in "Ee" \
+            # The sign of an exponent (1.5E+2), not an operator after a name (RATE+1).
+            if char in "+-" and _MANTISSA_RE.fullmatch("".join(buffer)) \
                     and index + 1 < length and formula[index + 1].isdigit():
                 buffer.append(char)
                 index += 1

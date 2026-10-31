@@ -5,6 +5,7 @@ from enum import IntEnum
 from typing import Dict, List, Optional, Set, Generator, Any
 from xml.parsers.expat import ParserCreate
 
+from ._errors import CellError
 from .biff_reader import BiffReader, CellType
 from .biff_utils import iter_records as _iter_biff_records
 from .excel_dates import serial_to_datetime as _serial_to_datetime
@@ -240,7 +241,7 @@ class ExcelReader:
         else:
             for row in rows:
                 yield [
-                    value[6:] if isinstance(value, str) and value.startswith("error:") else value
+                    str(value[6:]) if isinstance(value, CellError) else value
                     for value in row
                 ]
 

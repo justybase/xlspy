@@ -12,6 +12,7 @@ from .._xlsb_metadata import read_wide
 from itertools import chain as _chain
 
 from .._accel import xlsb_load_cells
+from .._errors import CellError
 from .._xlsb_read import cached_cell, formula_groups, formula_text, iter_indexed_rows
 from .._xlsb_styles import XlsbStyleTable
 from .._xlsb_validation import dval_rule
@@ -22,6 +23,7 @@ from ..reader import ExcelReader, _get_date_num_fmt_ids
 from ..refs import column_label, parse_cell_range
 from ..xlsb_updater import XlsbUpdater
 from ..chart_reader import read_drawing
+from ._objects import note_unread
 from ..updater_utils import resolve_zip_target
 from ._model import CELL_SLOTS, AutoFilter, Cell, DefinedNameList, Workbook, Worksheet
 from ._reader import _read_custom_properties, _read_print_names, _read_properties, _read_sheet_relationships
@@ -91,7 +93,7 @@ def _set_loaded_cell(sheet, row, column, value, style_id, formula_text=None):
     elif value is None:
         if style_id:
             sheet._set_cell_raw(row, column, None, style_id=style_id)
-    elif isinstance(value, str) and value.startswith("error:"):
+    elif isinstance(value, CellError):
         sheet._set_cell_raw(row, column, value[6:], style_id=style_id, data_type="e")
     else:
         kind = "s" if isinstance(value, str) else "b" if isinstance(value, bool) else "n"
@@ -235,12 +237,20 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
                 formula_context = FormulaContext(
                     updater.get_sheet_names(), updater._package.get("xl/workbook.bin"),
                 )
+            read = 0
             for sqref, rule in read_conditional_formats(conditional, formula_context, workbook._styles):
                 sheet._conditional_formats.add(sqref, rule)
+                read += 1
+            note_unread(
+                sheet, "conditional_formatting",
+                sum(record_id == BRT_BEGIN_CF_RULE for record_id, _ in conditional) - read,
+            )
             if validations:
                 for payload in validations:
                     rule = dval_rule(payload, formula_context)
-                    if rule is not None:
+                    if rule is None:
+                        note_unread(sheet, "data_validations")
+                    else:
                         sheet._data_validations.append(rule)
             for ref, comment in reader.get_comments(name).items():
                 try:

@@ -149,3 +149,51 @@ def test_removal_from_excel_files(tmp_path, file_format):
             book.Close(False)
     finally:
         excel.Quit()
+
+
+def _grouped(path, out):
+    """``path`` with its two picture anchors merged into one group anchor."""
+    import re
+
+    with zipfile.ZipFile(path) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    xml = members["xl/drawings/drawing1.xml"].decode()
+    pictures = re.findall(r"<pic>.*?</pic>", xml)
+    assert len(pictures) == 2
+    first = re.search(r"<oneCellAnchor>.*?</oneCellAnchor>", xml)
+    group = (
+        '<grpSp><nvGrpSpPr><cNvPr id="3" name="Group 3"/><cNvGrpSpPr/></nvGrpSpPr><grpSpPr/>'
+        + "".join(pictures) + "</grpSp>"
+    )
+    anchor = re.sub(r"<pic>.*?</pic>", lambda _match: group, first[0], count=1)
+    xml = xml[:first.start()] + anchor + "</wsDr>"
+    members["xl/drawings/drawing1.xml"] = xml.encode()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+
+
+def test_one_object_of_a_group_cannot_be_removed(tmp_path):
+    workbook = Workbook()
+    workbook.active.add_image(Image(io.BytesIO(_png(8, 4))), "B2")
+    workbook.active.add_image(Image(io.BytesIO(_png(8, 4, 0x20))), "F2")
+    plain = tmp_path / "plain.xlsx"
+    workbook.save(plain)
+    grouped = tmp_path / "grouped.xlsx"
+    _grouped(plain, grouped)
+
+    loaded = load_workbook(grouped)
+    try:
+        assert len(loaded.active.images) == 2
+        del loaded.active._images[0]
+        with pytest.raises(NotImplementedError, match="together with the rest of its group"):
+            loaded.save(tmp_path / "out.xlsx")
+        loaded.active._images.clear()
+        loaded.save(tmp_path / "out.xlsx")
+    finally:
+        loaded.close()
+    reloaded = load_workbook(tmp_path / "out.xlsx")
+    try:
+        assert reloaded.active.images == []
+    finally:
+        reloaded.close()

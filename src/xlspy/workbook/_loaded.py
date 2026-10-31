@@ -17,10 +17,12 @@ from .._xlsx_edit import _attributes, _bytes, _cell_value
 from ..formula.sheets import rename_sheet_references
 from ..formulas import Formula
 from ._drawings import check_removals, remove_drawing_objects
-from ._objects import add_objects, has_pending_objects, mark_objects_saved, sync_objects
+from ._objects import (
+    add_objects, check_object_rewrites, has_pending_objects, mark_objects_saved, sync_objects,
+)
 from ..refs import column_label, parse_cell_range
 from ..styles import _coerce_color, _color_key
-from ..updater_utils import replace_or_add_xml_attribute
+from ..updater_utils import renamed_chart_parts, replace_or_add_xml_attribute
 from ._model import Workbook, Worksheet, _coordinate, _normalize_range
 from ._styles import XlsxStyleTable
 
@@ -953,6 +955,8 @@ def rename_sheet(updater, old: str, new: str) -> None:
     # Formulas of defined names hold sheet titles (the cells' were updated in the model).
     workbook_xml = element_pattern("definedName").sub(rename_references, workbook_xml)
     package.set(workbook_path, workbook_xml.encode("utf-8"))
+    for part, data in renamed_chart_parts(package, old, new).items():
+        package.set(part, data)
     path = updater._sheets.pop(old, None)
     if path is not None:
         updater._sheets[new] = path
@@ -1169,6 +1173,10 @@ def save_loaded(workbook: Workbook, filename) -> None:
     from ._chartsheets import check_chartsheets
 
     check_chartsheets(workbook)
+    # Refusals first, before the package changes.
+    for sheet in workbook._sheets:
+        check_removals(sheet)
+        check_object_rewrites(sheet)
     if workbook._styles_dirty:
         updater._package.set("xl/styles.xml", workbook._styles.to_bytes())
         workbook._styles_dirty = False
@@ -1283,8 +1291,6 @@ def save_loaded(workbook: Workbook, filename) -> None:
         _remap_local_names(updater, sheet_order, renamed)
     # After the sheets have their final order: print names count it.
     final_order = _sheet_order(updater)
-    for sheet in workbook._sheets:
-        check_removals(sheet)
     for sheet in workbook._sheets:
         remove_drawing_objects(updater, sheet)
         sync_objects(updater, workbook, sheet)
