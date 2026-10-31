@@ -153,7 +153,8 @@ gap is implemented the same test starts passing without changes.
   rule loses its own extension. The settings are preserved, not modelled.
 
 **Charts and drawings**
-- Loaded charts keep their XML; only the title, axis titles and legend position are editable.
+- Loaded charts keep their XML; their title, axis titles, legend position and series titles
+  and colours are editable.
   The builder has combined charts, a secondary axis, trendlines and error bars; data tables
   remain. New chartsheets go after the other sheets.
 

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Loaded charts (XLSX and XLSB) can be edited: `LoadedChart.title`, `x_axis_title`,
   `y_axis_title` and `legend_position` (`None` removes the title or legend). The chart part is
   edited as text, so the rest of the file stays as Excel wrote it.
+- `LoadedChart.set_series_title()`, `set_series_color()` and `series_titles`.
 - Charts: combined charts (`ChartSeries.chart_type`), a secondary value axis (`secondary_axis`,
   `Chart.y2_axis`), `Trendline` and `ErrorBars`, in XLSX and XLSB.
 - Charts and images can be added to a loaded XLSB workbook, including on new sheets, and so can tables.

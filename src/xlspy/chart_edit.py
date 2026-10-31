@@ -191,3 +191,123 @@ def set_legend_position(xml: bytes, position: str | None) -> bytes:
         raise ValueError("the chart has no plot area")
     legend = f'<{c}legend><{c}legendPos val="{code}"/><{c}overlay val="0"/></{c}legend>'
     return (source[:plot[1]] + legend + source[plot[1]:]).encode("utf-8")
+
+
+# --- series -----------------------------------------------------------------
+
+_SERIES_BODY = (
+    "marker", "dPt", "dLbls", "trendline", "errBars", "cat", "val", "xVal", "yVal",
+    "invertIfNegative", "pictureOptions", "explosion", "smooth", "bubbleSize",
+)
+_LINE_GROUPS = frozenset({"lineChart", "line3DChart", "scatterChart", "radarChart", "stockChart"})
+_FILLS = r"(?:solidFill|noFill|gradFill|pattFill|blipFill|grpFill)"
+
+
+def _series_span(source: str, c: str, index: int) -> tuple[int, int]:
+    position = 0
+    found = None
+    for _ in range(index + 1):
+        found = _element(source, c, "ser", position)
+        if found is None:
+            break
+        position = found[1]
+    if found is None:
+        raise IndexError("the chart has no such series")
+    return found
+
+
+def _series_end_of_header(body: str, c: str) -> int:
+    """Offset in a ``<c:ser>`` element where idx, order, tx and spPr end."""
+    names = "|".join(_SERIES_BODY)
+    match = re.search(rf"<{c}(?:{names})\b", body)
+    return match.start() if match else body.rindex(f"</{c}ser")
+
+
+def set_series_title(xml: bytes, index: int, text: str) -> bytes:
+    source = xml.decode("utf-8")
+    c = _prefix(source)
+    start, end = _series_span(source, c, index)
+    body = source[start:end]
+    tx = f"<{c}tx><{c}v>{escape(text)}</{c}v></{c}tx>"
+    found = _element(body, c, "tx")
+    header = _series_end_of_header(body, c)
+    if found is not None and found[0] < header:
+        body = body[:found[0]] + tx + body[found[1]:]
+    else:
+        order = re.search(rf"<{c}order\b[^>]*/>", body)
+        if order is None:
+            raise ValueError("the series has no order element")
+        body = body[:order.end()] + tx + body[order.end():]
+    return (source[:start] + body + source[end:]).encode("utf-8")
+
+
+def get_series_titles(xml: bytes) -> list[str | None]:
+    source = xml.decode("utf-8")
+    c = _prefix(source)
+    titles: list[str | None] = []
+    position = 0
+    while (found := _element(source, c, "ser", position)) is not None:
+        body = source[found[0]:found[1]]
+        position = found[1]
+        tx = _element(body, c, "tx")
+        if tx is None or tx[0] > _series_end_of_header(body, c):
+            titles.append(None)
+            continue
+        text = re.search(rf"<{c}v>(.*?)</{c}v>", body[tx[0]:tx[1]], re.S)
+        titles.append(unescape(text[1]) if text else None)
+    return titles
+
+
+def set_series_color(xml: bytes, index: int, color: str) -> bytes:
+    """Fill a bar, area or pie series, or draw a line or scatter series, in ``color`` (RRGGBB)."""
+    source = xml.decode("utf-8")
+    c = _prefix(source)
+    a = _drawing_prefix(source) or "a:"
+    start, end = _series_span(source, c, index)
+    groups = re.findall(rf"<{c}(\w+Chart)\b", source[:start])
+    line = bool(groups) and groups[-1] in _LINE_GROUPS
+    fill = f'<{a}solidFill><{a}srgbClr val="{color}"/></{a}solidFill>'
+    body = source[start:end]
+    header = _series_end_of_header(body, c)
+    sp = _element(body, c, "spPr")
+    if sp is None or sp[0] >= header:
+        shape = f"<{c}spPr>{f'<{a}ln>{fill}</{a}ln>' if line else fill}</{c}spPr>"
+        anchor = max(
+            (m.end() for m in re.finditer(rf"<{c}(?:order|tx)\b[^>]*/>|</{c}tx>", body[:header])),
+            default=None,
+        )
+        body = body[:anchor] + shape + body[anchor:]
+        return (source[:start] + body + source[end:]).encode("utf-8")
+    old = body[sp[0]:sp[1]]
+    inner_start = old.index(">") + 1
+    inner = old[inner_start:old.rindex("<")] if not old.endswith("/>") else ""
+    ln = re.search(rf"<{a}ln\b[^>]*?(?:/>|>.*?</{a}ln>)", inner, re.S)
+    strip = re.compile(rf"<{a}{_FILLS}\b[^>]*?(?:/>|>.*?</{a}{_FILLS}>)", re.S)
+    if line:
+        if ln is None:
+            new_ln = f"<{a}ln>{fill}</{a}ln>"
+            inner = _insert_before_effects(inner, a, new_ln)
+        else:
+            text = ln[0]
+            if text.endswith("/>"):
+                text = text[:-2] + f"></{a}ln>"
+            opening = text[:text.index(">") + 1]
+            rest = strip.sub("", text[len(opening):])
+            inner = inner[:ln.start()] + opening + fill + rest + inner[ln.end():]
+    else:
+        without_ln = inner if ln is None else inner[:ln.start()] + "\0" + inner[ln.end():]
+        without_ln = strip.sub("", without_ln)
+        if "\0" in without_ln:
+            inner = without_ln.replace("\0", fill + ln[0])  # type: ignore[index]
+        else:
+            inner = _insert_before_effects(without_ln, a, fill)
+    opening = old[:inner_start] if not old.endswith("/>") else old[:-2] + ">"
+    shape = f"{opening}{inner}</{c}spPr>"
+    body = body[:sp[0]] + shape + body[sp[1]:]
+    return (source[:start] + body + source[end:]).encode("utf-8")
+
+
+def _insert_before_effects(inner: str, a: str, fragment: str) -> str:
+    effects = re.search(rf"<{a}(?:effectLst|effectDag|scene3d|sp3d|extLst)\b", inner)
+    at = effects.start() if effects else len(inner)
+    return inner[:at] + fragment + inner[at:]

@@ -102,11 +102,12 @@ def _check_number(value, kind: str, *, minimum=None, maximum=None):
 class LoadedChart:
     """A chart read back from a workbook, preserved as its original parts.
 
-    The title, the axis titles and the legend position can be changed; the
-    rest of the chart is saved as it was read. ``x_axis_title`` is the title of
-    the category (or X) axis and ``y_axis_title`` that of the value axis;
-    ``legend_position`` is ``None`` when the chart has no legend. Setting
-    ``None`` removes the title or the legend.
+    The title, the axis titles, the legend position and the titles and colours
+    of the series (``set_series_title()``, ``set_series_color()``) can be
+    changed; the rest of the chart is saved as it was read. ``x_axis_title`` is
+    the title of the category (or X) axis and ``y_axis_title`` that of the
+    value axis; ``legend_position`` is ``None`` when the chart has no legend.
+    Setting ``None`` removes the title or the legend.
     """
 
     chart_type: str | None = None
@@ -162,6 +163,27 @@ class LoadedChart:
         from .chart_edit import set_axis_title
 
         self.xml = set_axis_title(self.xml, index, value or None)
+
+    @property
+    def series_titles(self) -> list[str | None]:
+        """The literal title of each series (``None`` when it reads a cell)."""
+        from .chart_edit import get_series_titles
+
+        return get_series_titles(self.xml) if self.xml else []
+
+    def set_series_title(self, index: int, text: str) -> None:
+        """Give series ``index`` a literal title."""
+        if not isinstance(text, str):
+            raise TypeError("series title must be a string")
+        from .chart_edit import set_series_title
+
+        self.xml = set_series_title(self.xml, index, text)
+
+    def set_series_color(self, index: int, color: str) -> None:
+        """Fill series ``index`` (or draw its line) in ``color``, a ``'#RRGGBB'`` string."""
+        from .chart_edit import set_series_color
+
+        self.xml = set_series_color(self.xml, index, _normalize_rgb(color, "series color") or "")
 
     @property
     def legend_position(self) -> str | None:
