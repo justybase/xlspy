@@ -146,6 +146,11 @@ class XlsbSheetsMixin:
             raise KeyError(f"Worksheet not found: {name}")
         if len(self._sheets) == 1:
             raise ValueError("a workbook must keep at least one sheet")
+        from .workbook._loaded import sheet_has_slicers
+
+        # As for XLSX: the slicer caches would be left pointing at a removed table.
+        if sheet_has_slicers(self._package, path):
+            raise NotImplementedError(f"sheet {name!r} holds table slicers; removing it is not supported yet")
         workbook = self._package.get("xl/workbook.bin")
         entries = _bundles(workbook)
         removed = next(entry for entry in entries if entry.name == name)

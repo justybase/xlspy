@@ -54,6 +54,9 @@ def request_recalculation(data):
 
 
 class XlsbEditMixin(XlsxEditMixin):
+    # Set by XlsbUpdater; None until the shared strings part is read.
+    _shared_strings_data: bytes | None
+
     def _sheet_bin(self, sheet_name):
         try:
             path = self._sheets[sheet_name]

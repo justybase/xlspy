@@ -1,4 +1,6 @@
-"""Sparklines: small line, column or win/loss charts drawn inside cells (XLSX).
+"""Sparklines: small line, column or win/loss charts drawn inside cells.
+
+This module holds the options and the XLSX form; ``_xlsb_sparklines`` writes XLSB.
 
 A ``SparklineGroup`` is one style applied to several sparklines. ``data`` is
 the source range and ``location`` the cells that show the sparklines:

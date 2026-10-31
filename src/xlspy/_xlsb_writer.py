@@ -52,6 +52,14 @@ class XlsbWriterMetadata:
             definition = DefinedName('_FilterDatabase', quote_sheet_name(title) + '!' + first + ':' + last, title)
             context.names.append(_Name(definition.name, title, 0x21, definition=definition))
 
+    def _register_slicer_names(self):
+        # Excel links each slicer cache to a workbook name holding #N/A; the
+        # name record carries flag 0x10 as Excel writes it.
+        from ._xlsb_formulas import _Name
+        context = self._xlsb_formula_context
+        for cache_name in self._slicer_cache_names:
+            context.names.append(_Name(cache_name, None, 0x10, definition=DefinedName(cache_name, '#N/A')))
+
     def _register_print_names(self):
         # Built-in (fBuiltin) sheet names, as Excel stores _xlnm.Print_Area
         # and _xlnm.Print_Titles in XLSB.

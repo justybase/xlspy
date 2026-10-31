@@ -1548,6 +1548,15 @@ def check_zoom(zoom) -> int | None:
     return zoom
 
 
+def check_sheet_view(show_row_col_headers, show_zero_values, right_to_left) -> tuple[bool, bool, bool]:
+    """The sheet view switches as ``(headers, zeros, right_to_left)``; each must be a bool."""
+    for name, value in (("show_row_col_headers", show_row_col_headers),
+                        ("show_zero_values", show_zero_values), ("right_to_left", right_to_left)):
+        if not isinstance(value, bool):
+            raise TypeError(f"{name} must be a bool")
+    return show_row_col_headers, show_zero_values, right_to_left
+
+
 def tab_color_key(tab_color):
     """Color key of a sheet's ``tab_color`` (a Color or color string), or None."""
     if tab_color is None:

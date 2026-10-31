@@ -1,5 +1,6 @@
-"""Table slicers: the filter buttons that drive an Excel table by one column (XLSX).
+"""Table slicers: the filter buttons that drive an Excel table by one column.
 
+This module holds the options and the XLSX form; ``_xlsb_slicers`` writes XLSB.
 A slicer is written as four things, in the layout Excel itself produces:
 
 * a slicer part (``xl/slicers/sliceN.xml``) with the caption and the cache name,

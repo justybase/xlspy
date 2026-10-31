@@ -1,4 +1,4 @@
-"""Sparklines and table slicers in XLSX output, and their XLSB guard."""
+"""Sparklines and table slicers in XLSX output."""
 
 import os
 import re
@@ -7,7 +7,7 @@ import zipfile
 
 import pytest
 
-from xlspy import ExcelTable, XlsbWriter, XlsxWriter
+from xlspy import ExcelTable, XlsxWriter
 from xlspy.slicers import Slicer, normalize_slicers
 from xlspy.sparklines import SparklineGroup, _expand, normalize_sparklines, sparklines_ext
 
@@ -237,21 +237,7 @@ def test_plain_sheet_has_no_slicer_or_sparkline_parts(tmp_path):
     assert EXT_SPARKLINES not in parts["xl/worksheets/sheet1.xml"]
 
 
-# --- XLSB guard ----------------------------------------------------------------
-
-def test_xlsb_rejects_sparklines_until_supported(tmp_path):
-    with XlsbWriter(tmp_path / "x.xlsb") as writer:
-        writer.add_sheet("Sheet1")
-        with pytest.raises(NotImplementedError, match="sparklines"):
-            writer.write_sheet(ROWS, sparklines=[SparklineGroup(data="B2:D2", location="E2")])
-
-
-def test_xlsb_rejects_slicers_until_supported(tmp_path):
-    with XlsbWriter(tmp_path / "x.xlsb") as writer:
-        writer.add_sheet("Sheet1")
-        with pytest.raises(NotImplementedError, match="slicers"):
-            writer.write_sheet(ROWS, tables=[ExcelTable("Sales", "A1:E4", columns=COLUMNS)],
-                               slicers=[Slicer(table="Sales", column="Region")])
+# XLSB output: tests/test_xlsb_sparklines.py and tests/test_xlsb_slicers.py.
 
 
 # --- Excel COM -----------------------------------------------------------------

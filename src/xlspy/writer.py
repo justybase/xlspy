@@ -24,6 +24,7 @@ from .styles import (
     merge_styles,
     capture_table_headers,
     check_header_rows,
+    check_sheet_view,
     check_zoom,
     header_style_ranges,
     tab_color_key,
@@ -40,7 +41,8 @@ from .styles import (
     _xf_for_style_format,
     table_column_names,
 )
-from .biff_utils import build_record
+from ._extlst import REL_SLICER, REL_SLICER_CACHE
+from .biff_utils import build_record, iter_records
 from ._xlsb_style_records import (
     border_record,
     color_payload,
@@ -60,7 +62,14 @@ from ._text import check_cell_text
 from .formulas import Formula
 from .hyperlinks import Hyperlink
 from .images import Image, MediaParts, normalize_images
+from ._xlsb_slicers import (
+    CT_SLICER_BIN, CT_SLICER_CACHE_BIN, sheet_slicers_bin, slicer_cache_bin, slicers_part_bin,
+    workbook_slicer_caches_bin,
+)
+from ._xlsb_sparklines import sparklines_bin
 from .shapes import Shape, normalize_shapes
+from .slicers import Slicer, normalize_slicers
+from .sparklines import normalize_sparklines
 from .printing import PrintSettings, normalize_print_settings
 from .data_validation import DataValidation, normalize_validations
 from .outline import build_outline
@@ -220,6 +229,15 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         self._table_names: set[str] = set()
         self._sheet_tables: dict[int, list[tuple]] = {}
         self._tables_bin: dict[int, bytes] = {}
+        # Casefolded slicer names, cache names and (table, column) pairs already used.
+        self._slicer_names: set[str] = set()
+        self._slicer_caches: set[str] = set()
+        self._slicer_targets: set[tuple[str, str]] = set()
+        self._sheet_slicers: dict[int, list[Slicer]] = {}
+        # Sheet id -> (slicer part number, relationship id); one part holds a sheet's slicers.
+        self._sheet_slicer_parts: dict[int, tuple[int, str]] = {}
+        # Cache names, in cache part order (slicerCache1.bin, ...).
+        self._slicer_cache_names: list[str] = []
         self._seen_cf_priorities: set[int] = set()
         self._reserved_cf_priorities: set[int] = set()
         self._next_cf_priority = 1
@@ -513,13 +531,12 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         sparklines=None,
         slicers=None,
         shapes=None,
+        show_row_col_headers: bool = True,
+        show_zero_values: bool = True,
+        right_to_left: bool = False,
     ):
         self._require_writable()
-        # Both need BIFF12 parts whose layout is not reverse engineered yet (see the XLSB plan).
-        if sparklines:
-            raise NotImplementedError("sparklines are not supported for XLSB output yet; use XlsxWriter")
-        if slicers:
-            raise NotImplementedError("table slicers are not supported for XLSB output yet; use XlsxWriter")
+        view = check_sheet_view(show_row_col_headers, show_zero_values, right_to_left)
         if not isinstance(show_grid_lines, bool):
             raise TypeError("show_grid_lines must be a bool")
         if header_style is not None and not isinstance(header_style, Style):
@@ -553,9 +570,13 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         chart_specs = self._normalize_charts(charts)
         image_specs = normalize_images(images)
         shape_specs = normalize_shapes(shapes)
+        sparkline_groups = normalize_sparklines(sparklines)
         print_spec = normalize_print_settings(print_settings)
         validations = normalize_validations(data_validations)
         table_specs = self._normalize_tables(tables)
+        slicer_specs = normalize_slicers(
+            slicers, table_specs, self._slicer_names, self._slicer_caches, self._slicer_targets,
+        )
         cf_specs = self._normalize_cf_rules(conditional_formats)
         # Pre-reserve explicit priorities (like XLSX) so auto-assigned ones skip them.
         cf_priorities = explicit_cf_priorities(
@@ -585,7 +606,14 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             self._sheet_print[sheet_id - 1] = print_spec
         if shape_specs:
             self._sheet_shapes[sheet_id] = shape_specs
-        has_drawing = bool(chart_specs or image_specs or shape_specs)
+        if slicer_specs:
+            self._sheet_slicers[sheet_id] = slicer_specs
+            self._slicer_names.update(slicer.display_name.casefold() for slicer in slicer_specs)
+            self._slicer_caches.update(slicer.cache_name.casefold() for slicer in slicer_specs)
+            self._slicer_targets.update(
+                (slicer.table.casefold(), slicer.column.casefold()) for slicer in slicer_specs
+            )
+        has_drawing = bool(chart_specs or image_specs or shape_specs or slicer_specs)
         if has_drawing:
             self._sheet_drawings.add(sheet_id)
         table_ids: list[int] = []
@@ -615,6 +643,9 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         # (binary index, tables, drawing, comments).
         link_rids: dict[str, str] = {}
         link_rid_start = 2 + len(table_ids) + int(has_drawing) + (2 if comment_specs else 0)
+        # The sheet's slicer part comes next; its id is known before the rows stream.
+        slicer_rid = f"rId{link_rid_start}" if slicer_specs else None
+        link_rid_start += int(slicer_rid is not None)
         try:
             with self._zf.open_threaded(f"xl/worksheets/sheet{sheet_id}.bin") as sheet_file:
                 self._write_worksheet_bin(
@@ -627,7 +658,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                     drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
                     cf_rules=cf_specs, row_outline=row_outline, col_outline=col_outline,
                     sheet_protection=sheet_protection,
-                    show_grid_lines=show_grid_lines,
+                    show_grid_lines=show_grid_lines, view=view,
                     header_rows=header_rows, tab_key=tab_key, zoom=zoom,
                     filter_cells=[
                         (r1, c1, c2) for table in table_specs if table.header_row
@@ -636,11 +667,16 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                     comment_vml_rid=(f'rId{3 + len(table_ids) + int(has_drawing)}' if comment_specs else None),
                     link_rids=link_rids, link_rid_start=link_rid_start,
                     print_spec=print_spec, validations=validations,
+                    sparklines=sparkline_groups, slicer_rel=slicer_rid,
                 )
             self._sheet_link_rels[sheet_id] = link_rids
+            table_columns = {}
             for table, table_id in zip(table_specs, table_ids):
                 names = table_column_names(table, table_header_cells.get(parse_cell_range(table.ref)[1]))
                 self._tables_bin[table_id] = self._table_bin(table, table_id, names)
+                table_columns[table.display_name.casefold()] = (table_id, names)
+            if slicer_rid is not None:
+                self._write_slicer_parts(sheet_id, slicer_rid, slicer_specs, table_columns)
             self._zf.writestr(f"xl/worksheets/_rels/sheet{sheet_id}.bin.rels", self._create_worksheet_rels(sheet_id))
             self._zf.writestr(f"xl/worksheets/binaryIndex{sheet_id}.bin", self._binaryIndexBin)
         except BaseException:
@@ -672,6 +708,9 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         show_grid_lines: bool = True,
         tab_color=None,
         zoom: int | None = None,
+        show_row_col_headers: bool = True,
+        show_zero_values: bool = True,
+        right_to_left: bool = False,
     ):
         """Write a pandas or polars DataFrame to the current sheet.
 
@@ -716,6 +755,9 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             show_grid_lines=show_grid_lines,
             tab_color=tab_color,
             zoom=zoom,
+            show_row_col_headers=show_row_col_headers,
+            show_zero_values=show_zero_values,
+            right_to_left=right_to_left,
         )
 
     def _write_workbook_parts(self):
@@ -747,7 +789,8 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             self._zf.writestr(
                 f"xl/drawings/drawing{sheet_id}.xml",
                 chart_parts.drawing_xml(charts, chart_ids, images=self._sheet_images.get(sheet_id, []),
-                                        shapes=self._sheet_shapes.get(sheet_id, [])),
+                                        shapes=self._sheet_shapes.get(sheet_id, []),
+                                        slicers=self._sheet_slicers.get(sheet_id, [])),
             )
             self._zf.writestr(
                 f"xl/drawings/_rels/drawing{sheet_id}.xml.rels",
@@ -799,6 +842,13 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         )
         if self._sheet_comments:
             comment_parts += '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
+        comment_parts += ''.join(
+            f'<Override PartName="/xl/slicers/slicer{part_no}.bin" ContentType="{CT_SLICER_BIN}"/>'
+            for part_no, _rel_id in self._sheet_slicer_parts.values()
+        ) + ''.join(
+            f'<Override PartName="/xl/slicerCaches/slicerCache{index + 1}.bin" ContentType="{CT_SLICER_CACHE_BIN}"/>'
+            for index in range(len(self._slicer_cache_names))
+        )
         theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -825,6 +875,10 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
 {self._doc_props_root_rels()}
 </Relationships>'''
 
+    def _slicer_cache_rel_ids(self) -> list[str]:
+        """Workbook relationship ids of the slicer caches, after sheets, styles, strings and theme."""
+        return [f"rId{self._sheet_count + 4 + index}" for index in range(len(self._slicer_cache_names))]
+
     def _create_workbook_rels(self) -> str:
         relationships = [
             f'<Relationship Id="rId{i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i + 1}.bin"/>'
@@ -837,11 +891,36 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         relationships.append(f'<Relationship Id="rId{shared_strings_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.bin"/>')
         theme_rid = self._sheet_count + 3
         relationships.append(f'<Relationship Id="rId{theme_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>')
+        relationships.extend(
+            f'<Relationship Id="{rel_id}" Type="{REL_SLICER_CACHE}" Target="slicerCaches/slicerCache{index + 1}.bin"/>'
+            for index, rel_id in enumerate(self._slicer_cache_rel_ids())
+        )
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 {"".join(relationships)}
 </Relationships>'''
+
+    def _write_slicer_parts(self, sheet_id, rel_id, slicers, table_columns) -> None:
+        """Write the sheet's slicer part and one cache part per slicer.
+
+        Runs after the rows streamed, when the tables' column names are known.
+        """
+        for slicer in slicers:
+            table_id, names = table_columns[slicer.table.casefold()]
+            column_id = next(
+                (index for index, name in enumerate(names, start=1)
+                 if name.casefold() == slicer.column.casefold()),
+                None,
+            )
+            if column_id is None:
+                raise ValueError(f"slicer column {slicer.column!r} is not a column of table {slicer.table!r}")
+            self._slicer_cache_names.append(slicer.cache_name)
+            self._zf.writestr(f"xl/slicerCaches/slicerCache{len(self._slicer_cache_names)}.bin",
+                              slicer_cache_bin(slicer, table_id, column_id))
+        part_no = len(self._sheet_slicer_parts) + 1
+        self._sheet_slicer_parts[sheet_id] = (part_no, rel_id)
+        self._zf.writestr(f"xl/slicers/slicer{part_no}.bin", slicers_part_bin(slicers))
 
     def _create_worksheet_rels(self, sheet_id) -> str:
         tables = self._sheet_tables.get(sheet_id, [])
@@ -869,6 +948,9 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                 f'<Relationship Id="rId{index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments/comment{sheet_id}.bin"/>'
                 f'<Relationship Id="rId{index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/commentsDrawing{sheet_id}.vml"/>'
             )
+        if sheet_id in self._sheet_slicer_parts:
+            part_no, rel_id = self._sheet_slicer_parts[sheet_id]
+            rels += f'<Relationship Id="{rel_id}" Type="{REL_SLICER}" Target="../slicers/slicer{part_no}.bin"/>'
         for target, rel_id in self._sheet_link_rels.get(sheet_id, {}).items():
             rels += (
                 f'<Relationship Id="{rel_id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
@@ -904,15 +986,22 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             data.extend(sheet_name_utf16)
 
         data.extend(self._workbookBinMiddle)
-        if self._sheet_print:
-            # Print areas and titles are names with formulas: use the name table.
+        if self._sheet_print or self._slicer_cache_names:
+            # Print areas, titles and slicer links are names with formulas: use the name table.
             self._formula_context()
         if self._xlsb_formula_context is None:
             self._write_filter_defined_names(data)
         else:
             self._register_filter_names()
             self._register_print_names()
-        data.extend(self._workbookBinEnd)
+            self._register_slicer_names()
+        end = self._workbookBinEnd
+        caches = workbook_slicer_caches_bin(self._slicer_cache_rel_ids())
+        if caches:
+            # The slicer cache list follows BrtFileRecover, before the other FRT blocks.
+            split = next(record.data_end for record in iter_records(end) if record.record_id == 0x9B)
+            end = end[:split] + caches + end[split:]
+        data.extend(end)
         if self._xlsb_formula_context is not None or self._workbook_protection is not None:
             return self._metadata_workbook(bytes(data))
         return bytes(data)
@@ -1200,10 +1289,11 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         table_rel_ids: list[str] | None = None,
         cf_rules: list | None = None,
         row_outline=None, col_outline=None,
-        sheet_protection=None, comment_vml_rid=None, show_grid_lines=True,
+        sheet_protection=None, comment_vml_rid=None, show_grid_lines=True, view=(True, True, False),
         filter_cells=(), header_rows=1, tab_key=None, zoom=None,
         link_rids: dict | None = None, link_rid_start: int = 2,
-        print_spec: PrintSettings | None = None, validations=(),
+        print_spec: PrintSettings | None = None, validations=(), sparklines=(),
+        slicer_rel: str | None = None,
     ):
         buffer = io.BytesIO()
         BUFFER_SIZE = 65536
@@ -1225,8 +1315,15 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         # First flag byte of BrtBeginWsView: fDspGrid (0x04), fDspRwCol,
         # fDspZeros, fSelected (0x40, first sheet only) and fDspRuler.
         view_flags = 0xDC if self._sheetCnt == 1 else 0x9C
+        headers, zeros, right_to_left = view
         if not show_grid_lines:
             view_flags &= ~0x04
+        if not headers:
+            view_flags &= ~0x08  # fDspRwCol
+        if not zeros:
+            view_flags &= ~0x10  # fDspZeros
+        if right_to_left:
+            view_flags |= 0x20  # fRightToLeft
         buffer.write(bytes((view_flags,)))
         self._sheetCnt += 1
 
@@ -1662,6 +1759,12 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         elif comment_vml_rid is not None:
             from ._xlsb_metadata import wide_string
             buffer.write(build_record(0x227, wide_string(comment_vml_rid)))
+        if sparklines:
+            # Future-record blocks follow LISTPARTS, before the trailing uid block and BrtEndSheet.
+            buffer.write(sparklines_bin(sparklines, self._worksheet_data[worksheet_index][0],
+                                        self._formula_context()))
+        if slicer_rel is not None:
+            buffer.write(sheet_slicers_bin(slicer_rel))
         buffer.write(self._sheet1Bytes[346:])
         if buffer.tell() > 0:
             sheet_file.write(buffer.getvalue())

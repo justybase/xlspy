@@ -72,6 +72,7 @@ from .styles import (
     IconSetRule,
     Style,
     check_header_rows,
+    check_sheet_view,
     check_zoom,
     header_style_ranges,
     tab_color_key,
@@ -390,6 +391,9 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         sparklines: list | tuple | None = None,
         slicers: list | tuple | None = None,
         shapes: list | tuple | None = None,
+        show_row_col_headers: bool = True,
+        show_zero_values: bool = True,
+        right_to_left: bool = False,
     ):
         """Write rows to the current sheet.
 
@@ -406,6 +410,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         header_rows = check_header_rows(header_rows)
         tab_key = tab_color_key(tab_color)
         zoom = check_zoom(zoom)
+        view = check_sheet_view(show_row_col_headers, show_zero_values, right_to_left)
         style_ranges, header_style = header_style_ranges(
             normalize_style_ranges(styles), header_style, header_rows,
         )
@@ -532,7 +537,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 print_spec, row_outline=row_outline, col_outline=col_outline,
                 show_grid_lines=show_grid_lines,
                 width_styles=(style_ranges, header_style if has_styles else None),
-                filter_cells=filter_cells, tab_key=tab_key, zoom=zoom,
+                filter_cells=filter_cells, tab_key=tab_key, zoom=zoom, view=view,
             )
             tail = self._sheet_tail(
                 body, sheet_index, merge_refs, cf_rules, table_specs, table_bounds,
@@ -732,6 +737,9 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         show_grid_lines: bool = True,
         tab_color: Color | str | None = None,
         zoom: int | None = None,
+        show_row_col_headers: bool = True,
+        show_zero_values: bool = True,
+        right_to_left: bool = False,
     ):
         """Write a pandas or polars DataFrame to the current sheet.
 
@@ -775,6 +783,9 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             show_grid_lines=show_grid_lines,
             tab_color=tab_color,
             zoom=zoom,
+            show_row_col_headers=show_row_col_headers,
+            show_zero_values=show_zero_values,
+            right_to_left=right_to_left,
         )
 
     def _write_workbook_parts(self):
@@ -1852,7 +1863,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
     def _sheet_head(self, body, sheet_index, split_freeze, freeze_panes, widths,
                     hidden_cols, print_spec, row_outline=None, col_outline=None,
                     show_grid_lines=True, width_styles=((), None), filter_cells=(),
-                    tab_key=None, zoom=None):
+                    tab_key=None, zoom=None, view=(True, True, False)):
         """Everything before ``<sheetData>`` content: properties, views, widths."""
         parts = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                  '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
@@ -1867,7 +1878,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         if body.num_rows > 0 and body.max_cols > 0:
             parts.append(f'<dimension ref="A1:{self._letters[body.max_cols - 1]}{body.num_rows}"/>')
         parts.append(self._sheet_views_xml(
-            sheet_index, split_freeze, freeze_panes, show_grid_lines, zoom,
+            sheet_index, split_freeze, freeze_panes, show_grid_lines, zoom, view,
         ))
         max_row_level = row_outline.max_level if row_outline is not None else 0
         max_col_level = col_outline.max_level if col_outline is not None else 0
@@ -1892,10 +1903,17 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         return "".join(parts)
 
     def _sheet_views_xml(self, sheet_index, split_freeze, freeze_panes,
-                         show_grid_lines=True, zoom=None) -> str:
-        tab = ' tabSelected="1"' if sheet_index == 0 else ""
-        if not show_grid_lines:
-            tab = ' showGridLines="0"' + tab
+                         show_grid_lines=True, zoom=None, view=(True, True, False)) -> str:
+        headers, zeros, right_to_left = view
+        # CT_SheetView attribute order: showGridLines, showRowColHeaders, showZeros,
+        # rightToLeft, tabSelected, ..., zoomScale.
+        flags = "".join((
+            "" if show_grid_lines else ' showGridLines="0"',
+            "" if headers else ' showRowColHeaders="0"',
+            "" if zeros else ' showZeros="0"',
+            ' rightToLeft="1"' if right_to_left else "",
+        ))
+        tab = flags + (' tabSelected="1"' if sheet_index == 0 else "")
         if zoom is not None:
             tab += f' zoomScale="{zoom}" zoomScaleNormal="{zoom}"'
         if split_freeze is None and freeze_panes is None:
