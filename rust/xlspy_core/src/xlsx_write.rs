@@ -499,7 +499,12 @@ pub fn encode_xlsx_row<'py>(
 
     let result = (|| -> PyResult<bool> {
         for i in 0..n {
-            // SAFETY: `seq` is an exact list or tuple, kept alive, and i < its size.
+            // The body below can run Python code (hashing a format key, conversions)
+            // that shrinks a list row, so the bound is checked before every read.
+            if i >= unsafe { pyo3::ffi::PySequence_Fast_GET_SIZE(seq.as_ptr()) } as usize {
+                return Ok(false);
+            }
+            // SAFETY: `seq` is an exact list or tuple, kept alive, and i < its current size.
             let item = unsafe {
                 pyo3::ffi::PySequence_Fast_GET_ITEM(seq.as_ptr(), i as pyo3::ffi::Py_ssize_t)
             };

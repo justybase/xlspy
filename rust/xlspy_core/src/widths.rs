@@ -146,7 +146,12 @@ pub fn xlsb_row_has_formatted<'py>(
     let n = unsafe { pyo3::ffi::PySequence_Fast_GET_SIZE(seq.as_ptr()) } as usize;
     let mut style = None; // looked up at the first tuple: most rows have none
     for i in 0..n {
-        // SAFETY: `seq` is an exact list or tuple, kept alive, and i < its size.
+        // Python code runs in this loop (len, get_item, overlay_kind) and can
+        // shrink a list row, so the bound is checked before every read.
+        if i >= unsafe { pyo3::ffi::PySequence_Fast_GET_SIZE(seq.as_ptr()) } as usize {
+            return Ok(None);
+        }
+        // SAFETY: `seq` is an exact list or tuple, kept alive, and i < its current size.
         let cell = unsafe {
             pyo3::ffi::PySequence_Fast_GET_ITEM(seq.as_ptr(), i as pyo3::ffi::Py_ssize_t)
         };

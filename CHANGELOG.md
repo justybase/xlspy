@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `replace_sheet_data` (XLSX and XLSB, both paths) raises `UnsupportedFeatureError` before writing anything when a
     table's header cell would not equal its column name (ignoring case), or when the new data does not reach the
     header row. Excel repairs such tables; the package is left unchanged.
+  - The pure-Python XLSB cell reader (used when the native module is not available) looped forever when a sheet
+    stream ended right after a cell record. The native reader was not affected.
+  - The native XLSX and XLSB row writers check the row length again before every element read.
   - Built-in number formats 41–44 (accounting) are read and kept; they used to load as `General` and be lost on save.
   - A sheet added without `write_sheet` gets its part in XLSB, as it already did in XLSX. A second `write_sheet` on
     the same sheet raises: it used to write duplicate ZIP entries.
