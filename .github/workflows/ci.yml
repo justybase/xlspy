@@ -42,6 +42,12 @@ jobs:
         run: |
           python -c "from xlspy._accel import HAVE_NATIVE, ACCEL_BACKEND; print('native:', HAVE_NATIVE, ACCEL_BACKEND); assert HAVE_NATIVE and set(ACCEL_BACKEND.values()) == {'rust'}, 'native extension not loaded!'"
 
+      - name: Check the native stub against the built module
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: |
+          python -m pip install mypy
+          python -m mypy.stubtest xlspy._rs_core
+
       - name: Run tests
         run: |
           python -m pytest tests/ -v --tb=short
@@ -70,6 +76,10 @@ jobs:
       - name: Mypy
         run: |
           mypy
+
+      - name: "Mypy: stub usage (accepted and rejected argument types)"
+        run: |
+          mypy --warn-unused-ignores tests/typing/stub_usage.py
 
   rust:
     runs-on: ubuntu-latest

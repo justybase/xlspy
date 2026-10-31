@@ -43,8 +43,16 @@ def _roundtrip_and_update(directory, suffix, writer_cls, updater_cls):
     assert updated == expected, f"{suffix}: updater mismatch: {updated!r}"
 
 
+def _check_typing_files():
+    # Type checkers read the stub and the py.typed marker from the installed package.
+    package = pathlib.Path(xlspy.__file__).parent
+    for name in ("_rs_core.pyi", "py.typed"):
+        assert (package / name).is_file(), f"{name} is missing from the installed package"
+
+
 def main():
     assert HAVE_NATIVE, "the native extension did not load from the wheel"
+    _check_typing_files()
     print(f"xlspy imported from: {xlspy.__file__}")
     with tempfile.TemporaryDirectory() as directory:
         directory = pathlib.Path(directory)
