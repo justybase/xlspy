@@ -15,6 +15,7 @@ use pyo3::types::{PyString, PyType};
 static ERROR_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
 static STYLE_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
 static FORMULA_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
+static HYPERLINK_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
 static INVALID_FILE_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
 static DECIMAL: PyOnceLock<Py<PyType>> = PyOnceLock::new();
 
@@ -53,6 +54,12 @@ pub fn set_formula_type(type_: &Bound<'_, PyAny>) -> PyResult<()> {
     register(type_, &FORMULA_TYPE, "set_formula_type")
 }
 
+/// Register xlspy.Hyperlink, the class of link cells the native row encoder writes.
+#[pyfunction]
+pub fn set_hyperlink_type(type_: &Bound<'_, PyAny>) -> PyResult<()> {
+    register(type_, &HYPERLINK_TYPE, "set_hyperlink_type")
+}
+
 /// Register xlspy.InvalidFileError, the exception raised for package data the readers cannot decode.
 #[pyfunction]
 pub fn set_invalid_file_type(type_: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -78,6 +85,10 @@ pub fn style_type(py: Python<'_>) -> Option<Bound<'_, PyType>> {
 
 pub fn formula_type(py: Python<'_>) -> Option<Bound<'_, PyType>> {
     registered(py, &FORMULA_TYPE)
+}
+
+pub fn hyperlink_type(py: Python<'_>) -> Option<Bound<'_, PyType>> {
+    registered(py, &HYPERLINK_TYPE)
 }
 
 /// decimal.Decimal, or None if it cannot be imported.

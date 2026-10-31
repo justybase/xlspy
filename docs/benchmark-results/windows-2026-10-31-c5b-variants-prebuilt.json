@@ -1,0 +1,72 @@
+{
+  "rows": 50000,
+  "cols": 20,
+  "repeat": 5,
+  "accel_backends": {
+    "encode_xlsb_row": "rust",
+    "encode_xlsb_row_inline": "rust",
+    "calc_column_widths": "rust",
+    "read_xlsb_worksheet": "rust",
+    "read_xlsx_worksheet": "rust",
+    "xlsb_row_has_formatted": "rust",
+    "encode_xlsb_sst": "rust",
+    "read_xlsb_shared_strings": "rust",
+    "encode_xlsx_row": "rust",
+    "read_xlsx_shared_strings": "rust",
+    "set_style_type": "rust",
+    "set_error_type": "rust",
+    "xlsb_load_cells": "rust"
+  },
+  "variants": {
+    "plain": {
+      "median_seconds": 0.3443939999997383,
+      "runs": [
+        0.353,
+        0.346,
+        0.332,
+        0.329,
+        0.344
+      ]
+    },
+    "formula": {
+      "median_seconds": 0.39221120000001974,
+      "runs": [
+        0.392,
+        0.392,
+        0.452,
+        0.382,
+        0.411
+      ]
+    },
+    "formula_as_values": {
+      "median_seconds": 0.2949211000013747,
+      "runs": [
+        0.301,
+        0.32,
+        0.276,
+        0.267,
+        0.295
+      ]
+    },
+    "hyperlink": {
+      "median_seconds": 1.3671774999966146,
+      "runs": [
+        1.601,
+        1.273,
+        1.367,
+        1.308,
+        1.406
+      ]
+    },
+    "hyperlink_as_text": {
+      "median_seconds": 0.3114674000025843,
+      "runs": [
+        0.276,
+        0.311,
+        0.283,
+        0.319,
+        0.324
+      ]
+    }
+  }
+}

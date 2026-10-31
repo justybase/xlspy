@@ -1,0 +1,12 @@
+C5b same-session A/B: C5a (136ec73) against C5b (working tree before the commit).
+bench_io.py --repeat 7 --only "write_xlsx,write_formula,write_model_xlsx", two interleaved rounds
+(A = C5a built in a detached worktree, B = C5b). Seconds, median of 7 per run.
+
+case                          A round1  A round2  B round1  B round2
+write_xlsx                      0.437     0.452     0.460     0.435
+write_model_xlsx                2.403     2.675     2.473     2.398
+write_formula_hyperlink_xlsx    3.730     3.679     2.891     2.866
+
+Plain and model writes are unchanged within the noise of this machine (+/- 3%).
+The formula and hyperlink write is faster: the link cells are written natively
+(the trailer is unchanged).

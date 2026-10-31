@@ -1,0 +1,36 @@
+{
+  "data": "hyperlink",
+  "native_rows": true,
+  "rows": 50000,
+  "cols": 20,
+  "repeat": 5,
+  "accel_backends": {
+    "encode_xlsb_row": "rust",
+    "encode_xlsb_row_inline": "rust",
+    "calc_column_widths": "rust",
+    "read_xlsb_worksheet": "rust",
+    "read_xlsx_worksheet": "rust",
+    "xlsb_row_has_formatted": "rust",
+    "encode_xlsb_sst": "rust",
+    "read_xlsb_shared_strings": "rust",
+    "encode_xlsx_row": "rust",
+    "read_xlsx_shared_strings": "rust",
+    "set_style_type": "rust",
+    "set_error_type": "rust",
+    "xlsb_load_cells": "rust"
+  },
+  "unprofiled_seconds": 1.3666472999975667,
+  "profiled_write_sheet_seconds": 1.6184448,
+  "native_row_encoder_seconds": 0.1166254,
+  "body_loop_self_seconds": 0.007106,
+  "row_glue_seconds": {
+    "_row_attrs": 0.0047609,
+    "styles_for_row": 0.0,
+    "_style_ids_for_row": 0.0
+  },
+  "glue_share_of_write": 0.0073322859080519765,
+  "native_share_of_write": 0.07206016541311758,
+  "python_cell_writer_share_of_write": 0.0001322874898173852,
+  "formula_cell_writer_share_of_write": 0.0,
+  "hyperlink_trailer_share_of_write": 0.5007392899652803
+}

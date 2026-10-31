@@ -1719,6 +1719,9 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         row_style_ids_cache = {}
         ss_dict, ss_list = self._shared_strings_dict, self._shared_strings
         use_sst, fmt_xf = self._useSharedStrings, self._fmt_xf
+        # Style id of the built-in link style, 0 until a link registers it. Only the
+        # Python row path registers styles, so the lookup is repeated after those rows.
+        link_xf = self._style_xf_map.get(HYPERLINK_STYLE, 0)
         if table_headers:
             data = capture_table_headers(data, table_headers, header_rows)
         for row_idx, row in enumerate(data):
@@ -1742,14 +1745,18 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 )
                 if row_styles else None
             )
+            # Link cells need the built-in link style registered first: the Python
+            # path registers it on the first link, so the xf order is unchanged.
             c_row = accel_encode_xlsx_row(
                 row, ss_dict, ss_list,
                 self._sst_unique_count, self._sst_all_count,
                 row_idx, use_sst, style_ids, fmt_xf or None, row_attrs or None,
+                link_xf,
             )
             if c_row is not None:
-                row_xml, self._sst_unique_count, self._sst_all_count = c_row
+                row_xml, self._sst_unique_count, self._sst_all_count, links = c_row
                 buf.write(row_xml)
+                hyperlinks.extend(links)
             else:
                 text.write(f'<row r="{row_idx + 1}"{row_attrs}>')
                 self._write_row_cells(text, row, row_idx, row_styles, hyperlinks)
@@ -1757,6 +1764,8 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 buf.write(text.getvalue().encode('utf-8'))
                 text.seek(0)
                 text.truncate()
+                if not link_xf:
+                    link_xf = self._style_xf_map.get(HYPERLINK_STYLE, 0)
             if buf.tell() >= _FLUSH_BYTES:
                 spool.write(buf.getvalue())
                 buf = io.BytesIO()

@@ -1,0 +1,74 @@
+{
+  "python": "3.14.10",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "rows": 50000,
+  "cols": 20,
+  "repeat": 7,
+  "c_ext": true,
+  "accel": {
+    "mode": "auto",
+    "have_native": true,
+    "backends": {
+      "encode_xlsb_row": "rust",
+      "encode_xlsb_row_inline": "rust",
+      "calc_column_widths": "rust",
+      "read_xlsb_worksheet": "rust",
+      "read_xlsx_worksheet": "rust",
+      "xlsb_row_has_formatted": "rust",
+      "encode_xlsb_sst": "rust",
+      "read_xlsb_shared_strings": "rust",
+      "encode_xlsx_row": "rust",
+      "read_xlsx_shared_strings": "rust",
+      "set_style_type": "rust",
+      "set_error_type": "rust",
+      "xlsb_load_cells": "rust"
+    }
+  },
+  "results": {
+    "write_xlsx": {
+      "seconds": 0.453304599999683,
+      "size_mb": 3.153667449951172,
+      "peak_rss_delta_mb": 16.8203125,
+      "iqr": 0.02118680000421591,
+      "runs": [
+        0.464,
+        0.456,
+        0.437,
+        0.453,
+        0.44,
+        0.466,
+        0.431
+      ]
+    },
+    "write_model_xlsx": {
+      "seconds": 2.4016271000000415,
+      "size_mb": 3.1541576385498047,
+      "peak_rss_delta_mb": 318.7109375,
+      "iqr": 0.0770600000032573,
+      "runs": [
+        2.402,
+        2.346,
+        2.371,
+        2.44,
+        2.316,
+        2.535,
+        2.431
+      ]
+    },
+    "write_formula_hyperlink_xlsx": {
+      "seconds": 2.8625586999987718,
+      "size_mb": 5.979043006896973,
+      "peak_rss_delta_mb": 53.33203125,
+      "iqr": 0.12201135000577779,
+      "runs": [
+        2.791,
+        2.926,
+        2.781,
+        2.954,
+        2.891,
+        2.863,
+        2.715
+      ]
+    }
+  }
+}

@@ -14,7 +14,7 @@ use crate::cells::{
 };
 use crate::numfmt::{write_repr, write_u32};
 use crate::sst::u32_mask;
-use crate::types::{decimal_type, formula_type, style_type, type_check};
+use crate::types::{decimal_type, formula_type, hyperlink_type, style_type, type_check};
 
 fn is_hex(c: u8) -> bool {
     c.is_ascii_hexdigit()
@@ -108,6 +108,10 @@ struct Row<'a, 'py> {
     out: Vec<u8>,
     is_header: bool,
     sst: Option<Sst<'a, 'py>>,
+    /// Style id of the built-in link style (0: the Python writer handles links).
+    link_xf: u32,
+    /// (column, Hyperlink) for the link cells written, in column order.
+    links: Vec<(u32, Py<PyAny>)>,
 }
 
 impl Row<'_, '_> {
@@ -154,10 +158,32 @@ impl Row<'_, '_> {
         }
     }
 
+    /// Hyperlink cell, as the Python writer writes a link with no style of its
+    /// own: the display text in the built-in link style, and the link kept for
+    /// the sheet's <hyperlinks>. Anything else goes to the Python writer.
+    fn hyperlink(&mut self, cell: &Bound<'_, PyAny>, style: u32, col: u32) -> PyResult<Cell> {
+        if style != 0 || self.link_xf == 0 {
+            return Ok(Cell::Fallback);
+        }
+        let text = cell.getattr("display_text")?;
+        let Ok(text) = text.cast::<PyString>() else {
+            return Ok(Cell::Fallback);
+        };
+        let link_xf = self.link_xf;
+        match self.string(text, link_xf)? {
+            Cell::Done => {
+                self.links.push((col, cell.clone().unbind()));
+                Ok(Cell::Done)
+            }
+            Cell::Fallback => Ok(Cell::Fallback),
+        }
+    }
+
     fn cell(
         &mut self,
         cell: &Bound<'_, PyAny>,
         style: u32,
+        col: u32,
         decimal: Option<&Bound<'_, pyo3::types::PyType>>,
     ) -> PyResult<Cell> {
         let py = cell.py();
@@ -270,7 +296,10 @@ impl Row<'_, '_> {
         if formula_type(py).is_some_and(|t| type_check(cell, &t)) {
             return self.formula(cell, style);
         }
-        // Hyperlink and anything else: the Python writer.
+        if hyperlink_type(py).is_some_and(|t| type_check(cell, &t)) {
+            return self.hyperlink(cell, style, col);
+        }
+        // Anything else: the Python writer.
         Ok(Cell::Fallback)
     }
 
@@ -374,11 +403,19 @@ fn py_float(cell: &Bound<'_, PyAny>) -> Option<f64> {
     }
 }
 
-/// Encode one XLSX sheet row.  Returns (row_xml, sst_uniq, sst_all), or None
+/// (row_xml, sst_uniq, sst_all, hyperlinks) as returned to the Python writer.
+type EncodedRow<'py> = (
+    Bound<'py, PyBytes>,
+    u32,
+    u32,
+    Bound<'py, PyList>,
+);
+
+/// Encode one XLSX sheet row.  Returns (row_xml, sst_uniq, sst_all, hyperlinks), or None
 /// when the Python row writer must handle the row; then the strings this
 /// call added to the table are removed again.
 #[pyfunction]
-#[pyo3(signature = (row, ss_dict, ss_list, sst_uniq, sst_all, row_idx, use_shared_strings, style_ids=None, fmt_xf=None, row_attrs=None))]
+#[pyo3(signature = (row, ss_dict, ss_list, sst_uniq, sst_all, row_idx, use_shared_strings, style_ids=None, fmt_xf=None, row_attrs=None, link_xf=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn encode_xlsx_row<'py>(
     py: Python<'py>,
@@ -392,7 +429,14 @@ pub fn encode_xlsx_row<'py>(
     style_ids: Option<&Bound<'py, PyAny>>,
     fmt_xf: Option<&Bound<'py, PyAny>>,
     row_attrs: Option<&Bound<'py, PyAny>>,
-) -> PyResult<Option<(Bound<'py, PyBytes>, u32, u32)>> {
+    link_xf: Option<&Bound<'py, PyAny>>,
+) -> PyResult<Option<EncodedRow<'py>>> {
+    let link_xf = match link_xf {
+        Some(x) if !x.is_none() => x
+            .extract::<u32>()
+            .map_err(|_| PyTypeError::new_err("link_xf must be an int or None"))?,
+        _ => 0,
+    };
     let (uniq, all, row_idx) = (u32_mask(sst_uniq)?, u32_mask(sst_all)?, u32_mask(row_idx)?);
     let use_sst = use_shared_strings.is_truthy()?;
     let none = py.None().into_bound(py);
@@ -442,6 +486,8 @@ pub fn encode_xlsx_row<'py>(
             uniq,
             all,
         }),
+        link_xf,
+        links: Vec::new(),
     };
     row.out.extend_from_slice(b"<row r=\"");
     write_u32(&mut row.out, row_idx.wrapping_add(1));
@@ -475,7 +521,7 @@ pub fn encode_xlsx_row<'py>(
             if !explicit_fmt && !date_style_xf(&cell, fmt_xf, &mut style)? {
                 return Ok(false);
             }
-            if let Cell::Fallback = row.cell(&cell, style, decimal)? {
+            if let Cell::Fallback = row.cell(&cell, style, i as u32, decimal)? {
                 return Ok(false);
             }
         }
@@ -486,9 +532,14 @@ pub fn encode_xlsx_row<'py>(
         Ok(true) => {
             row.out.extend_from_slice(b"</row>");
             let (uniq, all) = row.sst.as_ref().map_or((uniq, all), |s| (s.uniq, s.all));
+            // (row, column, Hyperlink) for the sheet's <hyperlinks>, as the Python writer records them.
+            let links = PyList::empty(py);
+            for (col, link) in row.links {
+                links.append((row_idx, col, link.bind(py)))?;
+            }
             // UTF-8 by construction (ASCII markup and UTF-8 text from str), so the
             // Python writer can write the bytes to the sheet part as they are.
-            Ok(Some((PyBytes::new(py, &row.out), uniq, all)))
+            Ok(Some((PyBytes::new(py, &row.out), uniq, all, links)))
         }
         other => {
             rollback(dict, list, list_before);

@@ -138,6 +138,7 @@ def main():
     glue = {name: 0.0 for name in GLUE}
     python_cells = 0.0  # _write_row_cells: the Python cell writer, for rows the native encoder hands back
     formula_cells = 0.0
+    trailer_cells = 0.0  # the sheet's <hyperlinks> and their relationships, written after the rows
     for (filename, _line, name), (_cc, _nc, tottime, cumtime, _callers) in stats.items():
         if name == "write_sheet":
             total = cumtime
@@ -152,6 +153,8 @@ def main():
             python_cells += cumtime
         if name == "_write_formula_cell" and filename.endswith("xlsx_writer.py"):
             formula_cells += cumtime
+        if name in ("_link_relationships", "_hyperlinks_xml") and filename.endswith("xlsx_writer.py"):
+            trailer_cells += cumtime
     if total is None:
         raise SystemExit("write_sheet not found in the profile")
 
@@ -170,6 +173,7 @@ def main():
         "native_share_of_write": native / total,
         "python_cell_writer_share_of_write": python_cells / total,
         "formula_cell_writer_share_of_write": formula_cells / total,
+        "hyperlink_trailer_share_of_write": trailer_cells / total,
     }
     print(json.dumps(result, indent=2))
     if args.out:

@@ -28,6 +28,7 @@ fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(types::set_error_type, m)?)?;
     m.add_function(wrap_pyfunction!(types::set_style_type, m)?)?;
     m.add_function(wrap_pyfunction!(types::set_formula_type, m)?)?;
+    m.add_function(wrap_pyfunction!(types::set_hyperlink_type, m)?)?;
     m.add_function(wrap_pyfunction!(types::set_invalid_file_type, m)?)?;
     m.add_function(wrap_pyfunction!(sst::encode_xlsb_sst, m)?)?;
     m.add_function(wrap_pyfunction!(sst::read_xlsb_shared_strings, m)?)?;

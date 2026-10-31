@@ -484,7 +484,7 @@ def test_encoders_with_row_attributes_no_growth():
     row = ["a", 1, 2.5]
 
     def run():
-        xml, _uniq, _all = encode_xlsx_row(row, {}, [], 0, 0, 3, True, None, None,
+        xml, _uniq, _all, _links = encode_xlsx_row(row, {}, [], 0, 0, 3, True, None, None,
                                            ' ht="20" customHeight="1" hidden="1"')
         assert isinstance(xml, bytes)
         assert xml.startswith(b'<row r="4" ht="20" customHeight="1" hidden="1"><c')
