@@ -1524,7 +1524,8 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
     def _format_object_xml(cfvo) -> str:
         attrs = f'type="{cfvo.type}"'
         if cfvo.value is not None:
-            attrs += f' val="{saxutils.escape(str(cfvo.value), {"\"": "&quot;"})}"'
+            value = saxutils.escape(str(cfvo.value), {'"': "&quot;"})
+            attrs += f' val="{value}"'
         return f"<cfvo {attrs}/>"
 
     def _extra_cf_rule_parts(self, rule) -> tuple[str, str | None]:
@@ -1687,8 +1688,9 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             auto = f'<autoFilter ref="{ref}"/>'
         else:
             auto = ""
+        style_name = saxutils.escape(table.style_name, {'"': "&quot;"})
         style_xml = (
-            f'<tableStyleInfo name="{saxutils.escape(table.style_name, {"\"": "&quot;"})}" '
+            f'<tableStyleInfo name="{style_name}" '
             f'showFirstColumn="{1 if table.show_first_column else 0}" '
             f'showLastColumn="{1 if table.show_last_column else 0}" '
             f'showRowStripes="{1 if table.show_row_stripes else 0}" '

@@ -40,7 +40,7 @@ read and write APIs.
 
 ## Quick start
 
-Requires **Python 3.12 or newer**.
+Requires **Python 3.11 or newer** (tested on 3.11–3.15).
 
 ```bash
 pip install xlspy

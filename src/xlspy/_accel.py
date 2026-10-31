@@ -1,64 +1,81 @@
+"""Selects the native accelerator behind each fast path.
+
+Two native backends exist while the C extension is ported to Rust:
+``xlspy._c_core`` (C) and ``xlspy._rs_core`` (Rust/PyO3).  ``XLSPY_ACCEL``
+chooses per function:
+
+- ``auto`` (default): C, else Rust.
+- ``rust``: Rust, else C (functions not ported yet still come from C).
+- ``c``: C only.
+- ``python``: no native code; same as ``XLSPY_DISABLE_C_EXT=1``.
+
+Every wrapper below returns None when no backend provides the function, and
+the caller then uses the pure-Python implementation.
+"""
+import importlib as _importlib
 import os as _os
 
-HAVE_C_EXT = False
-_c_encode_xlsb_row = None
-_c_calc_column_widths = None
-_c_read_xlsb_worksheet = None
-_c_read_xlsx_worksheet = None
-_c_row_has_formatted = None
-_c_encode_xlsb_sst = None
-_c_read_sst = None
-_c_encode_xlsx_row = None
-_c_encode_xlsb_row_inline = None
-# Workbook model loader for XLSB sheet data (see workbook/_xlsb_reader.py).
-xlsb_load_cells = None
+_NATIVE_NAMES = (
+    "encode_xlsb_row", "encode_xlsb_row_inline", "calc_column_widths",
+    "read_xlsb_worksheet", "read_xlsx_worksheet", "xlsb_row_has_formatted",
+    "encode_xlsb_sst", "read_xlsb_shared_strings", "encode_xlsx_row",
+    "set_style_type", "set_error_type", "xlsb_load_cells",
+)
+_MODULES = {"c": "xlspy._c_core", "rust": "xlspy._rs_core"}
+_ORDER = {"auto": ("c", "rust"), "rust": ("rust", "c"), "c": ("c",), "python": ()}
 
-if _os.environ.get('XLSPY_DISABLE_C_EXT', '0') != '1':
+ACCEL_MODE = _os.environ.get("XLSPY_ACCEL", "auto").strip().lower() or "auto"
+if _os.environ.get("XLSPY_DISABLE_C_EXT", "0") == "1":
+    ACCEL_MODE = "python"
+if ACCEL_MODE not in _ORDER:
+    raise ImportError(f"XLSPY_ACCEL must be one of {sorted(_ORDER)}, not {ACCEL_MODE!r}")
+
+
+def _import(backend):
     try:
-        from xlspy._c_core import (
-            encode_xlsb_row as _c_encode_xlsb_row,
-            calc_column_widths as _c_calc_column_widths,
-            read_xlsb_worksheet as _c_read_xlsb_worksheet,
-        )
-        HAVE_C_EXT = True
+        return _importlib.import_module(_MODULES[backend])
     except ImportError:
-        pass
-    try:
-        from xlspy._c_core import (
-            xlsb_row_has_formatted as _c_row_has_formatted,
-            encode_xlsb_sst as _c_encode_xlsb_sst,
-            read_xlsb_shared_strings as _c_read_sst,
-            encode_xlsx_row as _c_encode_xlsx_row,
-        )
-    except ImportError:
-        pass
-    try:
-        from xlspy._c_core import encode_xlsb_row_inline as _c_encode_xlsb_row_inline
-    except ImportError:
-        pass
-    try:
-        from xlspy._c_core import set_style_type as _c_set_style_type
-    except ImportError:
-        _c_set_style_type = None
-    try:
-        from xlspy._c_core import xlsb_load_cells
-    except ImportError:
-        xlsb_load_cells = None
-    try:
-        from xlspy._c_core import read_xlsx_worksheet as _c_read_xlsx_worksheet
-    except ImportError:
-        _c_read_xlsx_worksheet = None
-    try:
-        from xlspy._c_core import set_error_type as _c_set_error_type
-    except ImportError:
-        pass
-    else:
+        return None
+
+
+_loaded = {b: m for b in _ORDER[ACCEL_MODE] if (m := _import(b)) is not None}
+
+# Function name -> backend ("c" or "rust") that provides it.
+ACCEL_BACKEND = {}
+_impl = {}
+for _name in _NATIVE_NAMES:
+    for _backend, _module in _loaded.items():
+        _func = getattr(_module, _name, None)
+        if _func is not None:
+            _impl[_name] = _func
+            ACCEL_BACKEND[_name] = _backend
+            break
+
+_c_encode_xlsb_row = _impl.get("encode_xlsb_row")
+_c_calc_column_widths = _impl.get("calc_column_widths")
+_c_read_xlsb_worksheet = _impl.get("read_xlsb_worksheet")
+_c_read_xlsx_worksheet = _impl.get("read_xlsx_worksheet")
+_c_row_has_formatted = _impl.get("xlsb_row_has_formatted")
+_c_encode_xlsb_sst = _impl.get("encode_xlsb_sst")
+_c_read_sst = _impl.get("read_xlsb_shared_strings")
+_c_encode_xlsx_row = _impl.get("encode_xlsx_row")
+_c_encode_xlsb_row_inline = _impl.get("encode_xlsb_row_inline")
+# Workbook model loader for XLSB sheet data (see workbook/_xlsb_reader.py).
+xlsb_load_cells = _impl.get("xlsb_load_cells")
+
+# True when a native backend provides the core readers and writers.
+HAVE_C_EXT = all(n in _impl for n in ("encode_xlsb_row", "calc_column_widths", "read_xlsb_worksheet"))
+HAVE_NATIVE = HAVE_C_EXT
+
+# Every loaded backend keeps its own registry of the xlspy types it checks.
+for _module in _loaded.values():
+    if hasattr(_module, "set_error_type"):
         from xlspy._errors import CellError as _CellError
-        _c_set_error_type(_CellError)
-    if _c_set_style_type is not None:
-        # (value, Style) cells: the C encoders and width scan recognise them.
+        _module.set_error_type(_CellError)
+    if hasattr(_module, "set_style_type"):
+        # (value, Style) cells: the native encoders and width scan recognise them.
         from xlspy.styles import Style as _Style
-        _c_set_style_type(_Style)
+        _module.set_style_type(_Style)
 
 
 def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header=None):

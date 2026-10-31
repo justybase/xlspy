@@ -1,0 +1,19 @@
+[package]
+name = "xlspy_core"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Native accelerator for xlspy (PyO3 port of the former C extension)"
+
+[lib]
+name = "_rs_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.30", features = ["extension-module"] }
+memchr = "2"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"

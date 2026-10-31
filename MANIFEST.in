@@ -1,0 +1,4 @@
+# Rust extension sources (setuptools-rust does not add them to the sdist).
+include rust/xlspy_core/Cargo.toml rust/xlspy_core/Cargo.lock
+recursive-include rust/xlspy_core/src *.rs
+prune rust/xlspy_core/target

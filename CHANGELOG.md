@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Python 3.11 and 3.15 support: `requires-python = ">=3.11"`, CI and wheels for 3.11–3.15.
+- Rust port of the native accelerator (`xlspy._rs_core`, PyO3), built next to the C extension while the port
+  proceeds. `XLSPY_ACCEL=auto|rust|c|python` picks the backend per function (`auto`: C first); functions not
+  ported yet come from C. Ported so far: shared-strings encoder and reader, column widths, the formatted-cell
+  pre-scan and the XLSB row encoders (shared and inline strings). `tests/test_accel_parity.py` checks the two
+  backends give the same results. Building from source now needs a Rust toolchain.
+
+### Changed
+
+- Native style and xf ids above 2**32 - 1 now raise OverflowError on every platform (the C extension raised on
+  Windows and silently truncated them on Linux and macOS).
+
 - Pivot tables (`PivotTable`, `PivotValue`): new pivots in XLSX and XLSB, passed as
   `write_sheet(..., pivots=[...])` (and `write_dataframe`). One row field, at most one column field, any number of
   filters (page fields) and values (sum, count, average, min, max). The source is a table written in the same

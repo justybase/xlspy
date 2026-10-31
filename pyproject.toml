@@ -1,10 +1,18 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=62.4", "setuptools-rust>=1.9"]
 build-backend = "setuptools.build_meta"
 
 [[tool.setuptools.ext-modules]]
 name = "xlspy._c_core"
 sources = ["src/xlspy/c_ext/_c_core.c"]
+
+# Rust port of the C extension (rust/xlspy_core); _accel.py picks the backend.
+[[tool.setuptools-rust.ext-modules]]
+target = "xlspy._rs_core"
+path = "rust/xlspy_core/Cargo.toml"
+binding = "PyO3"
+# Editable installs would otherwise build the debug profile (several times slower).
+debug = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -20,10 +28,16 @@ authors = [
 ]
 description = "Read and write XLSB and XLSX files efficiently, including XLSM updates."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Programming Language :: Rust",
     "Operating System :: OS Independent",
     "Topic :: Office/Business :: Office Suites",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -57,7 +71,7 @@ examples = [
 ]
 
 [tool.cibuildwheel]
-build = "cp312-* cp313-* cp314-*"
+build = "cp311-* cp312-* cp313-* cp314-* cp315-*"
 archs = "auto64"
 
 [tool.pytest.ini_options]
@@ -92,7 +106,7 @@ exclude_lines = [
 
 [tool.ruff]
 src = ["src"]
-target-version = "py312"
+target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
@@ -104,7 +118,7 @@ select = ["E9", "F63", "F7", "F82", "F401", "F811", "F841"]
 "src/xlspy/__init__.py" = ["F401"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 files = ["src/xlspy"]
 ignore_missing_imports = true
 warn_unused_configs = true

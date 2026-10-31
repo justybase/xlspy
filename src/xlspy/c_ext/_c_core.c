@@ -6,6 +6,27 @@
 #include <math.h>
 #include <pystrtod.h>
 
+#if PY_VERSION_HEX < 0x030C0000
+/* Python 3.11: the 3.12 single-object API over PyErr_Fetch/PyErr_Restore. */
+static PyObject *PyErr_GetRaisedException(void)
+{
+    PyObject *type, *value, *tb;
+    PyErr_Fetch(&type, &value, &tb);
+    if (!type) return NULL;
+    PyErr_NormalizeException(&type, &value, &tb);
+    if (tb) PyException_SetTraceback(value, tb);
+    Py_DECREF(type);
+    Py_XDECREF(tb);
+    return value;
+}
+
+static void PyErr_SetRaisedException(PyObject *exc)
+{
+    if (!exc) { PyErr_Clear(); return; }
+    PyErr_Restore(Py_NewRef((PyObject *)Py_TYPE(exc)), exc, PyException_GetTraceback(exc));
+}
+#endif
+
 /* ===== Types cache (imported from Python) ===== */
 static PyObject *decimal_type = NULL;
 static PyObject *datetime_type = NULL;

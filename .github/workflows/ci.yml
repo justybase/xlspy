@@ -12,7 +12,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        # Native backend the suite runs against (see src/xlspy/_accel.py).
+        accel: [c, rust]
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -24,20 +26,32 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
 
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
 
-      - name: Install package with test deps (builds C extension automatically)
+      - name: Install package with test deps (builds the C and Rust extensions)
         run: |
           pip install -e ".[test]"
 
       - name: Verify C extension is loaded
+        env:
+          XLSPY_ACCEL: ${{ matrix.accel }}
         run: |
-          python -c "from xlspy._accel import HAVE_C_EXT; print('C_EXT:', HAVE_C_EXT); assert HAVE_C_EXT, 'C extension not loaded!'"
+          python -c "import xlspy._rs_core; from xlspy._accel import HAVE_C_EXT, ACCEL_BACKEND; print('C_EXT:', HAVE_C_EXT, ACCEL_BACKEND); assert HAVE_C_EXT, 'C extension not loaded!'"
 
       - name: Run tests
+        env:
+          XLSPY_ACCEL: ${{ matrix.accel }}
         run: |
           python -m pytest tests/ -v --tb=short
 
@@ -51,7 +65,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Install linters
         run: |
@@ -66,6 +80,33 @@ jobs:
         run: |
           mypy
 
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
+
+      - name: Rustfmt, Clippy and unit tests
+        working-directory: rust/xlspy_core
+        run: |
+          rustup component add rustfmt clippy
+          cargo fmt --check
+          cargo clippy --release --all-targets -- -D warnings
+          cargo test --release
+
   test-fallback:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -77,6 +118,13 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.14"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
 
       - name: Install package with test deps (without C extension)
         run: |
@@ -104,6 +152,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
+
       - name: Install package with test deps
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -125,6 +180,13 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
 
       - name: Build wheel
         run: |
@@ -162,6 +224,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
+
       - name: Install package with test deps
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -195,6 +264,13 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
 
       - name: Install package with test deps
         run: |

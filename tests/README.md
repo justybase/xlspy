@@ -5,9 +5,11 @@ For recorded platform runs and compatibility checks, see
 
 ## Install and run
 
-xlspy needs Python 3.12 or later (`requires-python = ">=3.12"`); an older
-interpreter fails at import with a `SyntaxError` (PEP 701 f-strings). Where the
-default `python` is older, name the version, e.g. `py -3.14` on Windows.
+xlspy needs Python 3.11 or later (`requires-python = ">=3.11"`); CI runs
+3.11–3.15. Where the default `python` is older, name the version, e.g.
+`py -3.14` on Windows. Building from source needs a C compiler and a Rust
+toolchain (`rustup`), for the two native backends (see `src/xlspy/_accel.py`;
+`XLSPY_ACCEL=c|rust|python` picks one).
 
 The test dependencies are optional and do not become runtime dependencies:
 
