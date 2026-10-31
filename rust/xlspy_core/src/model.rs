@@ -7,20 +7,13 @@
 use pyo3::exceptions::PyTypeError;
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyTuple, PyType};
+use pyo3::types::{PyDict, PyTuple, PyType};
 
-/// Slot indices, in the order of `CELL_SLOTS` (workbook/_model.py).
-pub const SHEET: usize = 0;
+/// Slot indices used after creation; `CELL_SLOTS` (workbook/_model.py) is
+/// _sheet, _row, _column, _value, _formula, _data_type, _style_id, _comment,
+/// _hyperlink, _named_style, _dirty.
 pub const ROW: usize = 1;
 pub const COLUMN: usize = 2;
-pub const VALUE: usize = 3;
-pub const FORMULA: usize = 4;
-pub const DATA_TYPE: usize = 5;
-pub const STYLE_ID: usize = 6;
-pub const COMMENT: usize = 7;
-pub const HYPERLINK: usize = 8;
-pub const NAMED_STYLE: usize = 9;
-pub const DIRTY: usize = 10;
 const COUNT: usize = 11;
 
 /// The Cell class and the byte offsets of its slots.
@@ -81,6 +74,27 @@ impl CellClass {
         }
     }
 
+    /// A new Cell with every slot set, in `CELL_SLOTS` order (the ROW slot
+    /// may be None to leave it unset until the row is complete).
+    pub fn new_cell<'py>(
+        &self,
+        py: Python<'py>,
+        values: [Option<&Bound<'py, PyAny>>; COUNT],
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let cell = self.alloc(py)?;
+        let base = cell.as_ptr() as *mut u8;
+        for (offset, value) in self.offsets.iter().zip(values) {
+            if let Some(value) = value {
+                // SAFETY: a fresh instance of the class the offsets belong to;
+                // its object slots start NULL, so nothing is released.
+                unsafe {
+                    *(base.offset(*offset) as *mut *mut ffi::PyObject) = value.clone().into_ptr()
+                };
+            }
+        }
+        Ok(cell)
+    }
+
     /// Store `value` in slot `slot` of `cell` (an instance of the Cell class).
     #[inline]
     pub fn set(&self, cell: &Bound<'_, PyAny>, slot: usize, value: &Bound<'_, PyAny>) {
@@ -105,4 +119,12 @@ impl CellClass {
             Bound::from_borrowed_ptr_or_opt(cell.py(), *p)
         }
     }
+}
+
+/// The row dict of a cells dict: C used PyDict_SetItem on it, which raises
+/// SystemError for anything but a dict.
+pub fn as_row_dict<'py>(row_dict: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
+    row_dict
+        .cast_into::<PyDict>()
+        .map_err(|_| pyo3::exceptions::PySystemError::new_err("bad argument to internal function"))
 }

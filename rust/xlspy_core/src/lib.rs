@@ -33,6 +33,7 @@ fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(xlsx_write::encode_xlsx_row, m)?)?;
     m.add_function(wrap_pyfunction!(xlsb_read::read_xlsb_worksheet, m)?)?;
     m.add_class::<xlsb_read::XlsbReader>()?;
+    m.add_function(wrap_pyfunction!(xlsb_read::xlsb_load_cells, m)?)?;
     m.add_function(wrap_pyfunction!(xlsx_read::read_xlsx_worksheet, m)?)?;
     m.add_class::<xlsx_read::XlsxReader>()?;
     Ok(())

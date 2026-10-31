@@ -579,23 +579,27 @@ impl State {
                 c
             }
         };
-        let cell = m.cell.alloc(py)?;
         let none = py.None().into_bound(py);
-        m.cell.set(&cell, model::SHEET, m.sheet.bind(py));
-        m.cell.set(&cell, model::COLUMN, &column);
-        m.cell.set(&cell, model::VALUE, &value);
-        m.cell.set(&cell, model::FORMULA, &none);
-        m.cell.set(&cell, model::DATA_TYPE, &data_type);
-        m.cell
-            .set(&cell, model::STYLE_ID, &style.into_pyobject(py)?.into_any());
-        m.cell.set(&cell, model::COMMENT, &none);
-        m.cell.set(&cell, model::HYPERLINK, &none);
-        m.cell.set(&cell, model::NAMED_STYLE, &none);
-        m.cell.set(
-            &cell,
-            model::DIRTY,
-            &PyBool::new(py, false).to_owned().into_any(),
-        );
+        let style = style.into_pyobject(py)?.into_any();
+        let dirty = PyBool::new(py, false).to_owned().into_any();
+        let sheet = m.sheet.bind(py);
+        // The row slot is set once the whole row parsed.
+        let cell = m.cell.new_cell(
+            py,
+            [
+                Some(sheet),
+                None,
+                Some(&column),
+                Some(&value),
+                Some(&none),
+                Some(&data_type),
+                Some(&style),
+                Some(&none),
+                Some(&none),
+                Some(&none),
+                Some(&dirty),
+            ],
+        )?;
         m.row_cells.push(cell.unbind());
         m.row_max_column = m.row_max_column.max(col + 1);
         Ok(Some(()))
@@ -821,9 +825,9 @@ impl State {
                 let key = row_number.into_pyobject(py)?.into_any();
                 let cells_dict = m.cells_dict.bind(py);
                 let row_dict = match cells_dict.get_item(&key)? {
-                    Some(d) => d,
+                    Some(d) => model::as_row_dict(d)?,
                     None => {
-                        let d = PyDict::new(py).into_any();
+                        let d = PyDict::new(py);
                         cells_dict.set_item(&key, &d)?;
                         d
                     }

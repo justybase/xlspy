@@ -8,10 +8,11 @@
 
 use pyo3::exceptions::{PyMemoryError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PySet, PyString};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySet, PyString, PyTuple};
 
 use crate::bytes::{ByteView, le_f64, le_u32, read_rk, read_varint};
 use crate::dates::xlsb_date_value;
+use crate::model::{self, CellClass};
 use crate::text::decode_utf16le;
 use crate::types::error_type;
 
@@ -66,7 +67,7 @@ pub fn error_text(code: u8) -> &'static str {
 
 /// One flag per cell style (xf index): 1 when its number format is a date
 /// format.  Built once per sheet, so the cell loop does no lookups.
-pub fn date_xf_flags(styles: &Bound<'_, PyList>, date_num_fmts: &Bound<'_, PySet>) -> Vec<u8> {
+pub fn date_xf_flags(styles: &Bound<'_, PyList>, date_num_fmts: &Bound<'_, PyAny>) -> Vec<u8> {
     styles
         .iter()
         .map(|style| {
@@ -77,7 +78,15 @@ pub fn date_xf_flags(styles: &Bound<'_, PyList>, date_num_fmts: &Bound<'_, PySet
             let Ok(Some(nf)) = style.get_item("numFmtId") else {
                 return 0;
             };
-            u8::from(date_num_fmts.contains(nf).unwrap_or(false))
+            // PySet_Contains; errors (a non-set argument too) count as a miss.
+            match unsafe { pyo3::ffi::PySet_Contains(date_num_fmts.as_ptr(), nf.as_ptr()) } {
+                1 => 1,
+                0 => 0,
+                _ => {
+                    PyErr::take(date_num_fmts.py());
+                    0
+                }
+            }
         })
         .collect()
 }
@@ -493,7 +502,7 @@ pub fn read_xlsb_worksheet<'py>(
         done: false,
         shared_strings: shared_strings.clone().unbind(),
         ss_len: shared_strings.len(),
-        date_xf: date_xf_flags(styles_list, date_num_fmts),
+        date_xf: date_xf_flags(styles_list, date_num_fmts.as_any()),
         cur_cells: Vec::new(),
         cur_row_num: -1,
         gap_rows_remaining: 0,
@@ -507,4 +516,233 @@ pub fn read_xlsb_worksheet<'py>(
         return Ok(None);
     }
     Ok(Some(Bound::new(py, reader)?))
+}
+
+/// Load an XLSB sheet's data into Cell objects of the workbook model.
+///
+/// Returns (max_row, max_column, formulas, row_headers, formula_groups,
+/// sheet_data_start, sheet_data_end).  Formula cells are returned as
+/// (row, kind, record body) for the caller to decode; row headers with
+/// custom attributes as (row, body); BrtShrFmla/BrtArrFmla records as
+/// (record id, body).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn xlsb_load_cells<'py>(
+    py: Python<'py>,
+    data: &Bound<'py, PyAny>,
+    shared_strings: &Bound<'py, PyAny>,
+    styles_list: &Bound<'py, PyAny>,
+    date_num_fmts: &Bound<'py, PyAny>,
+    date_1904: &Bound<'py, PyAny>,
+    cell_type: &Bound<'py, PyAny>,
+    descriptors: &Bound<'py, PyAny>,
+    sheet: &Bound<'py, PyAny>,
+    cells_dict: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyTuple>> {
+    let view = ByteView::new(data)?;
+    let date_1904 = date_1904.is_truthy()?;
+    let (true, Ok(cells_dict), Ok(shared_strings), Ok(styles_list)) = (
+        cell_type.is_instance_of::<pyo3::types::PyType>(),
+        cells_dict.cast::<PyDict>(),
+        shared_strings.cast::<PyList>(),
+        styles_list.cast::<PyList>(),
+    ) else {
+        return Err(PyTypeError::new_err(
+            "xlsb_load_cells: unexpected arguments",
+        ));
+    };
+    let cell_class = CellClass::new(cell_type, descriptors)?;
+    let (formulas, headers, groups) = (PyList::empty(py), PyList::empty(py), PyList::empty(py));
+    let intern = |s: &str| PyString::intern(py, s).into_any();
+    let (type_n, type_s, type_b, type_e) = (intern("n"), intern("s"), intern("b"), intern("e"));
+    let none = py.None().into_bound(py);
+    let false_ = PyBool::new(py, false).to_owned().into_any();
+    let mut columns: Vec<Option<Bound<'py, PyAny>>> = vec![None; 16384];
+    let date_xf = date_xf_flags(styles_list, date_num_fmts);
+    let ctx = CellContext {
+        shared_strings,
+        ss_len: shared_strings.len(),
+        date_xf: &date_xf,
+        date_1904,
+    };
+
+    let data = view.as_slice();
+    let mut pos = 0usize;
+    let (mut data_start, mut data_end) = (-1i64, -1i64);
+    let (mut current_row, mut previous_column) = (-1i64, -1i64);
+    let (mut max_row, mut max_column) = (0i64, 0i64);
+    let mut row: Option<(Bound<'py, PyAny>, Bound<'py, PyDict>)> = None; // (row key, row dict)
+
+    while pos < data.len() {
+        let header_start = pos;
+        let Some(rec_id) = read_varint(data, &mut pos) else {
+            break;
+        };
+        let rec_len = match read_varint(data, &mut pos) {
+            Some(len) if len as usize <= data.len() - pos => len as usize,
+            _ => return Err(PyValueError::new_err("truncated XLSB record")),
+        };
+        let body = pos;
+        pos += rec_len;
+        if data_start < 0 {
+            if rec_id == 0x91 {
+                data_start = pos as i64;
+            }
+            continue;
+        }
+        match rec_id {
+            0x92 => {
+                data_end = header_start as i64;
+                break;
+            }
+            0x00 => {
+                let Some(r) = (rec_len >= 4).then(|| le_u32(data, body)).flatten() else {
+                    continue;
+                };
+                current_row = i64::from(r);
+                previous_column = -1;
+                row = None;
+                if current_row >= 1_048_576 {
+                    current_row = -1;
+                    continue;
+                }
+                // Custom height, hidden flag or outline level.
+                if rec_len > 11 && data[body + 11] & 0x7F != 0 {
+                    headers.append((
+                        current_row + 1,
+                        PyBytes::new(py, &data[body..body + rec_len]),
+                    ))?;
+                }
+                continue;
+            }
+            0x1AA | 0x1AB => {
+                groups.append((rec_id, PyBytes::new(py, &data[body..body + rec_len])))?;
+                continue;
+            }
+            _ => {}
+        }
+        if !(0x01..=0x12).contains(&rec_id) || current_row < 0 {
+            continue;
+        }
+        // Compact records (0x0C..0x12) omit the column: they follow the
+        // previous cell.  Viewed 4 bytes earlier they parse like full ones.
+        let (kind, column, cell_body, cell_len) = if rec_id >= 0x0C {
+            if rec_len < 4 || body < 4 {
+                continue;
+            }
+            (rec_id - 0x0B, previous_column + 1, body - 4, rec_len + 4)
+        } else {
+            if rec_len < 8 {
+                continue;
+            }
+            (
+                rec_id,
+                i64::from(le_u32(data, body).unwrap_or(0)),
+                body,
+                rec_len,
+            )
+        };
+        let xf = le_u32(data, cell_body + 4).unwrap_or(0) & 0xFF_FFFF;
+        if !(0..16384).contains(&column) {
+            return Err(PyValueError::new_err("XLSB column exceeds Excel limits"));
+        }
+        previous_column = column;
+
+        if kind >= 0x08 {
+            // Formulas are rare: the caller decodes them, from the full record
+            // so that compact cells get their column back.
+            let mut payload = Vec::with_capacity(cell_len);
+            payload.extend_from_slice(&[(column & 0xFF) as u8, ((column >> 8) & 0xFF) as u8, 0, 0]);
+            payload.extend_from_slice(&data[cell_body + 4..cell_body + cell_len]);
+            formulas.append((current_row + 1, kind, PyBytes::new(py, &payload)))?;
+            continue;
+        }
+        let (value, data_type) = if kind == 0x03 {
+            if cell_len < 9 {
+                continue;
+            }
+            (
+                PyString::new(py, error_text(data[cell_body + 8])).into_any(),
+                &type_e,
+            )
+        } else {
+            let rec = Record {
+                id: kind,
+                body: cell_body,
+                len: cell_len,
+            };
+            let Some(value) = ctx.value(data, &rec, xf)? else {
+                continue;
+            };
+            let data_type = if value.is_none() {
+                if xf == 0 {
+                    continue; // only a styled blank is a cell
+                }
+                &type_n
+            } else if value.is_instance_of::<PyString>() {
+                &type_s
+            } else if value.is_instance_of::<PyBool>() {
+                &type_b
+            } else {
+                &type_n
+            };
+            (value, data_type)
+        };
+
+        if row.is_none() {
+            let key = (current_row + 1).into_pyobject(py)?.into_any();
+            let dict = match cells_dict.get_item(&key)? {
+                Some(d) => model::as_row_dict(d)?,
+                None => {
+                    let d = PyDict::new(py);
+                    cells_dict.set_item(&key, &d)?;
+                    d
+                }
+            };
+            row = Some((key, dict));
+        }
+        let (row_key, row_dict) = row.as_ref().unwrap();
+        let col_obj = match &mut columns[column as usize] {
+            Some(c) => &*c,
+            slot @ None => &*slot.insert((column + 1).into_pyobject(py)?.into_any()),
+        };
+        let style = xf.into_pyobject(py)?.into_any();
+        let cell = cell_class.new_cell(
+            py,
+            [
+                Some(sheet),
+                Some(row_key),
+                Some(col_obj),
+                Some(&value),
+                Some(&none),
+                Some(data_type),
+                Some(&style),
+                Some(&none),
+                Some(&none),
+                Some(&none),
+                Some(&false_),
+            ],
+        )?;
+        let stored = row_dict.set_item(col_obj, &cell);
+        if !value.is_none() || xf != 0 || !data_type.is(&type_n) {
+            max_row = max_row.max(current_row + 1);
+            max_column = max_column.max(column + 1);
+        }
+        stored?;
+    }
+    if data_start >= 0 && data_end < 0 {
+        data_end = data.len() as i64;
+    }
+    PyTuple::new(
+        py,
+        [
+            max_row.into_pyobject(py)?.into_any(),
+            max_column.into_pyobject(py)?.into_any(),
+            formulas.into_any(),
+            headers.into_any(),
+            groups.into_any(),
+            data_start.into_pyobject(py)?.into_any(),
+            data_end.into_pyobject(py)?.into_any(),
+        ],
+    )
 }

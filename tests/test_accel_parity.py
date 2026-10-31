@@ -724,3 +724,116 @@ def test_scan_random(rows, model):
         assert _model_scan(rs_core, xml, 3, False, False, kinds) == _model_scan(c_core, xml, 3, False, False, kinds)
     else:
         same_scan(xml)
+
+
+# -- XLSB workbook-model loader ---------------------------------------------
+
+def _load(module, data, date_1904=False, shared=None, styles=None, dates=None):
+    from xlspy.workbook._model import CELL_SLOTS, Cell
+    sheet, cells = object(), {}
+    try:
+        result = module.xlsb_load_cells(data, list(SYNTH_SHARED if shared is None else shared),
+                                        list(SYNTH_STYLES if styles is None else styles),
+                                        set(SYNTH_DATES if dates is None else dates), date_1904,
+                                        Cell, CELL_SLOTS, sheet, cells)
+    except Exception as exc:  # noqa: BLE001
+        result = ("raises", type(exc))
+    dump = {row: {col: (cell._row, cell._column, repr(cell._value), type(cell._value), cell._data_type,
+                        cell._style_id, cell._sheet is sheet, cell._formula, cell._dirty)
+                  for col, cell in row_cells.items()}
+            for row, row_cells in cells.items()}
+    return result, dump
+
+
+def _sheet_bin(records):
+    return _rec(0x81) + _rec(0x94, b"\0" * 16) + _rec(0x91) + records + _rec(0x92) + _rec(0x82)
+
+
+def _row_hdr(n, flags=0):
+    return _rec(0x00, n.to_bytes(4, "little") + b"\0" * 7 + bytes([flags]) + b"\0" * 13)
+
+
+def _compact(rec_id, payload, xf=0):
+    return _rec(rec_id, xf.to_bytes(4, "little") + payload)
+
+
+def _load_sheets():
+    import struct
+    text = "ż\U0001F600".encode("utf-16-le")
+    cells = (_cell(0x01, 0, b"", xf=1) + _cell(0x01, 1, b"") + _cell(0x02, 2, _rk_int(42)) + _cell(0x03, 3, b"\x17")
+             + _cell(0x04, 4, b"\x01") + _cell(0x05, 5, struct.pack("<d", 45000.5), xf=1)
+             + _cell(0x06, 6, (len(text) // 2).to_bytes(4, "little") + text) + _cell(0x07, 7, (2).to_bytes(4, "little"))
+             + _cell(0x07, 8, (50).to_bytes(4, "little"), xf=3) + _cell(0x07, 9, (50).to_bytes(4, "little"))
+             + _cell(0x08, 10, b"\x01\0\0\0a\0" + b"\0" * 6) + _cell(0x09, 11, struct.pack("<d", 2.0) + b"\0" * 6)
+             + _cell(0x0A, 12, b"\x01" + b"\0" * 6) + _cell(0x0B, 13, b"\x07" + b"\0" * 6))
+    compact = (_cell(0x02, 0, _rk_int(1)) + _compact(0x0C, b"") + _compact(0x0D, _rk_int(5)) + _compact(0x0E, b"\x2a")
+               + _compact(0x0F, b"\x00") + _compact(0x10, struct.pack("<d", 1.25)) + _compact(0x11, b"\x01\0\0\0b\0")
+               + _compact(0x12, (1).to_bytes(4, "little")) + _compact(0x13, struct.pack("<d", 3.0) + b"\0" * 6)
+               + _compact(0x16, b"\x07" + b"\0" * 6))
+    return [
+        b"", _rec(0x81), _sheet_bin(b""),
+        _sheet_bin(_row_hdr(0) + cells),
+        _sheet_bin(_row_hdr(0, 0x10) + compact + _row_hdr(3, 0x81) + _cell(0x02, 2, _rk_int(9))),
+        _sheet_bin(_row_hdr(0) + _cell(0x02, 0, _rk_int(1)) + _rec(0x1AA, b"shared fmla") + _rec(0x1AB, b"array")),
+        _sheet_bin(_cell(0x02, 0, _rk_int(1)) + _row_hdr(2) + _cell(0x02, 1, _rk_int(2)) + _row_hdr(2)
+                   + _cell(0x02, 2, _rk_int(3))),
+        _sheet_bin(_row_hdr(1_048_576) + _cell(0x02, 0, _rk_int(1)) + _rec(0x00, b"\x01") + _row_hdr(5)),
+        _sheet_bin(_row_hdr(0) + _cell(0x02, 16384, _rk_int(1))),
+        _sheet_bin(_row_hdr(0) + _cell(0x05, 0, struct.pack("<d", 1e12), xf=1)),
+        _sheet_bin(_row_hdr(0) + _cell(0x02, 0, _rk_int(1)))[:-6],
+        _sheet_bin(_row_hdr(0) + _compact(0x0D, _rk_int(1)) + _rec(0x0D, b"\x01")),
+        _rec(0x91) + _row_hdr(0) + _cell(0x02, 0, _rk_int(7)),
+    ]
+
+
+@ported("xlsb_load_cells")
+@pytest.mark.parametrize("index", range(len(_load_sheets())))
+@pytest.mark.parametrize("date_1904", [False, True])
+def test_load_cells_synthetic(index, date_1904):
+    data = _load_sheets()[index]
+    assert _load(rs_core, data, date_1904) == _load(c_core, data, date_1904)
+
+
+@ported("xlsb_load_cells")
+def test_load_cells_written(written_sheets):
+    for blob, shared, styles, dates in written_sheets:
+        assert _load(rs_core, blob, False, shared, styles, dates) == _load(c_core, blob, False, shared, styles, dates)
+
+
+@ported("xlsb_load_cells")
+def test_load_cells_bad_arguments():
+    from xlspy.workbook._model import CELL_SLOTS, Cell
+    for args in [("x", [], [], set(), False, Cell, CELL_SLOTS, None, {}),
+                 (b"", [], [], set(), BadBool(), Cell, CELL_SLOTS, None, {}),
+                 (b"", [], [], set(), False, 5, CELL_SLOTS, None, {}),
+                 (b"", (), [], set(), False, Cell, CELL_SLOTS, None, {}),
+                 (b"", [], [], set(), False, Cell, CELL_SLOTS[:3], None, {}),
+                 (b"", [], [], set(), False, Cell, CELL_SLOTS, None, [])]:
+        c_result, rs_result = outcome(c_core.xlsb_load_cells, *args), outcome(rs_core.xlsb_load_cells, *args)
+        assert rs_result[0] == c_result[0] == "raises" and rs_result[1] is c_result[1]
+
+
+@ported("xlsb_load_cells")
+def test_load_cells_rejects_foreign_descriptors():
+    # Rust checks the descriptors belong to the Cell class (C trusted them).
+    from xlspy.workbook._model import CELL_SLOTS, Cell
+
+    class Other:
+        __slots__ = tuple(f"s{i}" for i in range(11))
+
+    foreign = tuple(Other.__dict__[f"s{i}"] for i in range(11))
+    with pytest.raises(TypeError):
+        rs_core.xlsb_load_cells(b"", [], [], set(), False, Cell, foreign, None, {})
+    rs_core.xlsb_load_cells(b"", [], [], set(), False, Cell, CELL_SLOTS, None, {})
+
+
+@ported("xlsb_load_cells")
+@settings(max_examples=400, deadline=None)
+@given(st.sampled_from(range(3, len(_load_sheets()))), st.data())
+def test_load_cells_corrupted(index, data):
+    sheet = bytearray(_load_sheets()[index])
+    for _ in range(data.draw(st.integers(0, 5))):
+        sheet[data.draw(st.integers(0, len(sheet) - 1))] = data.draw(st.integers(0, 255))
+    cut = data.draw(st.integers(0, len(sheet)))
+    blob = bytes(sheet[:cut])
+    assert _load(rs_core, blob) == _load(c_core, blob)
