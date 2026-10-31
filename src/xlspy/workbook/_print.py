@@ -96,7 +96,7 @@ class HeaderFooterItem:
     def load_code(self, code: str | None) -> None:
         """Split a header code such as ``&LTitle&RPage &P`` into the parts;
         text before any ``&L``/``&C``/``&R`` is centred, as in Excel."""
-        texts = {"L": [], "C": [], "R": []}
+        texts: dict[str, list[str]] = {"L": [], "C": [], "R": []}
         current = "C"
         index = 0
         code = code or ""

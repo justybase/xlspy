@@ -90,7 +90,7 @@ def _sync_sheet_list(workbook, updater) -> None:
     renamed = [sheet for sheet in loaded if sheet.title != sheet._original_title]
     # Through temporary names, so that sheets can swap titles.
     taken = set(updater.get_sheet_names()) | {sheet.title for sheet in sheets}
-    temporary = {}
+    temporary: dict = {}
     for sheet in renamed:
         number = len(temporary)
         while f"~xlspy{number}" in taken:

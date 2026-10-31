@@ -98,7 +98,7 @@ def builtin_format_code(index: int) -> str | None:
 
 def builtin_format_id(fmt: str | None) -> int | None:
     """Return the id of a standard format code, or None."""
-    return BUILTIN_FORMATS_REVERSE.get(fmt)
+    return None if fmt is None else BUILTIN_FORMATS_REVERSE.get(fmt)
 
 
 def is_builtin(fmt: str | None) -> bool:
@@ -115,7 +115,7 @@ def is_date_format(fmt: str | None) -> bool:
 
 def is_datetime(fmt: str | None) -> str | None:
     """Return ``"date"``, ``"time"`` or ``"datetime"`` for a date format."""
-    if not is_date_format(fmt):
+    if fmt is None or not is_date_format(fmt):
         return None
     fmt = fmt.split(";")[0]
     date = any(char in fmt for char in "dy")

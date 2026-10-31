@@ -292,7 +292,7 @@ def _format_record(sheet) -> bytes:
 def _column_records(sheet) -> bytes:
     fmt = sheet.sheet_format
     default = round((fmt.defaultColWidth or 8.43) * 256)
-    entries = []
+    entries: list[list] = []
     for letter, _, _, width, hidden, level, collapsed, best_fit, style in _columns_state(sheet):
         index = _cell(f"{letter}1")[1]
         flags = (

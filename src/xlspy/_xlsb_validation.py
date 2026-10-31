@@ -40,7 +40,7 @@ def _nullable(text: str | None) -> bytes:
 
 def _flags(rule: DataValidation) -> int:
     flags = _TYPES[rule.type] | _ERROR_STYLES[rule.error_style] << 4
-    if rule.type == "list" and rule.formula1.startswith('"'):
+    if rule.type == "list" and str(rule.formula1).startswith('"'):
         flags |= _LITERAL_LIST
     if rule.allow_blank:
         flags |= _ALLOW_BLANK
@@ -56,7 +56,7 @@ def _flags(rule: DataValidation) -> int:
 
 
 def _dval(rule: DataValidation, context) -> bytes:
-    ranges = [parse_cell_range(part) for part in rule.sqref.split()]
+    ranges = [parse_cell_range(part) for part in str(rule.sqref).split()]
     first_col, first_row = ranges[0][0], ranges[0][1]
     payload = bytearray(struct.pack("<II", _flags(rule), len(ranges)))
     for c1, r1, c2, r2 in ranges:

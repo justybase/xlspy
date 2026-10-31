@@ -287,7 +287,7 @@ def data_validation_xml(rule: DataValidation) -> str:
     if rule.prompt:
         attrs.append(f'prompt="{_attr(rule.prompt)}"')
     attrs.append(f'sqref="{rule.sqref}"')
-    inner = f"<formula1>{escape(rule.formula1)}</formula1>"
+    inner = f"<formula1>{escape(str(rule.formula1))}</formula1>"
     if rule.formula2 is not None:
-        inner += f"<formula2>{escape(rule.formula2)}</formula2>"
+        inner += f"<formula2>{escape(str(rule.formula2))}</formula2>"
     return f"<dataValidation {' '.join(attrs)}>{inner}</dataValidation>"

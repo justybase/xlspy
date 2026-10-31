@@ -114,6 +114,7 @@ class StagedOutput:
         try:
             if self._final_path is not None:
                 self.stream.close()
+                assert self._temp_path is not None
                 try:
                     shutil.copymode(self._final_path, self._temp_path)
                 except OSError:

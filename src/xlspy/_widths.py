@@ -98,7 +98,9 @@ _BOOLEAN = "PRAWDA"                 # TRUE in the longest common language
 
 
 def _sections(number_format: str) -> list[str]:
-    sections, current, quoted = [], [], False
+    sections: list[str] = []
+    current: list[str] = []
+    quoted = False
     for char in number_format:
         if char == '"':
             quoted = not quoted

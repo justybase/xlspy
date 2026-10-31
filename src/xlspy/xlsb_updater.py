@@ -734,7 +734,7 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
                 "" if unwrap_cell(value) is None else str(unwrap_cell(value))
                 for value in headers
             ]
-            cells = [
+            header_cells = [
                 self._string_cell_bytes(
                     column,
                     0 if style_fallback == "general" else header_styles.get(column, 0),
@@ -742,7 +742,7 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
                 )
                 for column, header_text in enumerate(header_texts)
             ]
-            push_row(0, cells)
+            push_row(0, header_cells)
 
         row_number = 1 if headers is not None else 0
         for row in rows:
@@ -923,7 +923,7 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
                     reference_start = name_start + character_count * 2
                     if reference_start + 16 > record.data_end:
                         continue
-                    source_sheet, _ = read_utf16(data, name_start, character_count)
+                    source_sheet, _ = read_utf16(bytes(data), name_start, character_count)
                     if source_sheet == sheet_name:
                         struct.pack_into("<i", data, reference_start + 4, last_row)
                         struct.pack_into("<i", data, reference_start + 12, last_col)
