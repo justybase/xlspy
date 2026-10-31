@@ -187,7 +187,7 @@ class _FastSheet:
         self.root_tag = root_tag
 
 
-def _probe_fast(stream):
+def _probe_fast(stream, with_head=False):
     """Read up to the sheetData start tag. Return ``(text, decoder, root_tag, ns, raw)``
     when the fast path applies (UTF-8, unprefixed tags, non-empty sheetData), otherwise
     ``None``. ``text`` and ``decoder`` continue the Python reader; ``raw`` is the same
@@ -216,7 +216,8 @@ def _probe_fast(stream):
     ns = xmlns.group(1) if xmlns else MAIN
     decoder = codecs.getincrementaldecoder("utf-8")()
     tail = raw[match.end():]
-    return decoder.decode(tail, False), decoder, root.group(0), ns, tail
+    result = decoder.decode(tail, False), decoder, root.group(0), ns, tail
+    return result + (head,) if with_head else result
 
 
 def _iter_c(reader, stream, probe):

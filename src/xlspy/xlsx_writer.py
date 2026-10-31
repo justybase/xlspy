@@ -7,7 +7,7 @@ import tempfile
 import zipfile
 import xml.sax.saxutils as saxutils
 from typing import Iterable, Mapping, Tuple
-from . import chart_parts
+from . import _zip_threads, chart_parts
 from ._accel import encode_xlsx_row as accel_encode_xlsx_row
 from ._output import StagedWriter
 from .doc_properties import DocumentPropertiesMixin
@@ -91,6 +91,21 @@ _SST_CHUNK_STRINGS = 4096
 # and 8 MiB write 50,000 x 50 rows in the same time, 1 MiB with 14 MB less.
 DEFAULT_SPOOL_BYTES = 1 << 20
 _EMPTY_ROW_STYLES: dict = {}
+
+
+class _Tee:
+    """Write the encoded rows to the spool and to the deflate segment."""
+
+    __slots__ = ("_spool", "_segment")
+
+    def __init__(self, spool, segment):
+        self._spool = spool
+        self._segment = segment
+
+    def write(self, data: bytes) -> int:
+        self._segment.write(data)
+        return self._spool.write(data)
+
 _REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table"
 _REL_DRAWING = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"
 _REL_HYPERLINK = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
@@ -537,13 +552,25 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
         has_styles = bool(style_ranges) or header_style is not None
 
         spool = tempfile.SpooledTemporaryFile(max_size=self._spool_max_bytes, mode="w+b")
+        # The rows are compressed on a worker thread while they are encoded;
+        # the head, which depends on them, is compressed separately at the end.
+        compressed = segment = None
+        if self._zf.threaded_deflate():
+            compressed = tempfile.SpooledTemporaryFile(
+                max_size=self._spool_max_bytes, mode="w+b")
+            segment = _zip_threads.DeflateSegment(
+                self._zf.deflate_pool(), self._zf.compresslevel, compressed)
         try:
             body = self._write_body(
-                data, spool, style_ranges, header_style if has_styles else None,
+                data, spool if segment is None else _Tee(spool, segment),
+                style_ranges, header_style if has_styles else None,
                 heights, hidden_row_set, has_styles,
                 table_specs,
                 row_outline=row_outline,
             )
+            if segment is not None:
+                segment.finish()
+                segment = None
             table_rels, table_bounds = self._register_tables(table_specs, sheet_id, body)
             rels = list(table_rels)
             link_rels = self._link_relationships(body.hyperlinks, rels)
@@ -604,18 +631,29 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
                 tail = replace_element(tail, 'legacyDrawing', f'<legacyDrawing r:id="{vml_rid}"/>', before=('tableParts',))
             if rels:
                 self._sheet_rels[sheet_id] = rels
-            with self._zf.open(f"xl/worksheets/sheet{sheet_id}.xml", 'w') as sheet_file:
-                sheet_file.write(head.encode('utf-8'))
-                spool.seek(0)
-                shutil.copyfileobj(spool, sheet_file, 1 << 20)
-                sheet_file.write(tail.encode('utf-8'))
+            spool.seek(0)
+            if compressed is not None:
+                compressed.seek(0)
+                _zip_threads.replay_member(
+                    self._zf, f"xl/worksheets/sheet{sheet_id}.xml",
+                    head.encode('utf-8'), spool, compressed, tail.encode('utf-8'),
+                )
+            else:
+                with self._zf.open(f"xl/worksheets/sheet{sheet_id}.xml", 'w') as sheet_file:
+                    sheet_file.write(head.encode('utf-8'))
+                    shutil.copyfileobj(spool, sheet_file, 1 << 20)
+                    sheet_file.write(tail.encode('utf-8'))
             self._sheet_written.add(sheet_index)
         except BaseException:
             # The sheet part is incomplete, so the workbook cannot be saved.
             self._aborted = True
+            if segment is not None:
+                segment.cancel()
             raise
         finally:
             spool.close()
+            if compressed is not None:
+                compressed.close()
 
     def _intern_font(self, font_key) -> int:
         if _font_is_empty(font_key):
@@ -867,7 +905,7 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
         self._write_doc_props()
 
         if self._useSharedStrings and self._shared_strings:
-            with self._zf.open("xl/sharedStrings.xml", 'w') as sst_file:
+            with self._zf.open_threaded("xl/sharedStrings.xml") as sst_file:
                 self._write_shared_strings_xml(sst_file)
 
     @staticmethod
@@ -1327,8 +1365,32 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
                   f'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
                   f'count="{self._sst_all_count}" uniqueCount="{self._sst_unique_count}">')
         sst_file.write(header.encode('utf-8'))
+        strings = self._shared_strings
+        for start in range(0, len(strings), _SST_CHUNK_STRINGS):
+            chunk = strings[start:start + _SST_CHUNK_STRINGS]
+            # Plain-text chunks are escaped in one pass: joined on NUL (which a
+            # string could only hold as a control character), then split again.
+            # Rich runs (tuples) make join() fail; those chunks go item by item.
+            try:
+                joined = '\0'.join(chunk)
+            except TypeError:
+                joined = None
+            if joined is None or joined.count('\0') != len(chunk) - 1:
+                self._write_shared_strings_items(sst_file, chunk)
+                continue
+            body = '</t></si><si><t>'.join(
+                joined.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').split('\0')
+            )
+            # Escaped text holds no '<', so "<si><t>" only ever starts an item.
+            body = ('<si><t>' + body + '</t></si>').replace(
+                '<si><t> ', '<si><t xml:space="preserve"> ').replace(
+                '<si><t>\t', '<si><t xml:space="preserve">\t')
+            sst_file.write(xstring_escape(body).encode('utf-8'))
+        sst_file.write(b'</sst>')
+
+    def _write_shared_strings_items(self, sst_file, strings) -> None:
         parts: list[str] = []
-        for s in self._shared_strings:
+        for s in strings:
             if type(s) is tuple:  # ("rich", runs) from _write_rich_cell, already escaped
                 # The runs already carry their _xHHHH_ escapes: escaping them
                 # with the chunk again would turn "_x000D_" into "_x005F_x000D_".
@@ -1343,12 +1405,9 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
                 parts.append(f'<si><t xml:space="preserve">{text}</t></si>')
             else:
                 parts.append(f'<si><t>{text}</t></si>')
-            if len(parts) >= _SST_CHUNK_STRINGS:
-                # The markup holds no escapable characters, so a chunk is escaped at once.
-                sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))
-                parts.clear()
-        parts.append('</sst>')
-        sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))
+        if parts:
+            # The markup holds no escapable characters, so a chunk is escaped at once.
+            sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))
 
     @staticmethod
     def _format_object_xml(cfvo) -> str:

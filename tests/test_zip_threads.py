@@ -1,0 +1,59 @@
+"""Members compressed on the worker thread hold the same bytes as sequential ones."""
+
+import io
+import threading
+import zipfile
+
+import pytest
+
+from xlspy import XlsbWriter, XlsxWriter, _zip_threads
+
+
+def _rows():
+    for i in range(3000):
+        yield [f"text {i % 50}", i, i / 7, i % 2 == 0, f"unique {i}"]
+
+
+def _members(data: bytes) -> dict:
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        assert archive.testzip() is None
+        return {name: archive.read(name) for name in archive.namelist()}
+
+
+def _write(cls, level, shared):
+    target = io.BytesIO()
+    with cls(target, compressionLevel=level, useSharedStrings=shared) as writer:
+        writer.add_sheet("S")
+        writer.write_sheet(_rows(), header_style=None, freeze_panes="B2")
+        writer.add_sheet("Empty")
+        writer.write_sheet([])
+    return target.getvalue()
+
+
+@pytest.mark.parametrize("cls", [XlsxWriter, XlsbWriter])
+@pytest.mark.parametrize("level", [0, 1, 3, 6, 9])
+@pytest.mark.parametrize("shared", [True, False])
+def test_threaded_members_match_sequential(monkeypatch, cls, level, shared):
+    threaded = _members(_write(cls, level, shared))
+    monkeypatch.setattr(_zip_threads, "AVAILABLE", False)
+    sequential = _members(_write(cls, level, shared))
+    assert threaded == sequential
+
+
+def test_threaded_xlsb_sheet_is_byte_identical_at_default_level(monkeypatch):
+    threaded = _write(XlsbWriter, 3, True)
+    monkeypatch.setattr(_zip_threads, "AVAILABLE", False)
+    assert threaded == _write(XlsbWriter, 3, True)
+
+
+def test_failed_write_stops_the_worker():
+    def failing():
+        yield from _rows()
+        raise RuntimeError("source failed")
+
+    for cls in (XlsxWriter, XlsbWriter):
+        with pytest.raises(RuntimeError, match="source failed"):
+            with cls(io.BytesIO()) as writer:
+                writer.add_sheet("S")
+                writer.write_sheet(failing())
+    assert not [t for t in threading.enumerate() if t.name.startswith("xlspy-deflate")]

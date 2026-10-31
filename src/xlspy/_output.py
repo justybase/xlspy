@@ -22,6 +22,8 @@ import shutil
 import tempfile
 import zipfile
 
+from . import _zip_threads
+
 DEFAULT_STAGING_BYTES = 8 << 20
 _COPY_CHUNK = 1 << 20
 
@@ -53,6 +55,38 @@ class PackageZip(zipfile.ZipFile):
         if mode == "w" and isinstance(name, str):
             name = self._member(name)
         return super().open(name, mode, *args, **kwargs)
+
+    _deflate_pool = None
+
+    def deflate_pool(self):
+        """The worker thread that compresses this archive's large members."""
+        if self._deflate_pool is None:
+            from concurrent.futures import ThreadPoolExecutor
+            self._deflate_pool = ThreadPoolExecutor(1, thread_name_prefix="xlspy-deflate")
+        return self._deflate_pool
+
+    def threaded_deflate(self) -> bool:
+        return _zip_threads.AVAILABLE and self.compression == zipfile.ZIP_DEFLATED
+
+    def open_threaded(self, name):
+        """``open(name, "w")``, compressing on the worker thread.
+
+        The member's bytes are the same as with ``open()``.
+        """
+        member = self.open(name, "w")
+        if self.threaded_deflate() and member._compressor is not None:
+            member._compressor = _zip_threads.ThreadedDeflate(
+                self.deflate_pool(), self.compresslevel
+            )
+        return member
+
+    def close(self):
+        try:
+            super().close()
+        finally:
+            if self._deflate_pool is not None:
+                self._deflate_pool.shutdown(wait=True)
+                self._deflate_pool = None
 
 class StagedOutput:
     """The staging file for one workbook and its eventual publication."""

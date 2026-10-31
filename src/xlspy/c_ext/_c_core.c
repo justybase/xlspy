@@ -363,53 +363,21 @@ static void _free_cur_cells(PyObject **cur_cells, Py_ssize_t cur_cells_len)
 
 /* ===== Existing writer functions ===== */
 
+static int _xlsx_serial(PyObject *cell, int is_datetime, double *serial);
+
+/* XLSB date serial (cell_kind 1 datetime, 2 date), the same value as
+   `datetime_to_serial` and the XLSX encoder.  -1.0: write str(cell) (year out
+   of range); -2.0: let the Python encoder write the row (unreadable fields,
+   or a datetime beyond exact-double microseconds, after about 2185). */
 static double _get_excel_serial(PyObject *cell, int cell_kind)
 {
-    PyObject *ymd = PyObject_GetAttrString(cell, "year");
-    if (!ymd) { PyErr_Clear(); return -1.0; }
-    long year = PyLong_AsLong(ymd);
-    Py_DECREF(ymd);
-    if (year == -1 && PyErr_Occurred()) { PyErr_Clear(); return -1.0; }
-    if (year < 1900 || year > 9999) return -1.0;
-
-    PyObject *ord = PyObject_CallMethod(cell, "toordinal", NULL);
-    if (!ord) { PyErr_Clear(); return -1.0; }
-    long ord_val = PyLong_AsLong(ord);
-    Py_DECREF(ord);
-    if (ord_val == -1 && PyErr_Occurred()) { PyErr_Clear(); return -1.0; }
-
-    long epoch_ord = 693594;
-    /* Excel's fictitious 1900-02-29: dates before 1900-03-01 use the
-       1899-12-31 epoch, so 1900-01-01 is stored as serial 1. */
-    if (ord_val < 693655)
-        epoch_ord = 693595;
-    double serial = (double)(ord_val - epoch_ord);
-
-    if (cell_kind == 1)
+    double serial = 0.0;
+    switch (_xlsx_serial(cell, cell_kind == 1, &serial))
     {
-        struct { const char *name; double val; } tp[4] = {
-            {"hour", 0.0}, {"minute", 0.0}, {"second", 0.0}, {"microsecond", 0.0}
-        };
-        int ok = 1;
-        for (int i = 0; i < 4; i++)
-        {
-            PyObject *a = PyObject_GetAttrString(cell, tp[i].name);
-            if (a)
-            {
-                tp[i].val = (double)PyLong_AsLong(a);
-                if (tp[i].val == -1 && PyErr_Occurred()) { PyErr_Clear(); ok = 0; }
-                Py_DECREF(a);
-            }
-            else { PyErr_Clear(); ok = 0; }
-            if (!ok) break;
-        }
-        if (ok)
-        {
-            double ts = tp[0].val * 3600.0 + tp[1].val * 60.0 + tp[2].val + tp[3].val / 1e6;
-            serial += ts / 86400.0;
-        }
+    case 1: return serial;
+    case 2: return -1.0;
+    default: return -2.0;
     }
-    return serial;
 }
 
 /* xlspy.Style, registered by set_style_type: the second item of a
@@ -1251,6 +1219,7 @@ static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObjec
         else if (datetime_type && PyObject_IsInstance(cell, datetime_type) == 1)
         {
             double serial = _get_excel_serial(cell, 1);
+            if (serial == -2.0) { PyMem_Free(buf); Py_RETURN_NONE; }
             if (serial == -1.0) goto fallback;
             unsigned int sv = 1;
             buf[buf_size++] = 0x05; buf[buf_size++] = 0x10;
@@ -1262,6 +1231,7 @@ static PyObject *_encode_xlsb_row_core(PyObject *row, PyObject *ss_dict, PyObjec
         else if (date_type && PyObject_IsInstance(cell, date_type) == 1)
         {
             double serial = _get_excel_serial(cell, 2);
+            if (serial == -2.0) { PyMem_Free(buf); Py_RETURN_NONE; }
             if (serial == -1.0) goto fallback;
             unsigned int sv = 2;
             buf[buf_size++] = 0x05; buf[buf_size++] = 0x10;
@@ -1432,6 +1402,20 @@ static int _xbuf_uint(_XBuf *b, unsigned int v)
 /* Identical to repr(): the same routine CPython's float repr uses. */
 static int _xbuf_double(_XBuf *b, double v)
 {
+    /* Whole numbers below 1e16 repr as "<digits>.0" (from 1e16 repr switches
+       to exponent notation); -0.0 keeps its sign through the slow path. */
+    if (v > -1e16 && v < 1e16 && v == (double)(long long)v && !(v == 0.0 && signbit(v)))
+    {
+        char tmp[24];
+        char *p = tmp + sizeof(tmp);
+        *--p = '0';
+        *--p = '.';
+        long long n = (long long)v;
+        unsigned long long u = n < 0 ? 0ULL - (unsigned long long)n : (unsigned long long)n;
+        do { *--p = (char)('0' + u % 10); u /= 10; } while (u);
+        if (n < 0) *--p = '-';
+        return _xbuf_put(b, p, (size_t)(tmp + sizeof(tmp) - p));
+    }
     char *s = PyOS_double_to_string(v, 'r', 0, Py_DTSF_ADD_DOT_0, NULL);
     if (!s) return 0;
     int ok = _xbuf_cstr(b, s);
@@ -1519,13 +1503,30 @@ static long long _days_from_civil(long long y, long long m, long long d)
 static int _xlsx_serial(PyObject *cell, int is_datetime, double *serial)
 {
     long y, mo, d, hh = 0, mi = 0, ss = 0, us = 0;
-    if (!_long_attr(cell, "year", &y) || !_long_attr(cell, "month", &mo) ||
-        !_long_attr(cell, "day", &d))
-        return 0;
-    if (is_datetime &&
-        (!_long_attr(cell, "hour", &hh) || !_long_attr(cell, "minute", &mi) ||
-         !_long_attr(cell, "second", &ss) || !_long_attr(cell, "microsecond", &us)))
-        return 0;
+    if (is_datetime ? PyDateTime_CheckExact(cell) : PyDate_CheckExact(cell))
+    {
+        /* Exact types: read the fields directly instead of seven lookups. */
+        y = PyDateTime_GET_YEAR(cell);
+        mo = PyDateTime_GET_MONTH(cell);
+        d = PyDateTime_GET_DAY(cell);
+        if (is_datetime)
+        {
+            hh = PyDateTime_DATE_GET_HOUR(cell);
+            mi = PyDateTime_DATE_GET_MINUTE(cell);
+            ss = PyDateTime_DATE_GET_SECOND(cell);
+            us = PyDateTime_DATE_GET_MICROSECOND(cell);
+        }
+    }
+    else
+    {
+        if (!_long_attr(cell, "year", &y) || !_long_attr(cell, "month", &mo) ||
+            !_long_attr(cell, "day", &d))
+            return 0;
+        if (is_datetime &&
+            (!_long_attr(cell, "hour", &hh) || !_long_attr(cell, "minute", &mi) ||
+             !_long_attr(cell, "second", &ss) || !_long_attr(cell, "microsecond", &us)))
+            return 0;
+    }
     if (y < 1900 || y > 9999)
         return 2;
     if (mo < 1 || mo > 12 || d < 1 || d > 31)

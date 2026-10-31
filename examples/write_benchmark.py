@@ -58,7 +58,7 @@ DEFAULT_SRC = os.path.normpath(os.path.join(HERE, "..", "src"))
 XLSPY_WRITERS = ("xlsx-shared", "xlsx-inline", "xlsb-shared", "xlsb-inline")
 OTHER_WRITERS = ("openpyxl", "xlsxwriter")
 ALL_WRITERS = XLSPY_WRITERS + OTHER_WRITERS
-COMPRESSION_LEVEL = 4  # xlspy's default; openpyxl and xlsxwriter use their own defaults
+COMPRESSION_LEVEL = 3  # xlspy's default; openpyxl and xlsxwriter use their own defaults
 
 
 # ---------------------------------------------------------------- datasets
