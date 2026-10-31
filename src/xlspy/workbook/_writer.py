@@ -204,20 +204,17 @@ def _save_new(workbook: Workbook, filename) -> None:
     extension = ""
     if isinstance(filename, (str, os.PathLike)):
         extension = os.fspath(filename).lower().rsplit(".", 1)[-1]
-    if extension == "xlsm":
-        raise ValueError(
-            "saving a new macro-enabled workbook is not supported; "
-            "load an existing .xlsm to keep its VBA project"
-        )
-    if extension in {"xltx", "xltm"}:
-        raise ValueError("template formats are not supported by the new workbook API")
     from ._chartsheets import add_chartsheets, check_chartsheets, pending_chartsheets
+    from ._package_kind import set_package_kind
 
-    if pending_chartsheets(workbook):
+    chartsheets = pending_chartsheets(workbook)
+    if chartsheets:
         if extension == "xlsb":
             raise NotImplementedError("chartsheets can be saved to XLSX only")
         check_chartsheets(workbook)
-        # The chartsheets go into the written package.
+    if chartsheets or extension in {"xlsm", "xltx", "xltm"}:
+        # Written as XLSX, then the package is finished: chartsheets, the
+        # macro-enabled or template content type and the VBA project.
         with tempfile.TemporaryDirectory(prefix="xlspy-workbook-") as directory:
             temporary = os.path.join(directory, "workbook.xlsx")
             _write_new(workbook, temporary, XlsxWriter, "xlsx")
@@ -226,6 +223,7 @@ def _save_new(workbook: Workbook, filename) -> None:
             updater = XlsxUpdater(temporary)
             try:
                 add_chartsheets(updater, workbook)
+                set_package_kind(updater, extension, workbook.vba_archive)
                 if isinstance(filename, (str, os.PathLike)):
                     updater.save(os.fspath(filename))
                 else:

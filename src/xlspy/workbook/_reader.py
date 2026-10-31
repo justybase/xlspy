@@ -1371,9 +1371,19 @@ def load_workbook(filename, *, read_only: bool = False, data_only: bool = False,
 
     updater = XlsxUpdater(path)
     try:
-        return _load_xlsx_workbook(
+        workbook = _load_xlsx_workbook(
             updater, path, data_only=data_only, rich_text=rich_text
         )
+        if keep_vba:
+            # As openpyxl: the source package, from which a new workbook
+            # saved as .xlsm takes its VBA project. A loaded workbook keeps
+            # its own whether or not this is set.
+            import io
+            import zipfile
+
+            with open(path, "rb") as source:
+                workbook.vba_archive = zipfile.ZipFile(io.BytesIO(source.read()))
+        return workbook
     except Exception:
         # A failed load must not leave the updater's temporary package behind.
         updater.close()
