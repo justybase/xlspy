@@ -1,7 +1,7 @@
-"""Memory-leak regression tests for the ``xlspy._c_core`` extension.
+"""Memory-leak regression tests for the native extension (``xlspy._rs_core``).
 
-Cover every C entry point on success paths, error paths (where a missed
-``Py_DECREF`` would leak), and end-to-end workbook cycles:
+Cover every native entry point on success paths, error paths (where a
+missed reference release would leak), and end-to-end workbook cycles:
 
 - RSS-based loops (``psutil``, skipped when unavailable): catch raw
   ``malloc``/``realloc`` leaks that ``tracemalloc`` cannot see.
@@ -26,7 +26,7 @@ import pytest
 from xlspy import ExcelReader, XlsbWriter, XlsxWriter
 from xlspy import _xlsx_read
 from xlspy._accel import (
-    HAVE_C_EXT,
+    HAVE_NATIVE,
     calc_column_widths,
     encode_xlsb_row,
     encode_xlsb_sst,
@@ -37,7 +37,7 @@ from xlspy._accel import (
     xlsb_row_has_formatted,
 )
 
-needs_c_ext = pytest.mark.skipif(not HAVE_C_EXT, reason="C extension not built")
+needs_native = pytest.mark.skipif(not HAVE_NATIVE, reason="native extension not built")
 
 SST_BLOB = None
 SHEET_BLOB = None
@@ -92,7 +92,7 @@ def workbook_parts(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def xlsx_parts(tmp_path_factory):
-    """A real .xlsx plus the bytes and tables the C scanner takes."""
+    """A real .xlsx plus the bytes and tables the native scanner takes."""
     global XLSX_HEAD, XLSX_REST, XLSX_SHARED, XLSX_FLAGS
     path = str(tmp_path_factory.mktemp("memleak-xlsx") / "leak.xlsx")
     with XlsxWriter(path) as w:
@@ -171,14 +171,14 @@ def assert_no_gc_growth(fn, *, iters=100, warmup=5, allowance=10):
     )
 
 
-@needs_c_ext
+@needs_native
 def test_sst_read_no_growth(workbook_parts):
     assert SST_BLOB is not None and len(SHARED) > 1000
     assert_no_rss_growth(lambda: read_xlsb_shared_strings(SST_BLOB))
     assert_no_tracemalloc_growth(lambda: read_xlsb_shared_strings(SST_BLOB))
 
 
-@needs_c_ext
+@needs_native
 def test_sst_read_error_paths_no_growth(workbook_parts):
     bad_blobs = [
         SST_BLOB[:7],
@@ -200,7 +200,7 @@ def test_sst_read_error_paths_no_growth(workbook_parts):
     assert_no_rss_growth(run, iters=40, allowance_mb=5.0)
 
 
-@needs_c_ext
+@needs_native
 def test_encode_sst_no_growth(workbook_parts):
     assert_no_rss_growth(
         lambda: encode_xlsb_sst(SHARED, len(SHARED) * 2, len(SHARED))
@@ -216,7 +216,7 @@ def test_encode_sst_no_growth(workbook_parts):
     gc.collect()
 
 
-@needs_c_ext
+@needs_native
 def test_row_encode_no_growth():
     ss_dict, ss_list = {}, []
     rows = [_mixed_row(i) for i in range(200)]
@@ -233,7 +233,7 @@ def test_row_encode_no_growth():
     assert_no_rss_growth(run, iters=20, allowance_mb=5.0)
 
 
-@needs_c_ext
+@needs_native
 def test_prescan_and_widths_no_growth():
     rows = [_mixed_row(i) for i in range(200)]
 
@@ -245,7 +245,7 @@ def test_prescan_and_widths_no_growth():
     assert_no_tracemalloc_growth(run, iters=30, allowance_kb=256.0)
 
 
-@needs_c_ext
+@needs_native
 def test_worksheet_iterator_no_growth(workbook_parts):
     def run():
         it = read_xlsb_worksheet(SHEET_BLOB, SHARED, STYLES, DATE_FMTS)
@@ -258,7 +258,7 @@ def test_worksheet_iterator_no_growth(workbook_parts):
     assert_no_tracemalloc_growth(run, iters=25, allowance_kb=512.0)
 
 
-@needs_c_ext
+@needs_native
 def test_worksheet_iterator_abandoned_no_growth(workbook_parts):
     # Dropping a partially-consumed iterator must free cur_cells + buffer.
     def run():
@@ -268,7 +268,7 @@ def test_worksheet_iterator_abandoned_no_growth(workbook_parts):
     assert_no_tracemalloc_growth(run, iters=200, allowance_kb=512.0)
 
 
-@needs_c_ext
+@needs_native
 def test_end_to_end_read_no_growth(workbook_parts):
     def run():
         with ExcelReader(workbook_parts) as r:
@@ -277,7 +277,7 @@ def test_end_to_end_read_no_growth(workbook_parts):
     assert_no_rss_growth(run, iters=15, allowance_mb=8.0)
 
 
-@needs_c_ext
+@needs_native
 def test_gc_contracts(workbook_parts):
     out = read_xlsb_shared_strings(SST_BLOB)
     assert out == SHARED
@@ -292,7 +292,7 @@ def test_gc_contracts(workbook_parts):
     assert_no_gc_growth(run_all, iters=100, allowance=10)
 
 
-@needs_c_ext
+@needs_native
 def test_encode_xlsx_row_no_growth():
     rows = [_mixed_row(i) for i in range(100)]
 
@@ -315,7 +315,7 @@ def test_encode_xlsx_row_no_growth():
     assert_no_tracemalloc_growth(run_inline, iters=20, allowance_kb=512.0)
 
 
-@needs_c_ext
+@needs_native
 def test_encode_xlsx_row_rollback_no_growth():
     # Rows that insert SST entries then hit a row fallback (huge int overflows
     # float(); tuple formats owned by the Python path) must leave the caller's
@@ -338,7 +338,7 @@ def test_encode_xlsx_row_rollback_no_growth():
     assert_no_rss_growth(run, iters=40, allowance_mb=5.0)
 
 
-@needs_c_ext
+@needs_native
 def test_encode_xlsx_row_error_paths_no_growth():
     def run():
         # non-dict / non-list args raise TypeError; non-sequence rows fall back
@@ -355,7 +355,7 @@ def test_encode_xlsx_row_error_paths_no_growth():
 
 
 def _formatted_row(i):
-    """(value, format) cells of every type the C encoders take, plus a styled one."""
+    """(value, format) cells of every type the native encoders take, plus a styled one."""
     return [
         (f"s{i}", "@"),
         (i, "#,##0"),
@@ -371,7 +371,7 @@ FMT_XF = {"@": 10, "#,##0": 11, "0.00": 12, "0": 13, "yyyy-mm-dd": 14, "0.0": 15
           (20, "0.00"): 21}
 
 
-@needs_c_ext
+@needs_native
 def test_encoders_with_format_ids_no_growth():
     from xlspy._accel import encode_xlsb_row_inline
 
@@ -396,7 +396,7 @@ def test_encoders_with_format_ids_no_growth():
     assert_no_gc_growth(run, iters=50, allowance=10)
 
 
-@needs_c_ext
+@needs_native
 def test_encoders_with_format_ids_fall_back_cleanly():
     from xlspy._accel import encode_xlsb_row_inline
 
@@ -430,7 +430,7 @@ def test_encoders_with_format_ids_fall_back_cleanly():
     assert_no_gc_growth(run, iters=100, allowance=10)
 
 
-@needs_c_ext
+@needs_native
 def test_xlsx_worksheet_iterator_no_growth(xlsx_parts):
     def run():
         rows = read_xlsx_worksheet(io.BytesIO(XLSX_REST), XLSX_HEAD, XLSX_SHARED, XLSX_FLAGS)
@@ -441,7 +441,7 @@ def test_xlsx_worksheet_iterator_no_growth(xlsx_parts):
     assert_no_tracemalloc_growth(run, iters=25, allowance_kb=512.0)
 
 
-@needs_c_ext
+@needs_native
 def test_xlsx_worksheet_iterator_abandoned_no_growth(xlsx_parts):
     def run():
         rows = read_xlsx_worksheet(io.BytesIO(XLSX_REST), XLSX_HEAD, XLSX_SHARED, XLSX_FLAGS)
@@ -450,7 +450,7 @@ def test_xlsx_worksheet_iterator_abandoned_no_growth(xlsx_parts):
     assert_no_tracemalloc_growth(run, iters=200, allowance_kb=512.0)
 
 
-@needs_c_ext
+@needs_native
 def test_xlsx_fallback_rows_no_growth():
     head = (b'<row r="1"><c r="A1" t="inlineStr"><is><r><t>a</t></r></is></c></row>'
             b'<row r="2"><c r="A2" t="str"><v>a &amp; b</v></c></row>')
@@ -465,7 +465,7 @@ def test_xlsx_fallback_rows_no_growth():
     assert_no_gc_growth(run, iters=100, allowance=10)
 
 
-@needs_c_ext
+@needs_native
 def test_xlsx_iterator_error_path_no_growth():
     def run():
         rows = read_xlsx_worksheet(
@@ -476,7 +476,7 @@ def test_xlsx_iterator_error_path_no_growth():
     assert_no_tracemalloc_growth(run, iters=100, allowance_kb=256.0)
 
 
-@needs_c_ext
+@needs_native
 def test_encoders_with_row_attributes_no_growth():
     from xlspy._accel import encode_xlsb_row_inline
 

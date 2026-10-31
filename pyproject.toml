@@ -1,24 +1,16 @@
 [build-system]
-requires = ["setuptools>=62.4", "setuptools-rust>=1.9"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
 
-[[tool.setuptools.ext-modules]]
-name = "xlspy._c_core"
-sources = ["src/xlspy/c_ext/_c_core.c"]
-
-# Rust port of the C extension (rust/xlspy_core); _accel.py picks the backend.
-[[tool.setuptools-rust.ext-modules]]
-target = "xlspy._rs_core"
-path = "rust/xlspy_core/Cargo.toml"
-binding = "PyO3"
+# The native accelerator: rust/xlspy_core, a PyO3 module (see _accel.py).
+[tool.maturin]
+python-source = "src"
+module-name = "xlspy._rs_core"
+manifest-path = "rust/xlspy_core/Cargo.toml"
+# Not in Cargo.toml, so `cargo test` links against libpython.
+features = ["pyo3/extension-module"]
 # Editable installs would otherwise build the debug profile (several times slower).
-debug = false
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-xlspy = ["py.typed"]
+profile = "release"
 
 [project]
 name = "xlspy"
@@ -127,7 +119,6 @@ warn_unused_configs = true
 # checked; remove a module from this list once mypy passes for it.
 [[tool.mypy.overrides]]
 module = [
-    "xlspy._accel",
     "xlspy._metadata",
     "xlspy._xlsb_cf",
     "xlspy._xlsb_edit",

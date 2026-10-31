@@ -1,7 +1,8 @@
-//! Native accelerator for xlspy: a PyO3 port of `c_ext/_c_core.c`.
+//! Native accelerator for xlspy (`xlspy._rs_core`), a PyO3 port of the
+//! former C extension that keeps its behaviour.
 //!
-//! Each Python entry point mirrors the C function of the same name; the
-//! selection between the two lives in `xlspy/_accel.py`.
+//! `xlspy/_accel.py` wraps every entry point; each one returns None where the
+//! pure-Python implementation must take over.
 
 use pyo3::prelude::*;
 

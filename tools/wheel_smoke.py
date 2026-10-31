@@ -12,7 +12,7 @@ import tempfile
 
 import xlspy
 from xlspy import ExcelReader, XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWriter
-from xlspy._accel import HAVE_C_EXT
+from xlspy._accel import HAVE_NATIVE
 
 
 def _read_all(path):
@@ -44,7 +44,7 @@ def _roundtrip_and_update(directory, suffix, writer_cls, updater_cls):
 
 
 def main():
-    assert HAVE_C_EXT, "the C extension did not load from the wheel"
+    assert HAVE_NATIVE, "the native extension did not load from the wheel"
     print(f"xlspy imported from: {xlspy.__file__}")
     with tempfile.TemporaryDirectory() as directory:
         directory = pathlib.Path(directory)

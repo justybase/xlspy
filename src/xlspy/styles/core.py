@@ -1646,7 +1646,7 @@ def _xf_for_style_format(style: Style, overlay: str | Style, register_style, cac
 
 def _record_cell_xf(fmt_xf: dict, keep: list, base_xf, overlay, xf_index: int) -> None:
     """Record the xf of a ``(value, format)`` or ``(value, Style)`` cell for
-    the C row encoders: keyed by the format or the Style's ``id()``, paired
+    the native row encoders: keyed by the format or the Style's ``id()``, paired
     with the cell's range-style xf when it has one. ``keep`` holds every
     keyed Style so its id cannot be reused while the writer is open."""
     key = overlay if isinstance(overlay, str) else id(overlay)
@@ -1664,7 +1664,7 @@ def _date_cell_xf(fmt_xf: dict, xf_styles: dict, register_style, xf_index: int,
 
     A style with no number format gets ``date_format`` on top, so Excel does
     not show the serial number. The result is recorded in ``fmt_xf`` under
-    ``("date" | "datetime", xf_index)`` for the C row encoders. ``xf_styles``
+    ``("date" | "datetime", xf_index)`` for the native row encoders. ``xf_styles``
     maps registered style xfs to their ``Style``; other xfs (format-only
     ones) already carry a number format and are kept.
     """

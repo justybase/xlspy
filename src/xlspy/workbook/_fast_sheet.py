@@ -53,7 +53,7 @@ _DATE_KINDS = {None: 0, "date": 1, "time": 2, "duration": 3}
 
 def _load_rows_c(sheet, stream, raw, root_tag, head, style_table,
                  data_only, date_1904, shared_strings, rich_text):
-    """The C scanner creates the cells of plain rows; the rows it leaves (formulas,
+    """The native scanner creates the cells of plain rows; the rows it leaves (formulas,
     row attributes, unusual markup) go through ElementTree as in ``_load_rows``."""
     kinds = [_DATE_KINDS[_date_kind(style.number_format)] for style in style_table.styles]
     rows = _accel._c_read_xlsx_worksheet(

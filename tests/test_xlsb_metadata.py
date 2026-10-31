@@ -85,7 +85,7 @@ def test_binary_notes_survive_data_replacement(tmp_path,stream):
 @pytest.mark.parametrize('force_python',[False,True])
 def test_binary_formula_caches_and_text(tmp_path,force_python,monkeypatch):
     if force_python:
-        monkeypatch.setattr(reader_module,'HAVE_C_EXT',False)
+        monkeypatch.setattr(reader_module,'HAVE_NATIVE',False)
     path=tmp_path/'formulas.xlsb'
     with XlsbWriter(path) as writer:
         writer.set_defined_name(DefinedName('Scale','2'))
@@ -219,7 +219,7 @@ def test_array_binary_text_and_group_edit_guard(tmp_path):
 @pytest.mark.parametrize('force_python',[False,True])
 def test_later_wider_binary_rows_not_truncated(tmp_path,force_python,monkeypatch):
     if force_python:
-        monkeypatch.setattr(reader_module,'HAVE_C_EXT',False)
+        monkeypatch.setattr(reader_module,'HAVE_NATIVE',False)
     path=tmp_path/'wide.xlsb'
     with XlsbWriter(path) as writer:
         writer.write_sheet([[1],[2,3,4],[5]])
@@ -310,10 +310,10 @@ def test_binary_metadata_interleaves_with_existing_bulk_updates(tmp_path,streame
     assert count==actual
 
 
-@pytest.mark.parametrize('c_ext', [True, False])
-def test_streaming_and_formula_rows_match_bulk_shape(tmp_path, monkeypatch, c_ext):
-    if not c_ext:
-        monkeypatch.setattr(reader_module, 'HAVE_C_EXT', False)
+@pytest.mark.parametrize('native', [True, False])
+def test_streaming_and_formula_rows_match_bulk_shape(tmp_path, monkeypatch, native):
+    if not native:
+        monkeypatch.setattr(reader_module, 'HAVE_NATIVE', False)
     path = tmp_path / 'gaps.xlsb'
     with XlsbWriter(path) as writer:
         writer.add_sheet('Data')

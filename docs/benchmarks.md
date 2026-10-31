@@ -2,7 +2,9 @@
 
 [Home](../README.md) · [Usage guide](usage.md) · [Validation](validation.md)
 
-`xlspy` includes a **C extension** (`_c_core`) that accelerates XLSB read and write and the XLSX write path. It is enabled by default. Set `XLSPY_DISABLE_C_EXT=1` to force the pure Python fallback.
+`xlspy` includes a **native extension** (`_rs_core`, Rust/PyO3) that accelerates XLSB read and write, the XLSX read and write paths and workbook-model loading. It is enabled by default. Set `XLSPY_ACCEL=python` (or the older `XLSPY_DISABLE_C_EXT=1`) to force the pure Python fallback.
+
+The measurements below predate the Rust port and were taken with the C extension (`_c_core`) it replaced; "C extension" in them means the native path. The port's own comparison against C is in [Validation](validation.md#rust-port-of-the-native-extension-2026-10-31).
 
 This page reports the write and read benchmarks on three machines. All were measured on **2026-10-19** with the same scripts and parameters. Dataset: **50,000 × 50** (2.5 million cells), `mixed` layout, median of **three runs** per measurement.
 
@@ -313,17 +315,17 @@ The write data for each system, with the environment, every run, and the medians
 
 ## Run the benchmarks
 
-Install the test extras and check that C acceleration is loaded:
+Install the test extras and check that native acceleration is loaded:
 
 ```bash
 python -m pip install -e '.[test]'
-python -c "from xlspy._accel import HAVE_C_EXT; assert HAVE_C_EXT"
+python -c "from xlspy._accel import HAVE_NATIVE; assert HAVE_NATIVE"
 ```
 
 [`examples/write_benchmark.py`](../examples/write_benchmark.py) produced the tables above. It runs every measurement in a fresh worker process, repeats each writer three times by default, interleaves the writers, and reports medians:
 
 ```bash
-# The full comparison: all writers, C extension on and off, one tracemalloc run per writer
+# The full comparison: all writers, native extension on and off (--c-ext), one tracemalloc run per writer
 python examples/write_benchmark.py --rows 50000 --cols 50 --iterations 3 --writers all --c-ext both --tracemalloc --output bench.json --csv bench.csv
 
 # Only some writers
@@ -335,7 +337,7 @@ python examples/write_benchmark.py --src ../other-checkout/src --csv other.csv
 
 - **Writers**: `xlsx-shared`, `xlsx-inline`, `xlsb-shared`, `xlsb-inline` (xlspy, `--c-ext on|off|both`), `openpyxl` (`write_only=True`), and `xlsxwriter` (`constant_memory=True`). openpyxl and xlsxwriter are optional; missing ones are skipped.
 - **Data**: `--dataset mixed` (default) is the eight-type layout of `performance_test.py` and is deterministic. `--dataset random --seed N` is a seeded, text-heavy alternative. With `--input stream` (default), every writer consumes the same generator. With `--input list`, the rows are built before the clock starts.
-- **Metrics**: wall time, peak resident memory, output size, and, with `--tracemalloc`, a separate untimed run's Python allocation peak (memory the C extension allocates directly is not traced).
+- **Metrics**: wall time, peak resident memory, output size, and, with `--tracemalloc`, a separate untimed run's Python allocation peak (memory the native extension allocates directly is not traced).
 - **Targets**: `--target file` (default) or `--target memory` (an `io.BytesIO`, xlspy writers only).
 - **Output**: `--output` writes JSON with the environment, every run, and the medians. The date is recorded as a day only. `--csv` writes one row per run. A failed run is recorded with its error and does not stop the series.
 

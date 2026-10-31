@@ -196,11 +196,11 @@ saves styled cells.
 
 ### Performance of styled writes
 
-Styles cost little on top of a plain write. The C encoders write header,
+Styles cost little on top of a plain write. The native encoders write header,
 range, `(value, format)` and `(value, Style)` cells, and rows with a height,
 hidden flag or outline level. Each distinct style combination is resolved
 once and then reused. Medians from `tools/bench_styles.py` (10,000 rows × 12
-columns, Python 3.14, Windows, C extension on, seconds):
+columns, Python 3.14, Windows, native extension on, seconds):
 
 | Scenario | XLSX 0.8.1 | XLSX now | XLSB 0.8.1 | XLSB now |
 |---|---:|---:|---:|---:|
@@ -504,7 +504,7 @@ with XlsxWriter("grouped.xlsx") as writer:
   or column, so Excel shows the `+` button. The summary row must be among the
   rows you write. Hidden rows and columns from `hidden_rows` and
   `hidden_columns` still apply.
-- Grouped rows are written by the Python row encoder rather than the C one,
+- Grouped rows are written by the Python row encoder rather than the native one,
   like rows with a custom height. Sheets without groups are unchanged and keep
   the fast path.
 - Updaters (`XlsxUpdater`, `XlsbUpdater`) do not create or change groups.
@@ -922,7 +922,7 @@ of the same data stay byte-for-byte identical. The workbook model saves
 - **Shared strings** (the default) keep one table of every distinct string in
   memory until save. For high-cardinality exports pass `useSharedStrings=False`:
   text is then stored inline in each cell, so memory no longer grows with the
-  number of distinct strings. Files are somewhat larger. The C extension encodes
+  number of distinct strings. Files are somewhat larger. The native extension encodes
   inline XLSB rows too; rows it cannot handle (formatted cells, or text it
   refuses) go to the Python encoder (see the benchmarks).
 
@@ -1005,7 +1005,7 @@ report.
 | Conditional format styles (`DifferentialStyle`) | Yes | Yes, except gradient fills, diagonal borders, vertical alignment and rare font options (`TypeError`) |
 | Sheet zoom (`zoom`) | Yes | Yes |
 | Streaming: one-pass input, spooled rows | Yes | Yes (rows written as produced) |
-| Inline strings (`useSharedStrings=False`) | Yes | Yes (C row encoder; Python fallback) |
+| Inline strings (`useSharedStrings=False`) | Yes | Yes (native row encoder; Python fallback) |
 | Chart caches from streamed rows | n/a (no caches) | Yes (only chart cells are kept) |
 | Chart formatting (`gap_width`, `hole_size`, `fill`, `border`, `plot_fill`, `font_size`, `font_color`) | Yes | Yes |
 | Shapes and text boxes (`Shape`, `link_cell` KPI cards) | Yes | Yes |
@@ -1203,7 +1203,7 @@ when reading formula text; reading cached values does not parse formula tokens.
 Point edits into grouped formulas are refused. Sparse edits discard the
 modified sheet's obsolete binary index and request recalculation.
 
-Ordinary exports and reads with `data_only=True` retain their C row encoder
+Ordinary exports and reads with `data_only=True` retain their native row encoder
 and reader, with the existing Python fallback. They do not parse formula
 tokens or look up comments for each cell. The binary formula context is
 created only when formulas or names are used. Incremental binary reading

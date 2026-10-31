@@ -378,7 +378,7 @@ def test_xlsb_inline_lone_surrogate_is_refused(tmp_path):
 def _accel_available():
     from xlspy import _accel
 
-    return _accel.HAVE_C_EXT
+    return _accel.HAVE_NATIVE
 
 
 _PARITY_SCRIPT = r'''
@@ -409,7 +409,7 @@ with XlsbWriter(sys.argv[1], useSharedStrings=False) as writer:
 '''
 
 
-@pytest.mark.skipif(not _accel_available(), reason="C extension not built")
+@pytest.mark.skipif(not _accel_available(), reason="native extension not built")
 def test_xlsb_inline_c_and_python_encoders_write_identical_bytes(tmp_path):
     import os
     import subprocess

@@ -195,18 +195,18 @@ def test_reader_honors_1904_xlsx_like_openpyxl(tmp_path):
     assert [row[0] for row in _read_workbook(path)] == expected
 
 
-@pytest.mark.parametrize("use_c_ext", [False, True], ids=["python", "c_ext"])
-def test_reader_honors_1904_xlsb_flag(tmp_path, monkeypatch, use_c_ext):
+@pytest.mark.parametrize("use_native", [False, True], ids=["python", "native"])
+def test_reader_honors_1904_xlsb_flag(tmp_path, monkeypatch, use_native):
     """The 1904 flag changes what every stored serial means.
 
     A workbook written under the 1900 system stores 2020-01-14 as serial 43843;
     after flipping the workbook flag, the same serial means 2024-01-15.
     """
-    if use_c_ext:
-        if not xlspy_reader.HAVE_C_EXT:
-            pytest.skip("C extension not available")
+    if use_native:
+        if not xlspy_reader.HAVE_NATIVE:
+            pytest.skip("native extension not available")
     else:
-        monkeypatch.setattr(xlspy_reader, "HAVE_C_EXT", False)
+        monkeypatch.setattr(xlspy_reader, "HAVE_NATIVE", False)
 
     path = _write_workbook(tmp_path / "mac.xlsb", [[(dt.date(2020, 1, 14), F.DATE_SHORT)]])
     _set_xlsb_date_system(path)

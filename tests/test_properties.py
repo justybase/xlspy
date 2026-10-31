@@ -5,7 +5,7 @@ mixed values and checks invariants that must hold for every workbook:
 
 * each writer round-trips its own output (XLSX and XLSB);
 * both writers agree on the same grid;
-* the XLSB C extension and the pure-Python fallback agree;
+* the XLSB native extension and the pure-Python fallback agree;
 * Excel serial numbers and ``date``/``datetime`` values convert back and
   forth (compared against openpyxl for random serials).
 
@@ -66,14 +66,14 @@ def _write(path, rows):
 
 
 def _read(path, force_python_xlsb=False):
-    if force_python_xlsb and xlspy_reader.HAVE_C_EXT:
-        original = xlspy_reader.HAVE_C_EXT
-        xlspy_reader.HAVE_C_EXT = False
+    if force_python_xlsb and xlspy_reader.HAVE_NATIVE:
+        original = xlspy_reader.HAVE_NATIVE
+        xlspy_reader.HAVE_NATIVE = False
         try:
             with ExcelReader(str(path)) as reader:
                 return reader.read_all("Sheet1")
         finally:
-            xlspy_reader.HAVE_C_EXT = original
+            xlspy_reader.HAVE_NATIVE = original
     with ExcelReader(str(path)) as reader:
         return reader.read_all("Sheet1")
 
@@ -125,7 +125,7 @@ def test_xlsx_roundtrip(tmp_path_factory, rows):
 def test_xlsb_roundtrip(tmp_path_factory, rows):
     path = _write(tmp_path_factory.mktemp("xlsb") / "grid.xlsb", rows)
     _assert_same_grid(_read(path), rows, "xlsb roundtrip")
-    if xlspy_reader.HAVE_C_EXT:
+    if xlspy_reader.HAVE_NATIVE:
         _assert_same_grid(
             _read(path, force_python_xlsb=True), rows, "xlsb roundtrip (python path)"
         )

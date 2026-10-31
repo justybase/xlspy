@@ -7,9 +7,9 @@ For recorded platform runs and compatibility checks, see
 
 xlspy needs Python 3.11 or later (`requires-python = ">=3.11"`); CI runs
 3.11–3.15. Where the default `python` is older, name the version, e.g.
-`py -3.14` on Windows. Building from source needs a C compiler and a Rust
-toolchain (`rustup`), for the two native backends (see `src/xlspy/_accel.py`;
-`XLSPY_ACCEL=c|rust|python` picks one).
+`py -3.14` on Windows. Building from source needs a Rust toolchain
+(`rustup`) for the native extension, `rust/xlspy_core` (built by maturin; see
+`src/xlspy/_accel.py`, where `XLSPY_ACCEL=rust|python` picks the backend).
 
 The test dependencies are optional and do not become runtime dependencies:
 
@@ -18,7 +18,7 @@ python -m pip install -e '.[test]'
 python -m pytest
 ```
 
-Without the C extension (the pure-Python fallback that CI also runs):
+Without the native extension (the pure-Python fallback that CI also runs):
 
 ```bash
 XLSPY_DISABLE_C_EXT=1 python -m pytest        # PowerShell: $env:XLSPY_DISABLE_C_EXT="1"
@@ -79,22 +79,21 @@ python -m pytest tests/test_xlsb_metadata_com.py
 python -m pytest tests/test_excel_com_review_fixes.py
 ```
 
-## Optional C extension
+## Native extension
 
-Most XLSB tests run through the pure-Python reader by default when the
-extension is absent. A few regressions explicitly cover both implementations.
-Build the local extension and run those tests with:
+Most tests run through whichever backend `_accel.py` loaded; the
+`test_native_*` modules and a few regressions pin both the native code and
+the pure-Python path to the same results. After changing the Rust code,
+rebuild it with `python -m pip install -e '.[test]'` (or `maturin develop
+--release`), then run the Rust checks too:
 
 ```bash
-gcc -shared -fPIC -O2 \
-  -I"$(python -c 'import sysconfig; print(sysconfig.get_path("include"))')" \
-  src/xlspy/c_ext/_c_core.c \
-  -o "src/xlspy/_c_core$(python3-config --extension-suffix)"
-python -m pytest tests/test_reader.py tests/test_excel_dates.py tests/test_xlsb_unicode.py
+cd rust/xlspy_core
+cargo fmt --check && cargo clippy -- -D warnings && cargo test
+cd ../..
+python -m pytest tests/test_native_*.py tests/test_xlsb_native_dates.py
+python tools/fuzz_native.py --iterations 20000 --seed 1
 ```
-
-Remove the generated, git-ignored `.so` afterward to restore the pure-Python
-test environment.
 
 ## Cross-validation goldens
 

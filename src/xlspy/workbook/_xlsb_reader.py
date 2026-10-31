@@ -57,7 +57,7 @@ def _external_links(package, sheet_path: str) -> dict[str, str]:
 
 def _load_cells(sheet, reader, name, sheet_data, data_only):
     """Read the cells into ``sheet``. Return the ``(start, end)`` offsets of the
-    sheet data when the C loader read it, else None (the records were read in
+    sheet data when the native loader read it, else None (the records were read in
     Python, row headers excluded)."""
     if xlsb_load_cells is None:
         _load_cells_python(sheet, reader, name, sheet_data, data_only)
@@ -153,7 +153,7 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
             conditional = []
             list_parts = []
             filter_records = None
-            # The C loader has read the sheet data (with its row headers):
+            # The native loader has read the sheet data (with its row headers):
             # only the records around it are left.
             outside = (
                 iter_record_payloads(sheet_data) if span is None

@@ -31,10 +31,10 @@ FORMATS = [
 
 @pytest.fixture(params=["c", "python"])
 def encoder(request, monkeypatch):
-    """Run with the C row encoders, or with them replaced by the Python ones."""
+    """Run with the native row encoders, or with them replaced by the Python ones."""
     if request.param == "c":
-        if not _accel.HAVE_C_EXT:
-            pytest.skip("C extension not built")
+        if not _accel.HAVE_NATIVE:
+            pytest.skip("native extension not built")
     else:
         def no_c(*args, **kwargs):
             return None
@@ -181,21 +181,21 @@ def _sst_writer(strings):
 def test_shared_string_table_refuses_text_over_the_limit(encoder, text, monkeypatch):
     # The writers reject these cells first; the table must not cut them to fit.
     if encoder == "c":
-        if not _accel.HAVE_C_EXT:
-            pytest.skip("C extension not built")
+        if not _accel.HAVE_NATIVE:
+            pytest.skip("native extension not built")
     else:
         monkeypatch.setattr(xlspy.writer, "accel_encode_xlsb_sst", lambda *args: None)
     with pytest.raises(ValueError, match="32767"):
         _sst_writer(["ok", text])._write_shared_strings_bin(io.BytesIO())
 
 
-@pytest.mark.skipif(not _accel.HAVE_C_EXT, reason="C extension not built")
+@pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 @pytest.mark.parametrize("text", [
     pytest.param("a" * LIMIT, id="limit"),
     pytest.param("a" + ASTRAL * 16383, id="astral-at-limit"),
     pytest.param("é" * 100, id="accented"),
 ])
-def test_c_and_python_shared_string_tables_agree(text, monkeypatch):
+def test_native_and_python_shared_string_tables_agree(text, monkeypatch):
     strings = ["short", text]
     c_bytes = io.BytesIO()
     _sst_writer(strings)._write_shared_strings_bin(c_bytes)
@@ -262,27 +262,27 @@ def test_xlsx_escapes_follow_ooxml():
     assert "<t>lit _x005F_x0041_</t>" in sheet
 
 
-@pytest.mark.skipif(not _accel.HAVE_C_EXT, reason="C extension not built")
+@pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 @pytest.mark.parametrize("text", ["x" * (LIMIT + 1), "a" * (LIMIT - 1) + ASTRAL],
                          ids=["32768", "32767-code-points-32768-units"])
-def test_c_shared_row_encoders_hand_long_text_back_untouched(text):
-    # A row the C encoder refuses goes to the Python encoder, which raises.
-    # Strings the C encoder interned earlier in that row must be removed again,
+def test_native_shared_row_encoders_hand_long_text_back_untouched(text):
+    # A row the native encoder refuses goes to the Python encoder, which raises.
+    # Strings the native encoder interned earlier in that row must be removed again,
     # or the shared-string indexes would drift from the caller's counters.
-    from xlspy import _c_core
+    from xlspy import _rs_core
 
     for encode in (
-        lambda d, s: _c_core.encode_xlsb_row(["new one", "new two", text], d, s, 1, 1, 1),
-        lambda d, s: _c_core.encode_xlsx_row(["new one", "new two", text], d, s, 1, 1, 1, True),
+        lambda d, s: _rs_core.encode_xlsb_row(["new one", "new two", text], d, s, 1, 1, 1),
+        lambda d, s: _rs_core.encode_xlsx_row(["new one", "new two", text], d, s, 1, 1, 1, True),
     ):
         table, strings = {"old": 0}, ["old"]
         assert encode(table, strings) is None
         assert (table, strings) == ({"old": 0}, ["old"])
 
 
-@pytest.mark.skipif(not _accel.HAVE_C_EXT, reason="C extension not built")
-def test_c_encoders_hand_unusual_cells_back():
-    from xlspy import _c_core
+@pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
+def test_native_encoders_hand_unusual_cells_back():
+    from xlspy import _rs_core
 
     class BrokenStr:
         def __str__(self):
@@ -296,27 +296,27 @@ def test_c_encoders_hand_unusual_cells_back():
     # to the Python encoder, which writes or refuses them; str() raising used
     # to drop the XLSB cell silently.
     for cell in (BrokenStr(), Plain(), Formula("A1"), Hyperlink("https://example.com")):
-        assert _c_core.encode_xlsb_row_inline(["a", cell], 1) is None
-        assert _c_core.encode_xlsb_row(["a", cell], {}, [], 0, 0, 1) is None
-        assert _c_core.encode_xlsx_row(["a", cell], {}, [], 0, 0, 1, False) is None
+        assert _rs_core.encode_xlsb_row_inline(["a", cell], 1) is None
+        assert _rs_core.encode_xlsb_row(["a", cell], {}, [], 0, 0, 1) is None
+        assert _rs_core.encode_xlsx_row(["a", cell], {}, [], 0, 0, 1, False) is None
     for text in ("bell\x07", "cr\r", "lit _x0041_", "ff￾"):
-        assert _c_core.encode_xlsx_row([text], {}, [], 0, 0, 1, False) is None
+        assert _rs_core.encode_xlsx_row([text], {}, [], 0, 0, 1, False) is None
     # Shared XLSX text is escaped when the table is written, so C keeps it.
-    assert _c_core.encode_xlsx_row(["bell\x07"], {}, [], 0, 0, 1, True) is not None
+    assert _rs_core.encode_xlsx_row(["bell\x07"], {}, [], 0, 0, 1, True) is not None
 
 
-@pytest.mark.skipif(not _accel.HAVE_C_EXT, reason="C extension not built")
-def test_c_shared_encoders_keep_errors_raised_by_string_hashing():
-    from xlspy import _c_core
+@pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
+def test_native_shared_encoders_keep_errors_raised_by_string_hashing():
+    from xlspy import _rs_core
 
     class BadHash(str):
         def __hash__(self):
             raise RuntimeError("hash failed")
 
     with pytest.raises(RuntimeError, match="hash failed"):
-        _c_core.encode_xlsb_row(["ok", BadHash("x")], {}, [], 0, 0, 1)
+        _rs_core.encode_xlsb_row(["ok", BadHash("x")], {}, [], 0, 0, 1)
     with pytest.raises(RuntimeError, match="hash failed"):
-        _c_core.encode_xlsx_row(["ok", BadHash("x")], {}, [], 0, 0, 1, True)
+        _rs_core.encode_xlsx_row(["ok", BadHash("x")], {}, [], 0, 0, 1, True)
 
 
 @pytest.mark.parametrize("writer_cls,ext,shared", FORMATS)
@@ -329,9 +329,9 @@ def test_failing_str_is_reported_not_dropped(encoder, writer_cls, ext, shared):
                      error=RuntimeError, match="str failed")
 
 
-def test_c_and_python_xlsx_encoders_agree_on_ordinary_text(monkeypatch):
-    if not _accel.HAVE_C_EXT:
-        pytest.skip("C extension not built")
+def test_native_and_python_xlsx_encoders_agree_on_ordinary_text(monkeypatch):
+    if not _accel.HAVE_NATIVE:
+        pytest.skip("native extension not built")
     rows = [["Name", "Note"], ["plain", "a&b"], ["żółw", ASTRAL + "x"],
             ["_x", "x_"], ["_x00G0_", "tab\tand\nnewline"]]
     outputs = []

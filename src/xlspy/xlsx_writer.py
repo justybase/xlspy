@@ -240,7 +240,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         self._style_xf_map: dict[Style, int] = {}
         self._xf_styles: dict[int, Style] = {}
         self._style_format_xf: dict[tuple, tuple] = {}
-        # xf of each (value, format) cell the C row encoder may reuse: keyed
+        # xf of each (value, format) cell the native row encoder may reuse: keyed
         # by the format, or by (cell style xf, format) for a styled cell.
         self._fmt_xf: dict = {}
         self._fmt_xf_styles: list = []
@@ -1737,7 +1737,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 styles_for_row(row_idx, len(row), style_ranges, header_style)
                 if has_styles else _EMPTY_ROW_STYLES
             )
-            # The C encoder handles common scalar rows with optional style ids
+            # The native encoder handles common scalar rows with optional style ids
             # and <row> attributes; it hands back rows it cannot write as None
             # for the Python path.
             style_ids = (
@@ -1836,7 +1836,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                         cell_style, overlay, self._register_style,
                         self._style_format_xf,
                     )
-                    # Only a registered style has the id the C encoder sees.
+                    # Only a registered style has the id the native encoder sees.
                     base_xf = self._style_xf_map.get(cell_style)
                     if base_xf is not None:
                         _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,

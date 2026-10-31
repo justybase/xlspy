@@ -2,6 +2,48 @@
 
 [Home](../README.md) · [Benchmarks](benchmarks.md) · [Running the test suite](../tests/README.md)
 
+## Rust port of the native extension (2026-10-31)
+
+The C extension (`xlspy._c_core`) was replaced by a Rust module
+(`xlspy._rs_core`, PyO3 0.30), one group of functions at a time, with both
+built side by side until the last step. Validated on Windows 11 with Python
+3.11, 3.14 and 3.15:
+
+- Differential tests, C against Rust, for every entry point (1,238 cases:
+  fixed inputs, Hypothesis-generated rows, sheets and corrupted parts):
+  identical results, exceptions and shared-string table state. They were
+  removed with the C code; the comparison that stays is native against the
+  pure-Python path (`tests/test_native_*.py`, `tools/fuzz_native.py`).
+- Full suite with Rust as the default backend and with `XLSPY_ACCEL=c`, on
+  3.11, 3.14 and 3.15: **3165 passed** in each run; the pure-Python fallback:
+  **2987 passed**. After the C code was removed (and the 1,238 differential
+  cases with it): **1927 passed** on 3.11 and 3.15, **1930 passed** on 3.14
+  (with `pywin32`), **1752 passed** for the fallback. The one failure in every
+  run, `test_golden_object_counts[images.xlsx]`, needs Pillow, which was not
+  installed.
+- Excel COM checks on the Rust build (`XLSPY_RUN_EXCEL_COM=1 pytest -m com`,
+  Excel 16.0): **91 passed**, 9 skipped (printer, VBA project access,
+  `nzpy_extended`).
+- A wheel built by maturin from the source distribution for Python 3.11
+  passed `tools/wheel_smoke.py` in a clean virtual environment.
+- `tools/fuzz_native.py` (5,000 iterations per phase) through the Rust
+  backend: seeds 2–5 and 7–10 held every check. Seed 1 stops at an XLSX
+  cell with `r="A"` (no row number): the Python regex path reads it as column
+  A, while ElementTree, which gets the rows the native scanner declines,
+  raises `ValueError`. The C extension stops at the same case, so this is a
+  difference between the two Python paths, not the port. Seed 6 generates a
+  row 463,132 cells wide repeated over many gap rows and runs for hours with
+  either backend; it is a slow input, not a failure.
+- Speed, Rust time / C time on the same machine (below 1 is faster): XLSB
+  row encoders 0.83–1.02, shared strings 0.88–0.99, column widths 1.00,
+  formatted-cell pre-scan 0.79, XLSX row encoder 0.81–0.87, XLSB reader
+  about 0.9, XLSX scanner 0.94–0.98, XLSB model loader 0.99–1.02.
+- Behaviour differences: style and xf ids above 2**32 - 1 raise
+  `OverflowError` on every platform (C raised on Windows and truncated on
+  Linux and macOS); row and record sizes use 64-bit arithmetic on every
+  platform (C's `long` is 32-bit on Windows); the model loader checks that
+  the slot descriptors belong to the `Cell` class.
+
 ## Comments and template metadata validation (2026-10-20)
 
 Validated on Windows with Python 3.14.7:

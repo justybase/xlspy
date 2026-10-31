@@ -169,7 +169,7 @@ _PANE_ACTIVE = {"bottomRight": 0, "topRight": 1, "bottomLeft": 2, "topLeft": 3}
 
 
 
-# The C row encoder hands rows with rich text to the Python encoder, which
+# The native row encoder hands rows with rich text to the Python encoder, which
 # writes them as rich shared strings (see _write_rich_str). Hyperlinks are
 # written as BrtHLink records (see _hlink_payload).
 _MAX_STR_RUNS = 32767
@@ -213,7 +213,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         self._style_xf_map: dict[Style, int] = {}
         self._xf_styles: dict[int, Style] = {}
         self._style_format_xf: dict[tuple, tuple] = {}
-        # xf of each (value, format) cell the C row encoder may reuse: keyed
+        # xf of each (value, format) cell the native row encoder may reuse: keyed
         # by the format, or by (cell style xf, format) for a styled cell.
         self._fmt_xf: dict = {}
         self._fmt_xf_styles: list = []
@@ -1646,7 +1646,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                             cell_style, overlay, self._register_style,
                             self._style_format_xf,
                         )
-                        # Only a registered style has the id the C encoder sees.
+                        # Only a registered style has the id the native encoder sees.
                         base_xf = self._style_xf_map.get(cell_style)
                         if base_xf is not None:
                             _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
@@ -1715,7 +1715,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                         buffer.write(b'\x05\x10')
                         buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
                 else:
-                    # The C encoder hands rows with other objects to this path.
+                    # The native encoder hands rows with other objects to this path.
                     if isinstance(cell, Formula):
                         from ._xlsb_formulas import formula_cell
                         buffer.write(formula_cell(cell, col_idx, xf_index if has_custom_fmt else 0,

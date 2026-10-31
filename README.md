@@ -14,21 +14,23 @@ Style the result with charts, tables, formatting, and cell notes — all from Py
 
 **2.5 million cells. Ready in seconds.**
 
-| XLSB with C acceleration | Windows | WSL2 |
+| XLSB with native acceleration | Windows | WSL2 |
 | :--- | ---: | ---: |
 | Write | **1.46 s** | **1.17 s** |
 | Read | **0.60 s** | **0.43 s** |
 
-C acceleration delivered **over 10× faster XLSB reads** than xlspy's
+Native acceleration delivered **over 10× faster XLSB reads** than xlspy's
 pure-Python fallback in both environments. Figures are medians of three runs
-on a 50,000 × 50 dataset (Windows: Python 3.14.6; WSL2: Python 3.14.4).
+on a 50,000 × 50 dataset (Windows: Python 3.14.6; WSL2: Python 3.14.4),
+measured with the C extension that the Rust (PyO3) module has since replaced;
+the Rust module is as fast or faster on the same paths.
 [See the full comparisons, hardware, and methodology →](docs/benchmarks.md)
 
 ## Made for the work behind the workbook
 
 | Your workflow | What xlspy brings |
 | :--- | :--- |
-| **Export large datasets** | XLSB and XLSX output from a generator or database cursor, with bounded memory via `useSharedStrings=False`, and C acceleration for supported read and write paths. A failed export publishes no partial workbook ([failure handling](docs/usage.md#failure-handling)). |
+| **Export large datasets** | XLSB and XLSX output from a generator or database cursor, with bounded memory via `useSharedStrings=False`, and native (Rust) acceleration for supported read and write paths. A failed export publishes no partial workbook ([failure handling](docs/usage.md#failure-handling)). |
 | **Deliver polished reports** | Cell styles, number formats, formulas, dropdown validation, hyperlinks, images, print setup, charts (column, bar, line, area, pie, doughnut, scatter, stacked), tables, and conditional formatting. Both XLSX and XLSB support them; see the [feature support table](docs/usage.md#feature-support). |
 | **Work with DataFrames** | Export pandas or polars data directly to either format. |
 | **Refresh a familiar template** | Replace data in XLSB, XLSX, or XLSM while keeping workbook structure, styles, and unrelated sheets. |
@@ -45,6 +47,10 @@ Requires **Python 3.11 or newer** (tested on 3.11–3.15).
 ```bash
 pip install xlspy
 ```
+
+Wheels include the native extension. Installing from the source
+distribution builds it, which needs a Rust toolchain
+([rustup](https://rustup.rs)).
 
 Create a report with a styled header and formatted values:
 

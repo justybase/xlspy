@@ -404,7 +404,7 @@ def test_styled_dates_keep_a_date_format(tmp_path, writer_cls, ext):
     with writer_cls(path) as writer:
         writer.add_sheet("S")
         rows = [["day", "moment", "ranged"]]
-        # Several rows: the C encoder takes over once the xfs are recorded.
+        # Several rows: the native encoder takes over once the xfs are recorded.
         rows += [[(day, bold), (moment, bold), day] for _ in range(5)]
         rows += [[(day, Style(bold=True, number_format="0.00")), (day, "dd/mm/yyyy"), moment]]
         writer.write_sheet(rows, styles={"C2:C7": Style(italic=True)})

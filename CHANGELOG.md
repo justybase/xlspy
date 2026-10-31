@@ -10,18 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Python 3.11 and 3.15 support: `requires-python = ">=3.11"`, CI and wheels for 3.11–3.15.
-- Rust port of the native accelerator (`xlspy._rs_core`, PyO3), built next to the C extension while the port
-  proceeds. `XLSPY_ACCEL=auto|rust|c|python` picks the backend per function; `auto` now uses Rust for every
-  function. Ported so far: shared-strings encoder and reader, column widths, the formatted-cell
-  pre-scan, the XLSB row encoders (shared and inline strings), the XLSX row encoder and the XLSB worksheet
-  reader, the XLSX worksheet scanner (plain and workbook-model mode) and the XLSB workbook-model loader. `tests/test_accel_parity.py` checks the two
-  backends give the same results. Building from source now needs a Rust toolchain.
-
-### Changed
-
-- Native style and xf ids above 2**32 - 1 now raise OverflowError on every platform (the C extension raised on
-  Windows and silently truncated them on Linux and macOS).
-
 - Pivot tables (`PivotTable`, `PivotValue`): new pivots in XLSX and XLSB, passed as
   `write_sheet(..., pivots=[...])` (and `write_dataframe`). One row field, at most one column field, any number of
   filters (page fields) and values (sum, count, average, min, max). The source is a table written in the same
@@ -86,6 +74,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renaming a sheet rewrites the sparkline formulas that refer to it.
 - Removing a sheet that holds table slicers from a loaded workbook (XLSX or XLSB) raises `NotImplementedError`
   before anything is written.
+- The native accelerator is now a Rust module (`xlspy._rs_core`, PyO3) instead of the C extension
+  (`xlspy._c_core`, removed). It covers the same paths with the same results: XLSB and XLSX reading and row
+  encoding, shared strings, column widths and workbook-model loading; the reads and writes are as fast or faster.
+  The build uses maturin, so installing from the source distribution needs a Rust toolchain. `XLSPY_ACCEL=python`
+  selects the pure-Python fallback (`XLSPY_DISABLE_C_EXT=1` still works); `xlspy._accel.HAVE_NATIVE` reports
+  the extension, and `HAVE_C_EXT` stays as an alias.
+- Native style and xf ids above 2**32 - 1 raise `OverflowError` on every platform (the C extension raised on
+  Windows and silently truncated them on Linux and macOS).
 
 ## [0.12.0] - 2026-10-29
 

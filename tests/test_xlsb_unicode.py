@@ -12,7 +12,7 @@ ASTRAL = "𐀀𝄞"
 @pytest.mark.parametrize("force_python", [False, True], ids=["default", "python"])
 def test_xlsb_roundtrips_supplementary_unicode(tmp_path, monkeypatch, force_python):
     if force_python:
-        monkeypatch.setattr(xlspy_reader, "HAVE_C_EXT", False)
+        monkeypatch.setattr(xlspy_reader, "HAVE_NATIVE", False)
 
     path = tmp_path / "unicode.xlsb"
     sheet_name = f"Sheet {ASTRAL}"
@@ -29,7 +29,7 @@ def test_xlsb_roundtrips_supplementary_unicode(tmp_path, monkeypatch, force_pyth
 @pytest.mark.parametrize("force_python", [False, True], ids=["default", "python"])
 def test_xlsb_updater_preserves_supplementary_unicode(tmp_path, monkeypatch, force_python):
     if force_python:
-        monkeypatch.setattr(xlspy_reader, "HAVE_C_EXT", False)
+        monkeypatch.setattr(xlspy_reader, "HAVE_NATIVE", False)
 
     path = tmp_path / "updated.xlsb"
     with XlsbWriter(str(path)) as writer:

@@ -1,15 +1,15 @@
-"""Fuzz the C extension's readers and row encoders.
+"""Fuzz the native extension's readers and row encoders.
 
 Three phases, all deterministic for a given ``--seed``:
 
   reader   Corrupts valid XLSB worksheet and shared-strings parts (flipped
            bytes, oversized length fields, truncation, inserted garbage) and
-           feeds them to the C readers. A Python exception is an acceptable
-           answer for malformed input; a crash or a sanitizer report is not.
+           feeds them to the native readers. A Python exception is an acceptable
+           answer for malformed input; a crash or a panic is not.
 
   encoder  Builds rows from awkward values (lone surrogates, text over the
            cell limit, out-of-range numbers and dates, objects whose hash or
-           str() raises) and feeds them to the C row encoders. After every
+           str() raises) and feeds them to the native row encoders. After every
            call the shared-string table must match the counters the caller
            holds: a call that fails or falls back must leave it unchanged.
            Successful XLSX rows must also parse as XML.
@@ -17,15 +17,15 @@ Three phases, all deterministic for a given ``--seed``:
   xlsx     Generates worksheet XML (attribute order, duplicate attributes,
            missing and malformed references, every cell type, entities,
            rich text, prefixes, odd numbers and dates) and reads it through
-           the C scanner, the Python regex path and ElementTree. Rows and
+           the native scanner, the Python regex path and ElementTree. Rows and
            values must agree; a row the scanner declines must surface as raw
            bytes. For malformed input both paths may raise, but one raising
            while the other returns rows is a violation.
 
 Usage:
-    python tools/fuzz_c_core.py --iterations 20000 --seed 1
+    python tools/fuzz_native.py --iterations 20000 --seed 1
 
-Run it against a sanitizer build to catch memory errors; see docs/validation.md.
+A panic in the Rust code aborts the process (panic = "abort"), so it shows up as a crash.
 The process exits 1 at the first violated check and prints the offending case.
 """
 
@@ -49,8 +49,8 @@ from xlspy import ExcelReader, Formula, Hyperlink, XlsbWriter, XlsxWriter  # noq
 from xlspy import _accel, _xlsx_read  # noqa: E402
 from xlspy.reader import _get_date_num_fmt_ids  # noqa: E402
 
-if not _accel.HAVE_C_EXT:
-    sys.exit("the C extension is not built; nothing to fuzz")
+if not _accel.HAVE_NATIVE:
+    sys.exit("the native extension is not built; nothing to fuzz")
 
 
 class BadHash(str):
@@ -148,7 +148,7 @@ def reader_phase(rng, iterations, state, sheets, ssts, counts):
         try:
             rows = _accel.read_xlsb_worksheet(mutate(rng, rng.choice(sheets)), shared_strings,
                                               styles, date_fmts, date_1904)
-            # The C reader is lazy: parsing happens while the rows are consumed.
+            # The native reader is lazy: parsing happens while the rows are consumed.
             for _ in rows or ():
                 counts["reader rows"] += 1
             counts["reader ok"] += 1
@@ -303,7 +303,7 @@ def _xlsx_cell(rng, row):
                 f'<v>{rng.choice(["1", "0", "", "true"])}</v></c>')
     if kind == 3:
         # Error values are fixed codes; `_fast_value` keeps entities raw for
-        # t="e", which predates the C scanner, so do not generate `&` here.
+        # t="e", which predates the native scanner, so do not generate `&` here.
         return (f'<c{_xlsx_attrs(rng, ref, style, "e")}>'
                 f'<v>{rng.choice(["#DIV/0!", "#N/A", ""])}</v></c>')
     if kind == 4:
@@ -480,7 +480,7 @@ def xlsx_reader_phase(rng, iterations, state, counts):
 
         if isinstance(expected, Exception) or isinstance(got, Exception):
             if isinstance(expected, Exception) and isinstance(got, Exception):
-                # Both reject the sheet; the C scanner reports the first cell
+                # Both reject the sheet; the native scanner reports the first cell
                 # it cannot read while the regex path may raise from a later
                 # matched cell, so the exception types need not match.
                 if type(expected) is type(got):

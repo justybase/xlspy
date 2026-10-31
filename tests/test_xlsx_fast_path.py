@@ -178,7 +178,7 @@ def test_strict_namespace_sheet_matches(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("name", sorted(SUPPORTED_BODIES))
-def test_c_reader_matches_python_and_element_tree(tmp_path, monkeypatch, name):
+def test_native_reader_matches_python_and_element_tree(tmp_path, monkeypatch, name):
     path = _base_file(tmp_path)
     replace_parts(path, {SHEET: _sheet(SUPPORTED_BODIES[name])})
     from_c, from_python, from_tree = _all_paths(path, monkeypatch)
@@ -187,7 +187,7 @@ def test_c_reader_matches_python_and_element_tree(tmp_path, monkeypatch, name):
 
 
 @pytest.mark.parametrize("name", sorted(PREFIXED_SHEETS))
-def test_c_reader_declines_prefixed_sheets(tmp_path, monkeypatch, name):
+def test_native_reader_declines_prefixed_sheets(tmp_path, monkeypatch, name):
     path = _base_file(tmp_path)
     replace_parts(path, {SHEET: PREFIXED_SHEETS[name]})
     from_c, from_python, from_tree = _all_paths(path, monkeypatch)
@@ -196,7 +196,7 @@ def test_c_reader_declines_prefixed_sheets(tmp_path, monkeypatch, name):
     assert from_c == [(1, [(0, 1)])]
 
 
-# Bodies the C scanner must hand to ElementTree instead of guessing.
+# Bodies the native scanner must hand to ElementTree instead of guessing.
 FALLBACK_BODIES = {
     "rich_inline_string_falls_back",
     "entities_in_inline_fall_back",
@@ -208,17 +208,17 @@ FALLBACK_BODIES = {
 }
 
 
-@pytest.mark.skipif(not _accel.HAVE_C_EXT, reason="C extension not built")
+@pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 @pytest.mark.parametrize("name", sorted(SUPPORTED_BODIES))
-def test_c_reader_signals_fallback_instead_of_guessing(tmp_path, name):
+def test_native_reader_signals_fallback_instead_of_guessing(tmp_path, name):
     path = _base_file(tmp_path)
     replace_parts(path, {SHEET: _sheet(SUPPORTED_BODIES[name])})
     items = _c_items(path)
     assert any(isinstance(item, bytes) for item in items) == (name in FALLBACK_BODIES)
 
 
-@pytest.mark.skipif(not _accel.HAVE_C_EXT, reason="C extension not built")
-def test_c_reader_handles_tiny_stream_chunks(tmp_path):
+@pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
+def test_native_reader_handles_tiny_stream_chunks(tmp_path):
     path = tmp_path / "chunks.xlsx"
     rows = [[index, f"text-{index}", index * 0.25, index % 2 == 0] for index in range(400)]
     with XlsxWriter(path) as writer:
@@ -240,7 +240,7 @@ def test_c_reader_handles_tiny_stream_chunks(tmp_path):
             _same_typed_rows(got, expected)
 
 
-def test_c_reader_resumes_row_numbers_after_a_fallback(tmp_path, monkeypatch):
+def test_native_reader_resumes_row_numbers_after_a_fallback(tmp_path, monkeypatch):
     path = _base_file(tmp_path)
     body = ('<row r="12 "><c r="A12"><v>1</v></c></row>'
             '<row><c r="B13"><v>2</v></c><c><v>3</v></c></row>')
@@ -251,7 +251,7 @@ def test_c_reader_resumes_row_numbers_after_a_fallback(tmp_path, monkeypatch):
     assert from_c == [(12, [(0, 1)]), (13, [(1, 2), (2, 3)])]
 
 
-def test_c_reader_honors_the_1904_date_system(tmp_path, monkeypatch):
+def test_native_reader_honors_the_1904_date_system(tmp_path, monkeypatch):
     path = _base_file(tmp_path)
     body = ('<row r="1"><c r="A1" s="1"><v>0</v></c><c r="B1" s="1"><v>59</v></c>'
             '<c r="C1" s="1"><v>60</v></c><c r="D1" s="1"><v>43000.5</v></c></row>')
@@ -274,7 +274,7 @@ def test_c_reader_honors_the_1904_date_system(tmp_path, monkeypatch):
     ]
 
 
-def test_c_reader_reads_iso_dates_and_empty_date_cells(tmp_path, monkeypatch):
+def test_native_reader_reads_iso_dates_and_empty_date_cells(tmp_path, monkeypatch):
     path = _base_file(tmp_path)
     body = ('<row r="1"><c r="A1" t="d"><v>2024-02-29T12:30:00</v></c>'
             '<c r="B1" t="d"><v></v></c></row>')
@@ -285,7 +285,7 @@ def test_c_reader_reads_iso_dates_and_empty_date_cells(tmp_path, monkeypatch):
     _same_typed_rows(from_c, from_tree)
 
 
-def test_c_reader_propagates_number_errors(tmp_path, monkeypatch):
+def test_native_reader_propagates_number_errors(tmp_path, monkeypatch):
     path = _base_file(tmp_path)
     replace_parts(path, {SHEET: _sheet('<row r="1"><c r="A1"><v>abc</v></c></row>')})
     with pytest.raises(ValueError):
@@ -298,7 +298,7 @@ def test_c_reader_propagates_number_errors(tmp_path, monkeypatch):
                 list(_xlsx_read.iter_indexed_rows(reader, "Sheet1"))
 
 
-def test_c_reader_propagates_invalid_utf8(tmp_path):
+def test_native_reader_propagates_invalid_utf8(tmp_path):
     path = _base_file(tmp_path)
     xml = (b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
            b'<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>\xff</t></is></c>'
@@ -309,7 +309,7 @@ def test_c_reader_propagates_invalid_utf8(tmp_path):
             list(_xlsx_read.iter_indexed_rows(reader, "Sheet1"))
 
 
-def test_c_reader_propagates_truncated_utf8(tmp_path):
+def test_native_reader_propagates_truncated_utf8(tmp_path):
     path = _base_file(tmp_path)
     xml = (b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
            b'<sheetData><row r="1"><c r="A1"><v>1</v></c></row>'

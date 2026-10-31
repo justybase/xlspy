@@ -192,7 +192,7 @@ def _probe_fast(stream, with_head=False):
     """Read up to the sheetData start tag. Return ``(text, decoder, root_tag, ns, raw)``
     when the fast path applies (UTF-8, unprefixed tags, non-empty sheetData), otherwise
     ``None``. ``text`` and ``decoder`` continue the Python reader; ``raw`` is the same
-    tail of bytes for the C reader."""
+    tail of bytes for the native reader."""
     raw = b""
     match = None
     while True:
@@ -222,7 +222,7 @@ def _probe_fast(stream, with_head=False):
 
 
 def _iter_c(reader, stream, probe):
-    """Rows from the C scanner, or None when the extension does not provide it."""
+    """Rows from the native scanner, or None when the extension does not provide it."""
     _text, _decoder, root_tag, ns, raw = probe
     rows = _accel.read_xlsx_worksheet(
         stream, raw, reader._shared_string_array, _date_style_flags(reader),
@@ -233,7 +233,7 @@ def _iter_c(reader, stream, probe):
 
 
 def _c_rows(reader, rows, root_tag, ns):
-    """Resolve the C scanner's fallback rows with the XML parser, as _iter_fast does."""
+    """Resolve the native scanner's fallback rows with the XML parser, as _iter_fast does."""
     next_row = 1
     for item in rows:
         if isinstance(item, bytes):

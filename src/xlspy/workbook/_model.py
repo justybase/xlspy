@@ -1285,7 +1285,7 @@ class Cell:
         return self._sheet.cell(self._row + row, self._column + column)
 
 
-# Slot descriptors, in the order the C loaders fill them (see c_ext/_c_core.c).
+# Slot descriptors, in the order the native loaders fill them (see rust/xlspy_core/src/model.rs).
 CELL_SLOTS = tuple(Cell.__dict__[name] for name in (
     "_sheet", "_row", "_column", "_value", "_formula", "_data_type",
     "_style_id", "_comment", "_hyperlink", "_named_style", "_dirty",

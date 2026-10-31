@@ -540,10 +540,10 @@ def _xlsb_with_row_index(tmp_path, new_index):
 def xlsb_reader_impl(request, monkeypatch):
     import xlspy.reader as reader_module
 
-    if request.param == "c" and not reader_module.HAVE_C_EXT:
-        pytest.skip("C extension not built")
+    if request.param == "c" and not reader_module.HAVE_NATIVE:
+        pytest.skip("native extension not built")
     if request.param == "python":
-        monkeypatch.setattr(reader_module, "HAVE_C_EXT", False)
+        monkeypatch.setattr(reader_module, "HAVE_NATIVE", False)
     return request.param
 
 

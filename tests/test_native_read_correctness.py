@@ -1,9 +1,9 @@
-"""Focused regressions for C-vs-Python XLSB reader parity.
+"""Focused regressions for native-vs-Python XLSB reader parity.
 
 The generated binary mutations exercise cases that ordinary writer output
 does not produce: left-ragged cells, record-order-dependent first-row widths,
 and short/overrunning cell records. The Python path is selected in-process by
-disabling only the reader's C dispatch, leaving both implementations on the
+disabling only the reader's native dispatch, leaving both implementations on the
 same input file and in the same test environment.
 """
 
@@ -15,10 +15,10 @@ import pytest
 
 from xlspy import ExcelReader, XlsbWriter
 from xlspy import reader as reader_module
-from xlspy._accel import HAVE_C_EXT
+from xlspy._accel import HAVE_NATIVE
 
 
-pytestmark = pytest.mark.skipif(not HAVE_C_EXT, reason="C extension not built")
+pytestmark = pytest.mark.skipif(not HAVE_NATIVE, reason="native extension not built")
 SHEET_PART = "xl/worksheets/sheet1.bin"
 
 
@@ -78,7 +78,7 @@ def _rewrite_sheet(source, destination, transform):
 def _read(path, *, force_python=False, monkeypatch):
     if force_python:
         with monkeypatch.context() as patch:
-            patch.setattr(reader_module, "HAVE_C_EXT", False)
+            patch.setattr(reader_module, "HAVE_NATIVE", False)
             with ExcelReader(str(path)) as reader:
                 return reader.read_all("S")
     with ExcelReader(str(path)) as reader:
@@ -88,7 +88,7 @@ def _read(path, *, force_python=False, monkeypatch):
 def _first_row(path, *, force_python=False, monkeypatch):
     if force_python:
         with monkeypatch.context() as patch:
-            patch.setattr(reader_module, "HAVE_C_EXT", False)
+            patch.setattr(reader_module, "HAVE_NATIVE", False)
             with ExcelReader(str(path)) as reader:
                 return next(reader.get_rows("S"))
     with ExcelReader(str(path)) as reader:
@@ -129,7 +129,7 @@ def _set_1904_date_system(path):
             zout.writestr(info, payload)
 
 
-def test_c_reader_drops_cells_left_of_first_data_column(tmp_path, monkeypatch):
+def test_native_reader_drops_cells_left_of_first_data_column(tmp_path, monkeypatch):
     source = tmp_path / "source.xlsb"
     _numeric_workbook(source)
 
@@ -156,7 +156,7 @@ def test_c_reader_drops_cells_left_of_first_data_column(tmp_path, monkeypatch):
     assert c_grid == [[10, 20, 30], [60, None, None]]
 
 
-def test_c_reader_matches_python_for_first_row_record_order(tmp_path, monkeypatch):
+def test_native_reader_matches_python_for_first_row_record_order(tmp_path, monkeypatch):
     source = tmp_path / "source.xlsb"
     _numeric_workbook(source)
 
@@ -182,7 +182,7 @@ def test_c_reader_matches_python_for_first_row_record_order(tmp_path, monkeypatc
     assert c_grid == [[], []]
 
 
-def test_c_reader_ignores_short_and_overrunning_records(tmp_path, monkeypatch):
+def test_native_reader_ignores_short_and_overrunning_records(tmp_path, monkeypatch):
     source = tmp_path / "source.xlsb"
     _numeric_workbook(source)
 
@@ -208,7 +208,7 @@ def test_c_reader_ignores_short_and_overrunning_records(tmp_path, monkeypatch):
     assert c_grid == [[10, 20, 30], [40, 50, 60]]
 
 
-def test_c_reader_propagates_out_of_range_1904_date_error(tmp_path, monkeypatch):
+def test_native_reader_propagates_out_of_range_1904_date_error(tmp_path, monkeypatch):
     path = tmp_path / "far-date.xlsb"
     with XlsbWriter(str(path)) as writer:
         writer.add_sheet("S")
@@ -223,7 +223,7 @@ def test_c_reader_propagates_out_of_range_1904_date_error(tmp_path, monkeypatch)
     assert type(c_error.value) is type(py_error.value)
 
 
-def test_c_reader_delegates_unusually_wide_layout_to_python(tmp_path, monkeypatch):
+def test_native_reader_delegates_unusually_wide_layout_to_python(tmp_path, monkeypatch):
     source = tmp_path / "source.xlsb"
     _numeric_workbook(source)
 

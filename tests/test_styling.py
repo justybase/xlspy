@@ -82,9 +82,9 @@ def test_xlsx_style_values_are_interpreted_by_openpyxl(tmp_path):
 
 @pytest.mark.parametrize("use_shared_strings", [True, False])
 def test_xlsx_c_encoder_applies_range_styles_to_cell_kinds(tmp_path, use_shared_strings):
-    from xlspy._accel import HAVE_C_EXT
-    if not HAVE_C_EXT:
-        pytest.skip("requires the optional C encoder")
+    from xlspy._accel import HAVE_NATIVE
+    if not HAVE_NATIVE:
+        pytest.skip("requires the optional native encoder")
     openpyxl = pytest.importorskip("openpyxl")
     path = tmp_path / f"styled-fast-path-{use_shared_strings}.xlsx"
     with XlsxWriter(path, useSharedStrings=use_shared_strings) as writer:

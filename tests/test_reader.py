@@ -403,47 +403,47 @@ _EMPTY_ROW_CASES = [
 ]
 
 
-@pytest.mark.parametrize('use_c_ext', [False, True], ids=['python', 'c_ext'])
+@pytest.mark.parametrize('use_native', [False, True], ids=['python', 'native'])
 @pytest.mark.parametrize('data', [_case[1] for _case in _EMPTY_ROW_CASES],
                          ids=[_case[0] for _case in _EMPTY_ROW_CASES])
-def test_xlsb_empty_rows_roundtrip(tmp_path, monkeypatch, use_c_ext, data):
+def test_xlsb_empty_rows_roundtrip(tmp_path, monkeypatch, use_native, data):
     """Regression: all-empty XLSB rows must round-trip exactly.
 
     Consecutive all-empty rows used to be duplicated (2 empty rows read back
     as 3, 3 as 6 -- the spurious count grew quadratically), while trailing and
     leading all-empty rows were dropped or mis-aligned.  The python fallback
-    reader and the C extension must behave identically.
+    reader and the native extension must behave identically.
     """
-    if use_c_ext:
-        if not xlspy_reader.HAVE_C_EXT:
-            pytest.skip('C extension not available')
+    if use_native:
+        if not xlspy_reader.HAVE_NATIVE:
+            pytest.skip('native extension not available')
     else:
-        monkeypatch.setattr(xlspy_reader, 'HAVE_C_EXT', False)
+        monkeypatch.setattr(xlspy_reader, 'HAVE_NATIVE', False)
 
     path = _write_workbook(tmp_path / 'empty_rows.xlsb', data)
     assert _read_workbook(path) == data
 
 
-@pytest.mark.parametrize('use_c_ext', [False, True], ids=['python', 'c_ext'])
-def test_xlsb_sheet_with_only_empty_rows_keeps_rows(tmp_path, monkeypatch, use_c_ext):
+@pytest.mark.parametrize('use_native', [False, True], ids=['python', 'native'])
+def test_xlsb_sheet_with_only_empty_rows_keeps_rows(tmp_path, monkeypatch, use_native):
     """An all-empty sheet keeps one row per written row.
 
     Cell widths fall back to a single column for the python reader: XLSB row
     records carry no width information and the writer emits no cell records
     for all-empty rows.
     """
-    if use_c_ext:
-        if not xlspy_reader.HAVE_C_EXT:
-            pytest.skip('C extension not available')
+    if use_native:
+        if not xlspy_reader.HAVE_NATIVE:
+            pytest.skip('native extension not available')
     else:
-        monkeypatch.setattr(xlspy_reader, 'HAVE_C_EXT', False)
+        monkeypatch.setattr(xlspy_reader, 'HAVE_NATIVE', False)
 
     path = _write_workbook(tmp_path / 'only_empty.xlsb', [[None, None], [None, None]])
     assert _read_workbook(path) == [[None], [None]]
 
 
 def test_xlsx_empty_rows_roundtrip(tmp_path):
-    """XLSX is the reference behaviour for empty rows (python and C readers
+    """XLSX is the reference behaviour for empty rows (python and native readers
     must match it wherever the XLSB metadata allows)."""
     data = [[None, None], [1, 'a'], [None, None], [None, None], [2, 'b'], [None, None]]
     path = _write_workbook(tmp_path / 'empty_rows.xlsx', data)

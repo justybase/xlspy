@@ -261,7 +261,7 @@ def test_border_edges_in_excel(tmp_path, open_workbook, writer_cls, ext):
 @pytest.mark.parametrize("writer_cls,ext", WRITERS)
 def test_value_style_cells_in_excel(tmp_path, open_workbook, writer_cls, ext):
     """(value, Style) cells go on top of header and range styles; most rows
-    take the C encoder once the first row has recorded their xf."""
+    take the native encoder once the first row has recorded their xf."""
     money_red = Style(fill="FCE4D6", number_format="#,##0.00")
     rows = [["Name", "Amount", "Flag"]]
     rows += [[f"n{r}", (r * 1.5, money_red), (r % 2 == 0, BOLD)] for r in range(1, 60)]

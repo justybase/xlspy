@@ -217,7 +217,7 @@ def run_worker(args):
     if args.writer in XLSPY_WRITERS:
         from xlspy import _accel
 
-        result["c_ext"] = bool(_accel.HAVE_C_EXT)
+        result["c_ext"] = bool(_accel.HAVE_NATIVE)
     else:
         __import__(args.writer)  # import before the baseline so it is not counted as write memory
     ext = "xlsb" if args.writer.startswith("xlsb") else "xlsx"

@@ -139,7 +139,7 @@ gap is implemented the same test starts passing without changes.
   for XLSX; new `.xlsm`/`.xltx`/`.xltm` workbooks and `keep_vba`/`vba_archive`.
 - `IconSetRule.type == "iconSet"` (threshold type: `cfvo_type`);
   `copy_worksheet()` copies dimensions and settings instead of sharing them.
-- `load_workbook()` builds cells in C: 50k x 20 cells load in 0.39 s (XLSX)
+- `load_workbook()` builds cells natively: 50k x 20 cells load in 0.39 s (XLSX)
   and 0.55 s (XLSB), 0.47 s/0.71 s for files saved by Excel.
 - Every change was checked by opening the files in Excel through COM.
 
@@ -262,7 +262,7 @@ python tools/make_openpyxl_goldens.py
 python -m pytest tests/openpyxl_compat -q
 python tools/compare_openpyxl_model.py LEFT RIGHT
 python -m pytest tests/ -q
-XLSPY_DISABLE_C_EXT=1 python -m pytest tests/ -q
+XLSPY_ACCEL=python python -m pytest tests/ -q
 ```
 
 Excel COM is an optional hybrid gate:

@@ -9,7 +9,7 @@ from xlspy import Font, Workbook, load_workbook
 from xlspy.workbook import _xlsb_reader
 
 pytestmark = pytest.mark.skipif(
-    _xlsb_reader.xlsb_load_cells is None, reason="C extension not built",
+    _xlsb_reader.xlsb_load_cells is None, reason="native extension not built",
 )
 
 
@@ -37,7 +37,7 @@ def both_loaders(path, monkeypatch, **options):
         python.close()
 
 
-def test_c_and_python_loaders_match(tmp_path, monkeypatch):
+def test_native_and_python_loaders_match(tmp_path, monkeypatch):
     workbook = Workbook()
     sheet = workbook.active
     sheet.append(["text", 1, 2.5, True, datetime.datetime(2024, 5, 6, 7, 8), None, "=A1&\"x\""])
@@ -72,7 +72,7 @@ def test_loaded_cells_have_openpyxl_data_types(tmp_path):
 
 @pytest.mark.com
 @pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1")
-def test_c_loader_on_excel_written_formulas(tmp_path, monkeypatch):
+def test_native_loader_on_excel_written_formulas(tmp_path, monkeypatch):
     client = pytest.importorskip("win32com.client")
     excel = client.DispatchEx("Excel.Application")
     excel.DisplayAlerts = False

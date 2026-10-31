@@ -1,7 +1,7 @@
-"""C row encoders: failed and fallback rows leave the shared-string table alone.
+"""Native row encoders: failed and fallback rows leave the shared-string table alone.
 
-The full fuzzer is ``tools/fuzz_c_core.py``; run it with more iterations, or
-against a sanitizer build, for deeper checks. The short run here keeps the
+The full fuzzer is ``tools/fuzz_native.py``; run it with more iterations, for
+deeper checks. The short run here keeps the
 harness itself working in the ordinary suite.
 """
 
@@ -12,7 +12,7 @@ import pytest
 
 from xlspy import Formula, _accel
 
-pytestmark = pytest.mark.skipif(not _accel.HAVE_C_EXT, reason="C extension not built")
+pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -41,7 +41,7 @@ def test_xlsx_row_that_raises_leaves_the_table_as_it_was():
 
 
 def test_xlsb_fallback_row_leaves_the_table_as_it_was():
-    # A formula cell is refused by the C encoder, so the whole row goes to Python.
+    # A formula cell is refused by the native encoder, so the whole row goes to Python.
     ss_dict, ss_list = {}, []
     assert _accel.encode_xlsb_row(["new", Formula("A1+1")], ss_dict, ss_list, 0, 0, 1) is None
     assert ss_list == []
@@ -59,7 +59,7 @@ def test_table_indexes_stay_correct_after_a_failed_row():
 
 
 def test_fuzz_harness_short_run_holds_every_check():
-    spec = importlib.util.spec_from_file_location("fuzz_c_core", ROOT / "tools" / "fuzz_c_core.py")
+    spec = importlib.util.spec_from_file_location("fuzz_native", ROOT / "tools" / "fuzz_native.py")
     fuzz = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fuzz)
     assert fuzz.main(["--iterations", "300", "--seed", "7"]) == 0

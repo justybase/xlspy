@@ -192,7 +192,7 @@ def _model_snapshot(workbook):
 
 
 @pytest.mark.parametrize("data_only", [False, True])
-def test_c_model_rows_match_python_rows(tmp_path, monkeypatch, data_only):
+def test_native_model_rows_match_python_rows(tmp_path, monkeypatch, data_only):
     import datetime
 
     import openpyxl
@@ -201,7 +201,7 @@ def test_c_model_rows_match_python_rows(tmp_path, monkeypatch, data_only):
     from xlspy.workbook import load_workbook as xlspy_load
 
     if _accel._c_read_xlsx_worksheet is None:
-        pytest.skip("C extension not built")
+        pytest.skip("native extension not built")
     source = openpyxl.Workbook()
     sheet = source.active
     sheet.append(["text", 1, 2.5, True, datetime.datetime(2024, 5, 6, 7, 8), None, "=A1&\"x\""])

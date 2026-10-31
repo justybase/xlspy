@@ -197,7 +197,7 @@ def worker(args):
         "elapsed_s": elapsed,
         "tracemalloc_mb": peak / 2**20 if peak is not None else None,
         "file_bytes": os.path.getsize(path),
-        "c_ext": _accel.HAVE_C_EXT,
+        "c_ext": _accel.HAVE_NATIVE,
     }
     if not args.keep:
         os.remove(path)

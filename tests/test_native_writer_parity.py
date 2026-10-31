@@ -1,4 +1,4 @@
-"""The C row encoders write the same worksheet bytes as the Python encoders."""
+"""The native row encoders write the same worksheet bytes as the Python encoders."""
 
 import datetime as dt
 import random
@@ -8,7 +8,7 @@ import pytest
 
 from xlspy import XlsbWriter, XlsxWriter, _accel, writer, xlsx_writer
 
-pytestmark = pytest.mark.skipif(not _accel.HAVE_C_EXT, reason="C extension not built")
+pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 
 
 def _rows():
@@ -38,7 +38,7 @@ def _sheet(path):
 
 @pytest.mark.parametrize("cls, suffix", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
 @pytest.mark.parametrize("shared", [True, False])
-def test_c_rows_match_python_rows(tmp_path, monkeypatch, cls, suffix, shared):
+def test_native_rows_match_python_rows(tmp_path, monkeypatch, cls, suffix, shared):
     rows = _rows()
     outputs = []
     for use_c in (True, False):

@@ -1,4 +1,4 @@
-"""XLSB reads through the C extension: date cells and wide rows.
+"""XLSB reads through the native extension: date cells and wide rows.
 
 ``read_xlsb_worksheet`` converts date serials itself and keeps each row in a
 buffer that grows as cells arrive. The date results are compared with the
@@ -11,11 +11,11 @@ import struct
 
 import pytest
 
-from xlspy._accel import HAVE_C_EXT, read_xlsb_worksheet
+from xlspy._accel import HAVE_NATIVE, read_xlsb_worksheet
 from xlspy.biff_utils import build_record
 from xlspy.excel_dates import serial_to_datetime
 
-needs_c_ext = pytest.mark.skipif(not HAVE_C_EXT, reason="C extension not built")
+needs_native = pytest.mark.skipif(not HAVE_NATIVE, reason="native extension not built")
 
 STYLES = [{"xfId": 0, "numFmtId": 0}, {"xfId": 0, "numFmtId": 14}]  # xf 1 is a date style
 DATE_FMTS = {14}
@@ -44,7 +44,7 @@ def _single_column_sheet(values, xf=DATE_XF):
 
 def _read(data, date_1904=False):
     rows = read_xlsb_worksheet(data, [], STYLES, DATE_FMTS, date_1904)
-    assert rows is not None, "the C reader fell back to Python for a plain layout"
+    assert rows is not None, "the native reader fell back to Python for a plain layout"
     return list(rows)
 
 
@@ -55,7 +55,7 @@ def _reference(value, date_1904):
         return error
 
 
-@needs_c_ext
+@needs_native
 @pytest.mark.parametrize("date_1904", [False, True])
 def test_date_cells_match_reference(date_1904):
     rng = random.Random(20261030)
@@ -79,14 +79,14 @@ def test_date_cells_match_reference(date_1904):
         assert str(info.value) == str(want)
 
 
-@needs_c_ext
+@needs_native
 def test_plain_numbers_in_a_non_date_style_stay_numbers():
     rows = _read(_single_column_sheet([2.5, 3.0, -7.0], xf=0))
     assert rows == [[2.5], [3], [-7]]
     assert [type(row[0]) for row in rows] == [float, int, int]
 
 
-@needs_c_ext
+@needs_native
 def test_wide_rows_keep_every_column_in_either_order():
     width = 40
     parts, expected = [], []
