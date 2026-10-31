@@ -552,7 +552,16 @@ def _read_table_parts(sheet, package, sheet_path, relationships, table_parts) ->
 
 
 def _cfvo(node) -> FormatObject:
-    return FormatObject(node.get("type", "num"), node.get("val"))
+    kind, value = node.get("type", "num"), node.get("val")
+    if value is not None and kind in ("num", "percent", "percentile"):
+        # A number, as openpyxl reads it; anything else is a formula.
+        try:
+            number = float(value)
+        except ValueError:
+            pass
+        else:
+            value = int(number) if number.is_integer() else number
+    return FormatObject(kind, value)
 
 
 def _cf_rule(sqref: str, node, style_table):
@@ -591,12 +600,12 @@ def _cf_rule(sqref: str, node, style_table):
             return None
         return DataBarRule(
             sqref, cfvos[0], cfvos[1], color,
-            show_value=_bool_attr(node, "showValue", None),
+            show_value=_bool_attr(bar, "showValue", None),
             min_length=(
-                int(node.get("minLength")) if node.get("minLength") is not None else None
+                int(bar.get("minLength")) if bar.get("minLength") is not None else None
             ),
             max_length=(
-                int(node.get("maxLength")) if node.get("maxLength") is not None else None
+                int(bar.get("maxLength")) if bar.get("maxLength") is not None else None
             ),
             priority=priority,
         )

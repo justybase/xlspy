@@ -1008,12 +1008,13 @@ class XlsxStyleTable:
         ET.register_namespace("", MAIN)
         return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
-    def append_dxfs(self, fragments: list[str]) -> int:
-        """Append differential formats and return the index of the first.
+    def append_dxfs(self, fragments: list[str]) -> list[int]:
+        """Add differential formats; return the index of each in the table.
 
-        ``fragments`` are ``<dxf>`` elements in the main namespace. Their
-        number formats are given this table's ids, so that a format code
-        keeps one id in the workbook.
+        ``fragments`` are ``<dxf>`` elements in the main namespace. A format
+        equal to one the table holds reuses it, so repeated edits do not
+        leave unused copies behind. Number formats are given this table's
+        ids, so that a format code keeps one id in the workbook.
         """
         if self._root is None:
             self.to_bytes()
@@ -1023,14 +1024,26 @@ class XlsxStyleTable:
             self._replace_container(root, "dxfs", [f'<dxf xmlns="{MAIN}"/>'])
             container = next(child for child in root if _local(child.tag) == "dxfs")
             container.clear()
-        first = len(container)
+        indexes = []
         for fragment in fragments:
             node = ET.fromstring(fragment)
+            try:
+                style = _read_differential(node)
+            except (TypeError, ValueError):
+                style = None
+            if style is not None and style in self.dxfs[:len(container)]:
+                indexes.append(self.dxfs.index(style))
+                continue
             for numfmt in node.iter(_q("numFmt")):
                 numfmt.set("numFmtId", str(self._intern_numfmt(numfmt.get("formatCode", "General"))))
+            # Keep the parsed list in step with the container.
+            del self.dxfs[len(container):]
+            self.dxfs.extend([None] * (len(container) - len(self.dxfs)))
+            indexes.append(len(container))
             container.append(node)
+            self.dxfs.append(style)
         container.set("count", str(len(container)))
-        return first
+        return indexes
 
     def style_at(self, index: int) -> Style:
         if not 0 <= index < len(self.styles):

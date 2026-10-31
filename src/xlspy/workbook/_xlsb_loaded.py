@@ -45,7 +45,7 @@ def _is_new(sheet) -> bool:
 
 def _reject_unsupported_sheet_edits(sheet) -> None:
     if _is_new(sheet):
-        for name in ("charts", "images", "tables", "conditional_formatting"):
+        for name in ("charts", "images", "tables"):
             if _object_values(sheet, name):
                 raise _unsupported(f"{name.replace('_', ' ')} on a new sheet")
         return
@@ -55,11 +55,8 @@ def _reject_unsupported_sheet_edits(sheet) -> None:
             raise _unsupported(f"adding or removing {name}")
     saved = sheet._saved_object_signatures
     current = object_signatures(sheet)
-    for name, label in (
-        ("tables", "table"), ("conditional_formatting", "conditional formatting"),
-    ):
-        if current[name] != saved.get(name, ()):
-            raise _unsupported(f"{label} changes")
+    if current["tables"] != saved.get("tables", ()):
+        raise _unsupported("table changes")
 
 
 def _reject_unsupported_edits(workbook) -> None:
@@ -179,6 +176,17 @@ def _save_sheet(sheet, updater) -> None:
     )
     if validations_changed:
         updater.set_data_validations(sheet.title, sheet.data_validations)
+    formats_changed = (
+        bool(sheet.conditional_formatting) if new else
+        object_signatures(sheet)["conditional_formatting"]
+        != sheet._saved_object_signatures.get("conditional_formatting", ())
+    )
+    if formats_changed:
+        updater.set_conditional_formats(
+            sheet.title,
+            [(item.sqref, item.pivot, item.rules) for item in sheet.conditional_formatting],
+            sheet._workbook._styles.dxf_id,
+        )
     if new or sheet._dirty_hyperlinks:
         links = {
             cell.coordinate: cell._hyperlink
@@ -210,16 +218,16 @@ def save_loaded_xlsb(workbook, filename) -> None:
 
     _reject_unsupported_edits(workbook)
 
-    styles = workbook._styles
-    if styles.is_modified():
-        updater._package.set(workbook._xlsb_styles_path, styles.to_bin())
-
     renamed = {sheet._original_title: sheet.title for sheet in workbook._sheets if not _is_new(sheet)}
     _sync_sheet_list(workbook, updater)
     _save_defined_names(workbook, updater, renamed)
     for sheet in workbook._sheets:
         _save_sheet(sheet, updater)
     _props.save_properties(updater, workbook)
+    # After the sheets: their conditional formats may add differential styles.
+    styles = workbook._styles
+    if styles.is_modified():
+        updater._package.set(workbook._xlsb_styles_path, styles.to_bin())
 
     if isinstance(filename, (str, os.PathLike)):
         updater.save(os.fspath(filename))

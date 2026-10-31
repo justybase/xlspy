@@ -233,7 +233,7 @@ def test_model_validation_rejects_bad_input():
     with pytest.raises(ValueError):
         Alignment(text_rotation=200)
     with pytest.raises(ValueError):
-        CellIsRule("A1:A5 C1:C5", "lessThan", ["5"])
+        CellIsRule("A1:A5 nope", "lessThan", ["5"])
     with pytest.raises(ValueError):
         CellIsRule("A1:A5", "outside", ["5"])
     with pytest.raises(TypeError):

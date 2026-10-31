@@ -316,12 +316,12 @@ def _add_conditional_formats(sheet: _Sheet, scratch: dict[str, bytes], donor: st
         return
     styles_xml = scratch["xl/styles.xml"].decode("utf-8")
     dxfs = [_with_namespaces(item, MAIN) for item in _donor_elements(styles_xml, "dxf")]
-    first = styles.append_dxfs(dxfs) if dxfs else 0
+    indexes = styles.append_dxfs(dxfs) if dxfs else []
     # Priorities are unique per sheet: the new rules come after the file's.
     offset = max((int(value) for value in re.findall(r'\bpriority="(\d+)"', sheet.xml)), default=0)
     fragments = []
     for item in formats:
-        item = re.sub(r'\bdxfId="(\d+)"', lambda m: f'dxfId="{first + int(m[1])}"', item)
+        item = re.sub(r'\bdxfId="(\d+)"', lambda m: f'dxfId="{indexes[int(m[1])]}"', item)
         item = re.sub(r'\bpriority="(\d+)"', lambda m: f'priority="{offset + int(m[1])}"', item)
         fragments.append(_with_namespaces(item, MAIN))
     sheet.insert("conditionalFormatting", "".join(fragments))

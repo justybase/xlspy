@@ -27,11 +27,16 @@ from ._model import CELL_SLOTS, AutoFilter, Cell, DefinedNameList, Workbook, Wor
 from ._reader import _read_custom_properties, _read_print_names, _read_properties, _read_sheet_relationships
 from ._xlsb_layout import builtin_names
 from ._xlsb_loaded import remember_saved_state, remember_workbook_state
-from .._xlsb_cf import BRT_BEGIN_CF_RULE, BRT_BEGIN_CONDITIONAL_FORMATTING, read_conditional_formats
+from .._xlsb_cf import (
+    BRT_BEGIN_CF_RULE, BRT_BEGIN_CONDITIONAL_FORMATTING, SCALE_RECORDS, read_conditional_formats,
+)
 from ._xlsb_sheet_meta import (
     FILTER_RECORDS, LIST_PART, RECORDS as SHEET_RECORDS, ROW_FLAGS, ROW_HEADER,
     apply_sheet_records, read_filter_record, read_table_part, row_header,
 )
+
+
+_CF_RECORDS = SCALE_RECORDS | {BRT_BEGIN_CONDITIONAL_FORMATTING, BRT_BEGIN_CF_RULE}
 
 
 def _external_links(package, sheet_path: str) -> dict[str, str]:
@@ -155,7 +160,7 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
                 if record_id in SHEET_RECORDS:
                     metadata.append((record_id, payload))
                     continue
-                if record_id in (BRT_BEGIN_CONDITIONAL_FORMATTING, BRT_BEGIN_CF_RULE):
+                if record_id in _CF_RECORDS:
                     conditional.append((record_id, payload))
                     continue
                 if record_id == LIST_PART:

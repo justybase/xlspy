@@ -49,6 +49,9 @@ from .workbook._styles import XlsxStyleTable, _Xf
 
 _FONT, _FMT, _FILL, _BORDER, _XF, _STYLE = 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30
 _DXF = 0x1FB
+_BEGIN_DXFS, _END_DXFS = 0x1F9, 0x1FA
+_END_STYLES = 0x28C  # BrtEndStyles: the DXFs block follows the cell styles.
+_AFTER_DXFS = (0x1FC, 0x1D9, 0x23, 0x117)  # table styles, colors, FRT, end
 _BEGIN_FILLS, _END_FILLS = 0x25B, 0x25C
 _BEGIN_FONTS, _END_FONTS = 0x263, 0x264
 _BEGIN_BORDERS, _END_BORDERS = 0x265, 0x266
@@ -218,6 +221,9 @@ class XlsbStyleTable(XlsxStyleTable):
             len(table.fonts), len(table.fills), len(table.borders), len(table.xfs),
         )
         table._saved_formats = set(table.custom_num_formats)
+        table._saved_dxfs = len(table.dxfs)
+        table._new_dxfs = []
+        table._dxf_keys = []
         return table
 
     def _parse_bin(self, data: bytes) -> None:
@@ -315,6 +321,30 @@ class XlsbStyleTable(XlsxStyleTable):
     def to_bytes(self) -> bytes:
         raise NotImplementedError("an XLSB style sheet is saved with to_bin()")
 
+    def dxf_id(self, dxf) -> int:
+        """The index of a conditional format's differential style; a style
+        the file does not hold yet is added once."""
+        from ._xlsb_cf import dxf_payload
+
+        if dxf is None:
+            return -1
+        # Styles are compared as written: a loaded style spells out what an
+        # edited one leaves implicit (a solid fill's background color).
+        wanted = dxf_payload(dxf, lambda _code: 0)
+        known = self._dxf_keys
+        for index in range(len(known), len(self.dxfs)):
+            existing = self.dxfs[index]
+            try:
+                known.append(None if existing is None else dxf_payload(existing, lambda _code: 0))
+            except (KeyError, TypeError, ValueError):
+                known.append(None)
+        if wanted in known:
+            return known.index(wanted)
+        self._new_dxfs.append(dxf_payload(dxf, self._intern_numfmt))
+        self.dxfs.append(dxf)
+        known.append(wanted)
+        return len(self.dxfs) - 1
+
     def mark_saved(self) -> None:
         """The current components are now the file's own."""
         self._source_bin = self.to_bin()
@@ -322,10 +352,13 @@ class XlsbStyleTable(XlsxStyleTable):
             len(self.fonts), len(self.fills), len(self.borders), len(self.xfs),
         )
         self._saved_formats = set(self.custom_num_formats)
+        self._saved_dxfs = len(self.dxfs)
+        self._new_dxfs = []
 
     def is_modified(self) -> bool:
         counts = (len(self.fonts), len(self.fills), len(self.borders), len(self.xfs))
-        return counts != self._saved_counts or self.custom_num_formats != self._saved_formats
+        return (counts != self._saved_counts or self.custom_num_formats != self._saved_formats
+                or bool(self._new_dxfs))
 
     def to_bin(self) -> bytes:
         """The original ``styles.bin`` with the components added since loading."""
@@ -341,6 +374,7 @@ class XlsbStyleTable(XlsxStyleTable):
             _END_FILLS: [fill_record(key) for key in self._fill_keys[saved_fills:]],
             _END_BORDERS: [border_record(key) for key in self._border_keys[saved_borders:]],
             _END_CELL_XFS: [self._xf_record(xf) for xf in self.xfs[saved_xfs:]],
+            _END_DXFS: [build_record(_DXF, payload) for payload in self._new_dxfs],
         }
         counts = {
             _BEGIN_FMTS: (_END_FMTS, len(self.custom_num_formats)),
@@ -348,9 +382,14 @@ class XlsbStyleTable(XlsxStyleTable):
             _BEGIN_FILLS: (_END_FILLS, len(self.fills)),
             _BEGIN_BORDERS: (_END_BORDERS, len(self.borders)),
             _BEGIN_CELL_XFS: (_END_CELL_XFS, len(self.xfs)),
+            _BEGIN_DXFS: (_END_DXFS, len(self.dxfs)),
         }
         data = self._source_bin
         missing = {end for end, records in additions.items() if records}
+        if _END_DXFS in missing and not any(
+            record.record_id == _BEGIN_DXFS for record in iter_records(data)
+        ):
+            data = self._with_dxfs_block(data)
         chunks: list[bytes] = []
         in_fonts = False
         for record in iter_records(data):
@@ -375,6 +414,23 @@ class XlsbStyleTable(XlsxStyleTable):
                 "the XLSB style sheet has no block for the new styles "
                 f"(record ids {sorted(missing)})"
             )
+        return b"".join(chunks)
+
+    @staticmethod
+    def _with_dxfs_block(data: bytes) -> bytes:
+        """``data`` with an empty DXFs block where Excel writes it."""
+        block = build_record(_BEGIN_DXFS, struct.pack("<I", 0)) + build_record(_END_DXFS)
+        chunks, inserted, after_styles = [], False, False
+        for record in iter_records(data):
+            if not inserted and (after_styles or record.record_id == 0x117) and (
+                record.record_id in _AFTER_DXFS
+            ):
+                chunks.append(block)
+                inserted = True
+            after_styles = after_styles or record.record_id == _END_STYLES
+            chunks.append(data[record.header_start:record.data_end])
+        if not inserted:
+            raise NotImplementedError("the XLSB style sheet has no place for conditional format styles")
         return b"".join(chunks)
 
     def _xf_record(self, xf: _Xf) -> bytes:

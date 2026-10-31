@@ -1418,7 +1418,7 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
 
     def _extra_cf_rule_parts(self, rule) -> tuple[str, str | None]:
         """``(cfRule attributes, formula or None)`` for the rules beyond the original five."""
-        first_col, first_row, _, _ = parse_cell_range(rule.sqref)
+        first_col, first_row, _, _ = parse_cell_range(rule.sqref.split()[0])
         corner = f"{self._letters[first_col]}{first_row + 1}"
         if isinstance(rule, TopBottomRule):
             attrs = f'type="top10" rank="{rule.rank}"'

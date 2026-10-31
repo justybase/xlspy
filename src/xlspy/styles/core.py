@@ -561,9 +561,11 @@ def _validate_priority(priority: int | None) -> None:
 
 
 def _validate_sqref(sqref: str) -> None:
-    # Multi-range "A1:A5 C1:C5" is not supported: the split below yields
-    # three parts and parse_cell_range raises ValueError.
-    parse_cell_range(sqref)
+    """A range or space-separated ranges ("A1:A5 C1:C5"), as Excel writes them."""
+    if not isinstance(sqref, str) or not sqref.split():
+        raise ValueError(f"invalid sqref {sqref!r}")
+    for part in sqref.split():
+        parse_cell_range(part)
 
 
 @dataclass(frozen=True, slots=True)

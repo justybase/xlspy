@@ -97,6 +97,16 @@ def _normalize_range(reference: str) -> str:
     return f"{_coordinate(r1 + 1, c1 + 1)}:{_coordinate(r2 + 1, c2 + 1)}"
 
 
+def _normalize_sqref(reference: str) -> str:
+    """A range or space-separated ranges, each normalized."""
+    if not isinstance(reference, str):
+        raise TypeError("a range must be an A1 string")
+    parts = reference.split()
+    if not parts:
+        raise ValueError("a range must not be empty")
+    return " ".join(_normalize_range(part) for part in parts)
+
+
 class CellRange(str):
     """An A1 range string with openpyxl-style boundary properties."""
 
@@ -677,7 +687,7 @@ class ConditionalFormattingList:
     def add(self, range_string: str, rule) -> None:
         """Apply ``rule`` to ``range_string`` (its own ``sqref`` is replaced)."""
         _expect(rule, _CF_RULES, "rule", "an xlspy conditional formatting rule (CellIsRule, ...)")
-        normalized = _normalize_range(range_string)
+        normalized = _normalize_sqref(range_string)
         for item in self._items:
             if item.sqref == normalized:
                 item.rules.append(replace(rule, sqref=normalized))
@@ -698,7 +708,7 @@ class ConditionalFormattingList:
     def __getitem__(self, key):
         if isinstance(key, int) and not isinstance(key, bool):
             return self._items[key]
-        normalized = _normalize_range(key)
+        normalized = _normalize_sqref(key)
         for item in self._items:
             if item.sqref == normalized:
                 return item.rules
@@ -709,7 +719,7 @@ class ConditionalFormattingList:
 
     def remove(self, rule_or_range) -> None:
         if isinstance(rule_or_range, str):
-            normalized = _normalize_range(rule_or_range)
+            normalized = _normalize_sqref(rule_or_range)
             self._items = [item for item in self._items if item.sqref != normalized]
             return
         for item in list(self._items):

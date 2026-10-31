@@ -133,16 +133,6 @@ _BRT_TABLE_STYLE_CLIENT = 513  # 0x201
 # Conditional formatting ([MS-XLSB] 2.1.7.62).
 _BRT_BEGIN_CF = 461
 _BRT_END_CF = 462
-_BRT_BEGIN_CF_RULE = 463
-_BRT_END_CF_RULE = 464
-_BRT_BEGIN_ICONSET = 465
-_BRT_END_ICONSET = 466
-_BRT_BEGIN_DATABAR = 467
-_BRT_END_DATABAR = 468
-_BRT_BEGIN_COLORSCALE = 469
-_BRT_END_COLORSCALE = 470
-_BRT_CFVO = 471
-_BRT_COLOR = 564
 _BRT_BEGIN_DXFS = 505
 _BRT_END_DXFS = 506
 _BRT_DXF = 507
@@ -482,77 +472,10 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
                 rule.dxf, DifferentialStyle
             ):
                 raise TypeError("dxf must be a DifferentialStyle or None")
-            if isinstance(rule, IconSetRule) and rule.type == "formula":
-                raise NotImplementedError(
-                    "XLSB icon-set formula thresholds are not supported"
-                )
             if isinstance(rule, FORMULA_RULES) and rule.dxf is not None:
                 # Reject styles XLSB cannot hold before anything is recorded.
                 dxf_payload(rule.dxf, lambda _fmt: 0)
         return list(conditional_formats)
-
-    _CFVO_CODES = {
-        "num": 1, "min": 2, "max": 3, "percent": 4,
-        "percentile": 5, "formula": 7,
-    }
-    _ICON_SET_CODES = {
-        "3Arrows": 0, "3ArrowsGray": 1, "3Flags": 2, "3TrafficLights1": 3,
-        "3TrafficLights2": 4, "3Signs": 5, "3Symbols": 6, "3Symbols2": 7,
-        "4Arrows": 8, "4ArrowsGray": 9, "4RedToBlack": 10, "4Ratings": 11,
-        "4TrafficLights": 12, "5Arrows": 13, "5ArrowsGray": 14,
-        "5Ratings": 15, "5Quarters": 16,
-    }
-
-    @staticmethod
-    def _color_to_brt(color) -> bytes:
-        from .styles import _coerce_color
-        resolved = _coerce_color(color, "color")
-        if resolved is None or resolved.rgb is None:
-            raise ValueError("CF colors must be RGB colors")
-        rgb = resolved.rgb
-        if len(rgb) == 8:  # ARGB -> drop alpha, use opaque
-            rgb = rgb[2:]
-        r = int(rgb[0:2], 16); g = int(rgb[2:4], 16); b = int(rgb[4:6], 16)
-        return bytes((0x05, 0xFF, 0x00, 0x00, r, g, b, 0xFF))
-
-    def _cfvo_bin(self, cfvo, default: str) -> bytes:
-        from .styles import FormatObject
-        if cfvo is None:
-            code = self._CFVO_CODES[default]
-            return (
-                struct.pack("<I", code) + struct.pack("<d", 0.0)
-                + struct.pack("<II", 0, 0) + struct.pack("<I", 0)
-            )
-        if not isinstance(cfvo, FormatObject):
-            raise TypeError("CFVO must be a FormatObject or None")
-        if cfvo.type == "formula":
-            raise NotImplementedError(
-                "XLSB formula-type CFVO needs Ptg (next step)"
-            )
-        code = self._CFVO_CODES[cfvo.type]
-        if cfvo.type in ("min", "max"):
-            num = 0.0
-        else:
-            if cfvo.value is None:
-                raise ValueError(f"CFVO type {cfvo.type!r} needs a value")
-            num = float(cfvo.value)
-        # IconSets use GTE flags; others ignore (0,0).
-        return (
-            struct.pack("<I", code) + struct.pack("<d", num)
-            + struct.pack("<II", 0, 0) + struct.pack("<I", 0)
-        )
-
-    def _cfvo_icon_bin(self, value: float, type_: str) -> bytes:
-        if type_ == "formula":
-            raise NotImplementedError(
-                "XLSB icon-set formula thresholds are not supported"
-            )
-        code = self._CFVO_CODES[type_]
-        number = 0.0 if type_ in ("min", "max") else float(value)
-        return (
-            struct.pack("<I", code) + struct.pack("<d", number)
-            + struct.pack("<II", 1, 1) + struct.pack("<I", 0)
-        )
 
     @staticmethod
     def _encode_nullable_wstring(value: str | None) -> bytes:
@@ -661,28 +584,6 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         out.extend(build_record(_BRT_END_LIST_PARTS, b""))
         return bytes(out)
 
-    def _begin_cf_rule_bin(self, iType: int, iTemplate: int,
-                           dxfId: int, priority: int, iParam: int,
-                           stop: bool = False) -> bytes:
-        payload = bytearray()
-        payload.extend(struct.pack("<I", iType))
-        payload.extend(struct.pack("<I", iTemplate))
-        payload.extend(struct.pack("<i", dxfId))
-        payload.extend(struct.pack("<I", priority))
-        payload.extend(struct.pack("<I", iParam))
-        payload.extend(struct.pack("<I", 0))  # reserved1
-        payload.extend(struct.pack("<I", 0))  # reserved2
-        flags = 0x02 if stop else 0x00  # match Excel (fStopTrue=1 for CellIs)
-        # For GRADIENT/DATABAR/MULTISTATE, flags must be 0.
-        if iType in (3, 4, 6):
-            flags = 0
-        payload.extend(struct.pack("<H", flags))
-        payload.extend(struct.pack("<I", 0))  # cbFmla1
-        payload.extend(struct.pack("<I", 0))  # cbFmla2
-        payload.extend(struct.pack("<I", 0))  # cbFmla3
-        payload.extend(struct.pack("<I", 0xFFFFFFFF))  # strParam NULL
-        return build_record(_BRT_BEGIN_CF_RULE, bytes(payload))
-
     def _register_dxf(self, dxf) -> int:
         """Index of ``dxf`` in the styles part; equal styles share one BrtDXF."""
         if dxf is None:
@@ -691,73 +592,8 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         return self._dxf_index.setdefault(payload, len(self._dxf_index))
 
     def _cf_bin_for_rule(self, rule, priority: int) -> bytes:
-        from .styles import ColorScaleRule, DataBarRule, IconSetRule
-        if isinstance(rule, FORMULA_RULES):
-            return rule_bin(rule, priority, self._register_dxf(rule.dxf),
-                            self._formula_context(), self._letters)
-        out = bytearray()
-        if isinstance(rule, ColorScaleRule):
-            out.extend(self._begin_cf_rule_bin(3, 2, -1, priority, 0))
-            out.extend(build_record(_BRT_BEGIN_COLORSCALE, b""))
-            # 2-color or 3-color.
-            if rule.midpoint is None:
-                cfvos = (rule.minimum, rule.maximum)
-            else:
-                cfvos = (rule.minimum, rule.midpoint, rule.maximum)
-            defaults = ("min", None, "max") if len(cfvos) == 2 else ("min", "percentile", "max")
-            # Default midpoint for 3-color is percentile 50 (like Excel).
-            for cfvo, default in zip(cfvos, ("min", "percentile", "max") if len(cfvos) == 3 else ("min", "max")):
-                if cfvo is None and default == "percentile":
-                    from .styles import FormatObject
-                    cfvo = FormatObject("percentile", 50)
-                out.extend(build_record(
-                    _BRT_CFVO, self._cfvo_bin(cfvo, default),
-                ))
-            for color in rule.colors:
-                out.extend(build_record(_BRT_COLOR, self._color_to_brt(color)))
-            out.extend(build_record(_BRT_END_COLORSCALE, b""))
-            out.extend(build_record(_BRT_END_CF_RULE, b""))
-            return bytes(out)
-        if isinstance(rule, DataBarRule):
-            out.extend(self._begin_cf_rule_bin(4, 3, -1, priority, 0))
-            show = 1 if rule.show_value is not False else 0
-            # Excel defaults 10/90 when omitted? Use 0/100 to be safe? Use 10/90 to match Excel.
-            min_len = rule.min_length if rule.min_length is not None else 0
-            max_len = rule.max_length if rule.max_length is not None else 100
-            # Clamp to reference defaults? Use provided or 0/100.
-            out.extend(build_record(
-                _BRT_BEGIN_DATABAR, bytes((min_len, max_len, show)),
-            ))
-            out.extend(build_record(
-                _BRT_CFVO, self._cfvo_bin(rule.minimum, "min"),
-            ))
-            out.extend(build_record(
-                _BRT_CFVO, self._cfvo_bin(rule.maximum, "max"),
-            ))
-            out.extend(build_record(_BRT_COLOR, self._color_to_brt(rule.color)))
-            out.extend(build_record(_BRT_END_DATABAR, b""))
-            out.extend(build_record(_BRT_END_CF_RULE, b""))
-            return bytes(out)
-        if isinstance(rule, IconSetRule):
-            out.extend(self._begin_cf_rule_bin(6, 4, -1, priority, 0))
-            code = self._ICON_SET_CODES[rule.icon_style]
-            # fIcon hides the value when set. fReverse is 1 for the icon
-            # set's normal order. All reserved and undefined bits stay clear.
-            flags = 0
-            if rule.show_value is False:
-                flags |= 0x02
-            if rule.reverse is not True:
-                flags |= 0x04
-            out.extend(build_record(
-                _BRT_BEGIN_ICONSET,
-                struct.pack("<I", code) + struct.pack("<H", flags),
-            ))
-            for v in rule.values:
-                out.extend(build_record(_BRT_CFVO, self._cfvo_icon_bin(v, rule.type)))
-            out.extend(build_record(_BRT_END_ICONSET, b""))
-            out.extend(build_record(_BRT_END_CF_RULE, b""))
-            return bytes(out)
-        raise NotImplementedError("CF rule type not yet supported for XLSB")
+        return rule_bin(rule, priority, self._register_dxf(getattr(rule, "dxf", None)),
+                        self._formula_context(), self._letters)
 
     def _cf_bin_grouped(self, rules) -> bytes:
         from .styles import parse_cell_range
@@ -767,13 +603,11 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
             by_range.setdefault(rule.sqref, []).append(rule)
         out = bytearray()
         for sqref, group in by_range.items():
-            first_col, first_row, last_col, last_row = parse_cell_range(sqref)
-            # BeginCF: ccf, fPivot=0, count=1, range.
-            payload = bytearray()
-            payload.extend(struct.pack("<I", len(group)))
-            payload.extend(struct.pack("<I", 0))
-            payload.extend(struct.pack("<I", 1))
-            payload.extend(self._encode_rfx(first_col, first_row, last_col, last_row))
+            ranges = sqref.split()
+            # BeginCF: ccf, fPivot=0, then the sqref's ranges.
+            payload = bytearray(struct.pack("<III", len(group), 0, len(ranges)))
+            for item in ranges:
+                payload.extend(self._encode_rfx(*parse_cell_range(item)))
             out.extend(build_record(_BRT_BEGIN_CF, bytes(payload)))
             for rule in group:
                 priority = self._claim_cf_priority(rule)

@@ -289,6 +289,21 @@ class XlsbEditMixin(XlsxEditMixin):
             'xl/workbook.bin': context.write_workbook(original_workbook),
         })
 
+    def set_conditional_formats(self, sheet_name: str, formats, dxf_id) -> None:
+        """Replace the sheet's conditional formats with ``formats``, an
+        iterable of ``(sqref, pivot, rules)``; ``dxf_id(dxf)`` returns the
+        index of a rule's differential style in the style sheet."""
+        from ._xlsb_cf import conditional_formats_bin, without_conditional_formats
+
+        path, data = self._sheet_bin(sheet_name)
+        original_workbook = self._package.get('xl/workbook.bin')
+        context = FormulaContext(self._sheets, original_workbook)
+        block = conditional_formats_bin(formats, context, dxf_id)
+        data = without_conditional_formats(data)
+        if block:
+            data = replace_records(data, (), block, before=(0x23D, 0x1EE) + _AFTER_HYPERLINKS)
+        self._apply_parts({path: data, 'xl/workbook.bin': context.write_workbook(original_workbook)})
+
     def set_workbook_protection(self, protection: WorkbookProtection) -> None:
         if not isinstance(protection, WorkbookProtection):
             raise TypeError("protection must be WorkbookProtection")

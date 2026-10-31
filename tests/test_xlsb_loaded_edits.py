@@ -453,10 +453,22 @@ def test_loaded_xlsb_saves_with_formatting_and_tables(formatted, tmp_path):
         loaded.close()
 
 
-@pytest.mark.parametrize("edit, message", [
-    (lambda s: s.conditional_formatting.add("A1", FormulaRule("A1", ["TRUE"])), "conditional"),
-    (lambda s: s.add_table(ExcelTable(display_name="More", ref="E1:F3")), "table"),
-])
-def test_formatting_and_table_edits_are_refused(formatted, tmp_path, edit, message):
-    with pytest.raises(NotImplementedError, match=message):
-        save_after(formatted, tmp_path, edit)
+def test_table_edits_are_refused(formatted, tmp_path):
+    with pytest.raises(NotImplementedError, match="table"):
+        save_after(formatted, tmp_path, lambda s: s.add_table(ExcelTable(display_name="More", ref="E1:F3")))
+
+
+def test_conditional_formats_are_added_next_to_the_files_own(formatted, tmp_path):
+    before = load_workbook(formatted)
+    try:
+        kept = [repr(rule) for rule in before.active.conditional_formatting.all_rules()]
+    finally:
+        before.close()
+    save_after(formatted, tmp_path, lambda s: s.conditional_formatting.add("A1", FormulaRule("A1", ["TRUE"])))
+    reloaded = load_workbook(tmp_path / "out.xlsb")
+    try:
+        rules = reloaded.active.conditional_formatting.all_rules()
+        assert [repr(rule) for rule in rules[:len(kept)]] == kept
+        assert isinstance(rules[-1], FormulaRule) and list(rules[-1].formula) == ["TRUE"]
+    finally:
+        reloaded.close()

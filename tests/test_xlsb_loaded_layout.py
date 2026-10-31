@@ -10,6 +10,10 @@ import pytest
 
 from xlspy import Comment, DataValidation, Hyperlink, Workbook, load_workbook
 from xlspy._metadata import password_hash
+from xlspy.styles import (
+    CellIsRule, ColorScaleRule, DataBarRule, DifferentialStyle, Font, FormatObject, IconSetRule,
+    PatternFill,
+)
 from xlspy.workbook import CustomProperty
 
 
@@ -192,6 +196,46 @@ def _check_properties(workbook):
     assert [(item.name, item.value) for item in workbook.custom_doc_props] == [("Project", "Apollo")]
 
 
+_RED = DifferentialStyle(font=Font(color="FF9C0006", bold=True),
+                         fill=PatternFill("solid", start_color="FFFFC7CE"))
+
+
+def _set_conditional(workbook):
+    formats = workbook["Data"].conditional_formatting
+    formats.add("B1:B10", CellIsRule("B1", "greaterThan", ["5"], dxf=_RED))
+    formats.add("C1:C10", ColorScaleRule("C1", FormatObject("min"), FormatObject("formula", "$B$1"),
+                                         FormatObject("max"), ["FFF8696B", "FFFFEB84", "FF63BE7B"]))
+    formats.add("B1:B5 C1:C5", DataBarRule("B1", FormatObject("num", 1), FormatObject("max"),
+                                           "FF638EC6", show_value=False))
+    formats.add("B1:B10", IconSetRule("B1", "5Rating", [0, 20, 40, 60, 80], reverse=True))
+    new = workbook.create_sheet("Fresh")
+    new["A1"] = 1
+    new.conditional_formatting.add("A1:A3", CellIsRule("A1", "lessThan", ["0"], dxf=_RED))
+
+
+def _check_conditional(workbook):
+    found = {
+        (item.sqref, type(rule).__name__): rule
+        for item in workbook["Data"].conditional_formatting for rule in item.rules
+    }
+    assert set(found) == {
+        ("B1:B10", "CellIsRule"), ("C1:C10", "ColorScaleRule"),
+        ("B1:B5 C1:C5", "DataBarRule"), ("B1:B10", "IconSetRule"),
+    }
+    cell_is = found["B1:B10", "CellIsRule"]
+    assert cell_is.formula == ("5",) or list(cell_is.formula) == ["5"]
+    assert cell_is.dxf.font.bold and cell_is.dxf.font.color.rgb == "FF9C0006"
+    assert found["C1:C10", "ColorScaleRule"].midpoint == FormatObject("formula", "$B$1")
+    bar = found["B1:B5 C1:C5", "DataBarRule"]
+    assert bar.minimum == FormatObject("num", 1) and bar.show_value is False
+    icons = found["B1:B10", "IconSetRule"]
+    assert icons.icon_style == "5Rating" and icons.reverse is True
+    assert list(icons.values) == [0, 20, 40, 60, 80]
+    fresh = [rule for item in workbook["Fresh"].conditional_formatting for rule in item.rules]
+    assert [type(rule).__name__ for rule in fresh] == ["CellIsRule"]
+    assert fresh[0].dxf.fill.start_color.rgb == "FFFFC7CE"
+
+
 CASES = {
     "dimensions": (_set_dimensions, _check_dimensions),
     "view": (_set_view, _check_view),
@@ -201,6 +245,7 @@ CASES = {
     "sheets": (_set_sheets, _check_sheets),
     "removal": (_set_removal, _check_removal),
     "properties": (_set_properties, _check_properties),
+    "conditional": (_set_conditional, _check_conditional),
 }
 
 
@@ -299,3 +344,61 @@ def test_column_records_use_spec_ids_and_legacy_wrappers_are_dropped(tmp_path):
     _, fixed = ids(tmp_path / "fixed.xlsb")
     assert fixed.count(0x86) == 1 and 0x87 not in fixed
     assert fixed.count(0x186) == 1
+
+
+def test_conditional_format_styles_are_shared_and_kept(tmp_path):
+    workbook = Workbook()
+    workbook.active["A1"] = 1
+    workbook.active.conditional_formatting.add("A1:A5", CellIsRule("A1", "greaterThan", ["1"], dxf=_RED))
+    path = tmp_path / "cf.xlsb"
+    workbook.save(path)
+    workbook.close()
+
+    def dxf_count(file):
+        reloaded = load_workbook(file)
+        try:
+            return len(reloaded._styles.dxfs)
+        finally:
+            reloaded.close()
+
+    loaded = load_workbook(path)
+    try:
+        formats = loaded.active.conditional_formatting
+        formats.add("B1:B5", CellIsRule("B1", "lessThan", ["0"], dxf=_RED))
+        loaded.save(tmp_path / "first.xlsb")
+        formats.remove("B1:B5")
+        loaded.save(tmp_path / "second.xlsb")
+        formats.add("C1:C5", CellIsRule("C1", "equal", ["3"], dxf=_RED))
+        loaded.save(tmp_path / "third.xlsb")
+    finally:
+        loaded.close()
+    # The same style is written once, whatever the edits.
+    assert dxf_count(path) == dxf_count(tmp_path / "third.xlsb") == 1
+    reloaded = load_workbook(tmp_path / "third.xlsb")
+    try:
+        assert [item.sqref for item in reloaded.active.conditional_formatting] == ["A1:A5", "C1:C5"]
+    finally:
+        reloaded.close()
+
+
+def test_xlsx_conditional_format_edits_do_not_pile_up_styles(tmp_path):
+    import re
+    import zipfile
+
+    workbook = Workbook()
+    workbook.active["A1"] = 1
+    workbook.active.conditional_formatting.add("A1:A5", CellIsRule("A1", "greaterThan", ["1"], dxf=_RED))
+    workbook.save(tmp_path / "cf.xlsx")
+    workbook.close()
+    loaded = load_workbook(tmp_path / "cf.xlsx")
+    try:
+        for number in range(1, 4):
+            loaded.active.conditional_formatting.add(f"B{number}", CellIsRule("B1", "lessThan", ["0"], dxf=_RED))
+            loaded.save(tmp_path / "out.xlsx")
+    finally:
+        loaded.close()
+    with zipfile.ZipFile(tmp_path / "out.xlsx") as archive:
+        styles = archive.read("xl/styles.xml").decode()
+        sheet = archive.read("xl/worksheets/sheet1.xml").decode()
+    assert re.search(r'<dxfs count="(\d+)"', styles)[1] == "1"
+    assert re.findall(r'dxfId="(\d+)"', sheet) == ["0"] * 4

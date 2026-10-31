@@ -334,8 +334,9 @@ def _sqref(payload: bytes, offset: int) -> str:
 
 
 def cf_rule(sqref: str, payload: bytes, context, style_table):
-    """A rule from a BrtBeginCFRule payload, or None for the kinds the model
-    reads from XLSX only (color scales, data bars, icon sets)."""
+    """A rule from a BrtBeginCFRule payload with formulas, or None for an
+    unknown kind (color scales, data bars and icon sets are read by
+    ``read_conditional_formats`` with their sub-records)."""
     from ._xlsb_formulas import decode_formula, read_parsed
     from ._xlsb_metadata import read_wide
 
@@ -380,26 +381,64 @@ def cf_rule(sqref: str, payload: bytes, context, style_table):
 
 
 def read_conditional_formats(items, context, style_table):
-    """``(sqref, rule)`` pairs from the BrtBeginConditionalFormatting and
-    BrtBeginCFRule records of a sheet, in file order."""
+    """``(sqref, rule)`` pairs from the BrtBeginConditionalFormatting,
+    BrtBeginCFRule and color scale / data bar / icon set records of a sheet,
+    in file order."""
     found = []
     sqref = None
+    pending = None  # (sqref, rule payload, sub-records) of a scale rule
+
+    def flush():
+        if pending is None:
+            return
+        rule_sqref, payload, parts = pending
+        kind, _template, _dxf, priority = struct.unpack_from("<IIiI", payload, 0)
+        stop = True if struct.unpack_from("<H", payload, 28)[0] & _STOP_IF_TRUE else None
+        try:
+            rule = _scale_rule(rule_sqref, kind, priority, stop, parts, context)
+        except (struct.error, KeyError, TypeError, ValueError, NotImplementedError):
+            return
+        if rule is not None:
+            found.append((rule_sqref, rule))
+
     for record_id, payload in items:
+        if record_id in SCALE_RECORDS:
+            if pending is not None:
+                pending[2].append((record_id, payload))
+            continue
+        flush()
+        pending = None
         if record_id == BRT_BEGIN_CONDITIONAL_FORMATTING:
             sqref = _sqref(payload, 8)
         elif record_id == BRT_BEGIN_CF_RULE and sqref:
+            if len(payload) >= 4 and struct.unpack_from("<I", payload)[0] in _SCALE_TEMPLATES:
+                pending = (sqref, payload, [])
+                continue
             try:
                 rule = cf_rule(sqref, payload, context, style_table)
             except (struct.error, TypeError, ValueError, NotImplementedError):
                 continue
             if rule is not None:
                 found.append((sqref, rule))
+    flush()
     return found
 
 
 def rule_bin(rule, priority: int, dxf_id: int, context, letters) -> bytes:
-    """BrtBeginCFRule with the rule's formulas, and BrtEndCFRule."""
+    """BrtBeginCFRule with the rule's formulas (or its color scale, data bar
+    or icon set records), and BrtEndCFRule."""
+    from .styles import ColorScaleRule, DataBarRule, IconSetRule
+
     first_col, first_row, _, _ = parse_cell_range(rule.sqref.split()[0])
+    if isinstance(rule, (ColorScaleRule, DataBarRule, IconSetRule)):
+        kind = _ICON_SET if isinstance(rule, IconSetRule) else (
+            _DATA_BAR if isinstance(rule, DataBarRule) else _COLOR_SCALE)
+        # No dxf, no formula, no flags: Excel keeps everything in the sub-records.
+        payload = struct.pack("<IIiIIII", kind, _SCALE_TEMPLATES[kind], -1, priority, 0, 0, 0)
+        payload += struct.pack("<H3Ii", 0, 0, 0, 0, -1)
+        return (build_record(BRT_BEGIN_CF_RULE, payload)
+                + _scale_records(rule, context, (first_col, first_row))
+                + build_record(BRT_END_CF_RULE))
     corner = f"{letters[first_col]}{first_row + 1}"
     kind, template, param, flags, formulas, text = _rule_fields(rule, corner)
     # Formulas are relative to the range's top-left cell, like XLSX.
@@ -421,3 +460,242 @@ def rule_bin(rule, priority: int, dxf_id: int, context, letters) -> bytes:
         payload += struct.pack("<I", len(encoded) // 2) + encoded
     payload += b"".join(compiled)
     return build_record(BRT_BEGIN_CF_RULE, payload) + build_record(BRT_END_CF_RULE)
+
+
+# Color scales, data bars and icon sets ([MS-XLSB] 2.1.7.62): the rule
+# record carries no formula, the sub-records hold the thresholds and colors.
+BRT_BEGIN_ICON_SET, BRT_END_ICON_SET = 0x1D1, 0x1D2
+BRT_BEGIN_DATA_BAR, BRT_END_DATA_BAR = 0x1D3, 0x1D4
+BRT_BEGIN_COLOR_SCALE, BRT_END_COLOR_SCALE = 0x1D5, 0x1D6
+BRT_CFVO, BRT_COLOR = 0x1D7, 0x234
+SCALE_RECORDS = frozenset((
+    BRT_BEGIN_ICON_SET, BRT_BEGIN_DATA_BAR, BRT_BEGIN_COLOR_SCALE, BRT_CFVO, BRT_COLOR,
+))
+_COLOR_SCALE, _DATA_BAR, _ICON_SET = 3, 4, 6
+_SCALE_TEMPLATES = {_COLOR_SCALE: 0x02, _DATA_BAR: 0x03, _ICON_SET: 0x04}
+_CFVO_CODES = {"num": 1, "min": 2, "max": 3, "percent": 4, "percentile": 5, "formula": 7}
+_CFVO_NAMES = {code: name for name, code in _CFVO_CODES.items()}
+# KPISets ([MS-XLSB] 2.5.94).
+ICON_SET_CODES = {
+    "3Arrows": 0, "3ArrowsGray": 1, "3Flags": 2, "3TrafficLights1": 3,
+    "3TrafficLights2": 4, "3Signs": 5, "3Symbols": 6, "3Symbols2": 7,
+    "4Arrows": 8, "4ArrowsGray": 9, "4RedToBlack": 10, "4Rating": 11,
+    "4TrafficLights": 12, "5Arrows": 13, "5ArrowsGray": 14,
+    "5Rating": 15, "5Quarters": 16,
+}
+_ICON_SET_NAMES = {code: name for name, code in ICON_SET_CODES.items()}
+# BrtBeginIconSet flags as Excel writes them: fIcon hides the value,
+# fReverse reverses the icon order.
+_ICON_ONLY, _ICON_REVERSE = 0x02, 0x04
+_BAR_SHOW_VALUE = 0x01
+
+
+def _scale_color(color) -> bytes:
+    """A BrtColor payload; Excel writes RGB colors opaque."""
+    data = _color(color)
+    if data[0] == 0x05:
+        data = data[:7] + b"\xff"
+    return data
+
+
+def cfvo_bin(kind: str, value, context, origin, gte: bool = False) -> bytes:
+    """A BrtCFVO payload; a ``formula`` threshold is compiled like a rule
+    formula, relative to the range's top-left cell."""
+    code = _CFVO_CODES[kind]
+    formula = b""
+    number = 0.0
+    if kind == "formula":
+        if value is None:
+            raise ValueError("a formula threshold needs a formula")
+        text = str(value)
+        stats = {}
+        formula = compile_formula(
+            text[1:] if text.startswith("=") else text, context,
+            origin=origin, cell_relative=True, stats=stats,
+        )
+        size = struct.unpack_from("<I", formula)[0] + 2 * stats["references"]
+    else:
+        size = 0
+        if kind not in ("min", "max"):
+            if value is None:
+                raise ValueError(f"CFVO type {kind!r} needs a value")
+            number = float(value)
+    flag = int(gte)
+    return struct.pack("<Id3I", code, number, flag, flag, size) + formula
+
+
+def _scale_records(rule, context, origin) -> bytes:
+    from .styles import ColorScaleRule, DataBarRule
+
+    def threshold(item, default, gte=False):
+        if item is None:
+            return build_record(BRT_CFVO, cfvo_bin(default[0], default[1], context, origin, gte))
+        return build_record(BRT_CFVO, cfvo_bin(item.type, item.value, context, origin, gte))
+
+    if isinstance(rule, ColorScaleRule):
+        out = build_record(BRT_BEGIN_COLOR_SCALE)
+        out += threshold(rule.minimum, ("min", None))
+        if rule.midpoint is not None:
+            out += threshold(rule.midpoint, ("percentile", 50))
+        out += threshold(rule.maximum, ("max", None))
+        out += b"".join(build_record(BRT_COLOR, _scale_color(color)) for color in rule.colors)
+        return out + build_record(BRT_END_COLOR_SCALE)
+    if isinstance(rule, DataBarRule):
+        # Without lengths Excel draws bars from 10% to 90% of the cell.
+        flags = 0 if rule.show_value is False else _BAR_SHOW_VALUE
+        out = build_record(BRT_BEGIN_DATA_BAR, bytes((
+            10 if rule.min_length is None else rule.min_length,
+            90 if rule.max_length is None else rule.max_length, flags,
+        )))
+        out += threshold(rule.minimum, ("min", None)) + threshold(rule.maximum, ("max", None))
+        out += build_record(BRT_COLOR, _scale_color(rule.color))
+        return out + build_record(BRT_END_DATA_BAR)
+    flags = (_ICON_ONLY if rule.show_value is False else 0) | (_ICON_REVERSE if rule.reverse else 0)
+    out = build_record(BRT_BEGIN_ICON_SET, struct.pack("<IH", ICON_SET_CODES[rule.icon_style], flags))
+    for value in rule.values:
+        out += build_record(BRT_CFVO, cfvo_bin(rule.type, value, context, origin, gte=True))
+    return out + build_record(BRT_END_ICON_SET)
+
+
+def _read_cfvo(payload: bytes, context, origin):
+    from ._xlsb_formulas import decode_formula, read_parsed
+    from .styles import FormatObject
+
+    code, number, _save_gte, _gte, size = struct.unpack_from("<Id3I", payload, 0)
+    kind = _CFVO_NAMES[code]
+    if kind == "formula":
+        _tokens, _extra, end = read_parsed(payload, 24)
+        return FormatObject(kind, decode_formula(payload[24:end], context, origin=origin))
+    if kind in ("min", "max"):
+        return FormatObject(kind)
+    return FormatObject(kind, int(number) if number.is_integer() else number)
+
+
+def _scale_rule(sqref, kind, priority, stop, parts, context):
+    """A color scale, data bar or icon set from its sub-records."""
+    from ._xlsb_styles import _color as color_at
+    from .styles import ColorScaleRule, DataBarRule, IconSetRule
+
+    first_col, first_row, _, _ = parse_cell_range(sqref.split()[0])
+    origin = (first_col, first_row)
+    head = None
+    cfvos, colors = [], []
+    for record_id, payload in parts:
+        if record_id == BRT_CFVO:
+            cfvos.append(_read_cfvo(payload, context, origin))
+        elif record_id == BRT_COLOR:
+            colors.append(color_at(payload, 0))
+        else:
+            head = (record_id, payload)
+    if head is None:
+        return None
+    if kind == _COLOR_SCALE and head[0] == BRT_BEGIN_COLOR_SCALE and len(cfvos) in (2, 3):
+        if len(cfvos) == 2:
+            return ColorScaleRule(sqref, cfvos[0], None, cfvos[1], colors, priority)
+        return ColorScaleRule(sqref, *cfvos, colors, priority)
+    if kind == _DATA_BAR and head[0] == BRT_BEGIN_DATA_BAR and len(cfvos) == 2 and colors:
+        low, high, flags = head[1][:3]
+        return DataBarRule(sqref, cfvos[0], cfvos[1], colors[0],
+                           show_value=False if not flags & _BAR_SHOW_VALUE else None,
+                           min_length=low, max_length=high, priority=priority)
+    if kind == _ICON_SET and head[0] == BRT_BEGIN_ICON_SET and cfvos:
+        code, flags = struct.unpack_from("<IH", head[1], 0)
+        values = [0 if item.value is None else item.value for item in cfvos]
+        return IconSetRule(sqref, _ICON_SET_NAMES[code], values, type=cfvos[0].type,
+                           show_value=False if flags & _ICON_ONLY else None,
+                           reverse=True if flags & _ICON_REVERSE else None,
+                           stop_if_true=stop, priority=priority)
+    return None
+
+
+BRT_END_CONDITIONAL_FORMATTING = 0x1CE
+# Excel 2010 conditional formats live in a worksheet FRT extension
+# (BrtFRTBegin, BrtBeginConditionalFormattings ... BrtEndConditionalFormattings,
+# BrtFRTEnd); BrtCFRuleExt ties a rule of the base block to its x14 rule.
+_FRT_BEGIN, _FRT_END = 0x23, 0x24
+_BEGIN_CF14_LIST, _CF_RULE14, _CF_RULE_EXT = 0x46F, 0x418, 0x47A
+
+
+def _letter(index: int) -> str:
+    from .refs import column_label
+
+    return column_label(index)
+
+
+class _Letters:
+    __getitem__ = staticmethod(_letter)
+
+
+def conditional_formats_bin(formats, context, dxf_id) -> bytes:
+    """The BrtBeginConditionalFormatting blocks for ``formats``, an iterable
+    of ``(sqref, pivot, rules)``; ``dxf_id`` gives a rule's style index.
+    Rules without a priority come after the others, in order."""
+    formats = [(sqref, pivot, list(rules)) for sqref, pivot, rules in formats]
+    taken = set()
+    for _sqref, _pivot, rules in formats:
+        for rule in rules:
+            if rule.priority is None:
+                continue
+            if rule.priority in taken:
+                raise ValueError(f"duplicate conditional formatting priority {rule.priority}")
+            taken.add(rule.priority)
+    following = max(taken, default=0) + 1
+    out = []
+    for sqref, pivot, rules in formats:
+        if not rules:
+            continue
+        ranges = [parse_cell_range(part) for part in sqref.split()]
+        head = struct.pack("<III", len(rules), 1 if pivot else 0, len(ranges))
+        head += b"".join(struct.pack("<IIII", r1, r2, c1, c2) for c1, r1, c2, r2 in ranges)
+        out.append(build_record(BRT_BEGIN_CONDITIONAL_FORMATTING, head))
+        for rule in rules:
+            priority = rule.priority
+            if priority is None:
+                priority = following
+                following += 1
+            out.append(rule_bin(rule, priority, dxf_id(getattr(rule, "dxf", None)), context, _Letters()))
+        out.append(build_record(BRT_END_CONDITIONAL_FORMATTING))
+    return b"".join(out)
+
+
+def without_conditional_formats(data: bytes) -> bytes:
+    """A worksheet part without its conditional formats (with their Excel
+    2010 extension). Raises ``NotImplementedError`` when the extension holds
+    rules the model cannot read, which a rewrite would lose."""
+    from .biff_utils import iter_records
+
+    records = list(iter_records(data))
+    kept, linked, extended = [], set(), []
+    depth = 0
+    index = 0
+    while index < len(records):
+        record = records[index]
+        kind = record.record_id
+        payload = data[record.data_start:record.data_end]
+        if kind == BRT_BEGIN_CONDITIONAL_FORMATTING:
+            depth += 1
+        if depth:
+            if kind == _CF_RULE_EXT and len(payload) >= 20:
+                linked.add(payload[4:20])
+            if kind == BRT_END_CONDITIONAL_FORMATTING:
+                depth -= 1
+            index += 1
+            continue
+        if (kind == _FRT_BEGIN and index + 1 < len(records)
+                and records[index + 1].record_id == _BEGIN_CF14_LIST):
+            end = index + 1
+            while end < len(records) and records[end].record_id != _FRT_END:
+                if records[end].record_id == _CF_RULE14:
+                    extended.append(data[records[end].data_start:records[end].data_end])
+                end += 1
+            index = end + 1
+            continue
+        kept.append(data[record.header_start:record.data_end])
+        index += 1
+    for payload in extended:
+        if not any(guid in payload for guid in linked):
+            raise NotImplementedError(
+                "this sheet has Excel 2010 conditional formats the model cannot read; "
+                "editing its conditional formats would lose them"
+            )
+    return b"".join(kept)
