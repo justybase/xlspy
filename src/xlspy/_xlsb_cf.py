@@ -380,12 +380,14 @@ def cf_rule(sqref: str, payload: bytes, context, style_table):
     return None
 
 
-def read_conditional_formats(items, context, style_table):
+def read_conditional_formats(items, context, style_table, links=None):
     """``(sqref, rule)`` pairs from the BrtBeginConditionalFormatting,
     BrtBeginCFRule and color scale / data bar / icon set records of a sheet,
-    in file order."""
+    in file order. A ``BrtCFRuleExt`` ties the rule before it to its Excel 2010
+    extension; with ``links`` (a dict) ``id(rule)`` is mapped to its payload."""
     found = []
     sqref = None
+    open_rule = False  # the last rule record was read into ``found``
     pending = None  # (sqref, rule payload, sub-records) of a scale rule
 
     def flush():
@@ -408,11 +410,18 @@ def read_conditional_formats(items, context, style_table):
             continue
         flush()
         pending = None
+        if record_id == _CF_RULE_EXT:
+            if links is not None and open_rule and found:
+                links[id(found[-1][1])] = payload
+            open_rule = False
+            continue
+        open_rule = False
         if record_id == BRT_BEGIN_CONDITIONAL_FORMATTING:
             sqref = _sqref(payload, 8)
         elif record_id == BRT_BEGIN_CF_RULE and sqref:
             if len(payload) >= 4 and struct.unpack_from("<I", payload)[0] in _SCALE_TEMPLATES:
                 pending = (sqref, payload, [])
+                open_rule = True
                 continue
             try:
                 rule = cf_rule(sqref, payload, context, style_table)
@@ -420,6 +429,7 @@ def read_conditional_formats(items, context, style_table):
                 continue
             if rule is not None:
                 found.append((sqref, rule))
+                open_rule = True
     flush()
     return found
 
@@ -613,7 +623,9 @@ BRT_END_CONDITIONAL_FORMATTING = 0x1CE
 # (BrtFRTBegin, BrtBeginConditionalFormattings ... BrtEndConditionalFormattings,
 # BrtFRTEnd); BrtCFRuleExt ties a rule of the base block to its x14 rule.
 _FRT_BEGIN, _FRT_END = 0x23, 0x24
-_BEGIN_CF14_LIST, _CF_RULE14, _CF_RULE_EXT = 0x46F, 0x418, 0x47A
+_BEGIN_CF14_LIST, _END_CF14_LIST, _CF_RULE14, _CF_RULE_EXT = 0x46F, 0x470, 0x418, 0x47A
+_BEGIN_CF14, _END_CF14 = 0x416, 0x417
+_FRT_CF = bytes.fromhex("020e0000")  # the FRT header Excel writes for conditional formats
 
 
 def _letter(index: int) -> str:
@@ -626,10 +638,12 @@ class _Letters:
     __getitem__ = staticmethod(_letter)
 
 
-def conditional_formats_bin(formats, context, dxf_id) -> bytes:
+def conditional_formats_bin(formats, context, dxf_id, links=None) -> bytes:
     """The BrtBeginConditionalFormatting blocks for ``formats``, an iterable
     of ``(sqref, pivot, rules)``; ``dxf_id`` gives a rule's style index.
-    Rules without a priority come after the others, in order."""
+    Rules without a priority come after the others, in order. ``links`` maps
+    ``id(rule)`` to the ``BrtCFRuleExt`` payload that ties the rule to its
+    Excel 2010 extension."""
     formats = [(sqref, pivot, list(rules)) for sqref, pivot, rules in formats]
     taken = set()
     for _sqref, _pivot, rules in formats:
@@ -653,19 +667,28 @@ def conditional_formats_bin(formats, context, dxf_id) -> bytes:
             if priority is None:
                 priority = following
                 following += 1
-            out.append(rule_bin(rule, priority, dxf_id(getattr(rule, "dxf", None)), context, _Letters()))
+            data = rule_bin(rule, priority, dxf_id(getattr(rule, "dxf", None)), context, _Letters())
+            if links and id(rule) in links:
+                end = build_record(BRT_END_CF_RULE)
+                data = (data[:-len(end)] + build_record(_FRT_BEGIN, _FRT_CF)
+                        + build_record(_CF_RULE_EXT, links[id(rule)]) + build_record(_FRT_END) + end)
+            out.append(data)
         out.append(build_record(BRT_END_CONDITIONAL_FORMATTING))
     return b"".join(out)
 
 
-def without_conditional_formats(data: bytes) -> bytes:
-    """A worksheet part without its conditional formats (with their Excel
-    2010 extension). Raises ``NotImplementedError`` when the extension holds
-    rules the model cannot read, which a rewrite would lose."""
+def without_conditional_formats(data: bytes, keep=frozenset()):
+    """``(worksheet part without its conditional formats, kept extension)``.
+
+    The Excel 2010 extension is a list of groups (BrtBeginConditionalFormatting14
+    to BrtEndConditionalFormatting14). A group is kept, as the bytes of its
+    records, unless it belongs to a base rule whose ``BrtCFRuleExt`` payload is
+    not in ``keep``: that rule is gone or changed, so its extension would
+    describe something else."""
     from .biff_utils import iter_records
 
     records = list(iter_records(data))
-    kept, linked, extended = [], set(), []
+    kept, linked, groups = [], {}, []
     depth = 0
     index = 0
     while index < len(records):
@@ -676,26 +699,52 @@ def without_conditional_formats(data: bytes) -> bytes:
             depth += 1
         if depth:
             if kind == _CF_RULE_EXT and len(payload) >= 20:
-                linked.add(payload[4:20])
+                linked[payload[4:20]] = payload
             if kind == BRT_END_CONDITIONAL_FORMATTING:
                 depth -= 1
             index += 1
             continue
         if (kind == _FRT_BEGIN and index + 1 < len(records)
                 and records[index + 1].record_id == _BEGIN_CF14_LIST):
-            end = index + 1
+            end = index + 2
+            start = None
             while end < len(records) and records[end].record_id != _FRT_END:
-                if records[end].record_id == _CF_RULE14:
-                    extended.append(data[records[end].data_start:records[end].data_end])
+                if records[end].record_id == _BEGIN_CF14:
+                    start = records[end].header_start
+                elif records[end].record_id == _END_CF14 and start is not None:
+                    groups.append(data[start:records[end].data_end])
+                    start = None
                 end += 1
             index = end + 1
             continue
         kept.append(data[record.header_start:record.data_end])
         index += 1
-    for payload in extended:
-        if not any(guid in payload for guid in linked):
-            raise NotImplementedError(
-                "this sheet has Excel 2010 conditional formats the model cannot read; "
-                "editing its conditional formats would lose them"
-            )
-    return b"".join(kept)
+    extension = [
+        group for group in groups
+        if all(payload in keep for guid, payload in linked.items() if guid in group)
+    ]
+    return b"".join(kept), extension
+
+
+def insert_extension(data: bytes, groups) -> bytes:
+    """``data`` with the extension ``groups`` before the trailing alternate
+    content block and BrtEndSheet (rows carry the same block, so only the tail counts)."""
+    from .biff_utils import iter_records
+
+    block = extension_block(groups)
+    if not block:
+        return data
+    records = list(iter_records(data))
+    at = records[-1].header_start
+    # The tail is BrtACBegin, one record, BrtACEnd, BrtEndSheet.
+    if len(records) >= 4 and records[-4].record_id == 0x25 and records[-2].record_id == 0x26:
+        at = records[-4].header_start
+    return data[:at] + block + data[at:]
+
+
+def extension_block(groups) -> bytes:
+    """The worksheet FRT block (BrtFRTBegin ... BrtFRTEnd) holding ``groups``."""
+    if not groups:
+        return b""
+    return (build_record(_FRT_BEGIN, _FRT_CF) + build_record(_BEGIN_CF14_LIST)
+            + b"".join(groups) + build_record(_END_CF14_LIST) + build_record(_FRT_END))

@@ -289,19 +289,23 @@ class XlsbEditMixin(XlsxEditMixin):
             'xl/workbook.bin': context.write_workbook(original_workbook),
         })
 
-    def set_conditional_formats(self, sheet_name: str, formats, dxf_id) -> None:
+    def set_conditional_formats(self, sheet_name: str, formats, dxf_id, links=None) -> None:
         """Replace the sheet's conditional formats with ``formats``, an
         iterable of ``(sqref, pivot, rules)``; ``dxf_id(dxf)`` returns the
-        index of a rule's differential style in the style sheet."""
-        from ._xlsb_cf import conditional_formats_bin, without_conditional_formats
+        index of a rule's differential style in the style sheet. ``links`` maps
+        ``id(rule)`` to the ``BrtCFRuleExt`` payload of a rule whose Excel 2010
+        extension is kept as it is in the file."""
+        from ._xlsb_cf import conditional_formats_bin, insert_extension, without_conditional_formats
 
         path, data = self._sheet_bin(sheet_name)
         original_workbook = self._package.get('xl/workbook.bin')
         context = FormulaContext(self._sheets, original_workbook)
-        block = conditional_formats_bin(formats, context, dxf_id)
-        data = without_conditional_formats(data)
+        block = conditional_formats_bin(formats, context, dxf_id, links)
+        data, groups = without_conditional_formats(data, frozenset((links or {}).values()))
         if block:
             data = replace_records(data, (), block, before=(0x23D, 0x1EE) + _AFTER_HYPERLINKS)
+        if groups:
+            data = insert_extension(data, groups)
         self._apply_parts({path: data, 'xl/workbook.bin': context.write_workbook(original_workbook)})
 
     def set_workbook_protection(self, protection: WorkbookProtection) -> None:

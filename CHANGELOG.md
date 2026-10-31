@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `y_axis_title` and `legend_position` (`None` removes the title or legend). The chart part is
   edited as text, so the rest of the file stays as Excel wrote it.
 - Charts and images can be added to a loaded XLSB workbook, including on new sheets, and so can tables.
+- Editing conditional formats in a loaded XLSB keeps the Excel 2010 extension (negative bar colours,
+  axis, gradient) of rules that were not changed; extension rules the model cannot read are kept too.
 
 ### Fixed
 

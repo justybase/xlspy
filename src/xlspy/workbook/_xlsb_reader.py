@@ -30,7 +30,8 @@ from ._reader import _read_custom_properties, _read_print_names, _read_propertie
 from ._xlsb_layout import builtin_names
 from ._xlsb_loaded import remember_saved_state, remember_workbook_state
 from .._xlsb_cf import (
-    BRT_BEGIN_CF_RULE, BRT_BEGIN_CONDITIONAL_FORMATTING, SCALE_RECORDS, read_conditional_formats,
+    BRT_BEGIN_CF_RULE, BRT_BEGIN_CONDITIONAL_FORMATTING, SCALE_RECORDS, _CF_RULE_EXT,
+    read_conditional_formats,
 )
 from ._xlsb_sheet_meta import (
     FILTER_RECORDS, LIST_PART, RECORDS as SHEET_RECORDS, ROW_FLAGS, ROW_HEADER,
@@ -38,7 +39,7 @@ from ._xlsb_sheet_meta import (
 )
 
 
-_CF_RECORDS = SCALE_RECORDS | {BRT_BEGIN_CONDITIONAL_FORMATTING, BRT_BEGIN_CF_RULE}
+_CF_RECORDS = SCALE_RECORDS | {BRT_BEGIN_CONDITIONAL_FORMATTING, BRT_BEGIN_CF_RULE, _CF_RULE_EXT}
 
 
 def _external_links(package, sheet_path: str) -> dict[str, str]:
@@ -138,6 +139,7 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
             sheet = Worksheet(workbook, name)
             sheet._loaded = True
             sheet._path = updater._sheets[name]
+            sheet._cf_extensions = {}
             sheet._original_title = name
             with updater._package.open_entry(sheet._path) as stream:
                 sheet_data = stream.read()
@@ -238,9 +240,16 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
                     updater.get_sheet_names(), updater._package.get("xl/workbook.bin"),
                 )
             read = 0
-            for sqref, rule in read_conditional_formats(conditional, formula_context, workbook._styles):
-                sheet._conditional_formats.add(sqref, rule)
+            extensions: dict = {}
+            for sqref, rule in read_conditional_formats(
+                conditional, formula_context, workbook._styles, extensions,
+            ):
+                payload = extensions.get(id(rule))
+                rule = sheet._conditional_formats.add(sqref, rule)
                 read += 1
+                if payload is not None:
+                    # Kept with the rule while it stays as it was read.
+                    sheet._cf_extensions[id(rule)] = (rule, repr(rule), payload)
             note_unread(
                 sheet, "conditional_formatting",
                 sum(record_id == BRT_BEGIN_CF_RULE for record_id, _ in conditional) - read,

@@ -188,11 +188,20 @@ def _save_sheet(sheet, updater) -> None:
         != sheet._saved_object_signatures.get("conditional_formatting", ())
     )
     if formats_changed:
+        # An unchanged rule keeps its Excel 2010 extension (negative bar colours,
+        # axes); a changed or removed one loses it with the old settings.
+        kept = {
+            id(rule): entry[2]
+            for rule in sheet.conditional_formatting.all_rules()
+            if (entry := getattr(sheet, "_cf_extensions", {}).get(id(rule))) and entry[0] is rule and entry[1] == repr(rule)
+        }
         updater.set_conditional_formats(
             sheet.title,
             [(item.sqref, item.pivot, item.rules) for item in sheet.conditional_formatting],
             sheet._workbook._styles.dxf_id,
+            kept,
         )
+        sheet._cf_extensions = {key: sheet._cf_extensions[key] for key in kept}
     if new or sheet._dirty_hyperlinks:
         links = {
             cell.coordinate: cell._hyperlink

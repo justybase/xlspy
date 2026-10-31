@@ -684,17 +684,18 @@ class ConditionalFormattingList:
     def __init__(self):
         self._items: list[ConditionalFormatting] = []
 
-    def add(self, range_string: str, rule) -> None:
-        """Apply ``rule`` to ``range_string`` (its own ``sqref`` is replaced)."""
+    def add(self, range_string: str, rule):
+        """Apply ``rule`` to ``range_string`` (its own ``sqref`` is replaced).
+        Returns the rule as stored."""
         _expect(rule, _CF_RULES, "rule", "an xlspy conditional formatting rule (CellIsRule, ...)")
         normalized = _normalize_sqref(range_string)
+        stored = replace(rule, sqref=normalized)
         for item in self._items:
             if item.sqref == normalized:
-                item.rules.append(replace(rule, sqref=normalized))
-                return
-        self._items.append(
-            ConditionalFormatting(normalized, [replace(rule, sqref=normalized)])
-        )
+                item.rules.append(stored)
+                return stored
+        self._items.append(ConditionalFormatting(normalized, [stored]))
+        return stored
 
     def __iter__(self):
         return iter(self._items)
