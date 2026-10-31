@@ -8,6 +8,7 @@ use pyo3::types::{
     PyType,
 };
 
+use crate::dates::days_from_civil;
 use crate::text::CELL_TEXT_LIMIT;
 use crate::types::overlay_kind;
 
@@ -172,17 +173,6 @@ pub fn date_style_xf(
         }
         None => Ok(false),
     }
-}
-
-/// Howard Hinnant's days_from_civil (days since 1970-01-01).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let yy = if m <= 2 { y - 1 } else { y };
-    let era = if yy >= 0 { yy } else { yy - 399 } / 400;
-    let yoe = yy - era * 400;
-    let mp = if m > 2 { m - 3 } else { m + 9 };
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
 }
 
 pub enum Serial {
@@ -358,17 +348,5 @@ impl<'a, 'py> Styles<'a, 'py> {
             break;
         }
         Ok(0)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::days_from_civil;
-
-    #[test]
-    fn civil_days() {
-        assert_eq!(days_from_civil(1970, 1, 1), 0);
-        assert_eq!(days_from_civil(2000, 3, 1), 11_017);
-        assert_eq!(days_from_civil(1899, 12, 30) + 719_163, 693_594);
     }
 }

@@ -45,7 +45,6 @@ pub fn set_style_type(type_: &Bound<'_, PyAny>) -> PyResult<()> {
     register(type_, &STYLE_TYPE, "set_style_type")
 }
 
-#[allow(dead_code)] // used by the readers (CP4)
 pub fn error_type(py: Python<'_>) -> Option<Bound<'_, PyType>> {
     registered(py, &ERROR_TYPE)
 }

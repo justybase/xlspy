@@ -31,6 +31,12 @@ impl ByteView {
     }
 }
 
+// SAFETY: the exporter keeps the buffer valid until release, whatever thread
+// reads it; it is only read, and released in drop with the GIL held
+// (pyclass deallocation).
+unsafe impl Send for ByteView {}
+unsafe impl Sync for ByteView {}
+
 impl Drop for ByteView {
     fn drop(&mut self) {
         // Every ByteView lives inside a call that holds the GIL.
@@ -70,7 +76,6 @@ pub fn le_u32(data: &[u8], pos: usize) -> Option<u32> {
 }
 
 /// IEEE double at `pos`, or 0.0 when the record is too short.
-#[allow(dead_code)] // XLSB readers (CP4)
 #[inline]
 pub fn le_f64(data: &[u8], pos: usize) -> f64 {
     match pos.checked_add(8).and_then(|end| data.get(pos..end)) {
@@ -80,7 +85,6 @@ pub fn le_f64(data: &[u8], pos: usize) -> f64 {
 }
 
 /// Decoded RK number (MS-XLSB 2.5.122), or 0.0 when the record is too short.
-#[allow(dead_code)] // XLSB readers (CP4)
 #[inline]
 pub fn read_rk(data: &[u8], pos: usize) -> f64 {
     let Some(raw) = le_u32(data, pos) else {

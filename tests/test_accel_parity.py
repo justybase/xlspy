@@ -400,3 +400,149 @@ def test_xlsx_row_random(row, row_idx, extra):
 @given(st.lists(st.text(max_size=12), max_size=6))
 def test_xlsx_row_random_text(row):
     assert_same_xlsx(row, 1)
+
+
+# -- XLSB worksheet reader --------------------------------------------------
+
+def _drain(module, *args):
+    """Every row the reader yields, then how it ended (StopIteration or an
+    exception class)."""
+    try:
+        rows = module.read_xlsb_worksheet(*args)
+    except Exception as exc:  # noqa: BLE001
+        return ("raises", type(exc))
+    if rows is None:
+        return ("none",)
+    seen = []
+    try:
+        for row in rows:
+            seen.append(row)
+            if len(seen) > 5000:
+                break
+    except Exception as exc:  # noqa: BLE001
+        return ("rows", seen, type(exc))
+    return ("rows", seen, None)
+
+
+def same_rows(*args):
+    expected, actual = _drain(c_core, *args), _drain(rs_core, *args)
+    assert actual == expected
+
+
+def _rec(rec_id, body=b""):
+    out = bytearray()
+    for value in (rec_id, len(body)):
+        while True:
+            byte = value & 0x7F
+            value >>= 7
+            out.append(byte | (0x80 if value else 0))
+            if not value:
+                break
+    return bytes(out) + body
+
+
+def _row(n):
+    return _rec(0x00, n.to_bytes(4, "little") + b"\0" * 21)
+
+
+def _cell(rec_id, col, payload, xf=0):
+    return _rec(rec_id, col.to_bytes(4, "little") + xf.to_bytes(4, "little") + payload)
+
+
+def _rk_int(n):
+    return ((n << 2) | 2).to_bytes(4, "little", signed=n < 0)
+
+
+SYNTH_SHARED = ["zero", "one", "two"]
+SYNTH_STYLES = [{"numFmtId": 0}, {"numFmtId": 14}, {"numFmtId": 22}, {"other": 1}, "not a dict"]
+SYNTH_DATES = {14, 22}
+
+def _synth_sheets():
+    import struct
+    text = "zażółć \U0001F600".encode("utf-16-le")
+    cells = [
+        _cell(0x01, 0, b""), _cell(0x02, 1, _rk_int(42)), _cell(0x02, 2, ((314 << 2) | 3).to_bytes(4, "little")),
+        _cell(0x03, 3, b"\x07"), _cell(0x0B, 4, b"\x2a"), _cell(0x03, 5, b""),
+        _cell(0x04, 6, b"\x01"), _cell(0x04, 7, b"\x02"), _cell(0x05, 8, struct.pack("<d", 2.5)),
+        _cell(0x06, 9, (len(text) // 2).to_bytes(4, "little") + text), _cell(0x07, 10, (1).to_bytes(4, "little")),
+        _cell(0x07, 11, (99).to_bytes(4, "little")), _cell(0x05, 12, struct.pack("<d", 45000.25), xf=1),
+        _cell(0x02, 13, _rk_int(60), xf=2), _cell(0x05, 16, struct.pack("<d", 1e300)),
+        _cell(0x05, 17, struct.pack("<d", -0.0)), _cell(0x05, 18, struct.pack("<d", 5e-324)),
+    ]
+    body = b"".join(cells)
+    sheets = [
+        _row(0) + body,
+        _row(0) + body[:-3],                                 # truncated last record
+        body + _row(2) + _cell(0x02, 0, _rk_int(1)),          # cells before any Row record
+        _row(2) + _row(5) + _cell(0x02, 3, _rk_int(1)) + _cell(0x02, 4, _rk_int(2)) + _row(9) + _cell(0x02, 7, _rk_int(3)),
+        _row(1) + _cell(0x02, 4, _rk_int(1)) + _cell(0x02, 2, _rk_int(2)) + _row(2) + _cell(0x02, 3, _rk_int(3)),
+        _row(0) + _cell(0x02, 0, _rk_int(1)) + _row(1) + _cell(0x02, 30, _rk_int(2)) + _cell(0x02, 20000, _rk_int(3)),
+        _row(0) + _cell(0x02, 0, _rk_int(1)) + _cell(0x02, 2_000_000, _rk_int(2)),
+        _row(0) + _cell(0x02, 0, _rk_int(1)) + _row(2_000_000),
+        _row(0) + _cell(0x02, 0, _rk_int(1)) + _rec(0x00, b"\xff\xff\xff\xff") + _cell(0x02, 0, _rk_int(2)),
+        _row(0) + _cell(0x06, 0, b"\xff\xff\xff\x7f") + _cell(0x02, 1, b"\x01"),
+        _row(0) + _cell(0x02, 0, _rk_int(1)) + _rec(0x92) + _row(1) + _cell(0x02, 0, _rk_int(2)),
+        _row(4),
+        # Dates the reference cannot convert end the iteration with its error.
+        _row(0) + _cell(0x02, 0, _rk_int(1)) + _row(1) + _cell(0x05, 0, struct.pack("<d", 1e12), xf=1),
+        _row(0) + _cell(0x05, 0, struct.pack("<d", float("nan")), xf=1),
+        _row(0) + _cell(0x05, 0, struct.pack("<d", -700000.0), xf=1),
+        _row(0) + _cell(0x05, 0, struct.pack("<d", 2958466.0), xf=2),
+    ]
+    return sheets
+
+
+@pytest.fixture(scope="module")
+def written_sheets(tmp_path_factory):
+    """Sheets written by XlsbWriter, with the styles and shared strings an
+    ExcelReader loads for them."""
+    import zipfile
+    from xlspy import ExcelReader, XlsbWriter
+    from xlspy.reader import _get_date_num_fmt_ids
+    path = tmp_path_factory.mktemp("xlsb") / "parity.xlsb"
+    rows = [["text", 1, 2.5, True, None, datetime.datetime(2024, 5, 6, 7, 8, 9), datetime.date(2020, 1, 1),
+             (3.25, "0.00"), Decimal("1.5"), -12345678901, CellError("error:#DIV/0!")]]
+    rows += [[f"r{i}", i, i / 3, None, i % 2 == 0] for i in range(200)]
+    rows += [[], [None, None, "late"], ["x" * 300, "\U0001F600"]]
+    with XlsbWriter(str(path)) as writer:
+        writer.add_sheet("Sheet1")
+        writer.write_sheet(rows)
+    with zipfile.ZipFile(path) as zf:
+        blob = zf.read("xl/worksheets/sheet1.bin")
+    with ExcelReader(str(path)) as reader:
+        return [(blob, list(reader._shared_string_array), list(reader._styles_cell_xfs_array),
+                 set(_get_date_num_fmt_ids(reader._number_formats_type_dict)))]
+
+
+@ported("read_xlsb_worksheet")
+@pytest.mark.parametrize("index", range(len(_synth_sheets())))
+@pytest.mark.parametrize("date_1904", [False, True])
+def test_read_xlsb_synthetic(index, date_1904):
+    same_rows(_synth_sheets()[index], SYNTH_SHARED, SYNTH_STYLES, SYNTH_DATES, date_1904)
+
+
+@ported("read_xlsb_worksheet")
+def test_read_xlsb_written(written_sheets):
+    for blob, shared, styles, dates in written_sheets:
+        same_rows(blob, shared, styles, dates, False)
+        same_rows(bytearray(blob), shared, styles, dates, True)
+
+
+@ported("read_xlsb_worksheet")
+def test_read_xlsb_bad_arguments():
+    same_rows("text", [], [], set())
+    same_rows(b"", (), [], set())
+    same_rows(b"", [], (), set())
+    same_rows(b"", [], [], frozenset())
+    same_rows(b"", [], [], set(), BadStr())
+
+
+@ported("read_xlsb_worksheet")
+@settings(max_examples=400, deadline=None)
+@given(st.sampled_from(range(len(_synth_sheets()))), st.data())
+def test_read_xlsb_corrupted(index, data):
+    sheet = bytearray(_synth_sheets()[index] or b"\0")
+    for _ in range(data.draw(st.integers(0, 6))):
+        sheet[data.draw(st.integers(0, len(sheet) - 1))] = data.draw(st.integers(0, 255))
+    cut = data.draw(st.integers(0, len(sheet)))
+    same_rows(bytes(sheet[:cut]), SYNTH_SHARED, SYNTH_STYLES, SYNTH_DATES, data.draw(st.booleans()))
