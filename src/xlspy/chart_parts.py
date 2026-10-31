@@ -266,13 +266,18 @@ def _solid(color: str) -> str:
 
 
 def _ref_xml(tag: str, letters, sheet_name: str, ref: str, cache: str = "") -> str:
-    formula = chart_ref(letters, sheet_name, ref)
+    formula = _formula_text(letters, sheet_name, ref)
     return f"<{tag}><numRef><f>{formula}</f>{cache}</numRef></{tag}>"
+
+
+def _formula_text(letters, sheet_name: str, ref: str, *, absolute: bool = True) -> str:
+    """A chart formula as XML text. Sheet names may hold ``&`` or ``<``."""
+    return saxutils.escape(chart_ref(letters, sheet_name, ref, absolute=absolute))
 
 
 def _series_title_xml(letters, series, sheet_name, cells, xlsb: bool) -> str:
     if series.title_cell is not None:
-        formula = chart_ref(
+        formula = _formula_text(
             letters, sheet_name, series.title_cell, absolute=False,
         )
         if xlsb:
@@ -307,7 +312,7 @@ def _categories_xml(letters, series, sheet_name, cells, xlsb: bool) -> str:
 
 def _cached_ref_xml(tag: str, letters, sheet_name: str, ref: str, cells) -> str:
     """A reference with its cache, as ``numRef`` for numbers, else ``strRef``."""
-    formula = chart_ref(letters, sheet_name, ref)
+    formula = _formula_text(letters, sheet_name, ref)
     values = _range_values(cells, ref)
     if _is_numeric_range(values):
         return f"<{tag}><numRef><f>{formula}</f>{_num_cache_xml(values)}</numRef></{tag}>"
@@ -617,10 +622,15 @@ def _legend_xml(legend) -> str:
     )
 
 
+def _font_size_hundredths(points: float) -> str:
+    """ST_TextFontSize is an integer count of hundredths of a point."""
+    return str(round(points * 100))
+
+
 def _title_xml(chart, xlsb: bool) -> str:
     title_text = saxutils.escape(chart.title)
     if xlsb:
-        size = "1800" if chart.title_size is None else _chart_number_text(chart.title_size * 100)
+        size = "1800" if chart.title_size is None else _font_size_hundredths(chart.title_size)
         return (
             "<title><tx><rich><a:bodyPr/><a:p>"
             f"<a:pPr><a:defRPr sz=\"{size}\" b=\"1\"/></a:pPr>"
@@ -634,7 +644,7 @@ def _title_xml(chart, xlsb: bool) -> str:
             f"<a:r><a:t>{title_text}</a:t></a:r></a:p></rich></tx>"
             '<overlay val="0"/></title>'
         )
-    size = _chart_number_text(chart.title_size * 100)
+    size = _font_size_hundredths(chart.title_size)
     return (
         "<title><tx><rich><a:bodyPr/><a:p>"
         f'<a:pPr><a:defRPr sz="{size}"/></a:pPr>'

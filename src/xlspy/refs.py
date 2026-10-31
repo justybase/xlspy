@@ -88,9 +88,9 @@ def check_sheet_name(sheet_name, existing=()) -> None:
     """Raise unless Excel accepts ``sheet_name`` beside the ``existing`` names.
 
     Excel refuses to open a workbook with a sheet name that is empty, longer
-    than 31 characters, holds ``: \\ / ? * [ ]``, starts or ends with an
-    apostrophe, is the reserved name ``History``, or repeats another sheet's
-    name ignoring case.
+    than 31 characters, holds ``: \\ / ? * [ ]`` or a control character, starts
+    or ends with an apostrophe, is the reserved name ``History``, or repeats
+    another sheet's name ignoring case.
     """
     if not isinstance(sheet_name, str):
         raise TypeError("sheet name must be a string")
@@ -99,6 +99,12 @@ def check_sheet_name(sheet_name, existing=()) -> None:
     bad = sorted(set(sheet_name) & _SHEET_NAME_FORBIDDEN)
     if bad:
         raise ValueError(f"sheet name {sheet_name!r} contains {''.join(bad)!r}, which Excel forbids")
+    # XML 1.0 cannot carry these at all, so the XLSX workbook part would not parse.
+    control = sorted({ch for ch in sheet_name if ord(ch) < 0x20 or ord(ch) in (0xFFFE, 0xFFFF)})
+    if control:
+        raise ValueError(
+            f"sheet name {sheet_name!r} contains control characters {control!r}"
+        )
     if sheet_name[0] == "'" or sheet_name[-1] == "'":
         raise ValueError(f"sheet name {sheet_name!r} must not start or end with an apostrophe")
     if sheet_name.casefold() == "history":

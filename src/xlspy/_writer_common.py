@@ -43,6 +43,22 @@ class WriterFrontEnd:
         self._sheet_count += 1
         self._worksheet_data.append((sheet_name, iter([]), hidden))
 
+    def _written_sheet_indexes(self) -> set[int]:
+        """Indexes of the sheets whose data has been written (each writer tracks its own)."""
+        raise NotImplementedError
+
+    def _reject_second_write(self) -> None:
+        """``write_sheet`` fills the most recently added sheet. A second call for that
+        sheet would write its part twice, and a ZIP with duplicate names is corrupt."""
+        if not self._worksheet_data:
+            return
+        index = self._sheet_count - 1
+        if index in self._written_sheet_indexes():
+            name = self._worksheet_data[index][0]
+            raise ValueError(
+                f"sheet {name!r} already has its data; call add_sheet() before write_sheet() again"
+            )
+
     def _sheet_index_by_name(self, name: str) -> int | None:
         folded = name.casefold()
         for index, (sheet_name, _data, _hidden) in enumerate(self._worksheet_data):
@@ -100,15 +116,17 @@ class WriterFrontEnd:
             return []
         # Names are only checked here; write_sheet registers them once every
         # option is valid, so a rejected call leaves no name behind.
-        names = set(self._table_names)
+        # Excel compares table names without regard to case: "Sales" and "sales"
+        # in one workbook make Excel repair the file.
+        names = {name.casefold() for name in self._table_names}
         for table in tables:
             if not isinstance(table, ExcelTable):
                 raise TypeError("tables must be ExcelTable instances")
-            if table.display_name in names:
+            if table.display_name.casefold() in names:
                 raise ValueError(
-                    f"duplicate table display name {table.display_name!r}"
+                    f"duplicate table display name {table.display_name!r} (Excel ignores case)"
                 )
-            names.add(table.display_name)
+            names.add(table.display_name.casefold())
         return list(tables)
 
     @staticmethod

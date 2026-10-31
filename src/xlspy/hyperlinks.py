@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from ._text import check_xml_text
 from .refs import parse_cell_range
 
 MAX_TARGET_LENGTH = 2079
@@ -58,6 +59,7 @@ class Hyperlink:
                 raise TypeError("hyperlink tooltip must be a string or None")
             if len(self.tooltip) > MAX_TOOLTIP_LENGTH:
                 raise ValueError(f"hyperlink tooltip may be at most {MAX_TOOLTIP_LENGTH} characters")
+            check_xml_text(self.tooltip, "hyperlink tooltip")
 
     @property
     def is_internal(self) -> bool:

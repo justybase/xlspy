@@ -110,6 +110,7 @@ from .styles import (
     styles_for_row,
 )
 
+_ATTR_ENTITIES = {'"': "&quot;"}
 # Rows sampled for automatic column widths (the historical limit).
 _WIDTH_SAMPLE_ROWS = 100
 # Encoded row bytes are handed to the spool once they grow past this size.
@@ -385,6 +386,9 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
     def _column_letter(self, index: int) -> str:
         return self._letters[index]
 
+    def _written_sheet_indexes(self) -> set[int]:
+        return self._sheet_written
+
     def write_sheet(
         self,
         data: Iterable[list[Any]],
@@ -475,7 +479,10 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         cf_priorities = explicit_cf_priorities(
             cf_rules, self._seen_cf_priorities, self._reserved_cf_priorities,
         )
-        # Every option is valid; only now record what this sheet claims.
+        # Every option is valid; only now record what this sheet claims. A second
+        # write to the same sheet is refused after the options are checked, so a
+        # bad argument still reports its own error.
+        self._reject_second_write()
         self._table_names.update(table.display_name for table in table_specs)
         self._slicer_names.update(slicer.display_name.casefold() for slicer in slicer_specs)
         self._slicer_caches.update(slicer.cache_name.casefold() for slicer in slicer_specs)
@@ -1105,7 +1112,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         for i, (sheet_name, _, hidden) in enumerate(self._worksheet_data):
             sheet_id = i + 1
             hidden_attr = ' state="hidden"' if hidden else ''
-            sheets += f'<sheet name="{saxutils.escape(sheet_name)}" sheetId="{sheet_id}"{hidden_attr} r:id="rId{sheet_id}"/>'
+            sheets += f'<sheet name="{saxutils.escape(sheet_name, _ATTR_ENTITIES)}" sheetId="{sheet_id}"{hidden_attr} r:id="rId{sheet_id}"/>'
 
         names = []
         for filter_data in self._filtered_data_list:
@@ -1138,7 +1145,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         names.extend(definition.to_xml(sheet_titles) for definition in self._defined_names.values())
         # Excel links each slicer cache to a defined name that holds #N/A.
         names.extend(
-            f'<definedName name="{saxutils.escape(cache_name)}">#N/A</definedName>'
+            f'<definedName name="{saxutils.escape(cache_name, _ATTR_ENTITIES)}">#N/A</definedName>'
             for cache_name in self._slicer_cache_names
         )
         defined_names = f"<definedNames>{''.join(names)}</definedNames>" if names else ""

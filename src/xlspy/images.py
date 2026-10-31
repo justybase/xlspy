@@ -12,6 +12,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import BinaryIO
 
+from ._text import check_xml_text
 from .refs import parse_cell_range
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -97,6 +98,8 @@ class Image:
             height = max(1, round(natural_height * width / natural_width))
         if self.description is not None and not isinstance(self.description, str):
             raise TypeError("image description must be a string or None")
+        if self.description is not None:
+            check_xml_text(self.description, "image description")
         object.__setattr__(self, "data", data)
         object.__setattr__(self, "extension", extension)
         object.__setattr__(self, "pixel_width", width)

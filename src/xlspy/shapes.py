@@ -13,6 +13,7 @@ import re
 import uuid
 import xml.sax.saxutils as saxutils
 
+from ._text import check_xml_text
 from .refs import column_label, parse_cell_range
 
 EMU_PER_PIXEL = 9525
@@ -77,6 +78,8 @@ class Shape:
             raise ValueError(f"shape valign must be one of {sorted(_VALIGN)}, got {self.valign!r}")
         if self.text is not None and not isinstance(self.text, str):
             raise TypeError("shape text must be a string")
+        if self.text is not None:
+            check_xml_text(self.text, "shape text")
         if self.fill is not None:
             _color(self.fill, "fill")
         if self.line is not None:
@@ -92,6 +95,8 @@ class Shape:
                 raise ValueError(f"link_cell must be a single cell, got {self.link_cell!r}")
         if self.name is not None and (not isinstance(self.name, str) or not self.name):
             raise ValueError("shape name must be a non-empty string or None")
+        if self.name is not None:
+            check_xml_text(self.name, "shape name")
 
 
 def normalize_shapes(shapes) -> list[Shape]:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from ._text import check_xml_text
 from .refs import parse_cell_range
 
 CHART_TYPES = frozenset({
@@ -27,6 +28,9 @@ _GROUPED_TYPES = frozenset({"area", "bar", "barh", "line"})
 # Types without markers, lines or axes of their own.
 _FILLED_TYPES = frozenset({"area", "bar", "barh", "doughnut", "pie"})
 _ROUND_TYPES = frozenset({"doughnut", "pie"})
+# CT_PieSer and CT_RadarSer have no trendline or error-bar element, so the
+# schema rejects them for these chart types (Excel would repair the chart).
+_NO_SERIES_EXTRAS_TYPES = _ROUND_TYPES | frozenset({"radar"})
 # Types a combined chart can mix, and that can use a secondary value axis.
 COMBINABLE_TYPES = frozenset({"area", "bar", "line"})
 TRENDLINE_TYPES = {
@@ -189,7 +193,11 @@ class LoadedChart:
         """Fill series ``index`` (or draw its line) in ``color``, a ``'#RRGGBB'`` string."""
         from .chart_edit import set_series_color
 
-        self.xml = set_series_color(self.xml, index, _normalize_rgb(color, "series color") or "")
+        rgb = _normalize_rgb(color, "series color")
+        if rgb is None:
+            # Writing "" produced <a:srgbClr val=""/>, which is not a colour.
+            raise TypeError("series color must be a '#RRGGBB' string, not None")
+        self.xml = set_series_color(self.xml, index, rgb)
 
     @property
     def legend_position(self) -> str | None:
@@ -246,6 +254,8 @@ class ChartAxis:
     def __post_init__(self):
         if self.title is not None and not isinstance(self.title, str):
             raise TypeError("axis title must be a string or None")
+        if self.title is not None:
+            check_xml_text(self.title, "axis title")
         minimum = _check_number(self.minimum, "axis minimum")
         maximum = _check_number(self.maximum, "axis maximum")
         if minimum is not None and maximum is not None and minimum >= maximum:
@@ -346,6 +356,8 @@ class Trendline:
             raise TypeError("trendline display_equation and display_r_squared must be bools")
         if self.name is not None and not isinstance(self.name, str):
             raise TypeError("trendline name must be a string or None")
+        if self.name is not None:
+            check_xml_text(self.name, "trendline name")
         object.__setattr__(self, "color", _normalize_rgb(self.color, "trendline color"))
 
 
@@ -422,6 +434,8 @@ class ChartSeries:
         _validate_chart_range(self.values, "series values")
         if self.title is not None and not isinstance(self.title, str):
             raise TypeError("series title must be a string or None")
+        if self.title is not None:
+            check_xml_text(self.title, "series title")
         if self.title_cell is not None:
             if not isinstance(self.title_cell, str):
                 raise TypeError("series title_cell must be an A1 cell or None")
@@ -524,6 +538,8 @@ class Chart:
         self._check_series_for_type(series)
         if self.title is not None and not isinstance(self.title, str):
             raise TypeError("chart title must be a string or None")
+        if self.title is not None:
+            check_xml_text(self.title, "chart title")
         if not isinstance(self.anchor, str):
             raise TypeError("chart anchor must be an A1 cell such as 'E2'")
         first_col, first_row, last_col, last_row = _validate_chart_range(
@@ -591,10 +607,10 @@ class Chart:
                 )
             if item.secondary_axis and kind not in COMBINABLE_TYPES:
                 raise ValueError(f"a secondary axis is only valid for bar, line and area series, not {kind!r}")
-            if item.trendline is not None and kind in _ROUND_TYPES:
+            if item.trendline is not None and kind in _NO_SERIES_EXTRAS_TYPES:
                 raise ValueError(f"trendlines are not valid for {kind!r} charts")
             if item.error_bars is not None:
-                if kind in _ROUND_TYPES:
+                if kind in _NO_SERIES_EXTRAS_TYPES:
                     raise ValueError(f"error bars are not valid for {kind!r} charts")
                 if item.error_bars.axis == "x" and kind != "scatter":
                     raise ValueError("x error bars are only valid for scatter series")

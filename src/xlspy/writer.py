@@ -521,6 +521,9 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             out.extend(build_record(_BRT_END_CF, b""))
         return bytes(out)
 
+    def _written_sheet_indexes(self) -> set[int]:
+        return self._written_sheets
+
     def write_sheet(
         self,
         data: Iterable[list[Any]],
@@ -621,6 +624,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
 
         # Every option is valid; only now record what this sheet claims, so a
         # rejected call leaves the writer as it was.
+        self._reject_second_write()
         if not self._worksheet_data:
             self.add_sheet("Sheet1")
         sheet_name,_, hidden = self._worksheet_data[self._sheet_count - 1]
@@ -851,7 +855,17 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         first = self._sheet_count + 4 + len(self._slicer_cache_names)
         return [f"rId{first + index}" for index in range(len(self._pivot_renders))]
 
+    def _write_empty_sheet(self, sheet_index: int) -> None:
+        """A sheet that was added but never written holds no rows."""
+        with self._zf.open_threaded(f"xl/worksheets/sheet{sheet_index + 1}.bin") as sheet_file:
+            self._write_worksheet_bin(sheet_file, [], sheet_index)
+
     def _write_workbook_parts(self):
+        # A sheet that was added but never written still has a part: the content
+        # types and workbook relationships name it, and XlsxWriter writes one too.
+        for sheet_index in range(self._sheet_count):
+            if sheet_index not in self._written_sheets:
+                self._write_empty_sheet(sheet_index)
         if self._sheet_comments:
             from ._xlsb_metadata import comments_bin
             from .comments import vml_xml
@@ -1371,11 +1385,13 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         widths = widths or {}
         buffer.write(build_record(_BRT_BEGIN_COL_INFOS, b''))
 
-        columns = range(start_col, end_col)
+        # Explicit widths and hidden columns past the sampled width still need a
+        # BrtColInfo; dropping them silently lost the caller's settings.
+        columns = set(range(start_col, end_col)) | set(widths) | set(hidden_cols)
         if col_outline is not None:
             # Grouped columns past the data still need a BrtColInfo.
-            columns = sorted(set(columns) | col_outline.indices())
-        for i in columns:
+            columns |= set(col_outline.indices())
+        for i in sorted(columns):
             explicit = widths.get(i)
             if explicit is not None:
                 coldx = int(round(explicit * 256))
@@ -1520,7 +1536,17 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         row_style_ids_cache = {}
 
         row_idx = -1
+        # Width of the whole sheet, measured as the rows stream past. The column
+        # records come before the rows and use the sample, but the autofilter is
+        # written after the rows and must span every column that holds a value.
+        stream_width = end_col
         for row_idx, row in enumerate(data_iterator):
+            for col_idx in range(len(row) - 1, -1, -1):
+                cell = row[col_idx]
+                if cell is not None and _unwrap_cell(cell) is not None:
+                    if col_idx + 1 > stream_width:
+                        stream_width = col_idx + 1
+                    break
             c_has_formatted = accel_row_has_formatted(row)
             if c_has_formatted is None:
                 has_formatted = any(_is_formatted_cell(c) for c in row if c is not None)
@@ -1815,7 +1841,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         # The filter buttons sit on the last header row.
         filter_row = header_rows - 1
         if row_idx >= filter_row and auto_filter is not False:
-            filter_first_col, filter_last_col = 0, end_col - 1
+            filter_first_col, filter_last_col = 0, stream_width - 1
             filter_first_row, filter_last_row = filter_row, last_row_idx
             if auto_filter_ref is not None:
                 filter_first_col, filter_first_row, filter_last_col, filter_last_row = (

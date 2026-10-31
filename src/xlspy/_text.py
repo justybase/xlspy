@@ -37,6 +37,22 @@ def check_cell_text(text: str) -> None:
             )
 
 
+# Characters XML 1.0 cannot carry at all (tab, line feed and carriage return are fine).
+_XML_FORBIDDEN = re.compile(
+    "[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff" + chr(0xFFFE) + chr(0xFFFF) + "]"
+)
+
+
+def check_xml_text(value: str, what: str) -> None:
+    """Raise ``ValueError`` for text that cannot be written into an XML part.
+
+    Parts that the writers build by hand (chart, drawing and shape XML) have no
+    escape for a control character, so a title holding one made the part unparseable.
+    """
+    if _XML_FORBIDDEN.search(value) is not None:
+        raise ValueError(f"{what} contains a control character, which XML cannot hold")
+
+
 def _escape_match(match: re.Match) -> str:
     return f"_x{ord(match.group()):04X}_"
 
