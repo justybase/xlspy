@@ -691,7 +691,12 @@ PrintSettings(
 ### Charts
 
 The original chart options still work: `Chart("bar", ...)` is a column chart,
-`"line"` and `"pie"` are unchanged. New in XLSX:
+`"line"` and `"pie"` are unchanged. The supported chart types are `"bar"`, `"barh"`,
+`"line"`, `"area"`, `"pie"`, `"doughnut"`, `"scatter"` and `"radar"`. The other
+names in `CHART_TYPES` (`area3d`, `bar3d`, `bubble`, `line3d`, `pie3d`,
+`projected_pie`, `stock`, `surface` and `surface3d`) raise `ValueError` when the
+chart is created. A radar series takes no trendline or error bars (`ValueError`).
+New in XLSX:
 
 - `"barh"`: horizontal bars. The category axis is vertical.
 - `"scatter"`: XY charts. Series take `x_values` (a numeric range); markers are
@@ -952,6 +957,8 @@ Examples: [`xlsx_streaming_export.py`](../examples/xlsx_streaming_export.py) (DB
   underscore escaped as `_x005F_`. Excel and xlspy's reader turn these back into
   the original text. Some other readers (openpyxl among them) show the escapes
   as written. XLSB stores text as UTF-16 and needs no escaping.
+- **Numbers.** `NaN` and infinite numbers raise `ValueError` in every writer and
+  in the updaters. XLSX used to write them as text.
 
 ### Failure handling
 
@@ -976,6 +983,23 @@ After a failure the writer refuses further `write_sheet` and `save` calls.
 `save()` writes the workbook parts; the file is published when the writer
 closes, so a writer that is closed without a successful save publishes
 nothing. The context manager calls both.
+
+### Errors
+
+Every error xlspy raises on purpose derives from `XlspyError`, so
+`except XlspyError` catches them all:
+
+- `InvalidFileError` is also a `ValueError` and a `zipfile.BadZipFile`. It is
+  raised when the file is not a readable XLSX, XLSM or XLSB package, or when the
+  native reader finds data it cannot decode.
+- `UnsupportedFeatureError` is also a `NotImplementedError`. It is raised when the
+  workbook uses, or the call asks for, a feature xlspy does not implement yet,
+  for example a formula in `XlsbUpdater.replace_sheet_data()` (use `update_cells()`).
+
+Other refused arguments raise the built-in `ValueError` or `TypeError`. For
+example: a second `write_sheet()` on the same sheet, two tables whose names match
+ignoring case, a sheet name with control characters, and a chart type that is not
+supported. The refusal happens before the workbook is published.
 
 ### Combined example
 
@@ -1373,6 +1397,14 @@ default, the updater inherits the dominant style of each existing column. Use
 `style_fallback="general"` to write new cells with the General style. Existing
 writer-style `(value, format_string)` tuples are accepted for compatibility,
 but updating a workbook does not create new styles.
+
+`replace_sheet_data()` and its streaming variant keep each table's header row
+valid. If a header cell would no longer hold the table's column name (compared
+without regard to case), or the new data does not reach the header row, the call
+raises `UnsupportedFeatureError` and writes nothing: Excel repairs such a table.
+The table's range is not changed. Formula cells are written as formulas in XLSX,
+with `Formula.value` as the cached result. In XLSB, `replace_sheet_data()` raises
+`UnsupportedFeatureError` for a formula; use `update_cells()` for formulas there.
 
 When a pivot cache is present, keep the source column schema (column order and
 count) unchanged; changing the schema requires rebuilding the pivot cache and

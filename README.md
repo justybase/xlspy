@@ -48,9 +48,10 @@ Requires **Python 3.11 or newer** (tested on 3.11–3.15).
 pip install xlspy
 ```
 
-Wheels include the native extension. Installing from the source
-distribution builds it, which needs a Rust toolchain
-([rustup](https://rustup.rs)).
+Wheels include the native (Rust) extension. Installing from the source
+distribution builds it, which needs Rust 1.88 or newer
+([rustup](https://rustup.rs)). Set `XLSPY_ACCEL=python` to run the pure-Python
+code instead.
 
 Create a report with a styled header and formatted values:
 
