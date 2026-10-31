@@ -143,6 +143,17 @@ gap is implemented the same test starts passing without changes.
   and 0.55 s (XLSB), 0.47 s/0.71 s for files saved by Excel.
 - Every change was checked by opening the files in Excel through COM.
 
+**Sprint 0.12 — 2026-10-29**
+- XLSB: charts, images, tables, chartsheets and named styles can be added to a
+  loaded workbook; conditional-format x14 extensions (data bar axis, negative
+  colours) are preserved; Analysis ToolPak and newer functions plus external
+  workbook references are read.
+- Charts: combined charts, secondary axis, trendlines, error bars; loaded charts
+  can change title, axis titles, legend, series titles and colours.
+- Ignored errors (`Worksheet.ignored_errors`) and a read-only list of external
+  links (`Workbook.external_links`).
+- mypy now checks 11 more modules.
+
 ### Remaining
 
 **XLSB**

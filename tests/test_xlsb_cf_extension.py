@@ -71,3 +71,23 @@ def test_extension_stays_after_the_base_rules_and_before_the_end(tmp_path):
     last_rule_end = max(i for i, record in enumerate(ids) if record == 0x1CE)
     assert ids.index(BEGIN_CF14) > last_rule_end
     assert ids[-1] == 0x82 and ids.index(0x470) < len(ids) - 1
+
+
+def test_conditional_format_on_a_new_sheet_of_a_loaded_xlsb(tmp_path):
+    from xlspy import Workbook
+
+    first = tmp_path / "first.xlsb"
+    book = Workbook()
+    book.active["A1"] = 1
+    book.save(first)
+    book.close()
+    loaded = load_workbook(first)
+    sheet = loaded.create_sheet("Extra")
+    sheet["A1"] = 5
+    sheet.conditional_formatting.add("A1", FormulaRule("A1", ["A1>1"]))
+    target = tmp_path / "second.xlsb"
+    loaded.save(target)
+    loaded.close()
+    again = load_workbook(target)
+    assert len(list(again["Extra"].conditional_formatting)) == 1
+    again.close()

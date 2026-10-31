@@ -117,7 +117,9 @@ def _sync_sheet_list(workbook, updater) -> None:
         if states.get(sheet.title) != sheet.sheet_state:
             updater.set_sheet_state(sheet.title, sheet.sheet_state)
     active = order.index(titles[min(workbook._active_index, len(titles) - 1)])
-    if active != updater.get_active_sheet():
+    on_chartsheet = current[min(updater.get_active_sheet(), len(current) - 1)] not in titles
+    unchanged = workbook._active_index == getattr(workbook, "_loaded_active_index", None)
+    if active != updater.get_active_sheet() and not (on_chartsheet and unchanged):
         updater.set_active_sheet(active)
 
 
@@ -202,7 +204,9 @@ def _save_sheet(sheet, updater) -> None:
             sheet._workbook._styles.dxf_id,
             kept,
         )
-        sheet._cf_extensions = {key: sheet._cf_extensions[key] for key in kept}
+        sheet._cf_extensions = {
+            key: getattr(sheet, "_cf_extensions", {})[key] for key in kept
+        }
     if new or sheet._dirty_hyperlinks:
         links = {
             cell.coordinate: cell._hyperlink

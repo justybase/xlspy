@@ -77,7 +77,14 @@ def _set_title_in(xml: str, c: str, a: str, span: tuple[int, int], text: str | N
 
 def _auto_title_deleted(xml: str, c: str, deleted: bool) -> str:
     value = "1" if deleted else "0"
-    return re.sub(rf'(<{c}autoTitleDeleted\s+val=")[^"]*(")', rf"\g<1>{value}\2", xml, count=1)
+    updated, count = re.subn(rf'(<{c}autoTitleDeleted\s+val=")[^"]*(")', rf"\g<1>{value}\2", xml, count=1)
+    if count or not deleted:
+        return updated
+    # Schema order: title, autoTitleDeleted, pivotFmts, view3D, ..., plotArea.
+    anchor = re.search(rf"<{c}(?:pivotFmts|view3D|floor|sideWall|backWall|plotArea)\b", xml)
+    if anchor is None:
+        return xml
+    return xml[:anchor.start()] + f'<{c}autoTitleDeleted val="1"/>' + xml[anchor.start():]
 
 
 def set_chart_title(xml: bytes, text: str | None) -> bytes:
@@ -128,9 +135,13 @@ def set_axis_title(xml: bytes, index: int, text: str | None) -> bytes:
         body = _set_title_in(body, c, a, found, text)
     elif text is not None:
         # Schema order: ... axPos, gridlines, title, numFmt, ...
-        anchor = re.search(
-            rf"<{c}(?:numFmt|majorTickMark|minorTickMark|tickLblPos|spPr|txPr|crossAx)\b", body,
+        grid_end = max(
+            (m.end() for m in re.finditer(rf"</{c}(?:major|minor)Gridlines>|<{c}(?:major|minor)Gridlines\s*/>", body)),
+            default=0,
         )
+        anchor = re.compile(
+            rf"<{c}(?:numFmt|majorTickMark|minorTickMark|tickLblPos|spPr|txPr|crossAx)\b",
+        ).search(body, grid_end)
         at = anchor.start() if anchor else body.rindex(f"</{c}")
         body = body[:at] + _title_xml(c, a, text) + body[at:]
     return (source[:start] + body + source[end:]).encode("utf-8")
@@ -190,7 +201,9 @@ def set_legend_position(xml: bytes, position: str | None) -> bytes:
     if plot is None:
         raise ValueError("the chart has no plot area")
     legend = f'<{c}legend><{c}legendPos val="{code}"/><{c}overlay val="0"/></{c}legend>'
-    return (source[:plot[1]] + legend + source[plot[1]:]).encode("utf-8")
+    after = _element(source, c, "dTable", plot[1])
+    at = plot[1] if after is None or after[0] != plot[1] else after[1]
+    return (source[:at] + legend + source[at:]).encode("utf-8")
 
 
 # --- series -----------------------------------------------------------------

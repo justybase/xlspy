@@ -181,3 +181,28 @@ def test_series_color_edits_keep_the_rest_of_the_shape():
     assert "<c:v>T</c:v>" in set_series_title(xml, 0, "T").decode()
     assert "<c:tx><c:v>T</c:v></c:tx><c:spPr>" in set_series_title(xml, 0, "T").decode()
     assert "<c:order val=\"1\"/><c:tx><c:v>U</c:v></c:tx>" in set_series_title(xml, 1, "U").decode()
+
+
+_AXIS = (
+    '<c:valAx xmlns:c="c"><c:axId val="2"/><c:axPos val="l"/>'
+    '<c:majorGridlines><c:spPr><a:ln/></c:spPr></c:majorGridlines>'
+    '<c:numFmt formatCode="General" sourceLinked="1"/><c:crossAx val="1"/></c:valAx>'
+)
+
+
+def test_axis_title_goes_after_gridlines():
+    xml = f"<c:chartSpace xmlns:c='c'><c:chart><c:plotArea>{_AXIS}</c:plotArea></c:chart></c:chartSpace>"
+    out = set_axis_title(xml.encode(), 0, "Y").decode()
+    assert out.index("</c:majorGridlines>") < out.index("<c:title>") < out.index("<c:numFmt")
+
+
+def test_removed_title_adds_auto_title_deleted():
+    xml = b"<c:chartSpace xmlns:c='c'><c:chart><c:plotArea/></c:chart></c:chartSpace>"
+    out = set_chart_title(set_chart_title(xml, "T"), None).decode()
+    assert '<c:autoTitleDeleted val="1"/>' in out
+
+
+def test_legend_goes_after_data_table():
+    xml = b"<c:chartSpace xmlns:c='c'><c:chart><c:plotArea/><c:dTable/></c:chart></c:chartSpace>"
+    out = set_legend_position(xml, "right").decode()
+    assert out.index("<c:dTable/>") < out.index("<c:legend>")

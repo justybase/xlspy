@@ -1004,10 +1004,13 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                 for item in node.findall(_q("ignoredError")):
                     if not item.get("sqref"):
                         continue
-                    sheet.ignored_errors.append(IgnoredError(
-                        item.get("sqref"),
-                        **{name: _bool_attr(item, name, None) for name in IGNORED_ERROR_FLAGS},
-                    ))
+                    try:
+                        sheet.ignored_errors.append(IgnoredError(
+                            item.get("sqref"),
+                            **{name: _bool_attr(item, name, None) for name in IGNORED_ERROR_FLAGS},
+                        ))
+                    except ValueError:
+                        continue  # a range this library cannot parse; the check stays as saved
             elif tag == "rowBreaks":
                 sheet.row_breaks = RowBreak([
                     Break(

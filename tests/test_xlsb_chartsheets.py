@@ -115,3 +115,27 @@ def test_new_chartsheet_on_a_workbook_without_one(tmp_path):
         workbook.close()
     assert _summary(out)[1] == [("Only", ["T"])]
     assert _summary(tmp_path / "again.xlsb")[1] == [("Only", ["T"])]
+
+
+def test_active_chartsheet_survives_a_plain_resave(tmp_path):
+    import shutil
+
+    from xlspy import load_workbook
+    from xlspy.xlsb_updater import XlsbUpdater
+
+    source = tmp_path / "in.xlsb"
+    shutil.copy("tests/data/chartsheet.xlsb", source)
+    updater = XlsbUpdater(source)
+    chart_index = updater.get_sheet_names().index(updater.get_chartsheet_names()[0])
+    updater.set_active_sheet(chart_index)
+    updater.save(source)
+    updater.close()
+    loaded = load_workbook(source)
+    target = tmp_path / "out.xlsb"
+    loaded.save(target)
+    loaded.close()
+    updater = XlsbUpdater(target)
+    try:
+        assert updater.get_active_sheet() == chart_index
+    finally:
+        updater.close()
