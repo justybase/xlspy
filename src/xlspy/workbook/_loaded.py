@@ -904,14 +904,24 @@ def _remove_sheet_node(workbook_xml: str, name: str) -> tuple[str, str | None]:
     return workbook_xml, None
 
 
-def sheet_has_slicers(package, sheet_path: str | None) -> bool:
-    """True when the sheet part relates to a table slicer."""
+def _sheet_relates_to(package, sheet_path: str | None, part_type: bytes) -> bool:
+    """True when the sheet part has a relationship of ``part_type``."""
     if not sheet_path:
         return False
     rels_path = rels_path_for_part(sheet_path)
     if rels_path not in package.names():
         return False
-    return re.search(rb'Type="[^"]*/slicer"', package.get(rels_path)) is not None
+    return re.search(rb'Type="[^"]*/' + part_type + rb'"', package.get(rels_path)) is not None
+
+
+def sheet_has_slicers(package, sheet_path: str | None) -> bool:
+    """True when the sheet part relates to a table slicer."""
+    return _sheet_relates_to(package, sheet_path, b"slicer")
+
+
+def sheet_has_pivots(package, sheet_path: str | None) -> bool:
+    """True when the sheet part relates to a pivot table."""
+    return _sheet_relates_to(package, sheet_path, b"pivotTable")
 
 
 def remove_sheet(updater, workbook: Workbook, name: str) -> None:
@@ -922,6 +932,12 @@ def remove_sheet(updater, workbook: Workbook, name: str) -> None:
     if sheet_has_slicers(package, path):
         raise NotImplementedError(
             f"sheet {name!r} holds table slicers; removing it is not supported yet"
+        )
+    # A pivot table, its cache and the workbook's pivotCaches entry would be left
+    # dangling too, so removing a pivot-bearing sheet is not supported yet.
+    if sheet_has_pivots(package, path):
+        raise NotImplementedError(
+            f"sheet {name!r} holds pivot tables; removing it is not supported yet"
         )
     workbook_path = "xl/workbook.xml"
     workbook_xml = package.get(workbook_path).decode("utf-8")

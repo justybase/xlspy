@@ -1012,7 +1012,59 @@ report.
 | Sparklines (`SparklineGroup`) | Yes | Yes |
 | Table slicers (`Slicer`) | Yes | Yes |
 | Headings, zero values, right-to-left (`show_row_col_headers`, `show_zero_values`, `right_to_left`) | Yes | Yes |
+| Pivot tables (`PivotTable`, compact layout) | Yes | No |
 | Pivot-table slicers, timelines | No | No |
+
+## Pivot tables (XLSX)
+
+`PivotTable` creates a pivot table over a table written in the same `write_sheet`
+call. Pass the pivots with `pivots=`:
+
+```python
+from xlspy import ExcelTable, PivotTable, PivotValue, XlsxWriter
+
+rows = [
+    ["Region", "Product", "Quarter", "Sales", "Units"],
+    ["North", "Coffee", 1, 1200, 40],
+    ["North", "Tea", 1, 800, 50],
+    ["South", "Coffee", 2, 1600, 58],
+    # ...
+]
+
+with XlsxWriter("pivot.xlsx") as writer:
+    sales = ExcelTable("SalesTable", "A1:E9")
+    writer.add_sheet("Data")
+    writer.write_sheet(
+        rows,
+        tables=[sales],
+        pivots=[
+            PivotTable(
+                source=sales,
+                rows="Region",
+                columns="Quarter",
+                values=[PivotValue("Sales", "sum", number_format="#,##0")],
+                location="A12",          # below the data, on the same sheet
+            ),
+        ],
+    )
+```
+
+To put a pivot on another sheet, name it with `sheet=` (or `location="Summary!A3"`) in
+the call that writes the source table. That sheet must be added after the source
+sheet, or be left empty.
+
+- **Layout:** one `rows` field; `columns` takes at most one field; `filters` add
+  page fields above the report; `values` takes one or more `PivotValue(field,
+  function, name=None, number_format=None)` with `function` one of `"sum"`,
+  `"count"`, `"average"`, `"min"`, `"max"`.
+- **Values:** `sum`, `average`, `min` and `max` skip blank and text cells; `count`
+  counts the non-blank cells.
+- **Output:** the report cells are written by the writer, from the rows as they
+  stream past. The cache holds no records and refreshes when the file opens, so
+  Excel rebuilds the layout and shows its own (localised) labels.
+- **Not included:** XLSB, layouts beyond the compact form, and changes to pivot
+  tables already in a loaded workbook. Removing a loaded sheet that holds a pivot
+  table is refused.
 
 ## Comments and template metadata (XLSX/XLSM/XLSB)
 

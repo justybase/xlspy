@@ -37,6 +37,16 @@ from ._extlst import (
 from .shapes import Shape, normalize_shapes
 from .slicers import Slicer, normalize_slicers, slicer_cache_xml, slicer_part_xml
 from .sparklines import normalize_sparklines, sparklines_ext
+from .pivots import (
+    PivotFeeder,
+    merge_cells,
+    normalize_pivots,
+    overlay_rows,
+    pivot_cache_xml,
+    pivot_table_rels_xml,
+    pivot_table_xml,
+    tee_rows,
+)
 from .hyperlinks import Hyperlink
 from .images import Image, MediaParts, normalize_images
 from .outline import build_outline
@@ -127,6 +137,10 @@ _REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationship
 _REL_DRAWING = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"
 _REL_HYPERLINK = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
 _REL_WORKSHEET = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
+_REL_PIVOT_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable"
+_REL_PIVOT_CACHE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition"
+_CT_PIVOT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"
+_CT_PIVOT_CACHE = "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"
 
 _DEFAULT_MARGINS = PageMargins()
 
@@ -256,6 +270,11 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         self._next_slicer_part = 1
         self._sheet_slicers: dict[int, list[Slicer]] = {}
         self._sheet_shapes: dict[int, list[Shape]] = {}
+        # Pivot-table names, rendered pivots and cells waiting for their target sheet.
+        self._pivot_names: set[str] = set()
+        self._next_pivot_id = 1
+        self._pivot_renders: list = []
+        self._pending_pivots: dict[str, list] = {}
         # (path, xml, content type) of each slicer and cache part, in write order.
         self._slicer_part_files: list[tuple[str, str, str]] = []
         # Cache defined names; cache i is the workbook relationship of index i.
@@ -337,6 +356,17 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
 
         return xf_index
 
+    def _number_format_id(self, fmt_string: str | None) -> int | None:
+        """The numFmt id for ``fmt_string``, registering it when it is new."""
+        if fmt_string is None:
+            return None
+        numfmt_id = self._format_registry.get(fmt_string)
+        if numfmt_id is None:
+            numfmt_id = self._next_numfmt_id
+            self._next_numfmt_id += 1
+            self._format_registry[fmt_string] = numfmt_id
+        return numfmt_id
+
     def _normalize_cf_rules(self, conditional_formats):
         if not conditional_formats:
             return []
@@ -390,6 +420,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         ignored_errors: list | tuple | None = None,
         sparklines: list | tuple | None = None,
         slicers: list | tuple | None = None,
+        pivots: list | tuple | None = None,
         shapes: list | tuple | None = None,
         show_row_col_headers: bool = True,
         show_zero_values: bool = True,
@@ -467,6 +498,20 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         sheet_id = self._sheet_count
         has_styles = bool(style_ranges) or header_style is not None
 
+        pivot_plans = normalize_pivots(pivots, table_specs, self._pivot_names, sheet_name)
+        for plan in pivot_plans:
+            target_index = self._sheet_index_by_name(plan.target_sheet)
+            if (
+                target_index is not None
+                and target_index != sheet_index
+                and target_index in self._sheet_written
+            ):
+                raise ValueError(
+                    f"pivot target sheet {plan.target_sheet!r} was written before its "
+                    "source sheet; write the pivot's sheet after the source sheet"
+                )
+        feeders = [PivotFeeder(plan) for plan in pivot_plans]
+
         spool = tempfile.SpooledTemporaryFile(max_size=self._spool_max_bytes, mode="w+b")
         # The rows are compressed on a worker thread while they are encoded;
         # the head, which depends on them, is compressed separately at the end.
@@ -477,13 +522,43 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             segment = _zip_threads.DeflateSegment(
                 self._zf.deflate_pool(), self._zf.compresslevel, compressed)
         try:
+            row_sink = spool if segment is None else _Tee(spool, segment)
+            pending = self._pending_pivots.pop(sheet_name, None)
+            # Feeders read the sheet's own rows; pivot output from other sheets is merged after.
+            if feeders:
+                data = tee_rows(data, feeders)
+            if pending:
+                data = overlay_rows(data, pending)
             body = self._write_body(
-                data, spool if segment is None else _Tee(spool, segment),
+                data, row_sink,
                 style_ranges, header_style if has_styles else None,
                 heights, hidden_row_set, has_styles,
                 table_specs,
                 row_outline=row_outline,
             )
+            own_renders = []
+            for feeder in feeders:
+                render = feeder.result()
+                render.assign_ids(self._next_pivot_id)
+                self._next_pivot_id += 1
+                self._pivot_renders.append(render)
+                own_renders.append(render)
+            same_sheet = [
+                render for render in own_renders
+                if render.plan.target_sheet.casefold() == sheet_name.casefold()
+            ]
+            if same_sheet:
+                self._append_pivot_rows(row_sink, same_sheet, body)
+            for render in own_renders:
+                if any(render is item for item in same_sheet):
+                    continue
+                target_index = self._sheet_index_by_name(render.plan.target_sheet)
+                if target_index is not None and target_index in self._sheet_written:
+                    raise ValueError(
+                        f"pivot target sheet {render.plan.target_sheet!r} was written "
+                        "before its source sheet"
+                    )
+                self._pending_pivots.setdefault(render.plan.target_sheet, []).append(render)
             if segment is not None:
                 segment.finish()
                 segment = None
@@ -491,6 +566,12 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             rels = list(table_rels)
             link_rels = self._link_relationships(body.hyperlinks, rels)
             rels.extend(link_rels)
+            for render in (pending or []) + same_sheet:
+                rid = f"rId{len(rels) + 1}"
+                rels.append((
+                    rid, _REL_PIVOT_TABLE,
+                    f"../pivotTables/pivotTable{render.pivot_id}.xml", False,
+                ))
             slicer_parts = self._resolve_slicers(slicer_specs)
             drawing_rid = None
             if chart_specs or image_specs or shape_specs or slicer_parts:
@@ -740,6 +821,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         show_row_col_headers: bool = True,
         show_zero_values: bool = True,
         right_to_left: bool = False,
+        pivots: list | tuple | None = None,
     ):
         """Write a pandas or polars DataFrame to the current sheet.
 
@@ -786,6 +868,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             show_row_col_headers=show_row_col_headers,
             show_zero_values=show_zero_values,
             right_to_left=right_to_left,
+            pivots=pivots,
         )
 
     def _write_workbook_parts(self):
@@ -801,6 +884,25 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         for sheet_index in range(self._sheet_count):
             if sheet_index not in self._sheet_written:
                 self._write_empty_sheet(sheet_index)
+        if self._pending_pivots:
+            names = ", ".join(sorted(self._pending_pivots))
+            raise ValueError(
+                f"pivot target sheet(s) {names} were never added to the workbook"
+            )
+
+        for render in self._pivot_renders:
+            render.numfmt_ids = [
+                self._number_format_id(spec.number_format)
+                for spec in render.pivot.values
+            ]
+            cache_path = f"xl/pivotCache/pivotCacheDefinition{render.cache_id}.xml"
+            table_path = f"xl/pivotTables/pivotTable{render.pivot_id}.xml"
+            self._zf.writestr(cache_path, pivot_cache_xml(render))
+            self._zf.writestr(table_path, pivot_table_xml(render, render.numfmt_ids))
+            self._zf.writestr(
+                f"xl/pivotTables/_rels/pivotTable{render.pivot_id}.xml.rels",
+                pivot_table_rels_xml(render.cache_id),
+            )
 
         for sheet_id in sorted(self._sheet_drawings):
             sheet_name = self._worksheet_data[sheet_id - 1][0]
@@ -933,6 +1035,11 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             f'<Override PartName="/{path}" ContentType="{content_type}"/>'
             for path, _xml, content_type in self._slicer_part_files
         )
+        pivot_parts = "".join(
+            f'<Override PartName="/xl/pivotTables/pivotTable{render.pivot_id}.xml" ContentType="{_CT_PIVOT_TABLE}"/>'
+            f'<Override PartName="/xl/pivotCache/pivotCacheDefinition{render.cache_id}.xml" ContentType="{_CT_PIVOT_CACHE}"/>'
+            for render in self._pivot_renders
+        )
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -949,6 +1056,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
 {shared_strings_part}
 {comment_parts}
 {slicer_parts}
+{pivot_parts}
 {self._doc_props_content_types()}
 </Types>'''
 
@@ -981,6 +1089,14 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             relationships.append(
                 f'<Relationship Id="rId{self._workbook_rel_base() + index + 1}" '
                 f'Type="{REL_SLICER_CACHE}" Target="slicerCaches/slicerCache{index + 1}.xml"/>'
+            )
+
+        pivot_base = self._workbook_rel_base() + len(self._slicer_cache_names)
+        for index, render in enumerate(self._pivot_renders):
+            relationships.append(
+                f'<Relationship Id="rId{pivot_base + index + 1}" '
+                f'Type="{_REL_PIVOT_CACHE}" '
+                f'Target="pivotCache/pivotCacheDefinition{render.cache_id}.xml"/>'
             )
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1032,6 +1148,15 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         defined_names = f"<definedNames>{''.join(names)}</definedNames>" if names else ""
         protection = self._workbook_protection.to_xml() if self._workbook_protection else ""
         workbook_ext = self._workbook_extensions()
+        pivot_caches = ""
+        if self._pivot_renders:
+            pivot_base = self._workbook_rel_base() + len(self._slicer_cache_names)
+            entries = "".join(
+                f'<pivotCache cacheId="{render.cache_id}" '
+                f'r:id="rId{pivot_base + index + 1}"/>'
+                for index, render in enumerate(self._pivot_renders)
+            )
+            pivot_caches = f"<pivotCaches>{entries}</pivotCaches>"
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -1042,6 +1167,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
 <sheets>{sheets}</sheets>
 {defined_names}
 <calcPr calcId="124519" fullCalcOnLoad="1"/>
+{pivot_caches}
 {workbook_ext}
 </workbook>'''
 
@@ -2120,8 +2246,89 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         items = "".join(f'<brk id="{value}" max="{max_value}" man="1"/>' for value in breaks)
         return f'<{tag} count="{len(breaks)}" manualBreakCount="{len(breaks)}">{items}</{tag}>'
 
+    def _sheet_index_by_name(self, name: str) -> int | None:
+        folded = name.casefold()
+        for index, (sheet_name, _data, _hidden) in enumerate(self._worksheet_data):
+            if sheet_name.casefold() == folded:
+                return index
+        return None
+
+    def _append_pivot_rows(self, sink, renders, body) -> None:
+        """Write pivot cells below the streamed rows of the source sheet."""
+        merged = merge_cells(renders)
+        if not merged:
+            return
+        by_row: dict[int, dict[int, object]] = {}
+        for (row, column), value in merged.items():
+            by_row.setdefault(row, {})[column] = value
+        first_row = min(by_row)
+        if body.num_rows > 0 and first_row < body.num_rows:
+            raise ValueError(
+                "a pivot table on the source sheet must start below the sheet's "
+                f"data (first free row {body.num_rows + 1}); got row {first_row + 1}"
+            )
+        for row_idx in sorted(by_row):
+            cells = by_row[row_idx]
+            width = max(cells) + 1
+            row = [None] * width
+            for column, value in cells.items():
+                row[column] = value
+            buf = io.StringIO()
+            buf.write(f'<row r="{row_idx + 1}">')
+            self._write_row_cells(buf, row, row_idx, {}, [])
+            buf.write('</row>')
+            sink.write(buf.getvalue().encode('utf-8'))
+            body.num_rows = max(body.num_rows, row_idx + 1)
+            body.max_cols = max(body.max_cols, width)
+
+    def _write_pivot_sheet(self, sheet_index: int, renders) -> None:
+        """A sheet that only holds pivot output (and its worksheet rels)."""
+        merged = merge_cells(renders)
+        by_row: dict[int, dict[int, object]] = {}
+        for (row, column), value in merged.items():
+            by_row.setdefault(row, {})[column] = value
+        rows_xml = []
+        max_row = max_col = 0
+        for row_idx in sorted(by_row):
+            cells = by_row[row_idx]
+            width = max(cells) + 1
+            row = [None] * width
+            for column, value in cells.items():
+                row[column] = value
+            buf = io.StringIO()
+            buf.write(f'<row r="{row_idx + 1}">')
+            self._write_row_cells(buf, row, row_idx, {}, [])
+            buf.write('</row>')
+            rows_xml.append(buf.getvalue())
+            max_row = max(max_row, row_idx + 1)
+            max_col = max(max_col, width)
+        dimension = f"A1:{self._letters[max_col - 1]}{max_row}" if max_row else "A1"
+        self._zf.writestr(
+            f"xl/worksheets/sheet{sheet_index + 1}.xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            f'<dimension ref="{dimension}"/>'
+            f"<sheetData>{''.join(rows_xml)}</sheetData>"
+            "</worksheet>",
+        )
+        sheet_id = sheet_index + 1
+        rels = []
+        for render in renders:
+            rid = f"rId{len(rels) + 1}"
+            rels.append((
+                rid, _REL_PIVOT_TABLE,
+                f"../pivotTables/pivotTable{render.pivot_id}.xml", False,
+            ))
+        if rels:
+            self._sheet_rels[sheet_id] = rels
+
     def _write_empty_sheet(self, sheet_index: int) -> None:
         """A sheet that was added but never written holds no rows."""
+        sheet_name = self._worksheet_data[sheet_index][0]
+        renders = self._pending_pivots.pop(sheet_name, None)
+        if renders:
+            self._write_pivot_sheet(sheet_index, renders)
+            return
         self._zf.writestr(
             f"xl/worksheets/sheet{sheet_index + 1}.xml",
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'

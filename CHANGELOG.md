@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Pivot tables (`PivotTable`, `PivotValue`): new pivots in XLSX, passed as `write_sheet(..., pivots=[...])`
+  (and `write_dataframe`). One row field, at most one column field, any number of filters (page fields) and
+  values (sum, count, average, min, max). The source is a table written in the same call; the pivot can sit on
+  that sheet below the data or on a sheet added after it. The report is rendered from the streamed rows and the
+  cache refreshes when the file opens. Compared against Excel's own layouts through COM. XLSB and editing
+  existing pivots are not included.
 - Sparklines (`SparklineGroup`): line, column and win/loss groups with colours, markers, high/low/first/last/negative
   points, empty-cell handling and axis limits, in XLSX and XLSB. The XLSB records were mapped from files Excel
   saved, one option at a time (`tools/capture_xlsb.py`).

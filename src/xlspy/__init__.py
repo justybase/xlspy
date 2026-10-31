@@ -53,6 +53,7 @@ from .images import Image
 from .shapes import Shape
 from .slicers import Slicer
 from .sparklines import SparklineGroup
+from .pivots import PivotTable, PivotValue
 from .outline import Group
 from .printing import PageMargins, PrintSettings
 from .dataframe import dataframe_to_rows, to_xlsb, to_xlsx
@@ -159,6 +160,8 @@ __all__ = [
     'Shape',
     'Slicer',
     'SparklineGroup',
+    'PivotTable',
+    'PivotValue',
     'CellRichText',
     'TextBlock',
     'InlineFont',
