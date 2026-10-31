@@ -9,6 +9,7 @@ import re
 import shutil
 import tempfile
 
+from ..utils.datetime import time_to_days, timedelta_to_days
 from .._metadata import SheetProtection as MetadataProtection
 from ..formulas import Formula
 from ..rich_text import CellRichText
@@ -20,12 +21,6 @@ from ._objects import _as_excel_table
 from ._print import print_settings_for
 from ._model import Workbook, Worksheet, WriteOnlyWorksheet
 
-
-def _serial_time(value: _datetime.time) -> float:
-    return (
-        value.hour * 3600 + value.minute * 60 + value.second
-        + value.microsecond / 1_000_000
-    ) / 86400.0
 
 
 def _value_for_new(cell):
@@ -41,9 +36,9 @@ def _value_for_new(cell):
         return Hyperlink(link.target, text=text, tooltip=link.tooltip)
     value = cell._value
     if isinstance(value, _datetime.time):
-        return _serial_time(value)
+        return time_to_days(value)
     if isinstance(value, _datetime.timedelta):
-        return value.total_seconds() / 86400.0
+        return timedelta_to_days(value)
     return value
 
 

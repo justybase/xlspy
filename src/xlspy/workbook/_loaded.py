@@ -13,7 +13,8 @@ import re
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
-from .._metadata import MAIN, REL, PKG_REL, CT, element_pattern, replace_element, serialize_like
+from ..utils.datetime import time_to_days, timedelta_to_days
+from .._metadata import MAIN, REL, PKG_REL, CT, qname, element_pattern, replace_element, serialize_like
 from .._xlsx_edit import _attributes, _bytes, _cell_value
 from ..formula.sheets import rename_sheet_references
 from ..formulas import Formula
@@ -34,9 +35,6 @@ _CONTENT_WORKSHEET = "application/vnd.openxmlformats-officedocument.spreadsheetm
 _CONTENT_COMMENTS = "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"
 _CONTENT_VML = "application/vnd.openxmlformats-officedocument.vmlDrawing"
 
-
-def _q(tag: str) -> str:
-    return f"{{{MAIN}}}{tag}"
 
 
 def _local(tag: str) -> str:
@@ -736,12 +734,6 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
     updater._apply_parts({path: xml})
 
 
-def _time_serial(value: _datetime.time) -> float:
-    return (
-        value.hour * 3600 + value.minute * 60 + value.second
-        + value.microsecond / 1_000_000
-    ) / 86400.0
-
 
 def _value_for_save(cell, date_1904: bool):
     if isinstance(cell._formula, Formula):
@@ -758,11 +750,11 @@ def _value_for_save(cell, date_1904: bool):
     if isinstance(value, _datetime.time):
         if cell.number_format == "General":
             cell.number_format = "h:mm:ss"
-        return _time_serial(value)
+        return time_to_days(value)
     if isinstance(value, _datetime.timedelta):
         if cell.number_format == "General":
             cell.number_format = "[h]:mm:ss"
-        return value.total_seconds() / 86400.0
+        return timedelta_to_days(value)
     return value
 
 
@@ -1039,7 +1031,7 @@ def _reorder_and_state(workbook: Workbook, updater) -> None:
     for sheet in workbook._sheets:
         node = existing.get(sheet.title)
         if node is None:
-            node = ET.Element(_q("sheet"))
+            node = ET.Element(qname("sheet"))
             node.set("name", sheet.title)
             node.set("sheetId", str(getattr(sheet, "_sheet_id", next_id)))
             rid = getattr(sheet, "_rel_id", None)

@@ -1,6 +1,6 @@
 """Optional metadata methods for XlsbWriter, outside its numeric row path."""
 
-from ._metadata import DefinedName, WorkbookProtection
+from ._metadata import DefinedName
 
 
 class XlsbWriterMetadata:
@@ -22,12 +22,6 @@ class XlsbWriterMetadata:
         DefinedName(name, '0', scope)
         if self._xlsb_formula_context is not None:
             self._xlsb_formula_context.remove_name(name, scope)
-
-    def set_workbook_protection(self, protection: WorkbookProtection) -> None:
-        self._require_writable()
-        if not isinstance(protection, WorkbookProtection):
-            raise TypeError("protection must be WorkbookProtection")
-        self._workbook_protection = protection
 
     def _metadata_workbook(self, data):
         if self._xlsb_formula_context is not None:

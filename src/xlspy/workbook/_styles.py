@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape, quoteattr
 
-from .._metadata import MAIN
+from .._metadata import MAIN, qname
 from ..styles import (
     Alignment,
     Border,
@@ -75,9 +75,6 @@ BUILTIN_NUM_FORMATS: dict[int, str] = {
 }
 
 
-def _q(tag: str) -> str:
-    return f"{{{MAIN}}}{tag}"
-
 
 def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
@@ -121,12 +118,12 @@ def _int(value: str | None) -> int | None:
 
 def _read_differential(node: ET.Element) -> DifferentialStyle:
     """Read one ``<dxf>`` element used by conditional formatting."""
-    font_node = node.find(_q("font"))
-    fill_node = node.find(_q("fill"))
-    border_node = node.find(_q("border"))
-    alignment_node = node.find(_q("alignment"))
-    protection_node = node.find(_q("protection"))
-    numfmt_node = node.find(_q("numFmt"))
+    font_node = node.find(qname("font"))
+    fill_node = node.find(qname("fill"))
+    border_node = node.find(qname("border"))
+    alignment_node = node.find(qname("alignment"))
+    protection_node = node.find(qname("protection"))
+    numfmt_node = node.find(qname("numFmt"))
     return DifferentialStyle(
         font=_read_font(font_node) if font_node is not None else None,
         fill=_read_fill(fill_node) if fill_node is not None else None,
@@ -162,49 +159,49 @@ def _read_color(node: ET.Element | None) -> Color | None:
 
 
 def _read_font(node: ET.Element) -> Font:
-    color = _read_color(node.find(_q("color")))
-    name_node = node.find(_q("name"))
-    size_node = node.find(_q("sz"))
-    underline_node = node.find(_q("u"))
+    color = _read_color(node.find(qname("color")))
+    name_node = node.find(qname("name"))
+    size_node = node.find(qname("sz"))
+    underline_node = node.find(qname("u"))
     underline: str | None = None
     if underline_node is not None:
         underline = underline_node.get("val") or "single"
-    vert = node.find(_q("vertAlign"))
-    family = node.find(_q("family"))
-    charset = node.find(_q("charset"))
-    scheme = node.find(_q("scheme"))
+    vert = node.find(qname("vertAlign"))
+    family = node.find(qname("family"))
+    charset = node.find(qname("charset"))
+    scheme = node.find(qname("scheme"))
     return Font(
         name=name_node.get("val") if name_node is not None else None,
         size=_float(size_node.get("val")) if size_node is not None else None,
-        bold=_flag(node.find(_q("b"))),
-        italic=_flag(node.find(_q("i"))),
-        strike=_flag(node.find(_q("strike"))),
+        bold=_flag(node.find(qname("b"))),
+        italic=_flag(node.find(qname("i"))),
+        strike=_flag(node.find(qname("strike"))),
         underline=underline,
         vertAlign=vert.get("val") if vert is not None else None,
         color=color,
         charset=_int(charset.get("val")) if charset is not None else None,
         family=_int(family.get("val")) if family is not None else None,
         scheme=scheme.get("val") if scheme is not None else None,
-        outline=_flag(node.find(_q("outline"))),
-        shadow=_flag(node.find(_q("shadow"))),
-        condense=_flag(node.find(_q("condense"))),
-        extend=_flag(node.find(_q("extend"))),
+        outline=_flag(node.find(qname("outline"))),
+        shadow=_flag(node.find(qname("shadow"))),
+        condense=_flag(node.find(qname("condense"))),
+        extend=_flag(node.find(qname("extend"))),
     )
 
 
 def _read_fill(node: ET.Element) -> PatternFill | GradientFill:
-    pattern = node.find(_q("patternFill"))
+    pattern = node.find(qname("patternFill"))
     if pattern is not None:
         return PatternFill(
             fill_type=pattern.get("patternType"),
-            start_color=_read_color(pattern.find(_q("fgColor"))),
-            end_color=_read_color(pattern.find(_q("bgColor"))),
+            start_color=_read_color(pattern.find(qname("fgColor"))),
+            end_color=_read_color(pattern.find(qname("bgColor"))),
         )
-    gradient = node.find(_q("gradientFill"))
+    gradient = node.find(qname("gradientFill"))
     if gradient is not None:
         stops = []
-        for stop in gradient.findall(_q("stop")):
-            color = _read_color(stop.find(_q("color")))
+        for stop in gradient.findall(qname("stop")):
+            color = _read_color(stop.find(qname("color")))
             position = _float(stop.get("position"))
             if color is not None and position is not None:
                 stops.append(Stop(color=color, position=position))
@@ -228,7 +225,7 @@ def _read_side(node: ET.Element | None) -> Side | None:
     if node is None:
         return None
     style = node.get("style")
-    color = _read_color(node.find(_q("color")))
+    color = _read_color(node.find(qname("color")))
     if style is None and color is None:
         return None
     return Side(style=style, color=color)
@@ -236,15 +233,15 @@ def _read_side(node: ET.Element | None) -> Side | None:
 
 def _read_border(node: ET.Element) -> Border:
     return Border(
-        left=_read_side(node.find(_q("left"))),
-        right=_read_side(node.find(_q("right"))),
-        top=_read_side(node.find(_q("top"))),
-        bottom=_read_side(node.find(_q("bottom"))),
-        diagonal=_read_side(node.find(_q("diagonal"))),
-        vertical=_read_side(node.find(_q("vertical"))),
-        horizontal=_read_side(node.find(_q("horizontal"))),
-        start=_read_side(node.find(_q("start"))),
-        end=_read_side(node.find(_q("end"))),
+        left=_read_side(node.find(qname("left"))),
+        right=_read_side(node.find(qname("right"))),
+        top=_read_side(node.find(qname("top"))),
+        bottom=_read_side(node.find(qname("bottom"))),
+        diagonal=_read_side(node.find(qname("diagonal"))),
+        vertical=_read_side(node.find(qname("vertical"))),
+        horizontal=_read_side(node.find(qname("horizontal"))),
+        start=_read_side(node.find(qname("start"))),
+        end=_read_side(node.find(qname("end"))),
         diagonal_up=_attr_flag(node, "diagonalUp"),
         diagonal_down=_attr_flag(node, "diagonalDown"),
         outline=_attr_flag(node, "outline"),
@@ -460,9 +457,9 @@ class XlsxStyleTable:
         self._rebuild_indexes()
 
     def _parse(self, root: ET.Element) -> None:
-        numfmts = root.find(_q("numFmts"))
+        numfmts = root.find(qname("numFmts"))
         if numfmts is not None:
-            for node in numfmts.findall(_q("numFmt")):
+            for node in numfmts.findall(qname("numFmt")):
                 num_id = _int(node.get("numFmtId"))
                 code = node.get("formatCode")
                 if num_id is not None and code is not None:
@@ -470,14 +467,14 @@ class XlsxStyleTable:
                     self.custom_num_formats.add(num_id)
                     self._next_numfmt_id = max(self._next_numfmt_id, num_id + 1)
 
-        dxfs = root.find(_q("dxfs"))
+        dxfs = root.find(qname("dxfs"))
         if dxfs is not None:
-            for node in dxfs.findall(_q("dxf")):
+            for node in dxfs.findall(qname("dxf")):
                 self.dxfs.append(_read_differential(node))
 
-        fonts = root.find(_q("fonts"))
+        fonts = root.find(qname("fonts"))
         if fonts is not None:
-            for node in fonts.findall(_q("font")):
+            for node in fonts.findall(qname("font")):
                 font = _read_font(node)
                 key = _font_key_from(font)
                 if _font_is_empty(key):
@@ -486,18 +483,18 @@ class XlsxStyleTable:
                 self._font_keys.append(key)
                 self._font_xml.append(ET.tostring(node, encoding="unicode"))
 
-        fills = root.find(_q("fills"))
+        fills = root.find(qname("fills"))
         if fills is not None:
-            for node in fills.findall(_q("fill")):
+            for node in fills.findall(qname("fill")):
                 fill = _read_fill(node)
                 key = _fill_key_from(fill)
                 self.fills.append(fill)
                 self._fill_keys.append(key)
                 self._fill_xml.append(ET.tostring(node, encoding="unicode"))
 
-        borders = root.find(_q("borders"))
+        borders = root.find(qname("borders"))
         if borders is not None:
-            for node in borders.findall(_q("border")):
+            for node in borders.findall(qname("border")):
                 border = _read_border(node)
                 key = _border_key(border)
                 self.borders.append(border)
@@ -520,14 +517,14 @@ class XlsxStyleTable:
             self._border_keys = [None]
             self._border_xml = ["<border><left/><right/><top/><bottom/><diagonal/></border>"]
 
-        style_xfs = root.find(_q("cellStyleXfs"))
+        style_xfs = root.find(qname("cellStyleXfs"))
         if style_xfs is not None:
-            for node in style_xfs.findall(_q("xf")):
+            for node in style_xfs.findall(qname("xf")):
                 self.cell_style_xfs.append(self._read_style_xf(node))
 
-        cell_styles = root.find(_q("cellStyles"))
+        cell_styles = root.find(qname("cellStyles"))
         if cell_styles is not None:
-            for node in cell_styles.findall(_q("cellStyle")):
+            for node in cell_styles.findall(qname("cellStyle")):
                 name = node.get("name")
                 if not name:
                     continue
@@ -548,16 +545,16 @@ class XlsxStyleTable:
                         hidden=node.get("hidden", "0").lower() in {"1", "true"},
                     )
 
-        xfs = root.find(_q("cellXfs"))
+        xfs = root.find(qname("cellXfs"))
         if xfs is not None:
-            for node in xfs.findall(_q("xf")):
+            for node in xfs.findall(qname("xf")):
                 xf = _Xf(
                     font_id=_int(node.get("fontId")) or 0,
                     fill_id=_int(node.get("fillId")) or 0,
                     border_id=_int(node.get("borderId")) or 0,
                     num_fmt_id=_int(node.get("numFmtId")) or 0,
-                    alignment=_read_alignment(node.find(_q("alignment"))),
-                    protection=_read_protection(node.find(_q("protection"))),
+                    alignment=_read_alignment(node.find(qname("alignment"))),
+                    protection=_read_protection(node.find(qname("protection"))),
                 )
                 self.xfs.append(xf)
                 self._xf_xml.append(ET.tostring(node, encoding="unicode"))
@@ -574,8 +571,8 @@ class XlsxStyleTable:
             fill=component(self.fills, _int(node.get("fillId"))),
             border=component(self.borders, _int(node.get("borderId"))),
             number_format=None if number_format in {None, "General"} else number_format,
-            alignment=_read_alignment(node.find(_q("alignment"))),
-            protection=_read_protection(node.find(_q("protection"))),
+            alignment=_read_alignment(node.find(qname("alignment"))),
+            protection=_read_protection(node.find(qname("protection"))),
         )
 
     def _container(self, root, tag: str, default: str):
@@ -943,7 +940,7 @@ class XlsxStyleTable:
                 root.remove(node)
             return
         if container is None:
-            container = ET.Element(_q(tag))
+            container = ET.Element(qname(tag))
             position = self._STYLE_ORDER.index(tag)
             successors = set(self._STYLE_ORDER[position + 1:])
             insertion = len(root)
@@ -967,21 +964,21 @@ class XlsxStyleTable:
     def to_bytes(self) -> bytes:
         """Serialise the table, preserving unrelated style children."""
         if self._root is None:
-            root = ET.Element(_q("styleSheet"))
-            ET.SubElement(root, _q("fonts"), {"count": str(len(self._font_xml))})
-            ET.SubElement(root, _q("fills"), {"count": str(len(self._fill_xml))})
-            ET.SubElement(root, _q("borders"), {"count": str(len(self._border_xml))})
-            cell_style_xfs = ET.SubElement(root, _q("cellStyleXfs"), {"count": "1"})
-            ET.SubElement(cell_style_xfs, _q("xf"), {
+            root = ET.Element(qname("styleSheet"))
+            ET.SubElement(root, qname("fonts"), {"count": str(len(self._font_xml))})
+            ET.SubElement(root, qname("fills"), {"count": str(len(self._fill_xml))})
+            ET.SubElement(root, qname("borders"), {"count": str(len(self._border_xml))})
+            cell_style_xfs = ET.SubElement(root, qname("cellStyleXfs"), {"count": "1"})
+            ET.SubElement(cell_style_xfs, qname("xf"), {
                 "numFmtId": "0", "fontId": "0", "fillId": "0", "borderId": "0",
             })
-            ET.SubElement(root, _q("cellXfs"), {"count": str(len(self._xf_xml))})
-            cell_styles = ET.SubElement(root, _q("cellStyles"), {"count": "1"})
-            ET.SubElement(cell_styles, _q("cellStyle"), {
+            ET.SubElement(root, qname("cellXfs"), {"count": str(len(self._xf_xml))})
+            cell_styles = ET.SubElement(root, qname("cellStyles"), {"count": "1"})
+            ET.SubElement(cell_styles, qname("cellStyle"), {
                 "name": "Normal", "xfId": "0", "builtinId": "0",
             })
-            ET.SubElement(root, _q("dxfs"), {"count": "0"})
-            ET.SubElement(root, _q("tableStyles"), {
+            ET.SubElement(root, qname("dxfs"), {"count": "0"})
+            ET.SubElement(root, qname("tableStyles"), {
                 "count": "0", "defaultTableStyle": "TableStyleMedium9",
                 "defaultPivotStyle": "PivotStyleLight16",
             })
@@ -1032,7 +1029,7 @@ class XlsxStyleTable:
             if style is not None and style in self.dxfs[:len(container)]:
                 indexes.append(self.dxfs.index(style))
                 continue
-            for numfmt in node.iter(_q("numFmt")):
+            for numfmt in node.iter(qname("numFmt")):
                 numfmt.set("numFmtId", str(self._intern_numfmt(numfmt.get("formatCode", "General"))))
             # Keep the parsed list in step with the container.
             del self.dxfs[len(container):]

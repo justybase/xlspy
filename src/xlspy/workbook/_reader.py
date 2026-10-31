@@ -14,7 +14,7 @@ import zipfile
 from .._untrusted import SafeZipFile
 from xml.etree import ElementTree as ET
 
-from .._metadata import MAIN, REL, read_defined_names
+from .._metadata import MAIN, REL, qname, read_defined_names
 from .._text import xstring_unescape
 from ..comments import find_comment_parts, read_comments, rels_path
 from ..data_validation import DataValidation, OPERATORS, VALIDATION_TYPES
@@ -74,9 +74,6 @@ _NS_DCTERMS = "http://purl.org/dc/terms/"
 _NS_CP = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
 _NS_APP = "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
 
-
-def _q(tag: str) -> str:
-    return f"{{{MAIN}}}{tag}"
 
 
 def _element_xml(element) -> str:
@@ -173,7 +170,7 @@ def _value(cell: ET.Element, style, *, date_1904: bool, shared_strings: list[str
             from ..rich_text import rich_text_from_si
 
             return rich_text_from_si(inline)
-        return xstring_unescape("".join(node.text or "" for node in inline.iter(_q("t"))))
+        return xstring_unescape("".join(node.text or "" for node in inline.iter(qname("t"))))
     raw = cell.findtext(_Q_V, "")
     if kind == "s":
         try:
@@ -438,8 +435,8 @@ _OXML_OPERATORS = {value: key for key, value in OPERATORS.items()}
 
 
 def _read_data_validations(sheet: Worksheet, node) -> None:
-    for child in node.findall(_q("dataValidation")):
-        formula1 = child.findtext(_q("formula1"))
+    for child in node.findall(qname("dataValidation")):
+        formula1 = child.findtext(qname("formula1"))
         if formula1 is None:
             note_unread(sheet, "data_validations")
             continue
@@ -457,7 +454,7 @@ def _read_data_validations(sheet: Worksheet, node) -> None:
                 type=kind,
                 sqref=child.get("sqref", "A1"),
                 formula1=formula1,
-                formula2=child.findtext(_q("formula2")),
+                formula2=child.findtext(qname("formula2")),
                 operator=operator,
                 allow_blank=_bool_attr(child, "allowBlank", True),
                 show_dropdown=not _bool_attr(child, "showDropDown", False),
@@ -501,20 +498,20 @@ def _parse_table(xml: bytes) -> Table:
         totalsRowShown=_bool_attr(root, "totalsRowShown", None),
         published=_bool_attr(root, "published", None),
     )
-    columns = root.find(_q("tableColumns"))
+    columns = root.find(qname("tableColumns"))
     if columns is not None:
-        for node in columns.findall(_q("tableColumn")):
+        for node in columns.findall(qname("tableColumn")):
             table.tableColumns.append(
                 TableColumn(
                     id=int(node.get("id")) if node.get("id") is not None else None,
                     name=node.get("name"),
                     totalsRowFunction=node.get("totalsRowFunction"),
                     totalsRowLabel=node.get("totalsRowLabel"),
-                    calculatedColumnFormula=node.findtext(_q("calculatedColumnFormula")),
-                    totalsRowFormula=node.findtext(_q("totalsRowFormula")),
+                    calculatedColumnFormula=node.findtext(qname("calculatedColumnFormula")),
+                    totalsRowFormula=node.findtext(qname("totalsRowFormula")),
                 )
             )
-    style = root.find(_q("tableStyleInfo"))
+    style = root.find(qname("tableStyleInfo"))
     if style is not None:
         table.tableStyleInfo = TableStyleInfo(
             name=style.get("name"),
@@ -523,7 +520,7 @@ def _parse_table(xml: bytes) -> Table:
             showRowStripes=_bool_attr(style, "showRowStripes", None),
             showColumnStripes=_bool_attr(style, "showColumnStripes", None),
         )
-    auto_filter = root.find(_q("autoFilter"))
+    auto_filter = root.find(qname("autoFilter"))
     if auto_filter is not None:
         table.autoFilter = AutoFilter(auto_filter.get("ref"))
     return table
@@ -562,7 +559,7 @@ def _cf_rule(sqref: str, node, style_table):
     stop = _bool_attr(node, "stopIfTrue", None)
     dxf_id = node.get("dxfId")
     dxf = style_table.dxf_at(int(dxf_id)) if dxf_id is not None else None
-    formulas = [item.text or "" for item in node.findall(_q("formula"))]
+    formulas = [item.text or "" for item in node.findall(qname("formula"))]
 
     if rule_type == "cellIs":
         operator = node.get("operator", "equal")
@@ -570,12 +567,12 @@ def _cf_rule(sqref: str, node, style_table):
     if rule_type == "expression":
         return FormulaRule(sqref, formulas, dxf, stop, priority)
     if rule_type == "colorScale":
-        scale = node.find(_q("colorScale"))
+        scale = node.find(qname("colorScale"))
         if scale is None:
             return None
-        cfvos = [_cfvo(item) for item in scale.findall(_q("cfvo"))]
+        cfvos = [_cfvo(item) for item in scale.findall(qname("cfvo"))]
         colors = [
-            _read_color(item) for item in scale.findall(_q("color"))
+            _read_color(item) for item in scale.findall(qname("color"))
         ]
         if len(cfvos) < 2 or any(color is None for color in colors):
             return None
@@ -583,11 +580,11 @@ def _cf_rule(sqref: str, node, style_table):
             return ColorScaleRule(sqref, cfvos[0], None, cfvos[1], colors, priority)
         return ColorScaleRule(sqref, cfvos[0], cfvos[1], cfvos[2], colors, priority)
     if rule_type == "dataBar":
-        bar = node.find(_q("dataBar"))
+        bar = node.find(qname("dataBar"))
         if bar is None:
             return None
-        cfvos = [_cfvo(item) for item in bar.findall(_q("cfvo"))]
-        color = _read_color(bar.find(_q("color")))
+        cfvos = [_cfvo(item) for item in bar.findall(qname("cfvo"))]
+        color = _read_color(bar.find(qname("color")))
         if len(cfvos) < 2 or color is None:
             return None
         return DataBarRule(
@@ -602,10 +599,10 @@ def _cf_rule(sqref: str, node, style_table):
             priority=priority,
         )
     if rule_type == "iconSet":
-        icon_set = node.find(_q("iconSet"))
+        icon_set = node.find(qname("iconSet"))
         if icon_set is None:
             return None
-        cfvos = [_cfvo(item) for item in icon_set.findall(_q("cfvo"))]
+        cfvos = [_cfvo(item) for item in icon_set.findall(qname("cfvo"))]
         values = []
         for item in cfvos:
             try:
@@ -687,7 +684,7 @@ def _read_conditional_formatting(sheet, node, style_table) -> None:
     sqref = node.get("sqref")
     if not sqref:
         return
-    for child in node.findall(_q("cfRule")):
+    for child in node.findall(qname("cfRule")):
         try:
             rule = _cf_rule(sqref, child, style_table)
         except (TypeError, ValueError):
@@ -833,26 +830,26 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                     pass
             elif tag == "autoFilter":
                 filter_ = AutoFilter(_normalize_range(node.get("ref")) if node.get("ref") else None)
-                for child in node.findall(_q("filterColumn")):
+                for child in node.findall(qname("filterColumn")):
                     column = FilterColumn(
                         colId=int(child.get("colId", "0") or 0),
                         hiddenButton=_bool_attr(child, "hiddenButton", False),
                         showButton=_bool_attr(child, "showButton", True),
                     )
-                    filters = child.find(_q("filters"))
+                    filters = child.find(qname("filters"))
                     if filters is not None:
                         column.vals = [
                             item.get("val")
-                            for item in filters.findall(_q("filter"))
+                            for item in filters.findall(qname("filter"))
                             if item.get("val") is not None
                         ]
                         column.blank = _bool_attr(filters, "blank", False)
                     # Any other criterion is kept verbatim: the model does not interpret it.
                     column.criteria = [
-                        _element_xml(item) for item in child if item.tag != _q("filters")
+                        _element_xml(item) for item in child if item.tag != qname("filters")
                     ]
                     filter_.filterColumn.append(column)
-                sort = node.find(_q("sortState"))
+                sort = node.find(qname("sortState"))
                 if sort is not None:
                     state = SortState(
                         ref=sort.get("ref"),
@@ -860,7 +857,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                         caseSensitive=_bool_attr(sort, "caseSensitive", None),
                         sortMethod=sort.get("sortMethod"),
                     )
-                    for condition in sort.findall(_q("sortCondition")):
+                    for condition in sort.findall(qname("sortCondition")):
                         dxf_id = condition.get("dxfId")
                         state.sortCondition.append(
                             SortCondition(
@@ -880,7 +877,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                 sheet._auto_filter = filter_
             elif tag == "sheetPr":
                 props = sheet.sheet_properties
-                tab = node.find(_q("tabColor"))
+                tab = node.find(qname("tabColor"))
                 if tab is not None:
                     try:
                         props.tabColor = _read_color(tab)
@@ -900,11 +897,11 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                     if node.get(attr) is not None:
                         value = node.get(attr)
                         setattr(props, field, value if field in {"codeName", "syncRef"} else _bool_attr(node, attr, None))
-                outline = node.find(_q("outlinePr"))
+                outline = node.find(qname("outlinePr"))
                 if outline is not None:
                     for name in ("applyStyles", "summaryBelow", "summaryRight", "showOutlineSymbols"):
                         setattr(props.outlinePr, name, _bool_attr(outline, name, None))
-                setup = node.find(_q("pageSetUpPr"))
+                setup = node.find(qname("pageSetUpPr"))
                 if setup is not None:
                     props.pageSetUpPr.fitToPage = _bool_attr(setup, "fitToPage", None)
                     if hasattr(props.pageSetUpPr, "autoPageBreaks"):
@@ -977,7 +974,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                     )
                 )
             elif tag == "cols":
-                for col in node.findall(_q("col")):
+                for col in node.findall(qname("col")):
                     minimum = int(col.get("min", "1"))
                     maximum = int(col.get("max", str(minimum)))
                     width = col.get("width")
@@ -998,7 +995,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                         if col.get("style") is not None:
                             dimension.style = int(col.get("style"))
             elif tag == "ignoredErrors":
-                for item in node.findall(_q("ignoredError")):
+                for item in node.findall(qname("ignoredError")):
                     if not item.get("sqref"):
                         continue
                     try:
@@ -1017,7 +1014,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                         man=_bool_attr(item, "man", True),
                         pt=int(item.get("pt")) if item.get("pt") is not None else None,
                     )
-                    for item in node.findall(_q("brk"))
+                    for item in node.findall(qname("brk"))
                 ])
             elif tag == "colBreaks":
                 sheet.col_breaks = ColBreak([
@@ -1028,7 +1025,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                         man=_bool_attr(item, "man", True),
                         pt=int(item.get("pt")) if item.get("pt") is not None else None,
                     )
-                    for item in node.findall(_q("brk"))
+                    for item in node.findall(qname("brk"))
                 ])
             elif tag == "hyperlink":
                 hyperlinks.append(dict(node.attrib))

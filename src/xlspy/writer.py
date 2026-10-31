@@ -267,13 +267,6 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         self._sheet_link_rels = {}
         self._workbook_protection = None
 
-    def _sheet_index_by_name(self, name: str) -> int | None:
-        folded = name.casefold()
-        for index, (sheet_name, _data, _hidden) in enumerate(self._worksheet_data):
-            if sheet_name.casefold() == folded:
-                return index
-        return None
-
     def _register_numfmt(self, fmt_string: str) -> int:
         numfmt_id = self._format_registry.get(fmt_string)
         if numfmt_id is None:

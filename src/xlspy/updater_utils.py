@@ -66,6 +66,23 @@ def xml_space_attribute(value: str) -> str:
     return ' xml:space="preserve"' if preserve else ""
 
 
+def xml_attribute(attrs: dict[str, str], wanted: str) -> str | None:
+    for name, value in attrs.items():
+        if local_xml_name(name) == wanted:
+            return value
+    return None
+
+
+def date_like_format(format_code: str) -> bool:
+    # Remove quoted literals and escaped characters before looking for date
+    # tokens.  This is intentionally conservative: a false positive only
+    # chooses an existing date style for a date value.
+    simplified = re.sub(r'"(?:[^"]|"")*"', "", format_code)
+    simplified = re.sub(r"\\.", "", simplified).lower()
+    simplified = re.sub(r"\[[^\]]*\]", "", simplified)
+    return bool(re.search(r"[dy]", simplified) or re.search(r"m", simplified))
+
+
 class DiskStringIndex:
     """Disk-backed shared-string lookup with an append-only pending file."""
 

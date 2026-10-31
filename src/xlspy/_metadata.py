@@ -288,3 +288,7 @@ def _validate_protection(obj):
         elif not isinstance(value, bool):
             raise TypeError(f"{field.name} must be bool")
 
+
+def qname(tag: str) -> str:
+    """Clark-notation name of a tag in the main SpreadsheetML namespace."""
+    return f"{{{MAIN}}}{tag}"

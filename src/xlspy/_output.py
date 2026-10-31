@@ -23,6 +23,7 @@ import tempfile
 import zipfile
 
 from . import _zip_threads
+from ._metadata import WorkbookProtection
 
 DEFAULT_STAGING_BYTES = 8 << 20
 _COPY_CHUNK = 1 << 20
@@ -159,6 +160,12 @@ class StagedWriter:
     ``__init__``, writes its parts in ``_write_workbook_parts``, and sets
     ``_aborted`` when a sheet write fails part-way.
     """
+
+    def set_workbook_protection(self, protection: WorkbookProtection) -> None:
+        self._require_writable()
+        if not isinstance(protection, WorkbookProtection):
+            raise TypeError("protection must be WorkbookProtection")
+        self._workbook_protection = protection
 
     def _staging_bytes(self):
         """In-memory size of the staging spool for file-object targets."""

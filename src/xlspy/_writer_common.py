@@ -43,6 +43,13 @@ class WriterFrontEnd:
         self._sheet_count += 1
         self._worksheet_data.append((sheet_name, iter([]), hidden))
 
+    def _sheet_index_by_name(self, name: str) -> int | None:
+        folded = name.casefold()
+        for index, (sheet_name, _data, _hidden) in enumerate(self._worksheet_data):
+            if sheet_name.casefold() == folded:
+                return index
+        return None
+
     def _check_unknown_cf_rule(self, rule) -> None:
         if hasattr(rule, "sqref") and not isinstance(rule, CF_RULES):
             raise TypeError(

@@ -9,7 +9,8 @@ import re
 import struct
 from xml.etree import ElementTree as ET
 from decimal import Decimal
-from typing import Any, Iterable, Literal, Sequence
+from typing import Any, Iterable, Sequence
+from ._updater_base import StyleFallback, _UpdaterBase
 from ._xlsb_edit import XlsbEditMixin
 from ._xlsb_sheets import XlsbSheetsMixin
 
@@ -25,7 +26,7 @@ from .updater_utils import (
     ZipPackage,
     copy_file_range,
     copy_stream,
-    local_xml_name,
+    date_like_format,
     materialize_rows,
     parse_relationships_xml,
     resolve_zip_target,
@@ -33,32 +34,14 @@ from .updater_utils import (
     unwrap_cell,
 )
 from ._text import check_cell_text
-from .excel_dates import datetime_to_serial
 
 
-StyleFallback = Literal["inherit", "general"]
 _CELL_RECORDS = set(range(0x01, 0x0C))
 _RK_INT_LOWER = -536870912
 _RK_INT_UPPER = 536870911
 
 
-def _date_like_format(format_code: str) -> bool:
-    """Return whether an Excel number format is date-like."""
-
-    simplified = re.sub(r'"(?:[^"]|"")*"', "", format_code)
-    simplified = re.sub(r"\\.", "", simplified).lower()
-    simplified = re.sub(r"\[[^\]]*\]", "", simplified)
-    return bool(re.search(r"[dy]", simplified) or re.search(r"m", simplified))
-
-
-def _xml_attribute(attrs: dict[str, str], wanted: str) -> str | None:
-    for name, value in attrs.items():
-        if local_xml_name(name) == wanted:
-            return value
-    return None
-
-
-class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
+class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
     """Replace the data region of sheets in an existing XLSB file."""
 
     def __init__(self, path: str | os.PathLike[str]):
@@ -78,30 +61,6 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
         self._shared_strings_pending: list[str] = []
         self._shared_strings_dirty = False
         self._stream_shared_strings: DiskStringIndex | None = None
-
-    def close(self) -> None:
-        """Release temporary files held by the updater.
-
-        While in use, the updater keeps shared-string data and staged package
-        parts on disk.  Calling ``close`` (or simply dropping the updater)
-        removes them.
-        """
-
-        if self._stream_shared_strings is not None:
-            self._stream_shared_strings.close()
-        self._package.close()
-
-    def __del__(self):
-        try:
-            self.close()
-        except Exception:
-            pass
-
-    def get_sheet_names(self) -> list[str]:
-        """Return the names of all sheets (chartsheets included) in workbook order,
-        which is what the ExternSheet table and local names index."""
-
-        return list(self._sheets)
 
     def _part_or_none(self, path: str) -> bytes | None:
         return self._package.get(path) if self._package.has(path) else None
@@ -194,47 +153,6 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
         self._package.set(sheet_path, bytes(updated))
         self._commit_shared_strings()
         self._patch_pivot_caches(sheet_name, last_row, last_col)
-
-    def replace_sheet_data_stream(
-        self,
-        sheet_name: str,
-        rows: Iterable[Sequence[Any]],
-        *,
-        headers: Sequence[str] | None = None,
-        style_fallback: StyleFallback = "inherit",
-    ) -> None:
-        """Replace worksheet data atomically while streaming rows.
-
-        The package and disk-backed shared-string index are committed only
-        after the one-pass row source and all metadata updates succeed.  A
-        failure therefore leaves this updater reusable for a later attempt.
-        """
-
-        if style_fallback not in ("inherit", "general"):
-            raise ValueError("style_fallback must be 'inherit' or 'general'")
-        if sheet_name not in self._sheets:
-            raise KeyError(f"Worksheet not found: {sheet_name}")
-
-        self._ensure_stream_shared_strings()
-        store = self._stream_shared_strings
-        self._package.begin_transaction()
-        try:
-            if store is not None:
-                store.begin_transaction()
-            self._replace_sheet_data_stream_impl(
-                sheet_name,
-                rows,
-                headers=headers,
-                style_fallback=style_fallback,
-            )
-            self._package.commit_transaction()
-            if store is not None:
-                store.commit_transaction()
-        except BaseException:
-            if store is not None:
-                store.rollback_transaction()
-            self._package.rollback_transaction()
-            raise
 
     def _replace_sheet_data_stream_impl(
         self,
@@ -374,16 +292,6 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
                     temporary_path.unlink()
                 except FileNotFoundError:
                     pass
-
-    def save(self, output_path: str | os.PathLike[str] | None = None) -> None:
-        """Save to a new path or atomically replace the input file."""
-
-        self._package.save(output_path)
-
-    def to_bytes(self) -> bytes:
-        """Return the current package as XLSB bytes."""
-
-        return self._package.to_bytes()
 
     def _load_sheet_structure(self) -> dict[str, str]:
         rels_path = "xl/_rels/workbook.bin.rels"
@@ -618,19 +526,6 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
         self._shared_strings_dirty = False
         self._package.set("xl/sharedStrings.bin", self._shared_strings_data)
 
-    def _shared_string_index(self, value: str) -> int:
-        if self._stream_shared_strings is not None:
-            return self._stream_shared_strings.get_or_add(value)
-        index = self._shared_string_indices.get(value)
-        if index is None:
-            index = len(self._shared_strings_values)
-            self._shared_strings_values.append(value)
-            self._shared_string_indices[value] = index
-            self._shared_strings_pending.append(value)
-        self._shared_strings_total += 1
-        self._shared_strings_dirty = True
-        return index
-
     @staticmethod
     def _shared_string_ref_count(sheet_data: bytes) -> int:
         return sum(1 for record in iter_records(sheet_data) if record.record_id == 0x07)
@@ -699,7 +594,7 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
                 number_format_id = struct.unpack_from("<H", payload, 2)[0]
                 if (14 <= number_format_id <= 22) or (45 <= number_format_id <= 47):
                     return xf_index
-                if _date_like_format(custom_formats.get(number_format_id, "")):
+                if date_like_format(custom_formats.get(number_format_id, "")):
                     return xf_index
                 xf_index += 1
         return None
@@ -867,11 +762,6 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
                     stream.write(struct.pack("<i", last_col))
                     stream.seek(record.data_end)
 
-    def _date_to_serial(self, value: _datetime.date | _datetime.datetime) -> float:
-        if isinstance(value, _datetime.datetime):
-            value = value.replace(tzinfo=None)
-        return datetime_to_serial(value, self._date_1904)
-
     def _find_rows_region(self, sheet_data: bytes) -> "_RowsRegion":
         rows_start = -1
         last_cell_end = -1
@@ -938,9 +828,6 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
                         break
             if patched:
                 self._package.set(path, bytes(data))
-
-    def _package_names(self) -> list[str]:
-        return self._package.names()
 
 
 class _RowsRegion:

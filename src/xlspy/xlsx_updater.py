@@ -10,7 +10,7 @@ import numbers
 import os
 import re
 from decimal import Decimal
-from typing import Any, Iterable, Literal, Sequence
+from typing import Any, Iterable, Sequence
 from xml.parsers import expat
 
 from .updater_utils import (
@@ -20,6 +20,7 @@ from .updater_utils import (
     column_letter_to_index,
     copy_file_range,
     copy_stream,
+    date_like_format,
     escape_xml_text,
     local_xml_name,
     materialize_rows,
@@ -31,20 +32,14 @@ from .updater_utils import (
     trim_trailing_empty_rows,
     unescape_xml_text,
     unwrap_cell,
+    xml_attribute,
+    xml_space_attribute,
 )
 from ._text import check_cell_text
-from .excel_dates import datetime_to_serial
+from ._updater_base import StyleFallback, _UpdaterBase
 from ._xlsx_edit import XlsxEditMixin
 
 
-StyleFallback = Literal["inherit", "general"]
-
-
-def _xml_attribute(attrs: dict[str, str], wanted: str) -> str | None:
-    for name, value in attrs.items():
-        if local_xml_name(name) == wanted:
-            return value
-    return None
 
 
 def _tag_attribute(opening_tag: str, wanted: str) -> str | None:
@@ -56,17 +51,7 @@ def _tag_attribute(opening_tag: str, wanted: str) -> str | None:
     return match.group(2) if match else None
 
 
-def _date_like_format(format_code: str) -> bool:
-    # Remove quoted literals and escaped characters before looking for date
-    # tokens.  This is intentionally conservative: a false positive only
-    # chooses an existing date style for a date value.
-    simplified = re.sub(r'"(?:[^"]|"")*"', "", format_code)
-    simplified = re.sub(r"\\.", "", simplified).lower()
-    simplified = re.sub(r"\[[^\]]*\]", "", simplified)
-    return bool(re.search(r"[dy]", simplified) or re.search(r"m", simplified))
-
-
-class XlsxUpdater(XlsxEditMixin):
+class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
     """Replace the data region of sheets in an existing XLSX or XLSM file.
 
     The workbook, styles, drawings and all unrelated ZIP members are kept in
@@ -100,29 +85,6 @@ class XlsxUpdater(XlsxEditMixin):
         self._shared_strings_dirty = False
         self._use_shared_strings = False
         self._stream_shared_strings: DiskStringIndex | None = None
-
-    def close(self) -> None:
-        """Release temporary files held by the updater.
-
-        While in use, the updater keeps shared-string data and staged package
-        parts on disk.  Calling ``close`` (or simply dropping the updater)
-        removes them.
-        """
-
-        if self._stream_shared_strings is not None:
-            self._stream_shared_strings.close()
-        self._package.close()
-
-    def __del__(self):
-        try:
-            self.close()
-        except Exception:
-            pass
-
-    def get_sheet_names(self) -> list[str]:
-        """Return worksheet names in workbook order."""
-
-        return list(self._sheets)
 
     def replace_sheet_data(
         self,
@@ -226,47 +188,6 @@ class XlsxUpdater(XlsxEditMixin):
         self._package.set(sheet_path, updated_sheet_xml.encode("utf-8"))
         self._commit_shared_strings()
         self._patch_pivot_metadata(sheet_name, len(materialized), dimension_ref)
-
-    def replace_sheet_data_stream(
-        self,
-        sheet_name: str,
-        rows: Iterable[Sequence[Any]],
-        *,
-        headers: Sequence[str] | None = None,
-        style_fallback: StyleFallback = "inherit",
-    ) -> None:
-        """Replace worksheet data atomically while streaming rows.
-
-        The package and disk-backed shared-string index are committed only
-        after the one-pass row source and all metadata updates succeed.  A
-        failure therefore leaves this updater reusable for a later attempt.
-        """
-
-        if style_fallback not in ("inherit", "general"):
-            raise ValueError("style_fallback must be 'inherit' or 'general'")
-        if sheet_name not in self._sheets:
-            raise KeyError(f"Worksheet not found: {sheet_name}")
-
-        self._ensure_stream_shared_strings()
-        store = self._stream_shared_strings
-        self._package.begin_transaction()
-        try:
-            if store is not None:
-                store.begin_transaction()
-            self._replace_sheet_data_stream_impl(
-                sheet_name,
-                rows,
-                headers=headers,
-                style_fallback=style_fallback,
-            )
-            self._package.commit_transaction()
-            if store is not None:
-                store.commit_transaction()
-        except BaseException:
-            if store is not None:
-                store.rollback_transaction()
-            self._package.rollback_transaction()
-            raise
 
     def _replace_sheet_data_stream_impl(
         self,
@@ -407,16 +328,6 @@ class XlsxUpdater(XlsxEditMixin):
                 except FileNotFoundError:
                     pass
 
-    def save(self, output_path: str | os.PathLike[str] | None = None) -> None:
-        """Save to a new path or atomically replace the input file."""
-
-        self._package.save(output_path)
-
-    def to_bytes(self) -> bytes:
-        """Return the current package as XLSX bytes."""
-
-        return self._package.to_bytes()
-
     def _load_sheet_structure(self) -> dict[str, str]:
         workbook_rels_path = "xl/_rels/workbook.xml.rels"
         if not self._package.has(workbook_rels_path):
@@ -429,8 +340,8 @@ class XlsxUpdater(XlsxEditMixin):
         def start_element(name: str, attrs: dict[str, str]) -> None:
             if local_xml_name(name) != "sheet":
                 return
-            sheet_name = _xml_attribute(attrs, "name")
-            relationship_id = _xml_attribute(attrs, "id")
+            sheet_name = xml_attribute(attrs, "name")
+            relationship_id = xml_attribute(attrs, "id")
             if not sheet_name or not relationship_id:
                 return
             target = relationships.get(relationship_id)
@@ -455,7 +366,7 @@ class XlsxUpdater(XlsxEditMixin):
             nonlocal date_1904
             if local_xml_name(name) != "workbookPr":
                 return
-            value = _xml_attribute(attrs, "date1904")
+            value = xml_attribute(attrs, "date1904")
             date_1904 = value is not None and value.strip().lower() in {
                 "1",
                 "true",
@@ -482,7 +393,7 @@ class XlsxUpdater(XlsxEditMixin):
             nonlocal current_row, current_column, row_sequence
             local = local_xml_name(name)
             if local == "row":
-                row_value = _xml_attribute(attrs, "r")
+                row_value = xml_attribute(attrs, "r")
                 if row_value:
                     current_row = int(row_value)
                     row_sequence = current_row
@@ -491,8 +402,8 @@ class XlsxUpdater(XlsxEditMixin):
                     current_row = row_sequence
                 current_column = 0
             elif local == "c" and current_row is not None:
-                style_value = _xml_attribute(attrs, "s")
-                reference = _xml_attribute(attrs, "r")
+                style_value = xml_attribute(attrs, "s")
+                reference = xml_attribute(attrs, "r")
                 column = (
                     column_letter_to_index(reference) if reference else current_column
                 )
@@ -535,7 +446,7 @@ class XlsxUpdater(XlsxEditMixin):
 
         def start_element(name: str, attrs: dict[str, str]) -> None:
             nonlocal count
-            if local_xml_name(name) == "c" and _xml_attribute(attrs, "t") == "s":
+            if local_xml_name(name) == "c" and xml_attribute(attrs, "t") == "s":
                 count += 1
 
         parser.StartElementHandler = start_element
@@ -564,7 +475,7 @@ class XlsxUpdater(XlsxEditMixin):
             nonlocal total_count, in_shared_item, in_text, text_parts
             local = local_xml_name(name)
             if local == "sst":
-                count_value = _xml_attribute(attrs, "count")
+                count_value = xml_attribute(attrs, "count")
                 total_count = int(count_value) if count_value else None
             elif local == "si":
                 in_shared_item = True
@@ -677,7 +588,7 @@ class XlsxUpdater(XlsxEditMixin):
         )
         items = "".join(
             f'<{self._shared_strings_prefix}si>'
-            f'<{self._shared_strings_prefix}t{self._xml_space_attribute(value)}>'
+            f'<{self._shared_strings_prefix}t{xml_space_attribute(value)}>'
             f'{escape_xml_text(value)}</{self._shared_strings_prefix}t>'
             f'</{self._shared_strings_prefix}si>'
             for value in self._shared_strings_pending
@@ -693,19 +604,6 @@ class XlsxUpdater(XlsxEditMixin):
         self._shared_strings_pending.clear()
         self._shared_strings_dirty = False
 
-    def _shared_string_index(self, value: str) -> int:
-        if self._stream_shared_strings is not None:
-            return self._stream_shared_strings.get_or_add(value)
-        index = self._shared_string_indices.get(value)
-        if index is None:
-            index = len(self._shared_strings_values)
-            self._shared_strings_values.append(value)
-            self._shared_string_indices[value] = index
-            self._shared_strings_pending.append(value)
-        self._shared_strings_total += 1
-        self._shared_strings_dirty = True
-        return index
-
     @staticmethod
     def _shared_string_ref_count(sheet_xml: str) -> int:
         count = 0
@@ -713,21 +611,12 @@ class XlsxUpdater(XlsxEditMixin):
 
         def start_element(name: str, attrs: dict[str, str]) -> None:
             nonlocal count
-            if local_xml_name(name) == "c" and _xml_attribute(attrs, "t") == "s":
+            if local_xml_name(name) == "c" and xml_attribute(attrs, "t") == "s":
                 count += 1
 
         parser.StartElementHandler = start_element
         parser.Parse(sheet_xml.encode("utf-8"), True)
         return count
-
-    @staticmethod
-    def _xml_space_attribute(value: str) -> str:
-        preserve = (
-            value[:1].isspace()
-            or value[-1:].isspace()
-            or any(character in value for character in "\t\n\r")
-        )
-        return ' xml:space="preserve"' if preserve else ""
 
     @staticmethod
     def _dimension_ref(total_rows: int, last_col: int) -> str:
@@ -749,7 +638,7 @@ class XlsxUpdater(XlsxEditMixin):
             nonlocal current_row, current_column, row_sequence
             local = local_xml_name(name)
             if local == "row":
-                row_value = _xml_attribute(attrs, "r")
+                row_value = xml_attribute(attrs, "r")
                 if row_value:
                     current_row = int(row_value)
                     row_sequence = current_row
@@ -758,8 +647,8 @@ class XlsxUpdater(XlsxEditMixin):
                     current_row = row_sequence
                 current_column = 0
             elif local == "c" and current_row is not None:
-                style_value = _xml_attribute(attrs, "s")
-                reference = _xml_attribute(attrs, "r")
+                style_value = xml_attribute(attrs, "s")
+                reference = xml_attribute(attrs, "r")
                 column = (
                     column_letter_to_index(reference) if reference else current_column
                 )
@@ -808,15 +697,15 @@ class XlsxUpdater(XlsxEditMixin):
             depth += 1
             local = local_xml_name(name)
             if local == "numFmt":
-                number_format_id = _xml_attribute(attrs, "numFmtId")
-                format_code = _xml_attribute(attrs, "formatCode")
+                number_format_id = xml_attribute(attrs, "numFmtId")
+                format_code = xml_attribute(attrs, "formatCode")
                 if number_format_id and format_code:
                     custom_formats[int(number_format_id)] = format_code
             elif local == "cellXfs":
                 in_cell_xfs = True
                 cell_xfs_depth = depth
             elif local == "xf" and in_cell_xfs and depth == cell_xfs_depth + 1:
-                number_format_id = _xml_attribute(attrs, "numFmtId")
+                number_format_id = xml_attribute(attrs, "numFmtId")
                 cell_xfs.append(int(number_format_id) if number_format_id else 0)
 
         def end_element(name: str) -> None:
@@ -835,7 +724,7 @@ class XlsxUpdater(XlsxEditMixin):
             if number_format_id in built_in_date_formats:
                 return index
             format_code = custom_formats.get(number_format_id)
-            if format_code and _date_like_format(format_code):
+            if format_code and date_like_format(format_code):
                 return index
         return None
 
@@ -903,14 +792,9 @@ class XlsxUpdater(XlsxEditMixin):
             index = self._shared_string_index(text)
             return f'{cell_prefix} t="s"><{prefix}v>{index}</{prefix}v></{prefix}c>'
         return (
-            f'{cell_prefix} t="inlineStr"><{prefix}is><{prefix}t{self._xml_space_attribute(text)}>'
+            f'{cell_prefix} t="inlineStr"><{prefix}is><{prefix}t{xml_space_attribute(text)}>'
             f"{escape_xml_text(text)}</{prefix}t></{prefix}is></{prefix}c>"
         )
-
-    def _date_to_serial(self, value: _datetime.date | _datetime.datetime) -> float:
-        if isinstance(value, _datetime.datetime):
-            value = value.replace(tzinfo=None)
-        return datetime_to_serial(value, self._date_1904)
 
     @staticmethod
     def _row_xml(row_number: int, cells: list[str], prefix: str = "") -> str:
@@ -1174,9 +1058,6 @@ class XlsxUpdater(XlsxEditMixin):
                 + xml_data[root_match.end() :]
             )
             self._package.set(path, xml_data.encode("utf-8"))
-
-    def _package_names(self) -> list[str]:
-        return self._package.names()
 
 
 # XLSM is the macro-enabled OOXML variant of XLSX.  Keep a named alias for

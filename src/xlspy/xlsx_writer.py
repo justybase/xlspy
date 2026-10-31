@@ -313,12 +313,6 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         DefinedName(name, "0", scope)
         self._defined_names.pop((name.casefold(), scope), None)
 
-    def set_workbook_protection(self, protection: WorkbookProtection) -> None:
-        self._require_writable()
-        if not isinstance(protection, WorkbookProtection):
-            raise TypeError("protection must be WorkbookProtection")
-        self._workbook_protection = protection
-
     def _staging_bytes(self):
         # File-object targets are staged under the same in-memory limit as the rows.
         return self._spool_max_bytes
@@ -2240,13 +2234,6 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
     def _breaks_xml(tag: str, breaks, max_value: int) -> str:
         items = "".join(f'<brk id="{value}" max="{max_value}" man="1"/>' for value in breaks)
         return f'<{tag} count="{len(breaks)}" manualBreakCount="{len(breaks)}">{items}</{tag}>'
-
-    def _sheet_index_by_name(self, name: str) -> int | None:
-        folded = name.casefold()
-        for index, (sheet_name, _data, _hidden) in enumerate(self._worksheet_data):
-            if sheet_name.casefold() == folded:
-                return index
-        return None
 
     def _append_pivot_rows(self, sink, renders, body) -> None:
         """Write pivot cells below the streamed rows of the source sheet."""
