@@ -172,7 +172,7 @@ def read_xlsx_shared_strings(data):
 
 def encode_xlsx_row(row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,
                     use_shared_strings, style_ids=None, fmt_xf=None, row_attrs=None):
-    """(row_xml, uniq, all) natively, or None to use the Python row writer
+    """(row_xml as UTF-8 bytes, uniq, all) natively, or None to use the Python row writer
     (unencodable rows, and tuple-formatted cells whose xf is not in
     ``fmt_xf`` yet).  ``row_attrs`` are extra ``<row>`` attributes.  Native errors
     propagate."""

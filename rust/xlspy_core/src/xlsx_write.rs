@@ -4,7 +4,9 @@
 
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDate, PyDateTime, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
+use pyo3::types::{
+    PyBool, PyBytes, PyDate, PyDateTime, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple,
+};
 
 use crate::cells::{
     Cell, Serial, Sst, Styles, date_style_xf, excel_serial, fmt_tuple_kind, fmt_xf_value, rollback,
@@ -279,7 +281,7 @@ pub fn encode_xlsx_row<'py>(
     style_ids: Option<&Bound<'py, PyAny>>,
     fmt_xf: Option<&Bound<'py, PyAny>>,
     row_attrs: Option<&Bound<'py, PyAny>>,
-) -> PyResult<Option<(Bound<'py, PyString>, u32, u32)>> {
+) -> PyResult<Option<(Bound<'py, PyBytes>, u32, u32)>> {
     let (uniq, all, row_idx) = (u32_mask(sst_uniq)?, u32_mask(sst_all)?, u32_mask(row_idx)?);
     let use_sst = use_shared_strings.is_truthy()?;
     let none = py.None().into_bound(py);
@@ -373,10 +375,9 @@ pub fn encode_xlsx_row<'py>(
         Ok(true) => {
             row.out.extend_from_slice(b"</row>");
             let (uniq, all) = row.sst.as_ref().map_or((uniq, all), |s| (s.uniq, s.all));
-            // Valid UTF-8 by construction: ASCII markup and UTF-8 text from str.
-            let xml =
-                String::from_utf8(row.out).map_err(|e| PyTypeError::new_err(e.to_string()))?;
-            Ok(Some((PyString::new(py, &xml), uniq, all)))
+            // UTF-8 by construction (ASCII markup and UTF-8 text from str), so the
+            // Python writer can write the bytes to the sheet part as they are.
+            Ok(Some((PyBytes::new(py, &row.out), uniq, all)))
         }
         other => {
             rollback(dict, list, list_before);

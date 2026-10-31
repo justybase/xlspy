@@ -111,8 +111,8 @@ from .styles import (
 
 # Rows sampled for automatic column widths (the historical limit).
 _WIDTH_SAMPLE_ROWS = 100
-# Encoded row text is handed to the spool once it grows past this size.
-_FLUSH_CHARS = 1 << 20
+# Encoded row bytes are handed to the spool once they grow past this size.
+_FLUSH_BYTES = 1 << 20
 # Shared-string entries written per chunk of sharedStrings.xml.
 _SST_CHUNK_STRINGS = 4096
 # Larger spools cost resident memory without making writes faster: 1 MiB
@@ -1714,7 +1714,8 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         header_rows: dict = {}
         num_rows = 0
         max_cols = 0
-        buf = io.StringIO()
+        buf = io.BytesIO()  # encoded rows waiting for the spool
+        text = io.StringIO()  # one Python-written row at a time, encoded once
         row_style_ids_cache = {}
         ss_dict, ss_list = self._shared_strings_dict, self._shared_strings
         use_sst, fmt_xf = self._useSharedStrings, self._fmt_xf
@@ -1749,25 +1750,25 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             if c_row is not None:
                 row_xml, self._sst_unique_count, self._sst_all_count = c_row
                 buf.write(row_xml)
-                if buf.tell() >= _FLUSH_CHARS:
-                    spool.write(buf.getvalue().encode('utf-8'))
-                    buf = io.StringIO()
-                continue
-            buf.write(f'<row r="{row_idx + 1}"{row_attrs}>')
-            self._write_row_cells(buf, row, row_idx, row_styles, hyperlinks)
-            buf.write('</row>')
-            if buf.tell() >= _FLUSH_CHARS:
-                spool.write(buf.getvalue().encode('utf-8'))
-                buf = io.StringIO()
+            else:
+                text.write(f'<row r="{row_idx + 1}"{row_attrs}>')
+                self._write_row_cells(text, row, row_idx, row_styles, hyperlinks)
+                text.write('</row>')
+                buf.write(text.getvalue().encode('utf-8'))
+                text.seek(0)
+                text.truncate()
+            if buf.tell() >= _FLUSH_BYTES:
+                spool.write(buf.getvalue())
+                buf = io.BytesIO()
         if row_outline is not None:
             # Grouped rows and summary rows past the data are written empty.
             for row_idx in row_outline.indices_from(num_rows):
                 row_attrs = self._row_attrs(row_idx, heights, hidden_row_set, row_outline)
-                buf.write(f'<row r="{row_idx + 1}"{row_attrs}/>')
-                if buf.tell() >= _FLUSH_CHARS:
-                    spool.write(buf.getvalue().encode('utf-8'))
-                    buf = io.StringIO()
-        spool.write(buf.getvalue().encode('utf-8'))
+                buf.write(f'<row r="{row_idx + 1}"{row_attrs}/>'.encode('utf-8'))
+                if buf.tell() >= _FLUSH_BYTES:
+                    spool.write(buf.getvalue())
+                    buf = io.BytesIO()
+        spool.write(buf.getvalue())
         if num_rows == 0:
             max_cols = 1
         return _SheetBody(num_rows, max_cols, head, hyperlinks, header_rows=header_rows)
