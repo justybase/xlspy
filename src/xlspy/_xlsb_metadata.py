@@ -165,9 +165,13 @@ def merge_ranges(data):
     return [struct.unpack("<IIII", payload) for record, payload in records(data) if record.record_id == 0xB0]
 
 
-def check_merged_refs(data, refs):
-    for r1, r2, c1, c2 in merge_ranges(data):
-        for ref in refs:
-            col, row, _, _ = parse_cell_range(ref)
+def check_merged_refs(data, refs, ranges=None):
+    """``ranges`` (already decoded BrtMergeCell tuples) saves a scan of ``data``."""
+    ranges = merge_ranges(data) if ranges is None else ranges
+    if not ranges:
+        return
+    coordinates = [parse_cell_range(ref)[:2] for ref in refs]
+    for r1, r2, c1, c2 in ranges:
+        for col, row in coordinates:
             if c1 <= col <= c2 and r1 <= row <= r2 and (col, row) != (c1, r1):
                 raise ValueError("merged cells must use their top-left cell")

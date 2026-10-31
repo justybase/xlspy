@@ -22,11 +22,19 @@ from ._xlsb_metadata import (
 from ._xlsb_formulas import FormulaContext, formula_cell
 from ._xlsx_edit import XlsxEditMixin
 from .biff_utils import build_record
-from .comments import Comment, V, VML_TYPE, comment_part_targets, find_comment_parts, normalize_comments, vml_xml, resolve_part
+from .comments import Comment, V, VML_TYPE, comment_part_targets, find_comment_parts, normalize_comments, vml_xml, rels_path, resolve_part
 from .excel_dates import datetime_to_serial
 from .formulas import Formula
 from .refs import parse_cell_range
 from .updater_utils import unwrap_cell
+
+
+_HYPERLINK_TYPE = REL + "/hyperlink"
+_MERGE_RECORDS = frozenset({0xB0, 0xB1, 0xB2})
+# Worksheet records that follow the merged cells / the hyperlinks in schema
+# order ([MS-XLSB] 2.1.7.62): a new block is inserted before the first one found.
+_AFTER_HYPERLINKS = (0x1DD, 0x1DC, 0x1DE, 0x1DF, 0x188, 0x18A, 0x226, 0x227, 0x294, 0x82)
+_AFTER_MERGES = (0x1CD, 0x23D, 0x1EE) + _AFTER_HYPERLINKS
 
 
 def request_recalculation(data):
@@ -181,6 +189,106 @@ class XlsbEditMixin(XlsxEditMixin):
         data = replace_records(data, {SHEET_PROTECTION, SHEET_PROTECTION_ISO}, sheet_protection_bin(protection), before=(0xA1, 0xB1, 0x1CD, 0x1EE, 0x1DC, 0x226, 0x227, 0x294, 0x82))
         self._apply_parts({path: data})
 
+    def set_merged_cells(self, sheet_name: str, ranges) -> None:
+        """Replace the sheet's merged ranges with ``ranges`` (A1 range strings)."""
+        from .writer import XlsbWriter
+
+        path, data = self._sheet_bin(sheet_name)
+        refs = XlsbWriter._normalize_merges(list(ranges)) or []
+        block = b""
+        if refs:
+            block = build_record(0xB1, struct.pack('<I', len(refs)))
+            for ref in refs:
+                c1, r1, c2, r2 = parse_cell_range(ref)
+                block += build_record(0xB0, struct.pack('<IIII', r1, r2, c1, c2))
+            block += build_record(0xB2)
+        if not block and not any(r.record_id in _MERGE_RECORDS for r, _ in records(data)):
+            return
+        self._apply_parts({path: replace_records(data, _MERGE_RECORDS, block, before=_AFTER_MERGES)})
+
+    def set_hyperlinks(self, sheet_name: str, links) -> None:
+        """Replace all of the sheet's hyperlinks with ``links`` ({cell: Hyperlink}).
+
+        External targets reuse the sheet's hyperlink relationships, new ones get
+        fresh ids and relationships no longer used are dropped.
+        """
+        from .hyperlinks import Hyperlink
+        from .writer import _hlink_payload
+
+        path, data = self._sheet_bin(sheet_name)
+        entries = []
+        for ref, link in links.items():
+            if not isinstance(link, Hyperlink):
+                raise TypeError("hyperlinks must be xlspy Hyperlink objects")
+            col, row, _, _ = parse_cell_range(cell_ref(ref))
+            entries.append((row, col, link))
+        entries.sort(key=lambda entry: entry[:2])
+
+        rels_name = rels_path(path)
+        has_rels = self._package.has(rels_name)
+        root = ET.fromstring(self._package.get(rels_name)) if has_rels else ET.Element(f"{{{PKG_REL}}}Relationships")
+        by_target = {
+            rel.get('Target'): rel.get('Id') for rel in root
+            if rel.get('Type') == _HYPERLINK_TYPE and rel.get('TargetMode') == 'External'
+        }
+        taken = {rel.get('Id') for rel in root}
+        used = set()
+        rels_changed = False
+        block = []
+        for row, col, link in entries:
+            rid = None
+            if not link.is_internal:
+                rid = by_target.get(link.target)
+                if rid is None:
+                    number = 1
+                    while f"rId{number}" in taken:
+                        number += 1
+                    rid = f"rId{number}"
+                    taken.add(rid)
+                    ET.SubElement(root, f"{{{PKG_REL}}}Relationship", {
+                        'Id': rid, 'Type': _HYPERLINK_TYPE, 'Target': link.target,
+                        'TargetMode': 'External',
+                    })
+                    by_target[link.target] = rid
+                    rels_changed = True
+                used.add(rid)
+            block.append(build_record(0x1EE, _hlink_payload(row, col, link, rid)))
+        for rel in list(root):
+            if rel.get('Type') == _HYPERLINK_TYPE and rel.get('Id') not in used:
+                root.remove(rel)
+                rels_changed = True
+        if not block and not any(r.record_id == 0x1EE for r, _ in records(data)):
+            return
+        parts = {path: replace_records(data, {0x1EE}, b''.join(block), before=_AFTER_HYPERLINKS)}
+        if rels_changed:
+            ET.register_namespace("", PKG_REL)
+            parts[rels_name] = (
+                b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                + ET.tostring(root, encoding='utf-8', xml_declaration=False)
+            )
+        self._apply_parts(parts)
+
+    def set_data_validations(self, sheet_name: str, rules) -> None:
+        """Replace the sheet's data validation rules with ``rules``."""
+        from ._xlsb_validation import BRT_BEGIN_DVALS, BRT_DVAL, BRT_END_DVALS, validations_bin
+        from .data_validation import DataValidation
+
+        rules = list(rules)
+        for rule in rules:
+            if not isinstance(rule, DataValidation):
+                raise TypeError("data validations must be xlspy DataValidation objects")
+        path, data = self._sheet_bin(sheet_name)
+        targets = {BRT_BEGIN_DVALS, BRT_DVAL, BRT_END_DVALS}
+        if not rules and not any(r.record_id in targets for r, _ in records(data)):
+            return
+        original_workbook = self._package.get('xl/workbook.bin')
+        context = FormulaContext(self._sheets, original_workbook)
+        block = validations_bin(rules, context)
+        self._apply_parts({
+            path: replace_records(data, targets, block, before=(0x1EE,) + _AFTER_HYPERLINKS),
+            'xl/workbook.bin': context.write_workbook(original_workbook),
+        })
+
     def set_workbook_protection(self, protection: WorkbookProtection) -> None:
         if not isinstance(protection, WorkbookProtection):
             raise TypeError("protection must be WorkbookProtection")
@@ -204,9 +312,16 @@ class XlsbEditMixin(XlsxEditMixin):
         updates[rp] = ET.tostring(rels, encoding='utf-8')
         updates['[Content_Types].xml'] = ET.tostring(types, encoding='utf-8')
 
-    def update_cells(self, sheet_name: str, cells: Mapping[str, object]) -> None:
+    def update_cells(self, sheet_name: str, cells: Mapping[str, object], *,
+                     styles: Mapping[str, int] | None = None) -> None:
+        """Set cell values; ``styles`` maps addresses to cell XF indexes.
+
+        An address only in ``styles`` keeps its value (or becomes a styled blank).
+        """
         if not isinstance(cells, Mapping):
             raise TypeError("cells must map single-cell addresses to values")
+        if styles is not None and not isinstance(styles, Mapping):
+            raise TypeError("styles must map single-cell addresses to XF indexes")
         path, data = self._sheet_bin(sheet_name)
         values = {}
         for ref, value in cells.items():
@@ -214,10 +329,20 @@ class XlsbEditMixin(XlsxEditMixin):
             if ref in values:
                 raise ValueError(f"duplicate cell address {ref}")
             values[ref] = unwrap_cell(value)
-        if not values:
+        targets = dict(values)
+        style_ids = {}
+        for ref, xf in (styles or {}).items():
+            ref = cell_ref(ref)
+            if not isinstance(xf, int) or isinstance(xf, bool) or not 0 <= xf < 0xFFFFFF:
+                raise ValueError(f"invalid cell style index {xf!r} for {ref}")
+            style_ids[ref] = xf
+            targets.setdefault(ref, KEEP)
+        if not targets:
             return
-        check_merged_refs(data, values)
         all_records = list(records(data))
+        check_merged_refs(data, values, [
+            struct.unpack_from('<IIII', payload) for record, payload in all_records if record.record_id == 0xB0
+        ])
         for record, payload in all_records:
             if record.record_id in (0x1AA, 0x1AB, 0x1AC):
                 r1, r2, c1, c2 = struct.unpack_from('<IIII', payload)
@@ -234,18 +359,23 @@ class XlsbEditMixin(XlsxEditMixin):
         end = next(r for r, _ in all_records if r.record_id == 0x92)
         row_starts = [(r, payload) for r, payload in all_records if r.record_id == 0 and begin.data_end <= r.header_start < end.header_start]
         by_row = {}
-        for ref, value in values.items():
+        for ref, value in targets.items():
             col, row, _, _ = parse_cell_range(ref)
-            by_row.setdefault(row, {})[col] = value
+            by_row.setdefault(row, {})[col] = (value, style_ids.get(ref))
         output = [data[:begin.data_end]]
         cursor = begin.data_end
         removed_shared_refs = 0
+        pending = sorted(by_row)
+        next_pending = 0
         for index, (row_record, payload) in enumerate(row_starts):
             row = struct.unpack_from('<I', payload)[0]
             row_end = row_starts[index + 1][0].header_start if index + 1 < len(row_starts) else end.header_start
             output.append(data[cursor:row_record.header_start])
-            for new_row in sorted(n for n in by_row if n < row):
-                output.append(new_row_bytes(new_row, by_row.pop(new_row), context, sheet_name, self._date_1904))
+            while next_pending < len(pending) and pending[next_pending] < row:
+                new_row = pending[next_pending]
+                next_pending += 1
+                if new_row in by_row:
+                    output.append(new_row_bytes(new_row, by_row.pop(new_row), context, sheet_name, self._date_1904))
             if row in by_row:
                 edited, count = patch_row(data[row_record.header_start:row_end], by_row.pop(row), context, sheet_name, row, self._date_1904)
                 output.append(edited)
@@ -258,7 +388,7 @@ class XlsbEditMixin(XlsxEditMixin):
             output.append(new_row_bytes(row, by_row[row], context, sheet_name, self._date_1904))
         output.append(data[end.header_start:])
         patched = b''.join(output)
-        coordinates = [parse_cell_range(ref) for ref in values]
+        coordinates = [parse_cell_range(ref) for ref in targets]
         # Existing cells count too: XlsbWriter stores an A1:A1 placeholder.
         current_row, previous_column = None, -1
         for record, payload in all_records:
@@ -271,12 +401,17 @@ class XlsbEditMixin(XlsxEditMixin):
                 previous_column = column
                 if column < 16384:
                     coordinates.append((column, current_row, column, current_row))
-        dimension = next((payload for record, payload in all_records if record.record_id == 0x94), None)
+        dimension = next(((record, payload) for record, payload in all_records if record.record_id == 0x94), None)
         if dimension is not None:
-            r1, r2, c1, c2 = struct.unpack('<IIII', dimension)
+            r1, r2, c1, c2 = struct.unpack('<IIII', dimension[1])
             coordinates.append((c1, r1, c2, r2))
         bounds = struct.pack('<IIII', min(v[1] for v in coordinates), max(v[3] for v in coordinates), min(v[0] for v in coordinates), max(v[2] for v in coordinates))
-        patched = replace_records(patched, {0x94}, build_record(0x94, bounds), before=(0x85, 0x91))
+        if dimension is not None and dimension[0].data_end <= begin.header_start:
+            # Before the sheet data, so its offsets are unchanged in ``patched``.
+            record = dimension[0]
+            patched = patched[:record.header_start] + build_record(0x94, bounds) + patched[record.data_end:]
+        else:
+            patched = replace_records(patched, {0x94}, build_record(0x94, bounds), before=(0x85, 0x91))
         updates, removed = {path: patched}, []
         if context is not None:
             updates['xl/workbook.bin'] = context.write_workbook(original_workbook)
@@ -339,13 +474,26 @@ def encode_cell(value, column, style, context, sheet, row, date_1904=False):
     return build_record(6, header + wide_string(value))
 
 
+# A style-only edit: the cell keeps its record (and value), only its XF changes.
+KEEP = object()
+
+
+def _encode_entry(entry, column, current_style, context, sheet, row, date_1904):
+    """Encode a ``(value, style)`` edit of a cell that has no record to keep."""
+    value, style = entry
+    style = current_style if style is None else style
+    return encode_cell(None if value is KEEP else value, column, style, context, sheet, row, date_1904)
+
+
 def new_row_bytes(row, values, context, sheet, date_1904=False):
     payload = bytearray(25)
     struct.pack_into('<I', payload, 0, row)
     struct.pack_into('<I', payload, 8, 300)
     payload[13] = 1
     struct.pack_into('<II', payload, 17, min(values), max(values))
-    return build_record(0, payload) + b''.join(encode_cell(values[col], col, 0, context, sheet, row, date_1904) for col in sorted(values))
+    return build_record(0, payload) + b''.join(
+        _encode_entry(values[col], col, 0, context, sheet, row, date_1904) for col in sorted(values)
+    )
 
 
 def patch_row(data, values, context, sheet, row, date_1904):
@@ -373,17 +521,27 @@ def patch_row(data, values, context, sheet, row, date_1904):
             previous_column = column
             last_column = max(last_column, column)
             for new_column in sorted(col for col in pending if col < column):
-                output.append(encode_cell(pending.pop(new_column), new_column, 0, context, sheet, row, date_1904))
+                output.append(_encode_entry(pending.pop(new_column), new_column, 0, context, sheet, row, date_1904))
             if column in pending:
-                style = struct.unpack_from('<I', full_payload, 4)[0]
-                output.append(encode_cell(pending.pop(column), column, style, context, sheet, row, date_1904))
-                removed_shared += full_kind == 7
+                value, style = pending.pop(column)
+                current = struct.unpack_from('<I', full_payload, 4)[0]
+                if value is KEEP:
+                    # Keep the upper flag bits (fPhShow) of the style field.
+                    new_payload = bytearray(full_payload)
+                    struct.pack_into('<I', new_payload, 4, (current & 0xFF000000) | style)
+                    output.append(build_record(full_kind, bytes(new_payload)))
+                else:
+                    output.append(encode_cell(
+                        value, column, current if style is None else (current & 0xFF000000) | style,
+                        context, sheet, row, date_1904,
+                    ))
+                    removed_shared += full_kind == 7
             else:
                 output.append(build_record(full_kind, full_payload) if kind >= 0xC else data[record.header_start:record.data_end])
         else:
             output.append(data[record.header_start:record.data_end])
     for column in sorted(pending):
-        output.append(encode_cell(pending[column], column, 0, context, sheet, row, date_1904))
+        output.append(_encode_entry(pending[column], column, 0, context, sheet, row, date_1904))
     if row_header is None:
         raise ValueError("row header was not found")
     if len(row_header) >= 25:

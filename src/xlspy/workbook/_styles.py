@@ -11,19 +11,21 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import re
 from xml.etree import ElementTree as ET
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 
 from .._metadata import MAIN
 from ..styles import (
     Alignment,
     Border,
     Color,
+    DifferentialStyle,
     Font,
     GradientFill,
     PatternFill,
     Protection,
     Side,
     Stop,
+    NamedStyle,
     Style,
     _border_key,
     _color_key,
@@ -117,6 +119,30 @@ def _int(value: str | None) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+def _read_differential(node: ET.Element) -> DifferentialStyle:
+    """Read one ``<dxf>`` element used by conditional formatting."""
+    font_node = node.find(_q("font"))
+    fill_node = node.find(_q("fill"))
+    border_node = node.find(_q("border"))
+    alignment_node = node.find(_q("alignment"))
+    protection_node = node.find(_q("protection"))
+    numfmt_node = node.find(_q("numFmt"))
+    return DifferentialStyle(
+        font=_read_font(font_node) if font_node is not None else None,
+        fill=_read_fill(fill_node) if fill_node is not None else None,
+        border=_read_border(border_node) if border_node is not None else None,
+        number_format=(
+            numfmt_node.get("formatCode") if numfmt_node is not None else None
+        ),
+        alignment=(
+            _read_alignment(alignment_node) if alignment_node is not None else None
+        ),
+        protection=(
+            _read_protection(protection_node) if protection_node is not None else None
+        ),
+    )
 
 
 def _read_color(node: ET.Element | None) -> Color | None:
@@ -375,6 +401,10 @@ class XlsxStyleTable:
         self.custom_num_formats: set[int] = set()
         self.xfs: list[_Xf] = []
         self.styles: list[Style] = []
+        self.dxfs: list[DifferentialStyle | None] = []
+        self.named_styles: list[str] = []
+        self.cell_style_xfs: list[Style] = []
+        self.named_style_defs: dict[str, NamedStyle] = {}
         self._font_keys: list[object | None] = []
         self._fill_keys: list[object | None] = []
         self._border_keys: list[object | None] = []
@@ -425,6 +455,9 @@ class XlsxStyleTable:
         self._border_xml = ["<border><left/><right/><top/><bottom/><diagonal/></border>"]
         self.xfs = [_Xf()]
         self.styles = [Style(font=default_font)]
+        self.named_styles = ["Normal"]
+        self.cell_style_xfs = [Style(font=default_font)]
+        self.named_style_defs = {"Normal": NamedStyle("Normal", font=default_font)}
         self._xf_xml = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>']
         self._rebuild_indexes()
 
@@ -438,6 +471,11 @@ class XlsxStyleTable:
                     self.num_formats[num_id] = code
                     self.custom_num_formats.add(num_id)
                     self._next_numfmt_id = max(self._next_numfmt_id, num_id + 1)
+
+        dxfs = root.find(_q("dxfs"))
+        if dxfs is not None:
+            for node in dxfs.findall(_q("dxf")):
+                self.dxfs.append(_read_differential(node))
 
         fonts = root.find(_q("fonts"))
         if fonts is not None:
@@ -484,6 +522,34 @@ class XlsxStyleTable:
             self._border_keys = [None]
             self._border_xml = ["<border><left/><right/><top/><bottom/><diagonal/></border>"]
 
+        style_xfs = root.find(_q("cellStyleXfs"))
+        if style_xfs is not None:
+            for node in style_xfs.findall(_q("xf")):
+                self.cell_style_xfs.append(self._read_style_xf(node))
+
+        cell_styles = root.find(_q("cellStyles"))
+        if cell_styles is not None:
+            for node in cell_styles.findall(_q("cellStyle")):
+                name = node.get("name")
+                if not name:
+                    continue
+                if name not in self.named_styles:
+                    self.named_styles.append(name)
+                xf_id = _int(node.get("xfId"))
+                if xf_id is not None and 0 <= xf_id < len(self.cell_style_xfs):
+                    base = self.cell_style_xfs[xf_id]
+                    self.named_style_defs[name] = NamedStyle(
+                        name=name,
+                        font=base.font,
+                        fill=base.fill,
+                        border=base.border,
+                        number_format=base.number_format,
+                        alignment=base.alignment,
+                        protection=base.protection,
+                        builtinId=_int(node.get("builtinId")),
+                        hidden=node.get("hidden", "0").lower() in {"1", "true"},
+                    )
+
         xfs = root.find(_q("cellXfs"))
         if xfs is not None:
             for node in xfs.findall(_q("xf")):
@@ -498,6 +564,95 @@ class XlsxStyleTable:
                 self.xfs.append(xf)
                 self._xf_xml.append(ET.tostring(node, encoding="unicode"))
         self._rebuild_indexes()
+
+    def _read_style_xf(self, node) -> Style:
+        def component(values, index):
+            index = index or 0
+            return values[index] if 0 <= index < len(values) else None
+
+        number_format = self.num_formats.get(_int(node.get("numFmtId")) or 0)
+        return Style(
+            font=component(self.fonts, _int(node.get("fontId"))),
+            fill=component(self.fills, _int(node.get("fillId"))),
+            border=component(self.borders, _int(node.get("borderId"))),
+            number_format=None if number_format in {None, "General"} else number_format,
+            alignment=_read_alignment(node.find(_q("alignment"))),
+            protection=_read_protection(node.find(_q("protection"))),
+        )
+
+    def _container(self, root, tag: str, default: str):
+        node = next((child for child in root if _local(child.tag) == tag), None)
+        if node is None:
+            self._replace_container(root, tag, [default])
+            node = next(child for child in root if _local(child.tag) == tag)
+        return node
+
+    def _named_xf_xml(self, style: Style) -> str:
+        font_id = self._intern_font(_font_key_from(style.font)) if style.font else 0
+        fill_id = self._intern_fill(_fill_key_from(style.fill)) if style.fill else 0
+        border_key = _border_key(style.border) if style.border else None
+        border_id = self._intern_border(border_key) if border_key is not None else 0
+        number_format = style.number_format
+        numfmt_id = (
+            self._intern_numfmt(number_format)
+            if number_format and number_format != "General" else 0
+        )
+        attrs = [
+            f'numFmtId="{numfmt_id}"', f'fontId="{font_id}"',
+            f'fillId="{fill_id}"', f'borderId="{border_id}"',
+        ]
+        if numfmt_id:
+            attrs.append('applyNumberFormat="1"')
+        if font_id:
+            attrs.append('applyFont="1"')
+        if fill_id:
+            attrs.append('applyFill="1"')
+        if border_id:
+            attrs.append('applyBorder="1"')
+        align_xml = _alignment_xml(style.alignment) if style.alignment is not None else ""
+        prot_xml = _protection_xml(style.protection) if style.protection is not None else ""
+        if align_xml:
+            attrs.append('applyAlignment="1"')
+        if prot_xml:
+            attrs.append('applyProtection="1"')
+        return f'<xf {" ".join(attrs)}>{align_xml}{prot_xml}</xf>'
+
+    def add_named_style(self, style: NamedStyle) -> int:
+        """Append a named style to ``cellStyleXfs``/``cellStyles``."""
+        if not isinstance(style, NamedStyle):
+            raise TypeError("style must be a NamedStyle")
+        if self._root is None:
+            self.to_bytes()
+        root = self._root
+        style_xfs = self._container(
+            root, "cellStyleXfs",
+            '<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>',
+        )
+        base = Style(
+            font=style.font, fill=style.fill, border=style.border,
+            number_format=style.number_format, alignment=style.alignment,
+            protection=style.protection,
+        )
+        xf_index = len(self.cell_style_xfs)
+        style_xfs.append(ET.fromstring(self._named_xf_xml(base)))
+        style_xfs.set("count", str(len(style_xfs)))
+        self.cell_style_xfs.append(base)
+
+        cell_styles = self._container(
+            root, "cellStyles", '<cellStyle name="Normal" xfId="0" builtinId="0"/>',
+        )
+        attrs = f"name={quoteattr(style.name)} xfId={quoteattr(str(xf_index))}"
+        if style.builtinId is not None:
+            attrs += f' builtinId="{style.builtinId}"'
+        if style.hidden:
+            attrs += ' hidden="1"'
+        cell_styles.append(ET.fromstring(f"<cellStyle {attrs}/>"))
+        cell_styles.set("count", str(len(cell_styles)))
+
+        if style.name not in self.named_styles:
+            self.named_styles.append(style.name)
+        self.named_style_defs[style.name] = style
+        return xf_index
 
     def _rebuild_indexes(self) -> None:
         self._font_index = {}
@@ -882,6 +1037,11 @@ class XlsxStyleTable:
             return self.styles[0]
         return self.styles[index]
 
+    def dxf_at(self, index: int | None) -> DifferentialStyle | None:
+        if index is None or not 0 <= index < len(self.dxfs):
+            return None
+        return self.dxfs[index]
+
     def clone(self) -> "XlsxStyleTable":
         import copy
         clone = XlsxStyleTable()
@@ -891,6 +1051,10 @@ class XlsxStyleTable:
         clone.borders = list(self.borders)
         clone.num_formats = dict(self.num_formats)
         clone.custom_num_formats = set(self.custom_num_formats)
+        clone.dxfs = list(self.dxfs)
+        clone.named_styles = list(self.named_styles)
+        clone.cell_style_xfs = list(self.cell_style_xfs)
+        clone.named_style_defs = dict(self.named_style_defs)
         clone.xfs = list(self.xfs)
         clone.styles = list(self.styles)
         clone._font_keys = list(self._font_keys)

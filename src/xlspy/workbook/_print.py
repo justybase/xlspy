@@ -25,6 +25,19 @@ class PageSetup:
     fitToWidth: int | None = None
     fitToHeight: int | None = None
     scale: int | None = None
+    firstPageNumber: int | None = None
+    useFirstPageNumber: bool | None = None
+    paperHeight: str | None = None
+    paperWidth: str | None = None
+    pageOrder: str | None = None
+    usePrinterDefaults: bool | None = None
+    blackAndWhite: bool | None = None
+    draft: bool | None = None
+    cellComments: str | None = None
+    errors: str | None = None
+    horizontalDpi: int | None = None
+    verticalDpi: int | None = None
+    copies: int | None = None
 
 
 @dataclass
@@ -45,6 +58,9 @@ class PrintOptions:
 
     horizontalCentered: bool | None = None
     verticalCentered: bool | None = None
+    headings: bool | None = None
+    gridLines: bool | None = None
+    gridLinesSet: bool | None = None
 
 
 @dataclass
@@ -100,11 +116,19 @@ class HeaderFooterItem:
 
 
 class HeaderFooter:
-    """``ws.HeaderFooter``: the odd-page header and footer (used on every page)."""
+    """``ws.HeaderFooter``: odd/even/first page headers and footers."""
 
     def __init__(self):
+        self.differentFirst = None
+        self.differentOddEven = None
+        self.scaleWithDoc = None
+        self.alignWithMargins = None
         self.oddHeader = HeaderFooterItem()
         self.oddFooter = HeaderFooterItem()
+        self.evenHeader = HeaderFooterItem()
+        self.evenFooter = HeaderFooterItem()
+        self.firstHeader = HeaderFooterItem()
+        self.firstFooter = HeaderFooterItem()
 
 
 def print_settings_for(sheet) -> PrintSettings | None:

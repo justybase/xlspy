@@ -6,7 +6,7 @@ import struct
 from ._xlsb_formulas import FormulaContext, ERRORS, decode_formula, read_parsed
 from ._xlsb_metadata import read_wide
 from .biff_reader import BiffReader
-from .biff_utils import iter_records_stream
+from .biff_utils import iter_record_payloads, iter_records_stream
 from .excel_dates import serial_to_datetime
 
 
@@ -41,14 +41,17 @@ def cached_cell(kind, payload, reader):
             value = serial_to_datetime(value, reader._date_1904)
         elif value.is_integer():
             value = int(value)
-    return value, payload[formula_offset:] if formula_offset is not None else None
+    return value, payload[formula_offset:] if formula_offset is not None else None, style
 
 
-def iter_indexed_rows(reader, sheet_name, *, data_only=True):
+def iter_indexed_rows(reader, sheet_name, *, data_only=True, data=None, with_styles=False):
     """Yield ``(row_number, [(column, value), ...])`` for every BrtRowHdr, with
-    1-based rows and 0-based columns; formulas are decoded when not data_only."""
-    rid = reader._worksheet_name_to_id[sheet_name]
-    path = reader._resolve_path(reader._worksheet_id_to_location[rid])
+    1-based rows and 0-based columns; formulas are decoded when not data_only.
+    With ``with_styles`` the cells are ``(column, value, style_id)``."""
+    path = None
+    if data is None:
+        rid = reader._worksheet_name_to_id[sheet_name]
+        path = reader._resolve_path(reader._worksheet_id_to_location[rid])
     context = FormulaContext(reader.get_sheet_names(), reader._archive.read('xl/workbook.bin')) if not data_only else None
     groups = {}
     current_row = None
@@ -73,12 +76,19 @@ def iter_indexed_rows(reader, sheet_name, *, data_only=True):
 
     def finish():
         # Formula groups follow their master cell, so decode at row end.
-        return current_row + 1, [(column, cell_value(column, value, formula)) for column, value, formula in cells]
+        if with_styles:
+            return current_row + 1, [
+                (column, cell_value(column, value, formula), style)
+                for column, value, formula, style in cells
+            ]
+        return current_row + 1, [
+            (column, cell_value(column, value, formula)) for column, value, formula, _style in cells
+        ]
 
-    with reader._archive.open(path) as stream:
+    def scan(source):
+        nonlocal current_row, cells, previous_column
         in_data = False
-        for record, payload in iter_records_stream(stream):
-            kind = record.record_id
+        for kind, payload in source:
             if kind == 0x91:
                 in_data = True
             elif kind == 0x92:
@@ -99,13 +109,21 @@ def iter_indexed_rows(reader, sheet_name, *, data_only=True):
                 if not 0 <= column < 16384:
                     raise ValueError("XLSB column exceeds Excel limits")
                 previous_column = column
-                value, formula = cached_cell(kind, payload, reader)
-                cells.append((column, value, formula))
+                value, formula, style = cached_cell(kind, payload, reader)
+                cells.append((column, value, formula, style))
             elif in_data and kind in (0x1AA, 0x1AB) and not data_only:
                 r1, r2, c1, c2 = struct.unpack_from('<IIII', payload)
                 groups[(r1, c1)] = (kind, payload[17 if kind == 0x1AA else 16:])
         if current_row is not None:
             yield finish()
+
+    if data is not None:
+        yield from scan(iter_record_payloads(data))
+        return
+    with reader._archive.open(path) as stream:
+        yield from scan(
+            (record.record_id, payload) for record, payload in iter_records_stream(stream)
+        )
 
 
 def sheet_dimension(reader, sheet_name):

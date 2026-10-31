@@ -46,11 +46,18 @@ _ANCHOR = re.compile(r"<(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b.*?</\1>",
 _OBJECT_LISTS = ("charts", "images", "tables", "data_validations", "conditional_formatting")
 
 
+def _object_values(sheet, name: str) -> list:
+    value = getattr(sheet, name)
+    if name == "conditional_formatting":
+        return list(value.all_rules())
+    return list(value)
+
+
 def pending_objects(sheet) -> dict[str, list]:
     """The objects added since the sheet was loaded or last saved."""
     saved = sheet._saved_object_counts
     return {
-        name: list(getattr(sheet, name))[saved.get(name, 0):]
+        name: _object_values(sheet, name)[saved.get(name, 0):]
         for name in _OBJECT_LISTS
     }
 
@@ -63,7 +70,10 @@ def has_pending_objects(sheet) -> bool:
 
 
 def mark_objects_saved(sheet) -> None:
-    sheet._saved_object_counts = {name: len(list(getattr(sheet, name))) for name in _OBJECT_LISTS}
+    sheet._saved_object_counts = {
+        name: len(_object_values(sheet, name)) for name in _OBJECT_LISTS
+    }
+    sheet._saved_object_signatures = object_signatures(sheet)
     sheet._saved_print_settings = print_settings_for(sheet)
 
 
@@ -117,16 +127,25 @@ class _Package:
         self.package = updater._package
         self.parts: dict[str, bytes] = {}
         self.names = set(self.package.names())
+        self.removed: set[str] = set()
         self.types = ET.fromstring(self.package.get("[Content_Types].xml"))
 
     def get(self, path: str) -> bytes | None:
         if path in self.parts:
             return self.parts[path]
+        if path in self.removed:
+            return None
         return self.package.get(path) if path in self.names else None
 
     def set(self, path: str, data: bytes | str) -> None:
         self.parts[path] = data.encode("utf-8") if isinstance(data, str) else data
         self.names.add(path)
+        self.removed.discard(path)
+
+    def remove(self, path: str) -> None:
+        self.parts.pop(path, None)
+        self.names.discard(path)
+        self.removed.add(path)
 
     def free_part(self, directory: str, stem: str, extension: str) -> str:
         index = 1
@@ -162,7 +181,7 @@ class _Package:
     def commit(self) -> None:
         ET.register_namespace("", CT)
         self.set("[Content_Types].xml", _bytes(self.types))
-        self.updater._apply_parts(self.parts)
+        self.updater._apply_parts(self.parts, self.removed - self.parts.keys())
 
 
 class _Sheet:
@@ -191,6 +210,9 @@ class _Sheet:
         p = re.escape(self.prefix)
         pattern = re.compile(rf"<{p}{tag}\b[^>]*?(?:/>|>.*?</{p}{tag}\s*>)", re.S)
         return list(pattern.finditer(self.xml, 0, self._limit()))
+
+    def remove_all(self, tag: str) -> None:
+        self.xml = element_pattern(tag).sub("", self.xml)
 
     def insert(self, tag: str, fragment: str) -> None:
         """Insert before the first element that follows ``tag`` in the schema
@@ -572,6 +594,8 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
 def _existing_tables(package: _Package) -> list[tuple[str, dict]]:
     tables = []
     for name in sorted(package.names):
+        if name in package.removed:
+            continue
         if name.startswith("xl/tables/") and name.endswith(".xml"):
             data = package.get(name)
             if data:
@@ -600,6 +624,7 @@ def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: E
     }
     next_id = max((int(attributes.get("id", 0)) for _, attributes in existing), default=0) + 1
     fragments = []
+    rids = []
     for source in sources:
         xml = scratch[source].decode("utf-8")
         attributes = _attributes(re.search(r"<table\b[^>]*>", xml)[0])
@@ -617,11 +642,21 @@ def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: E
         package.set(target, xml)
         package.override(target, _CONTENT["table"])
         rid = package.add_rel(sheet_rels, sheet_path, "table", target)
+        rids.append(rid)
         fragments.append(f'<tablePart r:id="{rid}"/>')
     host = sheet.find("tableParts")
     if host is None:
-        body = f'<tableParts count="{len(fragments)}">{"".join(fragments)}</tableParts>'
-        sheet.insert("tableParts", _with_namespaces(body, MAIN, r=REL))
+        if sheet.prefix:
+            p = sheet.prefix
+            body = (
+                f'<{p}tableParts count="{len(fragments)}">'
+                + "".join(f'<{p}tablePart r:id="{rid}"/>' for rid in rids)
+                + f"</{p}tableParts>"
+            )
+            sheet.insert("tableParts", body)
+        else:
+            body = f'<tableParts count="{len(fragments)}">{"".join(fragments)}</tableParts>'
+            sheet.insert("tableParts", _with_namespaces(body, MAIN, r=REL))
         return
     body = host[0]
     p = sheet.prefix
@@ -633,6 +668,126 @@ def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: E
     body = body[:position] + added + body[position:]
     body = re.sub(r'\bcount="\d+"', f'count="{count}"', body, count=1)
     sheet.replace(host, body)
+
+
+def _table_signature(table) -> tuple:
+    style = getattr(table, "tableStyleInfo", None)
+    columns = getattr(table, "tableColumns", None)
+    if columns is None:
+        columns = getattr(table, "columns", None) or []
+    return (
+        getattr(table, "displayName", getattr(table, "display_name", None)),
+        getattr(table, "ref", None),
+        tuple(getattr(column, "name", column) for column in columns),
+        getattr(table, "headerRowCount", getattr(table, "header_row", True)),
+        getattr(table, "totalsRowCount", getattr(table, "totals_row", False)),
+        getattr(style, "name", getattr(table, "style_name", None)),
+        getattr(style, "showFirstColumn", getattr(table, "show_first_column", False)),
+        getattr(style, "showLastColumn", getattr(table, "show_last_column", False)),
+        getattr(style, "showRowStripes", getattr(table, "show_row_stripes", True)),
+        getattr(style, "showColumnStripes", getattr(table, "show_column_stripes", False)),
+    )
+
+
+def object_signatures(sheet) -> dict[str, tuple]:
+    return {
+        "tables": tuple(_table_signature(table) for table in sheet.tables),
+        "data_validations": tuple(repr(rule) for rule in sheet.data_validations),
+        "conditional_formatting": tuple(
+            repr(rule) for rule in sheet.conditional_formatting.all_rules()
+        ),
+    }
+
+
+def _as_excel_table(table):
+    from ..styles import ExcelTable
+
+    if isinstance(table, ExcelTable):
+        return table
+    style = getattr(table, "tableStyleInfo", None)
+    return ExcelTable(
+        display_name=table.displayName,
+        ref=table.ref,
+        columns=getattr(table, "columns", None) or None,
+        header_row=bool(getattr(table, "headerRowCount", 1)),
+        totals_row=bool(getattr(table, "totalsRowCount", 0)),
+        style_name=(getattr(style, "name", None) or "TableStyleMedium9"),
+        show_first_column=bool(getattr(style, "showFirstColumn", False)),
+        show_last_column=bool(getattr(style, "showLastColumn", False)),
+        show_row_stripes=bool(getattr(style, "showRowStripes", True)),
+        show_column_stripes=bool(getattr(style, "showColumnStripes", False)),
+    )
+
+
+def _mark_synced_objects(sheet) -> None:
+    for name in ("tables", "data_validations", "conditional_formatting"):
+        sheet._saved_object_counts[name] = len(_object_values(sheet, name))
+    sheet._saved_object_signatures = object_signatures(sheet)
+
+
+def _only_appended(saved, current) -> bool:
+    if saved is None:
+        return False
+    for name in ("tables", "data_validations", "conditional_formatting"):
+        previous, now = saved[name], current[name]
+        if len(now) < len(previous) or now[:len(previous)] != previous:
+            return False
+    return True
+
+
+def sync_objects(updater, workbook, sheet) -> None:
+    """Rewrite tables/validations/CF when any loaded object was edited or removed."""
+    saved = getattr(sheet, "_saved_object_signatures", None)
+    current = object_signatures(sheet)
+    if current == saved or saved is None or _only_appended(saved, current):
+        return
+
+    names = [
+        getattr(table, "displayName", getattr(table, "display_name", None))
+        for table in sheet.tables
+    ]
+    if len(names) != len(set(names)):
+        duplicate = next(name for name in names if names.count(name) > 1)
+        raise ValueError(
+            f"a table named {duplicate!r} already exists in the workbook"
+        )
+
+    objects = {
+        "tables": [_as_excel_table(table) for table in sheet.tables],
+        "data_validations": list(sheet.data_validations),
+        "conditional_formatting": list(sheet.conditional_formatting.all_rules()),
+        "charts": [],
+        "images": [],
+    }
+    scratch = _scratch(sheet, objects, None)
+    package = _Package(updater)
+    sheet_path = updater._sheets[sheet.title]
+    host = _Sheet(package.get(sheet_path).decode("utf-8"))
+    sheet_rels = package.rels(sheet_path)
+
+    for node in list(sheet_rels):
+        if node.get("Type", "").endswith("/table"):
+            target = _resolve(sheet_path, node.get("Target"))
+            package.remove(target)
+            sheet_rels.remove(node)
+    host.remove_all("tableParts")
+    host.remove_all("dataValidations")
+    host.remove_all("conditionalFormatting")
+
+    donor = scratch["xl/worksheets/sheet1.xml"].decode("utf-8")
+    donor_rels = _sheet_rels(scratch)
+    _add_tables(package, host, sheet_path, sheet_rels, scratch, donor_rels)
+    _add_validations(host, donor)
+    _add_conditional_formats(host, scratch, donor, workbook._styles)
+
+    package.set(sheet_path, host.xml)
+    if len(sheet_rels):
+        ET.register_namespace("", PKG_REL)
+        package.set(_rels_path(sheet_path), _bytes(sheet_rels))
+    if objects["conditional_formatting"]:
+        package.set("xl/styles.xml", workbook._styles.to_bytes())
+    package.commit()
+    _mark_synced_objects(sheet)
 
 
 def add_objects(updater, workbook, sheet, sheet_order: list[str]) -> None:

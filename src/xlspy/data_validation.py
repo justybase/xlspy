@@ -138,6 +138,7 @@ class DataValidation:
     error_title: str | None = None
     error: str | None = None
     error_style: str = "stop"
+    ime_mode: str | None = None
 
     def __post_init__(self):
         if self.type not in VALIDATION_TYPES:
@@ -211,6 +212,40 @@ class DataValidation:
     @property
     def ooxml_type(self) -> str:
         return VALIDATION_TYPES[self.type]
+
+    # openpyxl-compatible attribute names, kept alongside the snake_case API.
+    @property
+    def allowBlank(self) -> bool:
+        return self.allow_blank
+
+    @property
+    def showDropDown(self) -> bool:
+        # OOXML spells the flag inversely; openpyxl exposes the raw flag.
+        return not self.show_dropdown
+
+    @property
+    def showErrorMessage(self) -> bool:
+        return self.show_error_message
+
+    @property
+    def showInputMessage(self) -> bool:
+        return self.show_input_message
+
+    @property
+    def errorStyle(self) -> str:
+        return self.error_style
+
+    @property
+    def errorTitle(self) -> str | None:
+        return self.error_title
+
+    @property
+    def promptTitle(self) -> str | None:
+        return self.prompt_title
+
+    @property
+    def imeMode(self) -> str | None:
+        return self.ime_mode
 
 
 def _attr(value: str) -> str:

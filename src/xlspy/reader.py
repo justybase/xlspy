@@ -1,4 +1,5 @@
 import datetime
+import re
 import zipfile
 from enum import IntEnum
 from typing import Dict, List, Optional, Set, Generator, Any
@@ -10,6 +11,31 @@ from .excel_dates import serial_to_datetime as _serial_to_datetime
 from ._accel import HAVE_C_EXT, read_xlsb_worksheet as _c_read_xlsb_worksheet
 from ._accel import read_xlsb_shared_strings as _accel_read_sst
 from ._text import xstring_unescape
+
+_SST_ITEM = re.compile(r"<si>(.*?)</si>", re.DOTALL)
+_SST_TEXT = re.compile(r"<t(?:\s[^>]*)?>(.*?)</t>", re.DOTALL)
+_SST_UNSAFE = re.compile(r"<!\[CDATA\[|<!--|&#|<\w+:|<si\s|<si/>|<t[^>]*/>")
+
+
+def _parse_shared_strings_fast(content):
+    """Shared strings by regex, or None when the markup needs the XML parser
+    (CDATA, comments, numeric references, prefixed or self-closing tags)."""
+    if _SST_UNSAFE.search(content) or content.count("<si>") != content.count("</si>"):
+        return None
+    if "\r" in content:
+        # XML end-of-line handling, as the parser applies it (&#13; and
+        # _x000D_ keep a carriage return; the first goes to the parser above).
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
+    strings = []
+    append = strings.append
+    for item in _SST_ITEM.finditer(content):
+        parts = _SST_TEXT.findall(item.group(1))
+        text = parts[0] if len(parts) == 1 else "".join(parts)
+        if "&" in text:
+            text = (text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+                    .replace("&apos;", "'").replace("&amp;", "&"))
+        append(xstring_unescape(text))
+    return strings
 
 
 class ExcelDataType(IntEnum):
@@ -126,7 +152,15 @@ _letter_to_column_num: Dict[str, int] = {letter: idx for idx, letter in enumerat
 class ExcelReader:
     _open_xml_info_string = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
-    def __init__(self, path: Optional[str] = None, use_memory_stream_for_xlsb: bool = True):
+    def __init__(
+        self,
+        path: Optional[str] = None,
+        use_memory_stream_for_xlsb: bool = True,
+        errors: str = "legacy",
+    ):
+        if errors not in {"legacy", "openpyxl"}:
+            raise ValueError("errors must be 'legacy' or 'openpyxl'")
+        self._errors = errors
         self._archive: Optional[zipfile.ZipFile] = None
         self._is_xlsb = False
         self._worksheet_id_to_name: Dict[str, str] = {}
@@ -196,11 +230,19 @@ class ExcelReader:
         if self._is_xlsb:
             if not data_only or streaming:
                 from ._xlsb_read import iter_rows
-                yield from iter_rows(self, sheet_name, data_only=data_only)
+                rows = iter_rows(self, sheet_name, data_only=data_only)
             else:
-                yield from self._get_rows_xlsb(sheet_name)
+                rows = self._get_rows_xlsb(sheet_name)
         else:
-            yield from self._get_rows_xlsx(sheet_name, data_only=data_only)
+            rows = self._get_rows_xlsx(sheet_name, data_only=data_only)
+        if self._errors == "legacy":
+            yield from rows
+        else:
+            for row in rows:
+                yield [
+                    value[6:] if isinstance(value, str) and value.startswith("error:") else value
+                    for value in row
+                ]
 
     def read_all(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> List[List[Any]]:
         return list(self.get_rows(sheet_name, data_only=data_only, streaming=streaming))
@@ -313,6 +355,11 @@ class ExcelReader:
         entry_path = self._resolve_path(self._shared_strings_location)
         with self._archive.open(entry_path) as f:
             content = f.read().decode('utf-8')
+
+        fast = _parse_shared_strings_fast(content)
+        if fast is not None:
+            self._shared_string_array = fast
+            return
 
         self._shared_string_array = []
         in_t = False

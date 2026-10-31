@@ -17,9 +17,9 @@ from typing import Mapping, NamedTuple
 
 # Chart and cell-reference models live in their own modules; they are
 # re-exported here so that ``xlspy.styles`` keeps its historical names.
-from .charts import Chart, ChartSeries  # noqa: F401
-from .hyperlinks import Hyperlink
-from .refs import _column_index, column_label, parse_cell_range  # noqa: F401
+from ..charts import Chart, ChartSeries  # noqa: F401
+from ..hyperlinks import Hyperlink
+from ..refs import _column_index, column_label, parse_cell_range  # noqa: F401
 
 _EMPTY_STYLES = {}
 
@@ -142,8 +142,8 @@ class Color:
         if self.theme is not None:
             if not isinstance(self.theme, int):
                 raise TypeError("theme must be an int or None")
-            if not 0 <= self.theme <= 9:
-                raise ValueError("theme must be 0..9")
+            if not 0 <= self.theme <= 11:
+                raise ValueError("theme must be 0..11")
         if self.tint is not None:
             if not isinstance(self.tint, (int, float)):
                 raise TypeError("tint must be a float or None")
@@ -564,6 +564,16 @@ def _validate_sqref(sqref: str) -> None:
     # Multi-range "A1:A5 C1:C5" is not supported: the split below yields
     # three parts and parse_cell_range raises ValueError.
     parse_cell_range(sqref)
+
+
+@dataclass(frozen=True, slots=True)
+class Rule:
+    """A generic conditional-formatting rule, as openpyxl exposes it."""
+
+    type: str
+    dxf: DifferentialStyle | None = None
+    priority: int | None = None
+    stop_if_true: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1029,7 +1039,7 @@ def capture_table_headers(rows, tables, store: dict):
     for row_idx, row in enumerate(rows):
         header_tables = by_row.get(row_idx)
         if header_tables is not None:
-            from .formats import _unwrap_cell  # formats imports this module
+            from ..formats import _unwrap_cell  # formats imports this module
 
             # A (value, format) or (value, Style) header is its value.
             cells = [_unwrap_cell(cell) for cell in row]
@@ -1662,3 +1672,43 @@ def _style_ids_for_row(row_styles, row_length: int, register_style, cache: dict)
 
 # Built-in look of a hyperlink cell that has no style of its own.
 HYPERLINK_STYLE = Style(font_color="#0563C1", underline=True)
+
+
+# openpyxl exposes the OOXML rule type on every conditional-formatting rule.
+# The local rule classes use descriptive field names, so the aliases are added
+# here without changing their constructors.
+def _text_rule_type(rule):
+    return "containsText" if rule.operator == "contains" else rule.operator
+
+
+def _duplicate_rule_type(rule):
+    return "uniqueValues" if rule.unique else "duplicateValues"
+
+
+def _blanks_rule_type(rule):
+    return {
+        "blanks": "containsBlanks",
+        "no_blanks": "notContainsBlanks",
+        "errors": "containsErrors",
+        "no_errors": "notContainsErrors",
+    }[rule.kind]
+
+
+_RULE_TYPES = (
+    (CellIsRule, lambda rule: "cellIs"),
+    (FormulaRule, lambda rule: "expression"),
+    (ColorScaleRule, lambda rule: "colorScale"),
+    (DataBarRule, lambda rule: "dataBar"),
+    (IconSetRule, lambda rule: "iconSet"),
+    (TopBottomRule, lambda rule: "top10"),
+    (AboveAverageRule, lambda rule: "aboveAverage"),
+    (TextRule, _text_rule_type),
+    (DuplicateRule, _duplicate_rule_type),
+    (TimePeriodRule, lambda rule: "timePeriod"),
+    (BlanksRule, _blanks_rule_type),
+)
+for _rule_class, _rule_type in _RULE_TYPES:
+    setattr(_rule_class, "rule_type", property(_rule_type))
+    if _rule_class is not IconSetRule:
+        setattr(_rule_class, "type", property(_rule_type))
+del _rule_class, _rule_type

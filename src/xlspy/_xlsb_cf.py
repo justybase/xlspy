@@ -29,6 +29,7 @@ BRT_END_CF_RULE = 0x1D0
 # XFPropType ([MS-XLSB] 2.5.165).
 _FILL_PATTERN, _FOREGROUND, _BACKGROUND, _FONT_COLOR = 0x00, 0x01, 0x02, 0x05
 _BORDERS = {"top": 0x06, "bottom": 0x07, "left": 0x08, "right": 0x09}
+_BORDER_KINDS = {kind: name for name, kind in _BORDERS.items()}
 _HORIZONTAL, _WRAP = 0x0F, 0x14
 _FONT_NAME, _BOLD, _UNDERLINE, _ITALIC, _STRIKE, _SIZE = 0x18, 0x19, 0x1A, 0x1C, 0x1D, 0x24
 _NUMBER_FORMAT, _NUMBER_FORMAT_ID = 0x26, 0x29
@@ -243,6 +244,157 @@ def _rule_fields(rule, corner: str):
         formula = CF_BLANK_RULES[rule.kind][1].format(c=corner)
         return _EXPRESSION, _BLANK_TEMPLATES[rule.kind], 0, flags, [formula], None
     raise TypeError(f"unsupported conditional formatting rule {type(rule).__name__}")
+
+
+BRT_BEGIN_CONDITIONAL_FORMATTING = 0x1CD
+
+_PATTERN_NAMES = {value: name for name, value in _PATTERNS.items()}
+_BORDER_NAMES = {value: name for name, value in _BORDER_CODES.items()}
+_HORIZONTAL_NAMES = {value: name for name, value in _HORIZONTAL_CODES.items()}
+_UNDERLINE_NAMES = {value: name for name, value in _UNDERLINE_CODES.items()}
+_CELL_IS_NAMES = {value: name for name, value in _CELL_IS_OPERATORS.items()}
+_TEXT_NAMES = {value: name for name, value in _TEXT_OPERATORS.items()}
+_TIME_PERIOD_NAMES = {template: name for name, (template, _param) in _TIME_PERIODS.items()}
+_BLANK_NAMES = {value: name for name, value in _BLANK_TEMPLATES.items()}
+_ABOVE_AVERAGE = {0x19: (False, False), 0x1A: (True, False), 0x1D: (False, True), 0x1E: (True, True)}
+
+
+def _decoded_text(data: bytes) -> str:
+    length = struct.unpack_from("<H", data, 0)[0]
+    return data[2:2 + 2 * length].decode("utf-16-le")
+
+
+def dxf_from_payload(payload: bytes) -> DifferentialStyle:
+    """A ``DifferentialStyle`` from a BrtDXF payload (the XFProp list)."""
+    from ._xlsb_styles import _color as color_at
+    from .styles import Alignment, Border, Font, PatternFill, Protection, Side
+
+    count = struct.unpack_from("<H", payload, 4)[0]
+    offset = 6
+    font, fill, sides, alignment, protection = {}, {}, {}, {}, {}
+    number_format = None
+    for _ in range(count):
+        kind, size = struct.unpack_from("<HH", payload, offset)
+        data = payload[offset + 4:offset + size]
+        offset += size
+        if kind == _FILL_PATTERN:
+            fill["fill_type"] = _PATTERN_NAMES.get(data[0], "solid")
+        elif kind == _FOREGROUND:
+            fill["start_color"] = color_at(data, 0)
+        elif kind == _BACKGROUND:
+            fill["end_color"] = color_at(data, 0)
+        elif kind == _FONT_COLOR:
+            font["color"] = color_at(data, 0)
+        elif kind in _BORDER_KINDS:
+            style = _BORDER_NAMES.get(struct.unpack_from("<H", data, 8)[0])
+            if style and style != "none":
+                color = color_at(data, 0)
+                sides[_BORDER_KINDS[kind]] = Side(
+                    style=style, color=None if color is not None and color.auto else color,
+                )
+        elif kind == _HORIZONTAL:
+            alignment["horizontal"] = _HORIZONTAL_NAMES.get(data[0])
+        elif kind == _WRAP:
+            alignment["wrap_text"] = bool(data[0])
+        elif kind == _FONT_NAME:
+            font["name"] = _decoded_text(data)
+        elif kind == _BOLD:
+            font["bold"] = struct.unpack_from("<H", data, 0)[0] >= 700
+        elif kind == _UNDERLINE:
+            code = struct.unpack_from("<H", data, 0)[0]
+            font["underline"] = _UNDERLINE_NAMES.get(code, "none") if code else "none"
+        elif kind == _ITALIC:
+            font["italic"] = bool(data[0])
+        elif kind == _STRIKE:
+            font["strike"] = bool(data[0])
+        elif kind == _SIZE:
+            font["size"] = struct.unpack_from("<I", data, 0)[0] / 20
+        elif kind == _NUMBER_FORMAT:
+            number_format = _decoded_text(data)
+        elif kind == _LOCKED:
+            protection["locked"] = bool(data[0])
+        elif kind == _HIDDEN:
+            protection["hidden"] = bool(data[0])
+    return DifferentialStyle(
+        font=Font(**font) if font else None,
+        fill=PatternFill(**fill) if fill else None,
+        border=Border(**sides) if sides else None,
+        number_format=number_format,
+        alignment=Alignment(**alignment) if alignment else None,
+        protection=Protection(**protection) if protection else None,
+    )
+
+
+def _sqref(payload: bytes, offset: int) -> str:
+    from ._xlsb_validation import _sqref as format_sqref
+
+    count = struct.unpack_from("<I", payload, offset)[0]
+    ranges = [struct.unpack_from("<IIII", payload, offset + 4 + 16 * index) for index in range(count)]
+    return format_sqref(ranges)
+
+
+def cf_rule(sqref: str, payload: bytes, context, style_table):
+    """A rule from a BrtBeginCFRule payload, or None for the kinds the model
+    reads from XLSX only (color scales, data bars, icon sets)."""
+    from ._xlsb_formulas import decode_formula, read_parsed
+    from ._xlsb_metadata import read_wide
+
+    kind, template, dxf_id, priority, param = struct.unpack_from("<IIiII", payload, 0)
+    flags = struct.unpack_from("<H", payload, 28)[0]
+    sizes = struct.unpack_from("<III", payload, 30)
+    text, offset = read_wide(payload, 42, nullable=True)
+    first_col, first_row, _, _ = parse_cell_range(sqref.split()[0])
+    formulas = []
+    for size in sizes:
+        if not size:
+            continue
+        _tokens, _extra, end = read_parsed(payload, offset)
+        formulas.append(decode_formula(payload[offset:end], context, origin=(first_col, first_row)))
+        offset = end
+    dxf = style_table.dxf_at(dxf_id) if dxf_id >= 0 else None
+    stop = True if flags & _STOP_IF_TRUE else None
+    if kind == _CELL_IS:
+        operator = _CELL_IS_NAMES.get(param)
+        return None if operator is None else CellIsRule(sqref, operator, formulas, dxf, stop, priority)
+    if kind == _TOP10:
+        return TopBottomRule(sqref, rank=param, percent=bool(flags & _PERCENT),
+                             bottom=bool(flags & _BOTTOM), dxf=dxf, stop_if_true=stop, priority=priority)
+    if kind != _EXPRESSION:
+        return None
+    if template == _FORMULA_TEMPLATE:
+        return FormulaRule(sqref, formulas, dxf, stop, priority)
+    if template in _ABOVE_AVERAGE:
+        below, equal = _ABOVE_AVERAGE[template]
+        return AboveAverageRule(sqref, below=below, equal_average=equal, std_dev=param or None,
+                                dxf=dxf, stop_if_true=stop, priority=priority)
+    if template in (_UNIQUE, _DUPLICATE):
+        return DuplicateRule(sqref, unique=template == _UNIQUE, dxf=dxf, stop_if_true=stop,
+                             priority=priority)
+    if template == _CONTAINS_TEXT and param in _TEXT_NAMES:
+        return TextRule(sqref, _TEXT_NAMES[param], text or "", dxf, stop, priority)
+    if template in _TIME_PERIOD_NAMES:
+        return TimePeriodRule(sqref, _TIME_PERIOD_NAMES[template], dxf, stop, priority)
+    if template in _BLANK_NAMES:
+        return BlanksRule(sqref, _BLANK_NAMES[template], dxf=dxf, stop_if_true=stop, priority=priority)
+    return None
+
+
+def read_conditional_formats(items, context, style_table):
+    """``(sqref, rule)`` pairs from the BrtBeginConditionalFormatting and
+    BrtBeginCFRule records of a sheet, in file order."""
+    found = []
+    sqref = None
+    for record_id, payload in items:
+        if record_id == BRT_BEGIN_CONDITIONAL_FORMATTING:
+            sqref = _sqref(payload, 8)
+        elif record_id == BRT_BEGIN_CF_RULE and sqref:
+            try:
+                rule = cf_rule(sqref, payload, context, style_table)
+            except (struct.error, TypeError, ValueError, NotImplementedError):
+                continue
+            if rule is not None:
+                found.append((sqref, rule))
+    return found
 
 
 def rule_bin(rule, priority: int, dxf_id: int, context, letters) -> bytes:

@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import struct
 
-from ._xlsb_formulas import compile_formula
-from ._xlsb_metadata import wide_string
-from .biff_utils import build_record
+from ._xlsb_formulas import compile_formula, decode_formula, read_parsed
+from ._xlsb_metadata import read_wide, wide_string
+from .biff_utils import build_record, iter_record_payloads
 from .data_validation import DataValidation, OPERATORS
-from .refs import parse_cell_range
+from .refs import column_label, parse_cell_range
 
 BRT_BEGIN_DVALS = 0x23D
 BRT_DVAL = 0x40
@@ -87,3 +87,76 @@ def validations_bin(rules, context) -> bytes:
         *(_dval(rule, context) for rule in rules),
         build_record(BRT_END_DVALS),
     ))
+
+
+_TYPE_NAMES = {value: name for name, value in _TYPES.items()}
+_ERROR_STYLE_NAMES = {value: name for name, value in _ERROR_STYLES.items()}
+_OPERATOR_NAMES = list(OPERATORS)
+_OPERATOR_TYPES = frozenset({"whole", "decimal", "date", "time", "text_length"})
+
+
+def _sqref(ranges) -> str:
+    parts = []
+    for r1, r2, c1, c2 in ranges:
+        first = f"{column_label(c1)}{r1 + 1}"
+        last = f"{column_label(c2)}{r2 + 1}"
+        parts.append(first if first == last else f"{first}:{last}")
+    return " ".join(parts)
+
+
+def _formula(payload: bytes, offset: int, context, origin):
+    if payload[offset:offset + 8] == _EMPTY_FORMULA:
+        return None, offset + 8
+    _tokens, _extra, end = read_parsed(payload, offset)
+    return decode_formula(payload[offset:end], context, origin=origin), end
+
+
+def dval_rule(payload: bytes, context) -> DataValidation | None:
+    """A ``DataValidation`` from a BrtDVal payload; None for an "any value" rule."""
+    flags, count = struct.unpack_from("<II", payload, 0)
+    kind = _TYPE_NAMES.get(flags & 0x0F)
+    if kind is None:
+        return None
+    offset = 8
+    ranges = []
+    for _ in range(count):
+        ranges.append(struct.unpack_from("<IIII", payload, offset))
+        offset += 16
+    if not ranges:
+        return None
+    error_title, offset = read_wide(payload, offset, nullable=True)
+    error, offset = read_wide(payload, offset, nullable=True)
+    prompt_title, offset = read_wide(payload, offset, nullable=True)
+    prompt, offset = read_wide(payload, offset, nullable=True)
+    origin = (ranges[0][2], ranges[0][0])
+    formula1, offset = _formula(payload, offset, context, origin)
+    formula2, offset = _formula(payload, offset, context, origin)
+    operator = (flags >> _OPERATOR_SHIFT) & 0x0F
+    return DataValidation(
+        type=kind,
+        sqref=_sqref(ranges),
+        formula1=formula1,
+        formula2=formula2,
+        # "between" is stored as 0, which XLSX leaves out: read it as the default.
+        operator=_OPERATOR_NAMES[operator] if kind in _OPERATOR_TYPES and operator else None,
+        allow_blank=bool(flags & _ALLOW_BLANK),
+        show_dropdown=not flags & _SUPPRESS_DROPDOWN,
+        show_input_message=bool(flags & _SHOW_INPUT),
+        prompt_title=prompt_title or None,
+        prompt=prompt or None,
+        show_error_message=bool(flags & _SHOW_ERROR),
+        error_title=error_title or None,
+        error=error or None,
+        error_style=_ERROR_STYLE_NAMES.get((flags >> 4) & 0x07, "stop"),
+    )
+
+
+def read_validations(data: bytes, context) -> list[DataValidation]:
+    """The data validation rules of a worksheet part."""
+    rules = []
+    for record_id, payload in iter_record_payloads(data):
+        if record_id == BRT_DVAL:
+            rule = dval_rule(payload, context)
+            if rule is not None:
+                rules.append(rule)
+    return rules

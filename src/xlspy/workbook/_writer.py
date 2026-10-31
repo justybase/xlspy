@@ -47,6 +47,8 @@ def _value_for_new(cell):
 
 # An empty style: written as the default look instead of the bold header.
 _PLAIN = Style()
+# Values that _value_for_new returns unchanged (no formula or hyperlink).
+_PLAIN_TYPES = frozenset({int, float, bool, str, _datetime.date, _datetime.datetime, type(None)})
 
 
 def _cell_values(sheet: Worksheet):
@@ -59,16 +61,34 @@ def _cell_values(sheet: Worksheet):
     max_row = max(sheet.max_row, 1)
     max_column = max(sheet.max_column, 1)
     style_at = sheet._workbook._styles.style_at
+    styles: dict[int, Style] = {}
+    plain_types = _PLAIN_TYPES
+    columns = range(1, max_column + 1)
+    cells = sheet._cells
     for row_number in range(1, max_row + 1):
+        row_cells = cells.get(row_number)
+        if not row_cells:
+            yield [None] * max_column
+            continue
+        get = row_cells.get
         row = []
-        for column in range(1, max_column + 1):
-            cell = sheet._existing_cell(row_number, column)
+        for column in columns:
+            cell = get(column)
             if cell is None:
                 row.append(None)
                 continue
-            value = _value_for_new(cell)
-            if cell._style_id and value is not None:
-                value = (value, style_at(cell._style_id))
+            if cell._formula is None and cell._hyperlink is None:
+                value = cell._value
+                if type(value) not in plain_types:
+                    value = _value_for_new(cell)
+            else:
+                value = _value_for_new(cell)
+            style_id = cell._style_id
+            if style_id and value is not None:
+                style = styles.get(style_id)
+                if style is None:
+                    style = styles[style_id] = style_at(style_id)
+                value = (value, style)
             elif row_number == 1 and isinstance(value, (str, CellRichText)):
                 # The writers make first-row text bold by default; a model
                 # cell keeps the look it has, as in openpyxl.
@@ -135,7 +155,7 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
         "zoom": sheet.sheet_view.zoomScale,
         "charts": sheet.charts or None,
         "tables": sheet.tables or None,
-        "conditional_formats": list(sheet.conditional_formatting) or None,
+        "conditional_formats": list(sheet.conditional_formatting.all_rules()) or None,
     }
     print_settings = print_settings_for(sheet)
     for name, items in (
@@ -144,11 +164,8 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
     ):
         if items:
             options[name] = items
-    if xlsb:
-        options["auto_filter"] = bool(sheet.auto_filter.ref)
-    else:
-        options["auto_filter"] = bool(sheet.auto_filter.ref)
-        options["auto_filter_ref"] = sheet.auto_filter.ref
+    options["auto_filter"] = bool(sheet.auto_filter.ref)
+    options["auto_filter_ref"] = sheet.auto_filter.ref or None
     return options
 
 
@@ -179,6 +196,8 @@ def _save_new(workbook: Workbook, filename) -> None:
     writer_class = XlsbWriter if extension == "xlsb" else XlsxWriter
     with writer_class(filename) as writer:
         _set_properties(writer, workbook.properties)
+        for definition in workbook.defined_names:
+            writer.set_defined_name(definition)
         for sheet in workbook._sheets:
             writer.add_sheet(sheet.title, hidden=sheet.sheet_state != "visible")
             writer.write_sheet(
@@ -203,6 +222,11 @@ def save_workbook(workbook: Workbook, filename) -> None:
     if not workbook._sheets:
         workbook.create_sheet("Sheet")
     if workbook._loaded:
-        _save_loaded_to_path(workbook, filename)
+        if getattr(workbook, "_format", "xlsx") == "xlsb":
+            from ._xlsb_loaded import save_loaded_xlsb
+
+            save_loaded_xlsb(workbook, filename)
+        else:
+            _save_loaded_to_path(workbook, filename)
     else:
         _save_new(workbook, filename)

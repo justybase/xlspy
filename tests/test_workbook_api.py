@@ -458,13 +458,77 @@ def test_write_only_workbook_is_readable_by_openpyxl(tmp_path):
         book.close()
 
 
-def test_unsupported_workbook_model_paths(tmp_path):
-    with pytest.raises(NotImplementedError, match="XLSB"):
-        load_workbook(tmp_path / "model.xlsb")
+def test_xlsb_model_and_unsupported_named_style(tmp_path):
+    source = tmp_path / "model.xlsb"
+    created = Workbook()
+    created.active["A1"] = "hello"
+    created.save(source)
+    created.close()
+
+    loaded = load_workbook(source)
+    try:
+        assert loaded["Sheet"]["A1"].value == "hello"
+    finally:
+        loaded.close()
 
     workbook = Workbook()
     with pytest.raises(NotImplementedError, match="named styles"):
         workbook.active["A1"].style = "Title"
+
+
+def test_loaded_xlsb_rejects_edits_it_cannot_persist(tmp_path):
+    source = tmp_path / "model.xlsb"
+    created = Workbook()
+    created.active["A1"] = "hello"
+    created.save(source)
+    created.close()
+
+    loaded = load_workbook(source)
+    try:
+        loaded["Sheet"]["A1"] = "edited"
+        loaded.save(tmp_path / "ok.xlsb")
+        loaded["Sheet"].title = "Renamed"
+        with pytest.raises(NotImplementedError, match="sheets"):
+            loaded.save(tmp_path / "renamed.xlsb")
+    finally:
+        loaded.close()
+
+    loaded = load_workbook(tmp_path / "ok.xlsb")
+    try:
+        assert loaded["Sheet"]["A1"].value == "edited"
+        loaded["Sheet"]["A1"].font = Font(bold=True)
+        loaded.save(tmp_path / "styled.xlsb")
+    finally:
+        loaded.close()
+    styled = load_workbook(tmp_path / "styled.xlsb")
+    try:
+        assert styled["Sheet"]["A1"].font.bold
+    finally:
+        styled.close()
+
+
+def test_xlsb_auto_filter_range_round_trips_through_model(tmp_path):
+    created = Workbook()
+    sheet = created.active
+    for number in range(1, 8):
+        sheet.append([f"h{number}", number, number * 2])
+    sheet.auto_filter.ref = "A2:C6"
+    path = tmp_path / "filter.xlsb"
+    created.save(path)
+    created.close()
+
+    loaded = load_workbook(path)
+    try:
+        assert loaded.active.auto_filter.ref == "A2:C6"
+        loaded.active["A1"] = "edited"
+        loaded.save(tmp_path / "again.xlsb")
+    finally:
+        loaded.close()
+    again = load_workbook(tmp_path / "again.xlsb")
+    try:
+        assert again.active.auto_filter.ref == "A2:C6"
+    finally:
+        again.close()
 
 
 def test_fast_path_modules_do_not_import_workbook_model():

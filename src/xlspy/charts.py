@@ -11,7 +11,11 @@ from dataclasses import dataclass
 
 from .refs import parse_cell_range
 
-CHART_TYPES = frozenset({"area", "bar", "barh", "doughnut", "line", "pie", "scatter"})
+CHART_TYPES = frozenset({
+    "area", "area3d", "bar", "bar3d", "barh", "bubble", "doughnut",
+    "line", "line3d", "pie", "pie3d", "projected_pie", "radar", "scatter",
+    "stock", "surface", "surface3d",
+})
 # Chart.grouping values and the chart types that accept them.
 GROUPINGS = {"stacked": "stacked", "percent_stacked": "percentStacked"}
 _GROUPED_TYPES = frozenset({"area", "bar", "barh", "line"})
@@ -82,6 +86,18 @@ def _check_number(value, kind: str, *, minimum=None, maximum=None):
     if maximum is not None and value > maximum:
         raise ValueError(f"{kind} must be at most {maximum}")
     return float(value)
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedChart:
+    """A chart read back from a workbook, preserved as its original parts."""
+
+    chart_type: str | None = None
+    title: str | None = None
+    series_count: int = 0
+    anchor: str | None = None
+    part: str | None = None
+    xml: bytes = b""
 
 
 @dataclass(frozen=True, slots=True)

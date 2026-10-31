@@ -536,3 +536,50 @@ if __name__ == '__main__':
     print("\n8. Reader with path in constructor...")
     test_reader_with_path_in_constructor()
     print("\n=== All tests passed! ===")
+
+
+def _with_carriage_returns(tmp_path):
+    """An XLSX whose shared and inline strings hold literal CR and CRLF, as
+    Excel writes multi-line text."""
+    source = tmp_path / "source.xlsx"
+    with XlsxWriter(source) as writer:
+        writer.add_sheet("S")
+        writer.write_sheet([["seed"], ["x"]])
+    target = tmp_path / "crlf.xlsx"
+    with zipfile.ZipFile(source) as zin, zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zout:
+        for info in zin.infolist():
+            data = zin.read(info)
+            if info.filename == "xl/sharedStrings.xml":
+                data = data.replace(b">seed<", b">a\r\nb\rc<")
+            elif info.filename == "xl/worksheets/sheet1.xml":
+                data = data.replace(
+                    b"</sheetData>",
+                    b'<row r="3"><c r="A3" t="inlineStr"><is><t>i\r\nj\rk</t></is></c></row>'
+                    b"</sheetData>",
+                )
+            zout.writestr(info, data)
+    return target
+
+
+def test_literal_carriage_returns_are_normalized_like_xml(tmp_path):
+    from xlspy import load_workbook
+
+    path = str(_with_carriage_returns(tmp_path))
+    with ExcelReader(path) as reader:
+        rows = [list(row) for row in reader.get_rows("S")]
+    assert rows[0] == ["a\nb\nc"] and rows[2] == ["i\nj\nk"]
+    workbook = load_workbook(path)
+    try:
+        assert workbook["S"]["A1"].value == "a\nb\nc"
+        assert workbook["S"]["A3"].value == "i\nj\nk"
+    finally:
+        workbook.close()
+
+
+def test_shared_strings_fast_path_matches_xml_parser():
+    content = (
+        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        "<si><t>a\r\nb</t></si><si><t>c\rd</t></si><si><t>e_x000D_f</t></si>"
+        '<si><r><t xml:space="preserve">g\r\n</t></r><r><t>h</t></r></si></sst>'
+    )
+    assert xlspy_reader._parse_shared_strings_fast(content) == ["a\nb", "c\nd", "e\rf", "g\nh"]

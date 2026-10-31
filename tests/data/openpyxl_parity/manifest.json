@@ -1,0 +1,14 @@
+{
+  "openpyxl_version": "3.1.5",
+  "python_version": "3.14.7",
+  "generated_utc": "2026-10-25T18:32:37.417976+00:00",
+  "files": [
+    "charts.xlsx",
+    "chartsheet.xlsx",
+    "images.xlsx",
+    "long_tail.xlsx",
+    "metadata.xlsx",
+    "objects.xlsx"
+  ],
+  "errors": []
+}

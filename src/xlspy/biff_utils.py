@@ -52,19 +52,66 @@ def vlq_bytes(value: int) -> bytes:
 def iter_records(data: bytes):
     """Yield all BIFF12 records in a byte buffer."""
 
+    size = len(data)
     offset = 0
-    while offset < len(data):
+    while offset < size:
         header_start = offset
-        record_id, offset = read_vlq(data, offset)
-        length, data_start = read_vlq(data, offset)
+        # Ids and lengths are almost always one or two bytes: decode those inline.
+        if offset + 2 <= size and not data[offset] & 0x80:
+            record_id = data[offset]
+            offset += 1
+        else:
+            record_id, offset = read_vlq(data, offset)
+        if offset < size and not data[offset] & 0x80:
+            length = data[offset]
+            data_start = offset + 1
+        else:
+            length, data_start = read_vlq(data, offset)
         data_end = data_start + length
-        if data_end > len(data):
+        if data_end > size:
             raise ValueError(
                 f"Truncated BIFF12 record 0x{record_id:x}: "
-                f"expected {length} bytes, only {len(data) - data_start} available"
+                f"expected {length} bytes, only {size - data_start} available"
             )
         yield Biff12Record(header_start, data_start, data_end, record_id, length)
         offset = data_end
+
+
+def iter_record_payloads(data: bytes):
+    """Yield ``(record_id, payload)`` for every BIFF12 record in a byte buffer.
+
+    The same records and errors as ``iter_records``, without the per-record
+    offset objects: the cheapest way to walk a whole worksheet part.
+    """
+
+    size = len(data)
+    offset = 0
+    while offset < size:
+        values = []
+        for _ in range(2):
+            value = 0
+            shift = 0
+            while True:
+                if offset >= size:
+                    raise ValueError("Truncated BIFF12 variable-length integer")
+                byte = data[offset]
+                offset += 1
+                value |= (byte & 0x7F) << shift
+                if not byte & 0x80:
+                    break
+                shift += 7
+                if shift > 63:
+                    raise ValueError("BIFF12 variable-length integer is too long")
+            values.append(value)
+        record_id, length = values
+        end = offset + length
+        if end > size:
+            raise ValueError(
+                f"Truncated BIFF12 record 0x{record_id:x}: "
+                f"expected {length} bytes, only {size - offset} available"
+            )
+        yield record_id, data[offset:end]
+        offset = end
 
 
 def _read_vlq_stream(stream: BinaryIO, offset: int) -> tuple[int | None, int]:

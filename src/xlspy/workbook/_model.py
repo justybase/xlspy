@@ -22,7 +22,8 @@ from ..formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT
 from ..formulas import Formula
 from ..hyperlinks import Hyperlink
 from ..images import Image
-from ..refs import column_label, parse_cell_range
+from .._metadata import DefinedName
+from ..refs import column_label, parse_cell_range, quote_sheet_name
 from ..rich_text import CellRichText
 from ..styles import (
     Alignment,
@@ -37,6 +38,8 @@ from ..styles import (
     FormulaRule,
     GradientFill,
     IconSetRule,
+    NamedStyle,
+    NamedStyleList,
     PatternFill,
     Protection,
     Style,
@@ -129,6 +132,83 @@ class CellRange(str):
             and self.min_row - 1 <= row <= self.max_row - 1
         )
 
+    @property
+    def coord(self) -> str:
+        return str(self)
+
+    @property
+    def bounds(self):
+        return (self.min_col, self.min_row, self.max_col, self.max_row)
+
+    @property
+    def size(self):
+        return {
+            "columns": self.max_col - self.min_col + 1,
+            "rows": self.max_row - self.min_row + 1,
+        }
+
+    def shift(self, col_shift: int = 0, row_shift: int = 0):
+        min_col = self.min_col + col_shift
+        min_row = self.min_row + row_shift
+        max_col = self.max_col + col_shift
+        max_row = self.max_row + row_shift
+        if min_col < 1 or min_row < 1 or max_col > 16384 or max_row > 1048576:
+            raise ValueError(
+                f"Invalid shift value: col_shift={col_shift}, row_shift={row_shift}"
+            )
+        return CellRange(f"{column_label(min_col - 1)}{min_row}:{column_label(max_col - 1)}{max_row}")
+
+    def expand(self, right: int = 0, down: int = 0, left: int = 0, up: int = 0):
+        min_col = self.min_col - left
+        min_row = self.min_row - up
+        max_col = self.max_col + right
+        max_row = self.max_row + down
+        if min_col < 1 or min_row < 1 or max_col > 16384 or max_row > 1048576:
+            raise ValueError("expanded range is outside the worksheet")
+        return CellRange(f"{column_label(min_col - 1)}{min_row}:{column_label(max_col - 1)}{max_row}")
+
+    def shrink(self, right: int = 0, bottom: int = 0, left: int = 0, top: int = 0):
+        return self.expand(right=-right, down=-bottom, left=-left, up=-top)
+
+    def union(self, other):
+        other = other if isinstance(other, CellRange) else CellRange(str(other))
+        return CellRange(
+            f"{column_label(min(self.min_col, other.min_col) - 1)}"
+            f"{min(self.min_row, other.min_row)}:"
+            f"{column_label(max(self.max_col, other.max_col) - 1)}"
+            f"{max(self.max_row, other.max_row)}"
+        )
+
+    def intersection(self, other):
+        other = other if isinstance(other, CellRange) else CellRange(str(other))
+        min_col = max(self.min_col, other.min_col)
+        min_row = max(self.min_row, other.min_row)
+        max_col = min(self.max_col, other.max_col)
+        max_row = min(self.max_row, other.max_row)
+        if min_col > max_col or min_row > max_row:
+            raise ValueError(f"Range {self} doesn't intersect {other}")
+        return CellRange(f"{column_label(min_col - 1)}{min_row}:{column_label(max_col - 1)}{max_row}")
+
+    def isdisjoint(self, other) -> bool:
+        other = other if isinstance(other, CellRange) else CellRange(str(other))
+        return (
+            self.max_col < other.min_col
+            or other.max_col < self.min_col
+            or self.max_row < other.min_row
+            or other.max_row < self.min_row
+        )
+
+    def issubset(self, other) -> bool:
+        other = other if isinstance(other, CellRange) else CellRange(str(other))
+        return (
+            other.min_col <= self.min_col <= self.max_col <= other.max_col
+            and other.min_row <= self.min_row <= self.max_row <= other.max_row
+        )
+
+    def issuperset(self, other) -> bool:
+        other = other if isinstance(other, CellRange) else CellRange(str(other))
+        return other.issubset(self)
+
 
 class MultiCellRange:
     def __init__(self, ranges: Iterable[str] | None = None):
@@ -176,6 +256,155 @@ class MultiCellRange:
 
 
 @dataclass
+class WorkbookSecurity:
+    workbookPassword: str | None = None
+    workbookPasswordCharacterSet: str | None = None
+    revisionsPassword: str | None = None
+    revisionsPasswordCharacterSet: str | None = None
+    lockStructure: bool | None = None
+    lockWindows: bool | None = None
+    lockRevision: bool | None = None
+    revisionsAlgorithmName: str | None = None
+    revisionsHashValue: str | None = None
+    revisionsSaltValue: str | None = None
+    revisionsSpinCount: int | None = None
+    workbookAlgorithmName: str | None = None
+    workbookHashValue: str | None = None
+    workbookSaltValue: str | None = None
+    workbookSpinCount: int | None = None
+
+
+@dataclass
+class CalcProperties:
+    calcId: int = 124519
+    calcMode: str | None = None
+    fullCalcOnLoad: bool = True
+    refMode: str | None = None
+    iterate: bool | None = None
+    iterateCount: int | None = None
+    iterateDelta: float | None = None
+    fullPrecision: bool | None = None
+    calcCompleted: bool | None = None
+    calcOnSave: bool | None = None
+    concurrentCalc: bool | None = None
+    concurrentManualCount: int | None = None
+    forceFullCalc: bool | None = None
+
+
+@dataclass
+class BookView:
+    visibility: str = "visible"
+    minimized: bool = False
+    showHorizontalScroll: bool = True
+    showVerticalScroll: bool = True
+    showSheetTabs: bool = True
+    xWindow: int | None = None
+    yWindow: int | None = None
+    windowWidth: int | None = None
+    windowHeight: int | None = None
+    tabRatio: int = 600
+    firstSheet: int = 0
+    activeTab: int = 0
+    autoFilterDateGrouping: bool = True
+
+
+class CustomPropertyList(list):
+    """A list of custom document properties, keyed by ``name`` for convenience."""
+
+    @property
+    def names(self):
+        return [item.name for item in self]
+
+
+class DefinedNameList:
+    """A list/dict hybrid of :class:`DefinedName` entries."""
+
+    def __init__(self, workbook=None, definitions=None):
+        self._workbook = workbook
+        self._items: list[DefinedName] = []
+        for definition in definitions or []:
+            self.add(definition, stage=False)
+
+    def __iter__(self):
+        return iter(self._items)
+
+    def __len__(self):
+        return len(self._items)
+
+    def __bool__(self):
+        return bool(self._items)
+
+    def __repr__(self):
+        return f"DefinedNameList({self._items!r})"
+
+    def __getitem__(self, key):
+        if isinstance(key, int) and not isinstance(key, bool):
+            return self._items[key]
+        if isinstance(key, str):
+            folded = key.casefold()
+            for definition in self._items:
+                if definition.name.casefold() == folded and definition.scope is None:
+                    return definition
+            for definition in self._items:
+                if definition.name.casefold() == folded:
+                    return definition
+            raise KeyError(key)
+        raise TypeError("defined name keys must be a name or an index")
+
+    def __contains__(self, key):
+        try:
+            self[key]
+        except (KeyError, TypeError):
+            return False
+        return True
+
+    def __setitem__(self, key, value):
+        self.add(value)
+
+    @property
+    def names(self):
+        return [definition.name for definition in self._items]
+
+    def add(self, definition, *, stage: bool = True):
+        if not isinstance(definition, DefinedName):
+            raise TypeError("defined names must be DefinedName instances")
+        self._items = [
+            item for item in self._items
+            if not (item.name.casefold() == definition.name.casefold()
+                    and item.scope == definition.scope)
+        ]
+        self._items.append(definition)
+        if stage and self._workbook is not None:
+            if self._workbook._updater is not None:
+                self._workbook._updater.set_defined_name(definition)
+            else:
+                self._workbook._defined_names_dirty = True
+
+    append = add
+
+    def remove(self, name, scope=None):
+        if not isinstance(name, str):
+            raise TypeError("defined name must be a string")
+        folded = name.casefold()
+        target = None
+        for definition in self._items:
+            if definition.name.casefold() == folded and (
+                scope is None or definition.scope == scope
+            ):
+                target = definition
+                break
+        if target is None:
+            raise KeyError(name)
+        self._items.remove(target)
+        if self._workbook is not None:
+            if self._workbook._updater is not None:
+                self._workbook._updater.remove_defined_name(target.name, target.scope)
+            else:
+                self._workbook._defined_names_dirty = True
+        return target
+
+
+@dataclass
 class DocumentProperties:
     creator: str = "xlspy"
     title: str | None = None
@@ -191,6 +420,15 @@ class DocumentProperties:
     identifier: str | None = None
     language: str | None = None
     version: str | None = None
+    lastPrinted: _datetime.datetime | None = None
+
+
+@dataclass
+class Outline:
+    applyStyles: bool | None = None
+    summaryBelow: bool | None = None
+    summaryRight: bool | None = None
+    showOutlineSymbols: bool | None = None
 
 
 @dataclass
@@ -198,27 +436,194 @@ class SheetProperties:
     tabColor: Color | str | None = None
     codeName: str | None = None
     pageSetUpPr: PageSetupProperties = field(default_factory=PageSetupProperties)
+    outlinePr: Outline = field(default_factory=Outline)
+    enableFormatConditionsCalculation: bool | None = None
+    filterMode: bool | None = None
+    published: bool | None = None
+    syncHorizontal: bool | None = None
+    syncRef: str | None = None
+    syncVertical: bool | None = None
+    transitionEvaluation: bool | None = None
+    transitionEntry: bool | None = None
+
+
+@dataclass
+class SheetFormatProperties:
+    baseColWidth: int = 8
+    defaultColWidth: float | None = None
+    defaultRowHeight: float = 15
+    customHeight: bool | None = None
+    zeroHeight: bool | None = None
+    thickTop: bool | None = None
+    thickBottom: bool | None = None
+    outlineLevelRow: int | None = None
+    outlineLevelCol: int | None = None
+
+
+@dataclass
+class Pane:
+    xSplit: float | int | None = None
+    ySplit: float | int | None = None
+    topLeftCell: str | None = None
+    activePane: str = "topLeft"
+    state: str = "split"
+
+
+@dataclass
+class Selection:
+    pane: str | None = None
+    activeCell: str = "A1"
+    activeCellId: int | None = None
+    sqref: str = "A1"
 
 
 @dataclass
 class SheetView:
+    windowProtection: bool | None = None
+    showFormulas: bool | None = None
     showGridLines: bool | None = None
     showRowColHeaders: bool | None = None
+    showZeros: bool | None = None
+    rightToLeft: bool | None = None
+    tabSelected: bool | None = None
+    showRuler: bool | None = None
+    showOutlineSymbols: bool | None = None
+    defaultGridColor: bool | None = None
+    showWhiteSpace: bool | None = None
+    view: str | None = None
+    topLeftCell: str | None = None
+    colorId: int | None = None
     zoomScale: int | None = None
     zoomScaleNormal: int | None = None
-    tabSelected: bool | None = None
-    rightToLeft: bool | None = None
+    zoomScaleSheetLayoutView: int | None = None
+    zoomScalePageLayoutView: int | None = None
+    zoomToFit: bool | None = None
+    workbookViewId: int = 0
+    selection: list[Selection] = field(default_factory=list)
+    pane: Pane | None = None
+
+
+@dataclass
+class FilterColumn:
+    colId: int = 0
+    hiddenButton: bool = False
+    showButton: bool = True
+    vals: list[str] = field(default_factory=list)
+    blank: bool = False
+
+
+@dataclass
+class SortCondition:
+    ref: str | None = None
+    descending: bool | None = None
+    sortBy: str | None = None
+    customList: str | None = None
+    dxfId: int | None = None
+    iconSet: str | None = None
+    iconId: int | None = None
+
+
+@dataclass
+class SortState:
+    ref: str | None = None
+    columnSort: bool | None = None
+    caseSensitive: bool | None = None
+    sortMethod: str | None = None
+    sortCondition: list[SortCondition] = field(default_factory=list)
 
 
 @dataclass
 class AutoFilter:
     ref: str | None = None
+    filterColumn: list[FilterColumn] = field(default_factory=list)
+    sortState: SortState | None = None
 
     def add_filter_column(self, col_id, vals, blank=False):
-        raise NotImplementedError("AutoFilter column filters are not implemented yet")
+        self.filterColumn.append(
+            FilterColumn(colId=col_id, vals=list(vals or []), blank=bool(blank))
+        )
 
     def add_sort_condition(self, ref, descending=False):
-        raise NotImplementedError("AutoFilter sort conditions are not implemented yet")
+        if self.sortState is None:
+            self.sortState = SortState(ref=self.ref)
+        self.sortState.sortCondition.append(
+            SortCondition(ref=ref, descending=bool(descending))
+        )
+
+
+@dataclass
+class Break:
+    id: int = 0
+    min: int = 0
+    max: int = 16383
+    man: bool = True
+    pt: int | None = None
+
+
+class RowBreak:
+    def __init__(self, brk=()):
+        self.brk = list(brk)
+
+    @property
+    def count(self):
+        return len(self.brk)
+
+    @property
+    def manualBreakCount(self):
+        return len(self.brk)
+
+    def append(self, brk=None):
+        if not isinstance(brk, Break):
+            brk = Break(id=self.count + 1)
+        self.brk.append(brk)
+
+    def __len__(self):
+        return len(self.brk)
+
+    def __bool__(self):
+        return bool(self.brk)
+
+
+class ColBreak(RowBreak):
+    pass
+
+
+@dataclass
+class SheetProtection:
+    sheet: bool = False
+    objects: bool = False
+    scenarios: bool = False
+    formatCells: bool = True
+    formatRows: bool = True
+    formatColumns: bool = True
+    insertColumns: bool = True
+    insertRows: bool = True
+    insertHyperlinks: bool = True
+    deleteColumns: bool = True
+    deleteRows: bool = True
+    selectLockedCells: bool = False
+    selectUnlockedCells: bool = False
+    sort: bool = True
+    autoFilter: bool = True
+    pivotTables: bool = True
+    password: str | None = None
+    algorithmName: str | None = None
+    saltValue: str | None = None
+    spinCount: int | None = None
+    hashValue: str | None = None
+
+
+@dataclass
+class CustomProperty:
+    name: str
+    value: object
+
+
+@dataclass
+class DocumentSecurity:
+    lockStructure: bool = False
+    lockWindows: bool = False
+    lockRevision: bool = False
 
 
 _CF_RULES = (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule, *EXTRA_CF_RULES)
@@ -232,34 +637,209 @@ def _expect(value, expected, what: str, hint: str):
         raise TypeError(f"{what} must be {hint}, not {type(value).__name__}{extra}")
 
 
+@dataclass
+class ConditionalFormatting:
+    sqref: str
+    rules: list = field(default_factory=list)
+    pivot: bool | None = None
+
+
 class ConditionalFormattingList:
-    """``ws.conditional_formatting``: the sheet's rules, in the order added."""
+    """``ws.conditional_formatting``: rules grouped by range, as openpyxl."""
 
     def __init__(self):
-        self._rules: list = []
+        self._items: list[ConditionalFormatting] = []
 
     def add(self, range_string: str, rule) -> None:
         """Apply ``rule`` to ``range_string`` (its own ``sqref`` is replaced)."""
         _expect(rule, _CF_RULES, "rule", "an xlspy conditional formatting rule (CellIsRule, ...)")
-        self._rules.append(replace(rule, sqref=_normalize_range(range_string)))
+        normalized = _normalize_range(range_string)
+        for item in self._items:
+            if item.sqref == normalized:
+                item.rules.append(replace(rule, sqref=normalized))
+                return
+        self._items.append(
+            ConditionalFormatting(normalized, [replace(rule, sqref=normalized)])
+        )
 
     def __iter__(self):
-        return iter(self._rules)
+        return iter(self._items)
 
     def __len__(self):
-        return len(self._rules)
+        return len(self._items)
 
     def __bool__(self):
-        return bool(self._rules)
+        return bool(self._items)
+
+    def __getitem__(self, key):
+        if isinstance(key, int) and not isinstance(key, bool):
+            return self._items[key]
+        normalized = _normalize_range(key)
+        for item in self._items:
+            if item.sqref == normalized:
+                return item.rules
+        raise KeyError(key)
+
+    def all_rules(self):
+        return [rule for item in self._items for rule in item.rules]
+
+    def remove(self, rule_or_range) -> None:
+        if isinstance(rule_or_range, str):
+            normalized = _normalize_range(rule_or_range)
+            self._items = [item for item in self._items if item.sqref != normalized]
+            return
+        for item in list(self._items):
+            item.rules = [rule for rule in item.rules if rule is not rule_or_range]
+            if not item.rules:
+                self._items.remove(item)
+
+
+class TableColumn:
+    def __init__(
+        self,
+        id=None,
+        name=None,
+        totalsRowFunction=None,
+        totalsRowLabel=None,
+        calculatedColumnFormula=None,
+        totalsRowFormula=None,
+        xmlColumnPr=None,
+    ):
+        self.id = id
+        self.name = name
+        self.totalsRowFunction = totalsRowFunction
+        self.totalsRowLabel = totalsRowLabel
+        self.calculatedColumnFormula = calculatedColumnFormula
+        self.totalsRowFormula = totalsRowFormula
+        self.xmlColumnPr = xmlColumnPr
+
+
+class TableStyleInfo:
+    def __init__(
+        self,
+        name=None,
+        showFirstColumn=None,
+        showLastColumn=None,
+        showRowStripes=None,
+        showColumnStripes=None,
+    ):
+        self.name = name
+        self.showFirstColumn = showFirstColumn
+        self.showLastColumn = showLastColumn
+        self.showRowStripes = showRowStripes
+        self.showColumnStripes = showColumnStripes
+
+
+class Table:
+    def __init__(
+        self,
+        id=1,
+        displayName=None,
+        ref=None,
+        name=None,
+        comment=None,
+        tableType=None,
+        headerRowCount=1,
+        insertRow=None,
+        insertRowShift=None,
+        totalsRowCount=None,
+        totalsRowShown=None,
+        published=None,
+        autoFilter=None,
+        sortState=None,
+        tableColumns=(),
+        tableStyleInfo=None,
+    ):
+        self.id = id
+        self.displayName = displayName
+        self.ref = ref
+        self.name = name or displayName
+        self.comment = comment
+        self.tableType = tableType
+        self.headerRowCount = headerRowCount
+        self.insertRow = insertRow
+        self.insertRowShift = insertRowShift
+        self.totalsRowCount = totalsRowCount
+        self.totalsRowShown = totalsRowShown
+        self.published = published
+        self.autoFilter = autoFilter
+        self.sortState = sortState
+        self.tableColumns = list(tableColumns)
+        self.tableStyleInfo = tableStyleInfo
+
+    @property
+    def display_name(self):
+        return self.displayName
+
+    @property
+    def header_row(self):
+        return bool(self.headerRowCount)
+
+    @property
+    def totals_row(self):
+        return bool(self.totalsRowCount)
+
+    @property
+    def columns(self):
+        return [column.name for column in self.tableColumns]
+
+    @property
+    def style_name(self):
+        return None if self.tableStyleInfo is None else self.tableStyleInfo.name
+
+
+class TableList(list):
+    """A list of tables that also accepts a table name as a lookup key."""
+
+    def __getitem__(self, key):
+        if isinstance(key, int) and not isinstance(key, bool):
+            return super().__getitem__(key)
+        for table in self:
+            if key in {getattr(table, "displayName", None), getattr(table, "name", None)}:
+                return table
+        raise KeyError(key)
+
+    def __contains__(self, key):
+        if isinstance(key, str):
+            return any(
+                key in {getattr(table, "displayName", None), getattr(table, "name", None)}
+                for table in self
+            )
+        return super().__contains__(key)
+
+    def add(self, table) -> None:
+        self.append(table)
+
+    def remove(self, table_or_name) -> None:
+        if isinstance(table_or_name, str):
+            for table in list(self):
+                if table_or_name in {
+                    getattr(table, "displayName", None), getattr(table, "name", None)
+                }:
+                    super().remove(table)
+                    return
+            raise KeyError(table_or_name)
+        super().remove(table_or_name)
+
+
+class DataValidationList(list):
+    def add(self, rule) -> None:
+        self.append(rule)
+
+    def remove(self, rule) -> None:
+        super().remove(rule)
 
 
 class Dimension:
     def __init__(self, index: str | int):
         self.index = index
+        self.min: int | None = None
+        self.max: int | None = None
         self.width: float | None = None
         self.height: float | None = None
         self.hidden: bool = False
         self.bestFit: bool | None = None
+        self.autoSize: bool | None = None
         self.outlineLevel: int = 0
         self.collapsed: bool = False
         self.style: int | None = None
@@ -271,6 +851,14 @@ class Dimension:
     @property
     def customHeight(self) -> bool:
         return self.height is not None
+
+    @property
+    def outline_level(self) -> int:
+        return self.outlineLevel
+
+    @outline_level.setter
+    def outline_level(self, value: int):
+        self.outlineLevel = value
 
 
 class ColumnDimension(Dimension):
@@ -302,6 +890,25 @@ class DimensionHolder(dict):
     def __contains__(self, key):
         return super().__contains__(self._transform(key))
 
+    def group(self, start, end=None, outline_level: int = 1, hidden: bool = False):
+        """Group consecutive rows or columns, as openpyxl does."""
+        if end is None:
+            end = start
+        if self._factory is ColumnDimension:
+            first = _coerce_column(start)
+            last = _coerce_column(end)
+            for index in range(first, last + 1):
+                dimension = self[column_label(index - 1)]
+                dimension.outlineLevel = outline_level
+                dimension.hidden = hidden
+                dimension.min = first
+                dimension.max = last
+        else:
+            for index in range(int(start), int(end) + 1):
+                dimension = self[index]
+                dimension.outlineLevel = outline_level
+                dimension.hidden = hidden
+
 
 def _column_key(key: str | int) -> str:
     if isinstance(key, int) and not isinstance(key, bool):
@@ -317,10 +924,15 @@ def _row_key(key: int) -> int:
     return _coerce_row(key)
 
 
+_new_cell = object.__new__
+_PLAIN_TYPES = {int: "n", float: "n", bool: "b", str: "s"}
+
+
 class Cell:
     __slots__ = (
         "_sheet", "_row", "_column", "_value", "_data_type",
         "_style_id", "_comment", "_hyperlink", "_dirty", "_formula",
+        "_named_style",
     )
 
     def __init__(self, sheet, row: int, column: int, value=None, style_id: int = 0):
@@ -333,6 +945,7 @@ class Cell:
         self._style_id = int(style_id)
         self._comment: Comment | None = None
         self._hyperlink: Hyperlink | None = None
+        self._named_style: str | None = None
         self._dirty = False
         if value is not None:
             self.value = value
@@ -373,6 +986,18 @@ class Cell:
 
     @value.setter
     def value(self, value):
+        plain = _PLAIN_TYPES.get(type(value))
+        if plain is not None and not (plain == "s" and value.startswith("=")):
+            # Exact int/float/bool/str: no formula, hyperlink or date handling.
+            self._formula = None
+            self._hyperlink = None
+            self._value = value
+            self._data_type = plain
+            self._dirty = True
+            sheet = self._sheet
+            sheet._dirty_cells.add((self._row, self._column))
+            sheet._dirty = True
+            return
         if isinstance(value, Cell):
             value = value.value
         if isinstance(value, Formula):
@@ -417,6 +1042,21 @@ class Cell:
     @property
     def internal_value(self):
         return self._value
+
+    @property
+    def is_date(self) -> bool:
+        return isinstance(
+            self._value,
+            (_datetime.datetime, _datetime.date, _datetime.time, _datetime.timedelta),
+        )
+
+    @property
+    def encoding(self) -> str:
+        return "utf-8"
+
+    @property
+    def base_date(self):
+        return self._sheet._workbook.epoch
 
     @property
     def hyperlink(self):
@@ -532,10 +1172,22 @@ class Cell:
     def number_format(self, value: str):
         if not isinstance(value, str):
             raise TypeError("number_format must be a string")
-        self._set_style(replace(
-            self._style(),
-            number_format=None if value == "General" else value,
-        ))
+        workbook = self._sheet._workbook
+        styles = workbook._styles
+        cache = getattr(styles, "_number_format_ids", None)
+        if cache is None:
+            cache = styles._number_format_ids = {}
+        key = (self._style_id, value)
+        style_id = cache.get(key)
+        if style_id is None:
+            style_id = cache[key] = styles.add(replace(
+                self._style(),
+                number_format=None if value == "General" else value,
+            ))
+        self._style_id = style_id
+        workbook._styles_dirty = True
+        self._sheet._dirty_styles.add(self.coordinate)
+        self._sheet._mark_dirty("styles")
 
     @property
     def style(self):
@@ -544,9 +1196,34 @@ class Cell:
     @style.setter
     def style(self, value):
         if isinstance(value, str):
-            raise NotImplementedError("named styles are not implemented yet")
+            named = None
+            for entry in self._sheet._workbook.named_styles:
+                if (entry if isinstance(entry, str) else entry.name) == value:
+                    named = entry
+                    break
+            if named is None:
+                raise NotImplementedError(
+                    "named styles are not implemented yet; "
+                    f"{value!r} is not defined, add it with add_named_style()"
+                )
+            if isinstance(named, NamedStyle):
+                current = self._style()
+                self._set_style(Style(
+                    font=named.font if named.font is not None else current.font,
+                    fill=named.fill if named.fill is not None else current.fill,
+                    border=named.border if named.border is not None else current.border,
+                    alignment=named.alignment if named.alignment is not None else current.alignment,
+                    protection=named.protection if named.protection is not None else current.protection,
+                    number_format=(
+                        named.number_format if named.number_format is not None
+                        else current.number_format
+                    ),
+                ))
+            self._named_style = value
+            return
         if not isinstance(value, Style):
-            raise TypeError("style must be a xlspy Style")
+            raise TypeError("style must be a xlspy Style or a named style")
+        self._named_style = None
         self._set_style(value)
 
     def _load_value(self, value, data_type: str, formula_text: str | None = None):
@@ -575,6 +1252,25 @@ class MergedCell(Cell):
     @Cell.value.setter
     def value(self, value):
         raise AttributeError("read-only cell (merged range)")
+
+
+class WriteOnlyCell:
+    """A value with optional style, used with ``WriteOnlyWorksheet.append``."""
+
+    def __init__(self, worksheet, value=None):
+        self.parent = worksheet
+        self.value = value
+        self.font = None
+        self.fill = None
+        self.border = None
+        self.alignment = None
+        self.protection = None
+        self.number_format = "General"
+        self.comment = None
+        self.hyperlink = None
+
+    def __repr__(self):
+        return f"<WriteOnlyCell {self.value!r}>"
 
 
 class Worksheet:
@@ -612,8 +1308,8 @@ class Worksheet:
         self._path: str | None = None
         self._row_heights: dict[int, float] = {}
         self._hidden_rows: set[int] = set()
-        self._data_validations: list = []
-        self._tables: list = []
+        self._data_validations = DataValidationList()
+        self._tables = TableList()
         self._charts: list = []
         self._images: list = []
         self._conditional_formats = ConditionalFormattingList()
@@ -628,6 +1324,10 @@ class Worksheet:
         self.page_margins = PageMargins()
         self.print_options = PrintOptions()
         self.HeaderFooter = HeaderFooter()
+        self.sheet_format = SheetFormatProperties()
+        self.protection = SheetProtection()
+        self.row_breaks = RowBreak()
+        self.col_breaks = ColBreak()
         self._print_area: str | None = None
         self._print_title_rows: str | None = None
         self._print_title_cols: str | None = None
@@ -694,6 +1394,27 @@ class Worksheet:
                 raise ValueError("freeze_panes must be a single cell")
             value = _coordinate(row + 1, col + 1)
         self._freeze_panes = value
+        if value is None:
+            self._sheet_view.pane = None
+            self._sheet_view.selection = []
+        else:
+            col, row, _, _ = parse_cell_range(value)
+            if col and row:
+                active = "bottomRight"
+            elif col:
+                active = "topRight"
+            else:
+                active = "bottomLeft"
+            self._sheet_view.pane = Pane(
+                xSplit=col if col else None,
+                ySplit=row if row else None,
+                topLeftCell=value,
+                activePane=active,
+                state="frozen",
+            )
+            self._sheet_view.selection = [
+                Selection(pane=active, activeCell=value, sqref=value)
+            ]
         self._mark_dirty("freeze_panes")
 
     @property
@@ -719,6 +1440,27 @@ class Worksheet:
     @property
     def sheet_view(self) -> SheetView:
         return self._sheet_view
+
+    @property
+    def active_cell(self) -> str | None:
+        if not self._sheet_view.selection:
+            return None
+        return self._sheet_view.selection[0].activeCell
+
+    @property
+    def selected_cell(self) -> str | None:
+        if not self._sheet_view.selection:
+            return None
+        return self._sheet_view.selection[0].sqref
+
+    @property
+    def show_gridlines(self) -> bool | None:
+        return self._sheet_view.showGridLines
+
+    @show_gridlines.setter
+    def show_gridlines(self, value: bool | None):
+        self._sheet_view.showGridLines = value
+        self._mark_dirty("sheet_view")
 
     @property
     def max_row(self) -> int:
@@ -787,6 +1529,22 @@ class Worksheet:
         return self.HeaderFooter.oddFooter
 
     @property
+    def evenHeader(self):
+        return self.HeaderFooter.evenHeader
+
+    @property
+    def evenFooter(self):
+        return self.HeaderFooter.evenFooter
+
+    @property
+    def firstHeader(self):
+        return self.HeaderFooter.firstHeader
+
+    @property
+    def firstFooter(self):
+        return self.HeaderFooter.firstFooter
+
+    @property
     def print_area(self) -> str | None:
         return self._print_area
 
@@ -814,6 +1572,17 @@ class Worksheet:
     @print_title_cols.setter
     def print_title_cols(self, value: str | None):
         self._print_title_cols = value
+
+    @property
+    def print_titles(self) -> str:
+        """The print titles as openpyxl formats them, e.g. ``'Sheet'!$1:$2``."""
+        title = quote_sheet_name(self.title)
+        values = []
+        if self._print_title_rows:
+            values.append("$" + self._print_title_rows.replace(":", ":$"))
+        if self._print_title_cols:
+            values.append("$" + self._print_title_cols.replace(":", ":$"))
+        return ",".join(f"{title}!{value}" for value in values)
 
     # -- inserting, deleting and moving (openpyxl semantics, see _shift) --
     def insert_rows(self, idx: int, amount: int = 1) -> None:
@@ -851,8 +1620,8 @@ class Worksheet:
             img = replace(img, path=img.data, anchor=anchor)
         self._images.append(img)
 
-    def add_table(self, table: ExcelTable) -> None:
-        _expect(table, ExcelTable, "table", "an xlspy ExcelTable")
+    def add_table(self, table) -> None:
+        _expect(table, (ExcelTable, Table), "table", "an xlspy ExcelTable or Table")
         self._tables.append(table)
 
     def add_data_validation(self, data_validation: DataValidation) -> None:
@@ -893,12 +1662,32 @@ class Worksheet:
 
     def _set_cell_raw(self, row: int, column: int, value=None, style_id: int = 0,
                       data_type: str = "n", formula_text: str | None = None) -> Cell:
-        cell = Cell(self, row, column, style_id=style_id)
-        cell._load_value(value, data_type, formula_text)
-        self._cells.setdefault(row, {})[column] = cell
+        # Loader hot path: bounds are checked inline and the cell is filled
+        # directly, which is what Cell.__init__ + _load_value would do.
+        if not (1 <= row <= 1048576 and 1 <= column <= 16384):
+            _coerce_row(row)
+            _coerce_column(column)
+        cell = _new_cell(Cell)
+        cell._sheet = self
+        cell._row = row
+        cell._column = column
+        cell._value = value
+        cell._formula = formula_text
+        cell._data_type = data_type
+        cell._style_id = style_id
+        cell._comment = None
+        cell._hyperlink = None
+        cell._named_style = None
+        cell._dirty = False
+        row_cells = self._cells.get(row)
+        if row_cells is None:
+            row_cells = self._cells[row] = {}
+        row_cells[column] = cell
         if value is not None or formula_text is not None or style_id or data_type != "n":
-            self._max_row = max(self._max_row, row)
-            self._max_column = max(self._max_column, column)
+            if row > self._max_row:
+                self._max_row = row
+            if column > self._max_column:
+                self._max_column = column
         return cell
 
     def _existing_cell(self, row: int, column: int) -> Cell | None:
@@ -943,10 +1732,38 @@ class Worksheet:
         raise TypeError("worksheet indices must be A1 references")
 
     def append(self, iterable: Iterable[Any]):
+        if isinstance(iterable, Mapping):
+            row = self._max_row + 1
+            for key, value in iterable.items():
+                if isinstance(key, str):
+                    column = _coerce_column(key)
+                elif isinstance(key, int) and not isinstance(key, bool):
+                    if not 1 <= key <= 16384:
+                        raise ValueError("column index must be 1..16384")
+                    column = key
+                else:
+                    raise TypeError("dict keys must be column letters or 1-based ints")
+                if isinstance(value, WriteOnlyCell):
+                    value = value.value
+                self.cell(row, column, value)
+            if iterable:
+                self._max_row = max(self._max_row, row)
+                self._max_column = max(
+                    self._max_column,
+                    max(_coerce_column(key) for key in iterable),
+                )
+            return row
         if isinstance(iterable, (str, bytes, bytearray)):
             raise TypeError("a row must be an iterable of cells, not text")
-        values = list(iterable)
+        values = [
+            value.value if isinstance(value, WriteOnlyCell) else value
+            for value in iterable
+        ]
         row = self._max_row + 1
+        if (values and row <= 1048576 and len(values) <= 16384
+                and not self._merged_cells and row not in self._cells):
+            self._append_new_row(row, values)
+            return row
         for column, value in enumerate(values, 1):
             if value is not None:
                 self.cell(row, column, value)
@@ -957,6 +1774,85 @@ class Worksheet:
         if values:
             self._max_row = max(self._max_row, row)
         return row
+
+    def _append_new_row(self, row: int, values: list) -> None:
+        """append() into a row with no cells yet and no merged ranges.
+
+        Plain int/float/bool/str values are stored as ``cell(row, column,
+        value)`` would store them, without its checks; any other value goes
+        through ``cell()``.
+        """
+        row_cells = self._cells[row] = {}
+        dirty = self._dirty_cells
+        plain_types = _PLAIN_TYPES
+        date_styles = None
+        dated = False
+        for column, value in enumerate(values, 1):
+            if value is None:
+                continue
+            kind = type(value)
+            plain = plain_types.get(kind)
+            style_id = 0
+            if plain is None:
+                # A date or datetime gets the writers' default format, as the
+                # value setter gives it; reuse the style id it already made.
+                if kind is _datetime.datetime or kind is _datetime.date:
+                    if date_styles is None:
+                        date_styles = self._default_date_styles()
+                    style_id = date_styles.get(kind)
+                if not style_id:
+                    self.cell(row, column, value)
+                    continue
+                plain = "d"
+                dated = True
+                self._dirty_styles.add(_coordinate(row, column))
+            elif plain == "s" and value.startswith("="):
+                self.cell(row, column, value)
+                continue
+            cell = _new_cell(Cell)
+            cell._sheet = self
+            cell._row = row
+            cell._column = column
+            cell._value = value
+            cell._formula = None
+            cell._data_type = plain
+            cell._style_id = style_id
+            cell._comment = None
+            cell._hyperlink = None
+            cell._named_style = None
+            cell._dirty = True
+            row_cells[column] = cell
+            dirty.add((row, column))
+        if dated:
+            self._workbook._styles_dirty = True
+            self._dirty_meta.add("styles")
+        if row_cells:
+            self._dirty = True
+        else:
+            del self._cells[row]
+        # As for cell() and the None branch of append(): every position counts.
+        if row > self._max_row:
+            self._max_row = row
+        if len(values) > self._max_column:
+            self._max_column = len(values)
+
+    def _default_date_styles(self) -> dict:
+        """Style ids a new date/datetime cell gets from the value setter, when known.
+
+        Taken from the number-format memo of ``Cell.number_format``; a type
+        missing here goes through ``cell()`` once, which fills the memo.
+        """
+        styles = self._workbook._styles
+        if styles.style_at(0).number_format not in (None, "General"):
+            return {}
+        cache = getattr(styles, "_number_format_ids", None) or {}
+        found = {}
+        for kind, fmt in ((_datetime.datetime, DEFAULT_DATETIME_FORMAT),
+                          (_datetime.date, DEFAULT_DATE_FORMAT)):
+            style_id = cache.get((0, fmt))
+            if style_id:
+                found[kind] = style_id
+        return found
 
     def iter_rows(self, min_row=None, max_row=None, min_col=None, max_col=None,
                   values_only: bool = False):
@@ -1063,9 +1959,29 @@ class WriteOnlyWorksheet(Worksheet):
         self._rows: list[list[Any]] = []
 
     def append(self, iterable: Iterable[Any]):
-        if isinstance(iterable, (str, bytes, bytearray)):
-            raise TypeError("a row must be an iterable of cells, not text")
-        self._rows.append(list(iterable))
+        if isinstance(iterable, Mapping):
+            entries = []
+            for key, value in iterable.items():
+                if isinstance(key, str):
+                    column = _coerce_column(key)
+                elif isinstance(key, int) and not isinstance(key, bool):
+                    if not 1 <= key <= 16384:
+                        raise ValueError("column index must be 1..16384")
+                    column = key
+                else:
+                    raise TypeError("dict keys must be column letters or 1-based ints")
+                entries.append((column, value.value if isinstance(value, WriteOnlyCell) else value))
+            row = [None] * (max((column for column, _ in entries), default=0))
+            for column, value in entries:
+                row[column - 1] = value
+            self._rows.append(row)
+        else:
+            if isinstance(iterable, (str, bytes, bytearray)):
+                raise TypeError("a row must be an iterable of cells, not text")
+            self._rows.append([
+                value.value if isinstance(value, WriteOnlyCell) else value
+                for value in iterable
+            ])
         self._max_row = len(self._rows)
         self._max_column = max((len(row) for row in self._rows), default=0)
         self._mark_dirty("rows")
@@ -1082,17 +1998,51 @@ class WriteOnlyWorksheet(Worksheet):
                 raise ValueError("write-only worksheets only support values_only rows")
 
 
+class Chartsheet:
+    """A chartsheet read from a workbook."""
+
+    def __init__(self, workbook, title: str, index: int | None = None):
+        self._workbook = workbook
+        self.title = title
+        self.sheet_state = "visible"
+        self._index = index
+        self._charts: list = []
+
+    def __repr__(self):
+        return f"<Chartsheet {self.title!r}>"
+
+    @property
+    def charts(self):
+        return self._charts
+
+    def add_chart(self, chart) -> None:
+        self._charts.append(chart)
+
+
 class Workbook:
     def __init__(self, write_only: bool = False, iso_dates: bool = False):
         self.write_only = bool(write_only)
         self.iso_dates = bool(iso_dates)
         self._sheets: list[Worksheet] = []
+        self._chartsheets: list[Chartsheet] = []
         self._active_index = 0
         self._styles = XlsxStyleTable.empty()
         self._styles_dirty = False
         self._properties = DocumentProperties()
-        self._defined_names: list = []
+        self._defined_names = DefinedNameList(self)
+        self._defined_names_dirty = False
+        self.template = False
+        self.epoch = _datetime.datetime(1899, 12, 30)
+        self.vba_archive = None
+        self.security = WorkbookSecurity()
+        self.calculation = CalcProperties()
+        self.views = [BookView()]
+        self.custom_doc_props = CustomPropertyList()
+        self.named_styles = NamedStyleList(["Normal"])
+        self._format = "xlsx"
         self._loaded = False
+        self._loaded_active_index = 0
+        self._loaded_workbook_meta = None
         self._read_only = False
         self._updater = None
         self._source_path: str | None = None
@@ -1110,8 +2060,20 @@ class Workbook:
         return [sheet.title for sheet in self._sheets]
 
     @property
+    def read_only(self) -> bool:
+        return self._read_only
+
+    @read_only.setter
+    def read_only(self, value: bool):
+        self._read_only = bool(value)
+
+    @property
     def worksheets(self) -> list[Worksheet]:
         return list(self._sheets)
+
+    @property
+    def chartsheets(self) -> list[Chartsheet]:
+        return list(self._chartsheets)
 
     @property
     def active(self) -> Worksheet:
@@ -1184,6 +2146,8 @@ class Workbook:
                 new_cell = target.cell(row_number, column, cell.value)
                 new_cell._style_id = cell._style_id
                 new_cell._comment = cell.comment
+                new_cell._hyperlink = cell.hyperlink
+                new_cell._named_style = cell._named_style
         target._merged_cells = MultiCellRange(from_worksheet._merged_cells.ranges)
         target._column_dimensions.update(from_worksheet._column_dimensions)
         target._row_dimensions.update(from_worksheet._row_dimensions)
@@ -1205,8 +2169,17 @@ class Workbook:
             raise TypeError("properties must be DocumentProperties")
         self._properties = value
 
+    def add_named_style(self, style) -> None:
+        if not isinstance(style, NamedStyle):
+            raise TypeError("style must be a NamedStyle")
+        self._styles.add_named_style(style)
+        self.named_styles.add(style)
+        self._styles_dirty = True
+
     @property
-    def defined_names(self):
+    def defined_names(self) -> DefinedNameList:
+        if not isinstance(self._defined_names, DefinedNameList):
+            self._defined_names = DefinedNameList(self, self._defined_names)
         return self._defined_names
 
     def _rename_sheet(self, sheet: Worksheet, title: str):

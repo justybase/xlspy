@@ -43,6 +43,15 @@ from .styles import (
     table_column_names,
 )
 from .biff_utils import build_record
+from ._xlsb_style_records import (
+    border_record,
+    color_payload,
+    fill_record,
+    font_record,
+    gradient_fill_record,
+    numfmt_record,
+    xf_record,
+)
 from ._xlsb_print import FIT_TO_PAGE_BIT, FIT_TO_PAGE_BYTE, print_records
 from ._xlsb_validation import validations_bin
 from ._xlsb_cf import FORMULA_RULES, dxf_payload, dxfs_bin, rule_bin
@@ -146,35 +155,6 @@ _ACUID_NAMESPACE = uuid.UUID("6f1c2a52-7b1e-4f0b-9a7e-58a3c1d0b6e4")
 # Active-pane identifiers for BrtPane/BrtSel ([MS-XLSB] 2.5.108 Pnn).
 _PANE_ACTIVE = {"bottomRight": 0, "topRight": 1, "bottomLeft": 2, "topLeft": 3}
 
-# Property encodings for BrtFont, BrtFill, BrtBorder and BrtXF; the values come
-# from the tables in [MS-XLSB] sections 2.4.311 (BrtBorder), 2.4.674 (BrtFill),
-# 2.4.683 (BrtFont) and 2.4.863 (BrtXF).
-_UNDERLINE_BYTES = {
-    None: 0x00, "none": 0x00, "single": 0x01, "double": 0x02,
-    "singleAccounting": 0x21, "doubleAccounting": 0x22,
-}
-_FONT_BASELINE = {None: 0, "baseline": 0, "superscript": 1, "subscript": 2}
-_FONT_SCHEME = {None: 0, "major": 1, "minor": 2}
-_PATTERN_BYTES = {
-    None: 0, "none": 0, "solid": 1, "mediumGray": 2, "darkGray": 3,
-    "lightGray": 4, "darkHorizontal": 5, "darkVertical": 6, "darkDown": 7,
-    "darkUp": 8, "darkGrid": 9, "darkTrellis": 10, "lightHorizontal": 11,
-    "lightVertical": 12, "lightDown": 13, "lightUp": 14, "lightGrid": 15,
-    "lightTrellis": 16, "gray125": 17, "gray0625": 18,
-}
-_BORDER_BYTES = {
-    None: 0x00, "none": 0x00, "thin": 0x01, "medium": 0x02, "dashed": 0x03,
-    "dotted": 0x04, "thick": 0x05, "double": 0x06, "hair": 0x07,
-    "mediumDashed": 0x08, "dashDot": 0x09, "mediumDashDot": 0x0A,
-    "dashDotDot": 0x0B, "mediumDashDotDot": 0x0C, "slantDashDot": 0x0D,
-}
-_HORIZONTAL_BYTES = {
-    None: 0, "general": 0, "left": 1, "center": 2, "right": 3, "fill": 4,
-    "justify": 5, "centerContinuous": 6, "distributed": 7,
-}
-_VERTICAL_BYTES = {
-    None: 2, "top": 0, "center": 1, "bottom": 2, "justify": 3, "distributed": 4,
-}
 
 
 @dataclass
@@ -816,6 +796,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         column_groups: list | tuple | None = None,
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
+        auto_filter_ref: str | None = None,
         charts: list[Chart] | tuple[Chart, ...] | None = None,
         images: list[Image] | tuple[Image, ...] | None = None,
         print_settings: PrintSettings | None = None,
@@ -923,13 +904,14 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         link_rids: dict[str, str] = {}
         link_rid_start = 2 + len(table_ids) + int(has_drawing) + (2 if comment_specs else 0)
         try:
-            with self._zf.open(f"xl/worksheets/sheet{sheet_id}.bin", 'w') as sheet_file:
+            with self._zf.open_threaded(f"xl/worksheets/sheet{sheet_id}.bin") as sheet_file:
                 self._write_worksheet_bin(
                     sheet_file, data, self._sheet_count - 1,
                     style_ranges=style_ranges, header_style=header_style,
                     merge_refs=merge_refs, widths=widths, hidden_cols=hidden_cols,
                     heights=heights, hidden_row_set=hidden_row_set,
                     freeze_panes=freeze_panes, auto_filter=auto_filter,
+                    auto_filter_ref=auto_filter_ref,
                     drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
                     cf_rules=cf_specs, row_outline=row_outline, col_outline=col_outline,
                     sheet_protection=sheet_protection,
@@ -966,6 +948,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         column_groups: list | tuple | None = None,
         freeze_panes: str | None = None,
         auto_filter: bool | None = None,
+        auto_filter_ref: str | None = None,
         charts: list | tuple | None = None,
         images: list | tuple | None = None,
         print_settings=None,
@@ -1009,6 +992,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
             column_groups=column_groups,
             freeze_panes=freeze_panes,
             auto_filter=auto_filter,
+            auto_filter_ref=auto_filter_ref,
             charts=charts,
             images=images,
             print_settings=print_settings,
@@ -1074,7 +1058,7 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         self._zf.writestr("xl/_rels/workbook.bin.rels", self._create_workbook_rels())
         self._write_doc_props()
 
-        with self._zf.open("xl/sharedStrings.bin", 'w') as sst_file:
+        with self._zf.open_threaded("xl/sharedStrings.bin") as sst_file:
             self._write_shared_strings_bin(sst_file)
 
     def _create_content_types(self) -> str:
@@ -1284,181 +1268,24 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         if buffer.tell() > 0:
             sst_file.write(buffer.getvalue())
 
-    @staticmethod
-    def _build_numfmt_record(ifmt: int, fmt_string: str) -> bytes:
-        encoded = fmt_string.encode('utf-16-le')
-        payload = struct.pack('<HI', ifmt, len(encoded) // 2) + encoded
-        return build_record(_BRT_FMT, payload)
-
-    @staticmethod
-    def _color_payload(color_key) -> bytes:
-        """An 8-byte BrtColor ([MS-XLSB] 2.4.334) for a ``split_style`` color."""
-        if color_key is None:
-            return bytes(8)  # automatic
-        kind = color_key[0]
-        if kind == "rgb":
-            alpha, red, green, blue = bytes.fromhex(color_key[1])
-            return bytes((0x05, 0, 0, 0, red, green, blue, alpha))
-        if kind == "indexed":
-            return bytes((0x03, color_key[1], 0, 0, 0, 0, 0, 0xFF))
-        if kind == "theme":
-            tint = color_key[2]
-            scaled = 0 if tint is None else max(-32768, min(32767, round(tint * 32767)))
-            return bytes((0x07, color_key[1])) + struct.pack('<h', scaled) + bytes((0, 0, 0, 0xFF))
-        return bytes(8)  # ("auto",)
+    # Style records are shared with the loaded-workbook saver (_xlsb_style_records).
+    _build_numfmt_record = staticmethod(numfmt_record)
+    _color_payload = staticmethod(color_payload)
 
     def _xlsb_font_record(self, font_key: tuple) -> bytes:
-        """Build a BrtFont record ([MS-XLSB] 2.4.683) from a font key."""
-        flags = 0
-        for bit, value in (
-            (0x01, font_key.bold), (0x02, font_key.italic), (0x08, font_key.strike),
-            (0x10, font_key.outline), (0x20, font_key.shadow),
-            (0x40, font_key.condense), (0x80, font_key.extend),
-        ):
-            if value:
-                flags |= bit
-        height = 220 if font_key.size is None else max(0x14, min(0x1FFF, round(font_key.size * 20)))
-        payload = bytearray()
-        payload.extend(struct.pack(
-            '<HHHH', height, flags, 700 if font_key.bold else 400,
-            _FONT_BASELINE[font_key.vert_align],
-        ))
-        payload.extend((
-            _UNDERLINE_BYTES[font_key.underline],
-            font_key.family if font_key.family is not None else 2,
-            font_key.charset if font_key.charset is not None else 0,
-            0,
-        ))
-        payload.extend(self._color_payload(font_key.color))
-        scheme = _FONT_SCHEME[font_key.scheme]
-        if font_key.scheme is None and font_key.name is None:
-            # The default Calibri is the minor (body) theme font; a font that
-            # names its typeface must not claim a theme scheme or Excel would
-            # substitute the theme font for the requested one.
-            scheme = 2
-        payload.append(scheme)
-        name = (font_key.name or 'Calibri').encode('utf-16-le')
-        payload.extend(struct.pack('<I', len(name) // 2))
-        payload.extend(name)
-        return build_record(_BRT_FONT, bytes(payload))
+        return font_record(font_key)
 
     def _xlsb_fill_record(self, fill_key: tuple) -> bytes:
-        """Build a BrtFill record ([MS-XLSB] 2.4.674) from a fill key."""
-        if fill_key[0] == "gradient":
-            return self._xlsb_gradient_fill_record(fill_key)
-        _, fill_type, start_color, end_color = fill_key
-        payload = bytearray()
-        payload.extend(struct.pack('<I', _PATTERN_BYTES[fill_type]))
-        payload.extend(self._color_payload(start_color))
-        payload.extend(self._color_payload(end_color))
-        payload.extend(bytes(48))  # unused gradient fields
-        return build_record(_BRT_FILL, bytes(payload))
+        return fill_record(fill_key)
 
     def _xlsb_gradient_fill_record(self, fill_key: tuple) -> bytes:
-        _, fill_type, degree, left, right, top, bottom, stops = fill_key
-        linear = fill_type == "linear"
-        payload = bytearray()
-        payload.extend(struct.pack('<I', 0x28))
-        payload.extend(self._color_payload(None))
-        payload.extend(self._color_payload(None))
-        payload.extend(struct.pack('<I', 0 if linear else 1))
-        # BIFF12 measures the gradient angle counter-clockwise while xlspy (like
-        # OOXML) measures it clockwise.
-        angle = (360 - degree) % 360 if linear and degree is not None else 0.0
-        payload.extend(struct.pack('<d', angle))
-        if linear:
-            payload.extend(struct.pack('<dddd', 0.0, 0.0, 0.0, 0.0))
-        else:
-            # OOXML omits unset fillToRect values, i.e. the inner rectangle
-            # spans the whole cell.
-            payload.extend(struct.pack(
-                '<dddd',
-                0.0 if left is None else float(left),
-                1.0 if right is None else float(right),
-                0.0 if top is None else float(top),
-                1.0 if bottom is None else float(bottom),
-            ))
-        payload.extend(struct.pack('<I', len(stops)))
-        for color_key, position in stops:
-            payload.extend(self._color_payload(color_key))
-            payload.extend(struct.pack('<d', float(position)))
-        return build_record(_BRT_FILL, bytes(payload))
+        return gradient_fill_record(fill_key)
 
     def _xlsb_border_record(self, border_key: tuple) -> bytes:
-        """Build a BrtBorder record ([MS-XLSB] 2.4.311) from a border key."""
-        diagonal = 0
-        if border_key.diagonal_down:
-            diagonal |= 0x01
-        if border_key.diagonal_up:
-            diagonal |= 0x02
-        payload = bytearray((diagonal,))
-        for style, color in (
-            border_key.top, border_key.bottom, border_key.left,
-            border_key.right, border_key.diagonal,
-        ):
-            payload.append(_BORDER_BYTES[style])
-            payload.append(0)  # reserved
-            payload.extend(self._color_payload(color))
-        return build_record(_BRT_BORDER, bytes(payload))
+        return border_record(border_key)
 
-    def _build_style_record(
-        self, ifmt: int = 0, *, flags: int = 0, font_id: int = 0, fill_id: int = 0,
-        border_id: int = 0, alignment=None, protection=None, apply_flags: bool = False,
-    ) -> bytes:
-        """Build a BrtXF record ([MS-XLSB] 2.4.863).
-
-        ``alignment`` is a ``split_style`` alignment key and ``protection`` a
-        protection key.  ``apply_flags`` derives the xfGrbitAtr bits from the
-        referenced components; the built-in XFs pass ``flags`` explicitly to
-        keep byte parity with Excel's own file.
-        """
-        rotation = 0
-        indent = 0
-        alignment_byte = 0x10  # Excel's default: bottom vertical alignment
-        flags_byte = 0x10  # Excel's default: locked
-        if alignment is not None:
-            (
-                horizontal, vertical, wrap, shrink, indent_value,
-                text_rotation, _relative_indent, justify_last_line,
-                reading_order,
-            ) = alignment
-            rotation = 0 if text_rotation is None else text_rotation
-            indent = 0 if indent_value is None else indent_value
-            alignment_byte = (
-                _HORIZONTAL_BYTES[horizontal]
-                | (_VERTICAL_BYTES[vertical] << 3)
-                | (0x40 if wrap else 0)
-                | (0x80 if justify_last_line else 0)
-            )
-            flags_byte = (
-                0x10
-                | (0x01 if shrink else 0)
-                | ((reading_order or 0) << 2)
-            )
-        if protection is not None:
-            locked, hidden = protection
-            flags_byte = (
-                (flags_byte & 0xCF)
-                | (0x10 if locked is not False else 0x00)
-                | (0x20 if hidden else 0x00)
-            )
-        if apply_flags:
-            flags = (
-                (0x01 if ifmt else 0)
-                | (0x02 if font_id else 0)
-                | (0x04 if alignment is not None else 0)
-                | (0x08 if border_id else 0)
-                | (0x10 if fill_id else 0)
-                | (0x20 if protection is not None else 0)
-            )
-        payload = bytearray(2)  # ixfeParent: cell style XF 0
-        payload.extend(struct.pack('<HHHH', ifmt, font_id, fill_id, border_id))
-        payload.append(rotation)
-        payload.append(indent)
-        payload.append(alignment_byte)
-        payload.append(flags_byte)
-        payload.extend(struct.pack('<H', flags))
-        return build_record(_BRT_XF, bytes(payload))
+    def _build_style_record(self, ifmt: int = 0, **options) -> bytes:
+        return xf_record(ifmt, **options)
 
     def _build_styles_bin(self) -> bytes:
         if not (self._format_registry or self._style_components or self._dxf_index or self._font_registry):
@@ -1655,7 +1482,8 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         worksheet_index: int, *, style_ranges=(), header_style: Style | None = None,
         merge_refs=(), widths=None, hidden_cols=frozenset(), heights=None,
         hidden_row_set=frozenset(), freeze_panes: str | None = None,
-        auto_filter: bool | None = None, drawing_rel: str | None = None,
+        auto_filter: bool | None = None, auto_filter_ref: str | None = None,
+        drawing_rel: str | None = None,
         table_rel_ids: list[str] | None = None,
         cf_rules: list | None = None,
         row_outline=None, col_outline=None,
@@ -2057,19 +1885,25 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         # The filter buttons sit on the last header row.
         filter_row = header_rows - 1
         if row_idx >= filter_row and auto_filter is not False:
+            filter_first_col, filter_last_col = 0, end_col - 1
+            filter_first_row, filter_last_row = filter_row, last_row_idx
+            if auto_filter_ref is not None:
+                filter_first_col, filter_first_row, filter_last_col, filter_last_row = (
+                    parse_cell_range(auto_filter_ref)
+                )
             buffer.write(self._autoFilterStartBytes)
-            buffer.write(struct.pack('<I', filter_row))
-            buffer.write(struct.pack('<I', last_row_idx))
-            buffer.write(struct.pack('<I', 0))
-            buffer.write(struct.pack('<I', 0 + end_col - 1))
+            buffer.write(struct.pack('<I', filter_first_row))
+            buffer.write(struct.pack('<I', filter_last_row))
+            buffer.write(struct.pack('<I', filter_first_col))
+            buffer.write(struct.pack('<I', filter_last_col))
             buffer.write(self._autoFilterEndBytes)
             self._filtered_data_list.append(
                 FilterData(
                 sheet_index=worksheet_index,
-                start_column=0,
-                end_column=end_col - 1,
-                start_row=filter_row,
-                end_row=last_row_idx
+                start_column=filter_first_col,
+                end_column=filter_last_col,
+                start_row=filter_first_row,
+                end_row=filter_last_row
             ))
 
         if merge_refs:

@@ -151,6 +151,14 @@ class DefinedName:
     name: str
     formula: str
     scope: str | None = None
+    localSheetId: int | None = None
+    hidden: bool | None = None
+    comment: str | None = None
+
+    @property
+    def attr_text(self) -> str:
+        """openpyxl's name for the formula text."""
+        return self.formula
 
     def __post_init__(self):
         if not isinstance(self.name, str) or not re.fullmatch(r"[^\W\d][\w.]*|\\[\w.]*", self.name):
@@ -169,6 +177,15 @@ class DefinedName:
             raise ValueError("defined name formula must not be empty")
         if self.scope is not None and not isinstance(self.scope, str):
             raise TypeError("scope must be a worksheet title or None")
+        if self.localSheetId is not None and (
+            not isinstance(self.localSheetId, int) or isinstance(self.localSheetId, bool)
+            or self.localSheetId < 0
+        ):
+            raise TypeError("localSheetId must be a non-negative int or None")
+        if self.hidden is not None and not isinstance(self.hidden, bool):
+            raise TypeError("hidden must be a bool or None")
+        if self.comment is not None and not isinstance(self.comment, str):
+            raise TypeError("comment must be a string or None")
         object.__setattr__(self, "formula", self.formula.removeprefix("="))
 
     def to_xml(self, sheets) -> str:
@@ -177,18 +194,39 @@ class DefinedName:
             if self.scope not in sheets:
                 raise KeyError(f"Worksheet not found: {self.scope}")
             scope = f' localSheetId="{list(sheets).index(self.scope)}"'
-        return f'<definedName xmlns="{MAIN}" name={quoteattr(self.name)}{scope}>{escape(self.formula)}</definedName>'
+        elif self.localSheetId is not None:
+            scope = f' localSheetId="{self.localSheetId}"'
+        hidden = ' hidden="1"' if self.hidden else ""
+        return (
+            f'<definedName xmlns="{MAIN}" name={quoteattr(self.name)}{scope}{hidden}>'
+            f"{escape(self.formula)}</definedName>"
+        )
 
 
 def read_defined_names(xml: str, sheets) -> list[DefinedName]:
     result = []
     root = ET.fromstring(xml)
     ns = namespace_of(root.tag) or MAIN
+    sheet_titles = list(sheets)
     for node in root.findall(f"{{{ns}}}definedNames/{{{ns}}}definedName"):
         if node.get("name", "").lower().startswith("_xlnm."):
             continue
-        scope = node.get("localSheetId")
-        result.append(DefinedName(node.attrib["name"], node.text or "", None if scope is None else list(sheets)[int(scope)]))
+        raw_scope = node.get("localSheetId")
+        local_sheet_id = int(raw_scope) if raw_scope is not None else None
+        scope = None if local_sheet_id is None else sheet_titles[local_sheet_id]
+        result.append(
+            DefinedName(
+                node.attrib["name"],
+                node.text or "",
+                scope,
+                localSheetId=local_sheet_id,
+                hidden=(
+                    None
+                    if node.get("hidden") is None
+                    else node.get("hidden", "0").lower() in {"1", "true"}
+                ),
+            )
+        )
     return result
 
 
