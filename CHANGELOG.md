@@ -88,6 +88,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native style and xf ids above 2**32 - 1 raise `OverflowError` on every platform (the C extension raised on
   Windows and silently truncated them on Linux and macOS).
 
+### Security
+
+- Rows wider than Excel's 16,384 columns are refused. The native XLSB reader used to accept 1,048,576, so a crafted
+  first row could make it allocate a million-cell row per record. The pure-Python XLSB reader raises the same
+  `ValueError`.
+- The XLSX streaming reader refuses a sheet part that grows past 64 MiB without closing a row, and it no longer
+  rescans a pending row from its start on every chunk.
+- Package parts declared above 2 GiB uncompressed are refused before they are read, on every archive open path.
+- The Rust module is built with `panic = "unwind"`: a panic inside a reader raises `PanicException` in Python
+  instead of ending the interpreter.
+
+### Changed
+
+- The mutation fuzzer is back as a bounded test, `tests/test_native_fuzz.py` (300 seeded cases per format; set
+  `XLSPY_FUZZ_ITERATIONS` for more). The unbounded tool, `tools/fuzz_native.py`, stays removed.
+
+### Fixed
+
+- Adding a sheet to a loaded workbook wrote `r:id` without declaring the `xmlns:r` prefix, so saving that workbook
+  failed with `ParseError: unbound prefix`.
+
 ## [0.12.0] - 2026-10-29
 
 ### Added

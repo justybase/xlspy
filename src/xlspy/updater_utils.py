@@ -20,6 +20,8 @@ import struct
 import tempfile
 import weakref
 import zipfile
+
+from ._untrusted import SafeZipFile
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
@@ -564,7 +566,7 @@ class ZipPackage:
 
         self._entries: list[zipfile.ZipInfo] = []
         self._indices: dict[str, int] = {}
-        with zipfile.ZipFile(self.path, "r") as archive:
+        with SafeZipFile(self.path, "r") as archive:
             for info in archive.infolist():
                 copied_info = copy.copy(info)
                 self._entries.append(copied_info)
@@ -611,7 +613,7 @@ class ZipPackage:
             return override
         if isinstance(override, Path):
             return override.read_bytes()
-        with zipfile.ZipFile(self.path, "r") as archive:
+        with SafeZipFile(self.path, "r") as archive:
             return archive.read(self._entries[index])
 
     @contextmanager
@@ -631,7 +633,7 @@ class ZipPackage:
                 yield stream
             return
 
-        with zipfile.ZipFile(self.path, "r") as archive:
+        with SafeZipFile(self.path, "r") as archive:
             with archive.open(self._entries[index], "r") as stream:
                 yield stream
 
@@ -778,13 +780,13 @@ class ZipPackage:
             with override.open("rb") as stream:
                 yield stream
             return
-        with zipfile.ZipFile(self.path, "r") as archive:
+        with SafeZipFile(self.path, "r") as archive:
             with archive.open(self._entries[index], "r") as stream:
                 yield stream
 
     def to_bytes(self) -> bytes:
         result = BytesIO()
-        with zipfile.ZipFile(result, "w") as archive:
+        with SafeZipFile(result, "w") as archive:
             for index, original_info in enumerate(self._entries):
                 with self._replacement_stream(index) as stream:
                     with archive.open(copy.copy(original_info), "w") as target:
@@ -803,7 +805,7 @@ class ZipPackage:
         )
         os.close(descriptor)
         try:
-            with zipfile.ZipFile(temporary_path, "w") as archive:
+            with SafeZipFile(temporary_path, "w") as archive:
                 for index, original_info in enumerate(self._entries):
                     with self._replacement_stream(index) as stream:
                         with archive.open(copy.copy(original_info), "w") as target_stream:
@@ -827,7 +829,7 @@ class ZipPackage:
 
         entries: list[zipfile.ZipInfo] = []
         indices: dict[str, int] = {}
-        with zipfile.ZipFile(source_path, "r") as archive:
+        with SafeZipFile(source_path, "r") as archive:
             for info in archive.infolist():
                 entries.append(copy.copy(info))
                 indices[info.filename] = len(entries) - 1

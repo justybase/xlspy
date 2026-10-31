@@ -176,6 +176,11 @@ gap is implemented the same test starts passing without changes.
 
 ## P0/P1 gaps
 
+This table is the snapshot taken at xlspy 0.10.1, kept as the record of the
+plan. Its status column is historical: for what is supported now, see the
+implementation status above and the [feature support table](usage.md#feature-support).
+Pivot tables, sparklines, slicers and shapes were added after this snapshot.
+
 | ID | Area | xlspy 0.10.1 | target | Phase |
 | --- | --- | --- | --- | --- |
 | A1 | XLSB workbook model | `load_workbook(.xlsb)` raises for `read_only=False` → **done** (see E1–E6) | L3 | 5–6 |

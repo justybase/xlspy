@@ -16,4 +16,6 @@ memchr = "2"
 [profile.release]
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+# Unwind, not abort: a panic in a reader becomes a PanicException in Python
+# instead of killing the interpreter.
+panic = "unwind"

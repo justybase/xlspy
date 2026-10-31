@@ -42,6 +42,7 @@ NS = {
     "pkg": "http://schemas.openxmlformats.org/package/2006/relationships",
     "ct": "http://schemas.openxmlformats.org/package/2006/content-types",
     "xdr": "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing",
+    "c": "http://schemas.openxmlformats.org/drawingml/2006/chart",
 }
 
 # CT_Worksheet child order (ECMA-376 Part 1, 18.3.1.99); only the names used here.
@@ -234,8 +235,8 @@ def test_drawing_object_ids_and_chart_references_are_consistent(tmp_path):
     chart_parts = sorted(n for n in names if re.fullmatch(r"xl/charts/chart\d+\.xml", n))
     assert len(chart_parts) == 3
     for chart in chart_parts:
-        text = ElementTree.tostring(roots[chart], encoding="unicode")
-        refs = re.findall(r"<c:f>([^<]+)</c:f>", text)
+        # Namespace-aware: ElementTree serialises the chart prefix as ns0, not c.
+        refs = [node.text or "" for node in roots[chart].iter("{%s}f" % NS["c"])]
         assert refs, f"{chart} has no cell references"
         for ref in refs:
             assert "!" in ref and "=" not in ref, ref

@@ -10,6 +10,8 @@ import os
 import posixpath
 import re
 import zipfile
+
+from .._untrusted import SafeZipFile
 from xml.etree import ElementTree as ET
 
 from .._metadata import MAIN, REL, read_defined_names
@@ -1129,7 +1131,7 @@ def _read_only_bounds(path: str, sheet_path: str) -> tuple[int, int, int, int] |
     if not sheet_path.endswith(".xml"):
         return None
     try:
-        with zipfile.ZipFile(path) as archive:
+        with SafeZipFile(path) as archive:
             with archive.open(sheet_path) as stream:
                 for _event, node in ET.iterparse(stream, events=("start",)):
                     if _local(node.tag) == "dimension" and node.get("ref"):
@@ -1386,10 +1388,9 @@ def load_workbook(filename, *, read_only: bool = False, data_only: bool = False,
             # saved as .xlsm takes its VBA project. A loaded workbook keeps
             # its own whether or not this is set.
             import io
-            import zipfile
 
             with open(path, "rb") as source:
-                workbook.vba_archive = zipfile.ZipFile(io.BytesIO(source.read()))
+                workbook.vba_archive = SafeZipFile(io.BytesIO(source.read()))
         return workbook
     except Exception:
         # A failed load must not leave the updater's temporary package behind.

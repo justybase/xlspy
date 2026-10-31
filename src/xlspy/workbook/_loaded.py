@@ -892,8 +892,10 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
         for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
     ]
     sheet_id = max(existing_ids, default=0) + 1
+    # The fragment is spliced into a workbook.xml that may not declare xmlns:r at
+    # the root, so the prefix is declared on the element itself (as openpyxl does).
     fragment = (
-        f'<sheet name={quoteattr(sheet.title)} sheetId="{sheet_id}" '
+        f'<sheet xmlns:r="{REL}" name={quoteattr(sheet.title)} sheetId="{sheet_id}" '
         f'r:id="{rid}"/>'
     )
     workbook_xml = _insert_sheet_fragment(workbook_xml, fragment, index)

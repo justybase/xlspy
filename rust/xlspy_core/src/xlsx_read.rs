@@ -27,6 +27,14 @@ const CHUNK: usize = 1 << 18;
 const COLUMN_KEYS: usize = 26 * 26 * 26 + 26 * 26 + 26 + 1;
 const MAX_COLUMNS: i64 = 16384;
 const MAX_ROWS: i64 = 1_048_576;
+/// Unconsumed sheet bytes allowed while no row closes.  A legitimate row is
+/// far smaller; the cap stops a decompression bomb from growing the buffer
+/// without bound.
+const MAX_PENDING_BYTES: usize = 64 << 20;
+/// Length of `</sheetData>`, the longest needle searched in the buffer.
+const SHEET_DATA_CLOSE_LEN: usize = 12;
+/// Length of `</row>`.
+const ROW_CLOSE_LEN: usize = 6;
 
 static DATETIME: PyOnceLock<Py<PyType>> = PyOnceLock::new();
 static TIMEDELTA: PyOnceLock<Py<PyType>> = PyOnceLock::new();
@@ -961,7 +969,11 @@ struct RowSpan {
     body: Option<(usize, usize)>,
 }
 
-fn next_row(buf: &[u8], from: usize) -> Option<RowSpan> {
+/// Find the next complete `<row>`.  `close_scan` remembers where the search
+/// for `</row>` stopped when the row was incomplete, so the next call does not
+/// rescan a long pending row from its start (that rescan made growing a row
+/// quadratic).
+fn next_row(buf: &[u8], from: usize, close_scan: &mut usize) -> Option<RowSpan> {
     let len = buf.len();
     let mut i = from;
     loop {
@@ -990,7 +1002,12 @@ fn next_row(buf: &[u8], from: usize) -> Option<RowSpan> {
                 body: None,
             });
         }
-        let close = find(buf, b"</row>", gt + 1)?;
+        let search = (*close_scan).max(gt + 1);
+        let Some(close) = find(buf, b"</row>", search) else {
+            // A match may begin in the last bytes, so resume there.
+            *close_scan = len.saturating_sub(ROW_CLOSE_LEN - 1).max(gt + 1);
+            return None;
+        };
         return Some(RowSpan {
             start: i,
             end: close + 6,
@@ -1007,6 +1024,10 @@ pub struct XlsxReader {
     /// First byte not yet scanned, and bytes known to be valid UTF-8.
     pos: usize,
     validated: usize,
+    /// Resume points for the `</row>` and `</sheetData>` searches, so a row
+    /// that grows over many chunks is scanned once, not once per chunk.
+    row_scan: usize,
+    end_scan: usize,
     eof: bool,
     done: bool,
     state: State,
@@ -1044,6 +1065,8 @@ impl XlsxReader {
         if self.pos > 0 {
             self.buf.drain(..self.pos);
             self.validated = self.validated.saturating_sub(self.pos);
+            self.row_scan = self.row_scan.saturating_sub(self.pos);
+            self.end_scan = self.end_scan.saturating_sub(self.pos);
             self.pos = 0;
         }
         let chunk = self
@@ -1057,7 +1080,22 @@ impl XlsxReader {
             return Ok(());
         }
         self.buf.extend_from_slice(data);
+        if self.buf.len() > MAX_PENDING_BYTES {
+            return Err(PyValueError::new_err(format!(
+                "worksheet XML holds more than {MAX_PENDING_BYTES} bytes without closing a row"
+            )));
+        }
         self.validate(py, false)
+    }
+
+    /// True once `</sheetData>` is in the buffer; remembers where it stopped looking.
+    fn sheet_data_closed(&mut self) -> bool {
+        let from = self.end_scan.max(self.pos);
+        if find(&self.buf, b"</sheetData>", from).is_some() {
+            return true;
+        }
+        self.end_scan = self.buf.len().saturating_sub(SHEET_DATA_CLOSE_LEN - 1);
+        false
     }
 
     fn advance<'py>(&mut self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
@@ -1065,7 +1103,7 @@ impl XlsxReader {
             return Ok(None);
         }
         loop {
-            if let Some(span) = next_row(&self.buf, self.pos) {
+            if let Some(span) = next_row(&self.buf, self.pos, &mut self.row_scan) {
                 let attrs = &self.buf[span.attrs.0..span.attrs.1];
                 let body = span.body.map(|(a, b)| &self.buf[a..b]);
                 let row = self.state.parse_row(py, attrs, body);
@@ -1080,7 +1118,7 @@ impl XlsxReader {
                     Some(Some(row)) => return Ok(Some(row)),
                 }
             }
-            if self.eof || find(&self.buf, b"</sheetData>", self.pos).is_some() {
+            if self.eof || self.sheet_data_closed() {
                 self.done = true;
                 // Once iteration stops no chunk can complete a truncated
                 // character, so the Python reader's final decode would raise.
@@ -1238,6 +1276,8 @@ pub fn read_xlsx_worksheet<'py>(
         buf: head.as_bytes().to_vec(),
         pos: 0,
         validated: 0,
+        row_scan: 0,
+        end_scan: 0,
         eof: false,
         done: false,
         state: State {
@@ -1253,4 +1293,49 @@ pub fn read_xlsx_worksheet<'py>(
     };
     reader.validate(py, false)?;
     Bound::new(py, reader)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Start, end, attrs and body of a complete row.
+    type Span = (usize, usize, (usize, usize), Option<(usize, usize)>);
+
+    /// The first complete row of `buf`, or None.
+    fn span_of(buf: &[u8], hint: &mut usize) -> Option<Span> {
+        next_row(buf, 0, hint).map(|s| (s.start, s.end, s.attrs, s.body))
+    }
+
+    /// Growing a pending row chunk by chunk, with the resume hint, must find
+    /// exactly the span that a single search over the whole row finds.
+    #[test]
+    fn incremental_row_search_matches_whole_buffer() {
+        let row = br#"<row r="1"><c r="A1" t="inlineStr"><is><t>x&amp;y</t></is></c></row>"#;
+        let whole = span_of(row, &mut 0).expect("complete row");
+        for chunk in 1..=row.len() {
+            let mut hint = 0;
+            let mut found = None;
+            for end in (chunk..=row.len())
+                .step_by(chunk)
+                .chain(std::iter::once(row.len()))
+            {
+                found = span_of(&row[..end], &mut hint);
+                if found.is_some() {
+                    break;
+                }
+            }
+            assert_eq!(found, Some(whole), "chunk size {chunk}");
+        }
+    }
+
+    /// A `</row>` split across the chunk boundary must still be found.
+    #[test]
+    fn close_tag_straddling_the_buffer_end_is_found() {
+        let row = br#"<row r="2"><c r="A2"/></row>"#;
+        let close_at = row.len() - ROW_CLOSE_LEN;
+        let mut hint = 0;
+        assert!(span_of(&row[..close_at + 2], &mut hint).is_none());
+        assert_eq!(span_of(row, &mut hint).map(|s| s.1), Some(row.len()));
+    }
 }

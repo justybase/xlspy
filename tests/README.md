@@ -92,7 +92,6 @@ cd rust/xlspy_core
 cargo fmt --check && cargo clippy -- -D warnings && cargo test
 cd ../..
 python -m pytest tests/test_native_*.py tests/test_xlsb_native_dates.py
-python tools/fuzz_native.py --iterations 20000 --seed 1
 ```
 
 ## Cross-validation goldens

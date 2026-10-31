@@ -4,6 +4,7 @@ import datetime
 import struct
 
 from ._errors import CellError
+from ._untrusted import check_column_span
 from ._xlsb_formulas import FormulaContext, ERRORS, decode_formula, read_parsed
 from ._xlsb_metadata import read_wide
 from .biff_reader import BiffReader
@@ -173,6 +174,8 @@ def iter_rows(reader, sheet_name, *, data_only=True):
         if first_row_record is None:
             first_row_record = row_number
         last_row_record = row_number
+        if cells:
+            check_column_span(first_column if first_column is not None else cells[0][0], cells[-1][0])
         if first_column is None:
             if not cells:
                 continue

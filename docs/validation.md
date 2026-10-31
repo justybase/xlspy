@@ -13,9 +13,9 @@ built side by side until the last step. Validated on Windows 11 with Python
   fixed inputs, Hypothesis-generated rows, sheets and corrupted parts):
   identical results, exceptions and shared-string table state. They were
   removed with the C code; the comparison that stays is native against the
-  pure-Python path (`tests/test_native_*.py`, `tools/fuzz_native.py`).
-- Full suite with Rust as the default backend and with `XLSPY_ACCEL=c`, on
-  3.11, 3.14 and 3.15: **3165 passed** in each run; the pure-Python fallback:
+  pure-Python path (`tests/test_native_*.py`).
+- Full suite with Rust as the default backend and, in those runs, with the C backend
+  (`XLSPY_ACCEL=c`, since removed), on 3.11, 3.14 and 3.15: **3165 passed** in each run; the pure-Python fallback:
   **2987 passed**. After the C code was removed (and the 1,238 differential
   cases with it): **1927 passed** on 3.11 and 3.15, **1930 passed** on 3.14
   (with `pywin32`), **1752 passed** for the fallback. The one failure in every
@@ -26,15 +26,18 @@ built side by side until the last step. Validated on Windows 11 with Python
   `nzpy_extended`).
 - A wheel built by maturin from the source distribution for Python 3.11
   passed `tools/wheel_smoke.py` in a clean virtual environment.
-- `tools/fuzz_native.py` (5,000 iterations per phase) through the Rust
-  backend: seeds 1–5 and 7–10 held every check. Seed 1 first stopped at an
-  XLSX cell with `r="A"` (no row number): the regular-expression path read
-  it as column A, while ElementTree raised `ValueError`. The C extension
-  stopped at the same case, so the port was not the cause; the read paths
-  now share one rule for cell references (`refs.cell_position`), and the
-  seed passes. Seed 6 generates a
-  row 463,132 cells wide repeated over many gap rows and runs for hours with
-  either backend; it is a slow input, not a failure.
+- A mutation fuzzer (5,000 iterations per phase) through the Rust backend:
+  seeds 1–5 and 7–10 held every check. Seed 1 first stopped at an XLSX cell
+  with `r="A"` (no row number): the regular-expression path read it as
+  column A, while ElementTree raised `ValueError`. The C extension stopped at
+  the same case, so the port was not the cause; the read paths now share one
+  rule for cell references (`refs.cell_position`), and the seed passes.
+  Seed 6 generates a row 463,132 cells wide repeated over many gap rows: with
+  rows held as full cell lists, it takes hours in either backend, so it is a
+  slow input, not a failure. The unbounded tool has been removed. A bounded
+  mutation test, `tests/test_native_fuzz.py` (300 seeded cases per format, each
+  required to finish within 5 seconds), now runs in the ordinary suite; the
+  encoder failure-path checks stay in `tests/test_native_encoders.py`.
 - Speed, Rust time / C time on the same machine (below 1 is faster): XLSB
   row encoders 0.83–1.02, shared strings 0.88–0.99, column widths 1.00,
   formatted-cell pre-scan 0.79, XLSX row encoder 0.81–0.87, XLSB reader

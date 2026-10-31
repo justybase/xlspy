@@ -223,7 +223,7 @@ def test_native_reader_propagates_out_of_range_1904_date_error(tmp_path, monkeyp
     assert type(c_error.value) is type(py_error.value)
 
 
-def test_native_reader_delegates_unusually_wide_layout_to_python(tmp_path, monkeypatch):
+def test_native_reader_refuses_unusually_wide_layout_like_python(tmp_path, monkeypatch):
     source = tmp_path / "source.xlsb"
     _numeric_workbook(source)
 
@@ -245,13 +245,11 @@ def test_native_reader_delegates_unusually_wide_layout_to_python(tmp_path, monke
     mutated = tmp_path / "wide-first-row.xlsb"
     _rewrite_sheet(source, mutated, widen_first_row)
 
-    # C's dense row array intentionally declines this nonstandard layout;
-    # the public reader must transparently use the Python reference result.
-    c_row = _first_row(mutated, monkeypatch=monkeypatch)
-    assert len(c_row) == 2_000_001
-    assert (c_row[0], c_row[1], c_row[-1]) == (10, 20, 30)
-    del c_row
+    # A row wider than Excel's 16,384 columns is refused, not built as a
+    # two-million-cell list. The native path declines it (returns None) and the
+    # Python reader raises, so both backends agree.
+    with pytest.raises(ValueError, match="wider than"):
+        _first_row(mutated, monkeypatch=monkeypatch)
 
-    py_row = _first_row(mutated, force_python=True, monkeypatch=monkeypatch)
-    assert len(py_row) == 2_000_001
-    assert (py_row[0], py_row[1], py_row[-1]) == (10, 20, 30)
+    with pytest.raises(ValueError, match="wider than"):
+        _first_row(mutated, force_python=True, monkeypatch=monkeypatch)

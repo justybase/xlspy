@@ -13,7 +13,8 @@ from __future__ import annotations
 import io
 import posixpath
 import re
-import zipfile
+
+from .._untrusted import SafeZipFile
 from dataclasses import fields
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import quoteattr
@@ -104,7 +105,7 @@ def _scratch(sheet, objects, settings) -> dict[str, bytes]:
             print_settings=settings,
             auto_filter=False,
         )
-    with zipfile.ZipFile(io.BytesIO(stream.getvalue())) as archive:
+    with SafeZipFile(io.BytesIO(stream.getvalue())) as archive:
         return {name: archive.read(name) for name in archive.namelist()}
 
 

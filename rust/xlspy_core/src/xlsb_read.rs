@@ -17,9 +17,10 @@ use crate::text::decode_utf16le;
 use crate::types::error_type;
 
 const XLSB_MAX_ROW_INDEX: u32 = 1_048_575;
-/// Bound of the dense per-row cell array.  The format maximum is 16384
-/// columns; wider nonstandard layouts are left to the Python reference.
-pub const MAX_COL_SPAN: i64 = 1_048_576;
+/// Bound of the dense per-row cell array: the format maximum of 16384 columns
+/// (XFD).  Wider spans are refused, so a crafted row cannot make the reader
+/// allocate a million-cell row per record; the Python reader refuses them too.
+pub const MAX_COL_SPAN: i64 = 16_384;
 
 /// One record header: id, body start and the claimed body length.
 pub struct Record {

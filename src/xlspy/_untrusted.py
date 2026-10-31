@@ -1,0 +1,46 @@
+"""Resource limits for untrusted package input.
+
+Workbooks come from outside the process, so a crafted file can claim a huge
+decompressed size or a row far wider than Excel allows. This module holds the
+limits and the ZIP wrapper that enforces the size one. It has no xlspy imports,
+so any reader can depend on it.
+"""
+
+from __future__ import annotations
+
+import zipfile
+
+#: Widest row Excel can hold (columns A..XFD). Wider spans are refused.
+MAX_COLUMNS = 16384
+
+#: Largest uncompressed size accepted for one package part (2 GiB). A part is
+#: read into memory whole, so this bounds the memory one member can take.
+MAX_PART_BYTES = 2 << 30
+
+
+def check_column_span(first_column: int, last_column: int) -> None:
+    """Raise ValueError when columns ``first_column``..``last_column`` span more than Excel's width."""
+    if last_column - first_column >= MAX_COLUMNS:
+        raise ValueError(
+            f"row spans columns {first_column}..{last_column}, wider than the "
+            f"{MAX_COLUMNS} columns a worksheet can hold"
+        )
+
+
+class SafeZipFile(zipfile.ZipFile):
+    """ZipFile that refuses to read a member whose declared size is over MAX_PART_BYTES.
+
+    ``ZipFile.read`` and ``ZipFile.open`` both go through ``open``, so every read
+    path is covered. The reader stops at the declared size, so a member that lies
+    about its size is cut off there and fails its CRC check.
+    """
+
+    def open(self, name, mode="r", pwd=None, *, force_zip64=False):
+        if mode == "r":
+            info = name if isinstance(name, zipfile.ZipInfo) else self.getinfo(name)
+            if info.file_size > MAX_PART_BYTES:
+                raise ValueError(
+                    f"package part {info.filename!r} is {info.file_size} bytes uncompressed, "
+                    f"over the {MAX_PART_BYTES}-byte limit"
+                )
+        return super().open(name, mode, pwd, force_zip64=force_zip64)

@@ -161,3 +161,7 @@ examples/output/
 .vs/slnx.sqlite
 .vs/VSWorkspaceState.json
 .vs/PythonXlsb/v17/.wsuo
+
+# Local clutter from a failed shell redirect and the agent tool config
+$null
+.commandcode/

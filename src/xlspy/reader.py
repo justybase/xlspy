@@ -2,6 +2,8 @@ import datetime
 import os
 import re
 import zipfile
+
+from ._untrusted import SafeZipFile, check_column_span
 from enum import IntEnum
 from typing import Dict, List, Optional, Set, Generator, Any
 from xml.parsers.expat import ParserCreate
@@ -282,7 +284,7 @@ class ExcelReader:
         return read_defined_names(self._archive.read("xl/workbook.xml"), self.get_sheet_names())
 
     def _open_xlsx(self, path: str):
-        self._archive = zipfile.ZipFile(path, 'r')
+        self._archive = SafeZipFile(path, 'r')
 
         with self._archive.open('xl/workbook.xml') as f:
             content = f.read().decode('utf-8')
@@ -297,7 +299,7 @@ class ExcelReader:
             self._fill_shared_strings()
 
     def _open_xlsb(self, path: str):
-        self._archive = zipfile.ZipFile(path, 'r')
+        self._archive = SafeZipFile(path, 'r')
 
         with self._archive.open('xl/workbook.bin') as f:
             raw = f.read()
@@ -611,6 +613,8 @@ class ExcelReader:
             if not return_value:
                 break
 
+            if number_of_first_column_with_data != -1:
+                check_column_span(number_of_first_column_with_data, col_num)
             if not is_first_row and col_num > number_of_first_column_with_data:
                 for i in range(col_num - number_of_first_column_with_data):
                     inner_row[i] = None
@@ -629,6 +633,8 @@ class ExcelReader:
 
             while row_num == prev_row and return_value:
                 if reader.read_cell:
+                    if number_of_first_column_with_data != -1:
+                        check_column_span(number_of_first_column_with_data, col_num)
                     if is_first_row:
                         if number_of_first_column_with_data == -1:
                             number_of_first_column_with_data = col_num
