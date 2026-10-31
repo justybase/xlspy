@@ -180,6 +180,10 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
     ):
         if items:
             options[name] = items
+    if sheet.ignored_errors:
+        if xlsb:
+            raise NotImplementedError("ignored errors can be saved to XLSX only")
+        options["ignored_errors"] = list(sheet.ignored_errors)
     options["auto_filter"] = bool(sheet.auto_filter.ref)
     options["auto_filter_ref"] = sheet.auto_filter.ref or None
     return options

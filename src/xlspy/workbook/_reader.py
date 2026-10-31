@@ -17,7 +17,9 @@ from .._text import xstring_unescape
 from ..comments import find_comment_parts, read_comments, rels_path
 from ..data_validation import DataValidation, OPERATORS, VALIDATION_TYPES
 from ..excel_dates import serial_to_datetime
+from ..external_links import read_external_links
 from ..hyperlinks import Hyperlink
+from ..ignored_errors import FLAGS as IGNORED_ERROR_FLAGS, IgnoredError
 from ..reader import ExcelReader
 from ..refs import column_label, parse_cell_range
 from ..styles import (
@@ -387,6 +389,7 @@ def _read_workbook_metadata(workbook: Workbook, root, package) -> None:
     if views:
         workbook.views = views
     workbook.custom_doc_props = _read_custom_properties(package)
+    workbook.external_links = read_external_links(package, binary=False)
 
 
 def _read_sheet_relationships(package, sheet_path: str) -> dict[str, tuple[str, str | None, str]]:
@@ -997,6 +1000,14 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                         dimension.autoSize = _bool_attr(col, "autoSize", None)
                         if col.get("style") is not None:
                             dimension.style = int(col.get("style"))
+            elif tag == "ignoredErrors":
+                for item in node.findall(_q("ignoredError")):
+                    if not item.get("sqref"):
+                        continue
+                    sheet.ignored_errors.append(IgnoredError(
+                        item.get("sqref"),
+                        **{name: _bool_attr(item, name, None) for name in IGNORED_ERROR_FLAGS},
+                    ))
             elif tag == "rowBreaks":
                 sheet.row_breaks = RowBreak([
                     Break(

@@ -1370,6 +1370,7 @@ class Worksheet:
         self.protection = SheetProtection()
         self.row_breaks = RowBreak()
         self.col_breaks = ColBreak()
+        self.ignored_errors: list = []
         self._print_area: str | None = None
         self._print_title_rows: str | None = None
         self._print_title_cols: str | None = None
@@ -2099,6 +2100,7 @@ class Workbook:
         self.calculation = CalcProperties()
         self.views = [BookView()]
         self.custom_doc_props = CustomPropertyList()
+        self.external_links: list = []
         self.named_styles = NamedStyleList(["Normal"])
         self._format = "xlsx"
         self._loaded = False
@@ -2266,7 +2268,7 @@ class Workbook:
         target._sheet_properties = copy.deepcopy(from_worksheet.sheet_properties)
         target._sheet_view = copy.deepcopy(from_worksheet.sheet_view)
         for name in ("page_setup", "page_margins", "print_options", "HeaderFooter",
-                     "sheet_format", "row_breaks", "col_breaks"):
+                     "sheet_format", "row_breaks", "col_breaks", "ignored_errors"):
             setattr(target, name, copy.deepcopy(getattr(from_worksheet, name)))
         target._mark_dirty("copy")
         return target

@@ -16,6 +16,7 @@ from .._metadata import MAIN, REL, PKG_REL, CT, element_pattern, replace_element
 from .._xlsx_edit import _attributes, _bytes, _cell_value
 from ..formula.sheets import rename_sheet_references
 from ..formulas import Formula
+from ..ignored_errors import ignored_errors_xml, snapshot as ignored_errors_snapshot
 from ._drawings import check_removals, remove_drawing_objects, save_chart_edits
 from ._objects import (
     add_objects, check_object_rewrites, has_pending_objects, mark_objects_saved, sync_objects,
@@ -149,6 +150,7 @@ def _meta_signature(sheet: Worksheet):
         _snapshot(sheet.page_margins), _header_footer_snapshot(sheet.HeaderFooter),
         _snapshot(sheet.protection),
         _break_snapshot(sheet.row_breaks), _break_snapshot(sheet.col_breaks),
+        ignored_errors_snapshot(sheet.ignored_errors),
         sheet.print_area, sheet.print_title_rows, sheet.print_title_cols,
     )
 
@@ -656,7 +658,11 @@ def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
     )
     xml = replace_element(
         xml, "colBreaks", _breaks_xml(sheet.col_breaks, "colBreaks", prefix, 1048575),
-        before=("drawing", "legacyDrawing", "tableParts", "extLst"),
+        before=("ignoredErrors", "drawing", "legacyDrawing", "tableParts", "extLst"),
+    )
+    xml = replace_element(
+        xml, "ignoredErrors", ignored_errors_xml(sheet.ignored_errors, prefix),
+        before=("smartTags", "drawing", "legacyDrawing", "tableParts", "extLst"),
     )
     updater._apply_parts({path: xml})
 

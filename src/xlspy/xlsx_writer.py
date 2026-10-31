@@ -21,6 +21,7 @@ from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted
 from .formulas import Formula
 from .comments import Comment, normalize_comments, comments_xml, vml_xml, COMMENTS_TYPE
 from ._metadata import DefinedName, SheetProtection, WorkbookProtection, replace_element
+from .ignored_errors import ignored_errors_xml
 from .hyperlinks import Hyperlink
 from .images import Image, MediaParts, normalize_images
 from .outline import build_outline
@@ -356,6 +357,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         header_rows: int = 1,
         tab_color: Color | str | None = None,
         zoom: int | None = None,
+        ignored_errors: list | tuple | None = None,
     ):
         """Write rows to the current sheet.
 
@@ -487,6 +489,11 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             )
             if sheet_protection is not None:
                 tail = '</sheetData>' + sheet_protection.to_xml() + tail[len('</sheetData>'):]
+            if ignored_errors:
+                tail = replace_element(
+                    tail, 'ignoredErrors', ignored_errors_xml(ignored_errors),
+                    before=('drawing', 'legacyDrawing', 'tableParts'),
+                )
             if comment_specs:
                 self._sheet_comments[sheet_id] = comment_specs
                 rid = f"rId{len(rels) + 1}"

@@ -43,7 +43,9 @@ from .charts import (
     LoadedChart,
 )
 from .data_validation import DataValidation
+from .external_links import ExternalLink
 from .formulas import Formula
+from .ignored_errors import IgnoredError
 from .comments import Comment
 from ._metadata import DefinedName, SheetProtection, WorkbookProtection
 from .hyperlinks import Hyperlink
@@ -139,6 +141,8 @@ __all__ = [
     'ChartLegend',
     'ChartMarker',
     'DataLabels',
+    'ExternalLink',
+    'IgnoredError',
     'ErrorBars',
     'Trendline',
     'Formula',

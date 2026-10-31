@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - XLSB formulas: the Analysis ToolPak functions (`EOMONTH`, `WORKDAY`, `NETWORKDAYS`, `GCD`, `XIRR`, ...,
   98 in all) with the ids, arities and operand classes Excel writes, and the newer `_xlfn` functions
   (`BITAND`, `NUMBERVALUE`, `UNICHAR`, `RRI`, ... also prefixed in XLSX). `RANDBETWEEN` is volatile.
+- `Worksheet.ignored_errors` (`IgnoredError`): the ranges whose error checks are skipped, read and
+  written for XLSX (XLSB refuses to save them).
+- `Workbook.external_links` (`ExternalLink`): the workbooks that formulas refer to, XLSX and XLSB,
+  read only and kept as they are on save.
 - Charts: combined charts (`ChartSeries.chart_type`), a secondary value axis (`secondary_axis`,
   `Chart.y2_axis`), `Trendline` and `ErrorBars`, in XLSX and XLSB.
 - Charts and images can be added to a loaded XLSB workbook, including on new sheets, and so can tables.

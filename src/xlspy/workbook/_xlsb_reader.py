@@ -18,6 +18,7 @@ from .._xlsb_styles import XlsbStyleTable
 from .._xlsb_validation import dval_rule
 from ..biff_utils import iter_record_payloads
 from ..comments import rels_path
+from ..external_links import read_external_links
 from ..hyperlinks import Hyperlink
 from ..reader import ExcelReader, _get_date_num_fmt_ids
 from ..refs import column_label, parse_cell_range
@@ -300,6 +301,7 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         workbook._loaded_active_index = workbook._active_index
         workbook._properties = _read_properties(updater._package)
         workbook.custom_doc_props = _read_custom_properties(updater._package)
+        workbook.external_links = read_external_links(updater._package, binary=True)
         print_names = builtin_names(FormulaContext(updater._sheets, updater._package.get("xl/workbook.bin")))
         for sheet in workbook._sheets:
             _read_print_names(sheet, print_names.get(sheet.title, {}))
