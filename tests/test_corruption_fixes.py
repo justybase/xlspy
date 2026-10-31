@@ -481,6 +481,66 @@ def test_matching_headers_are_accepted_ignoring_case_and_length(tmp_path, suffix
     assert [sheet.cell(row=2, column=c).value for c in (1, 2)] == ["c", 3]
 
 
+def _truncate_sheet_after_last_cell(source, target):
+    """Copy an XLSB whose first sheet stream ends right after its last cell record."""
+
+    def read_varint(data, i):
+        value = shift = 0
+        while True:
+            byte = data[i]
+            i += 1
+            value |= (byte & 0x7F) << shift
+            shift += 7
+            if not byte & 0x80:
+                return value, i
+
+    with zipfile.ZipFile(source) as zin:
+        names = zin.namelist()
+        members = {name: zin.read(name) for name in names}
+    sheet = members["xl/worksheets/sheet1.bin"]
+    end_of_last_cell = None
+    i = 0
+    while i < len(sheet):
+        record_id, i = read_varint(sheet, i)
+        size, i = read_varint(sheet, i)
+        if record_id in range(0x01, 0x0C):
+            end_of_last_cell = i + size
+        i += size
+    members["xl/worksheets/sheet1.bin"] = sheet[:end_of_last_cell]
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zout:
+        for name in names:
+            zout.writestr(name, members[name])
+
+
+def test_pure_python_xlsb_reader_stops_at_eof_after_a_cell(tmp_path, monkeypatch):
+    """Ignoring read_worksheet's result at EOF repeated the last cell forever."""
+    from xlspy import biff_reader
+    from xlspy import reader as reader_module
+    from xlspy.reader import ExcelReader
+
+    base = tmp_path / "base.xlsb"
+    with XlsbWriter(base) as wb:
+        wb.add_sheet("S")
+        wb.write_sheet([[1, 2], [3, 4]])
+    truncated = tmp_path / "eof.xlsb"
+    _truncate_sheet_after_last_cell(base, truncated)
+
+    # The native reader does not reach the Python loop; force the fallback.
+    monkeypatch.setattr(reader_module, "HAVE_NATIVE", False)
+    original = biff_reader.BiffReader.read_worksheet
+    calls = []
+
+    def bounded(self):
+        calls.append(None)
+        if len(calls) > 10_000:
+            raise AssertionError("read_worksheet kept returning the last cell past the end of the stream")
+        return original(self)
+
+    monkeypatch.setattr(biff_reader.BiffReader, "read_worksheet", bounded)
+    with ExcelReader(truncated) as reader:
+        assert list(reader.get_rows("S")) == [[1, 2], [3, 4]]
+
+
 @FORMATS
 def test_mismatch_after_refused_write_leaves_later_valid_write_working(tmp_path, suffix):
     base = _table_base(tmp_path, suffix)

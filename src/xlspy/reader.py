@@ -682,7 +682,13 @@ class ExcelReader:
                     else:
                         inner_row[tmp_len] = None
 
-                reader.read_worksheet()
+                # The result must be kept: at the end of the stream read_worksheet
+                # returns False and leaves read_cell set, so ignoring it repeats the
+                # same cell forever.
+                # The result must be kept: at the end of the stream read_worksheet
+                # returns False and leaves read_cell set, so ignoring it repeats the
+                # same cell forever.
+                return_value = reader.read_worksheet()
                 while return_value and not reader.read_cell:
                     return_value = reader.read_worksheet()
 
