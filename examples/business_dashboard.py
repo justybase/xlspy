@@ -11,13 +11,12 @@ so the slicer on ``Region`` updates the cards, the summaries and the charts:
 Usage:
     python examples/business_dashboard.py [--out dashboard.xlsx]
 
-An ``.xlsb`` output name writes XLSB. XLSB has no formula cells and no slicers
-or sparklines yet, so it gets the computed figures, the cards, the charts and
-the table, and the slicer and sparklines are left out.
+An ``.xlsb`` output name writes the same dashboard as XLSB.
 """
 import argparse
 import os
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
@@ -73,7 +72,7 @@ def _percent(value):
 
 
 def _totals(rows):
-    """The figures the formulas compute, for cached values and for XLSB."""
+    """The figures the formulas compute, stored as their cached values."""
     # Every row is visible in the file as saved, so the sums run over all rows.
     margins = [(row[0], row[1], row[2], row[3], row[4], row[4] - row[5]) for row in rows]
     total_sales = sum(row[4] for row in rows)
@@ -97,12 +96,12 @@ def _place(grid, ref, value):
     grid[int(ref[1:]) - 1][ord(ref[0]) - ord("A")] = value
 
 
-def build_grid(rows, totals, use_formulas):
+def build_grid(rows, totals):
     """The sheet as a list of rows; formula cells carry their computed result."""
     grid = [[None] * (ord(LAST_COLUMN) - ord("A") + 1) for _ in range(LAST_DATA_ROW)]
 
     def formula(text, value):
-        return Formula(text, value) if use_formulas else value
+        return Formula(text, value)
 
     def rng(letter):
         return f"${letter}${FIRST_DATA_ROW}:${letter}${LAST_DATA_ROW}"
@@ -198,10 +197,10 @@ def build_grid(rows, totals, use_formulas):
 
 
 def build_dashboard(path):
-    use_formulas = not str(path).lower().endswith(".xlsb")
+    xlsx = not str(path).lower().endswith(".xlsb")
     rows = sample_rows()
     totals = _totals(rows)
-    grid = build_grid(rows, totals, use_formulas)
+    grid = build_grid(rows, totals)
 
     cards = [
         Shape(anchor="A5", width=196, height=60, fill=CARD_FILL, line=CARD_LINE, font_size=20,
@@ -255,7 +254,7 @@ def build_dashboard(path):
     }
     table = ExcelTable("Sprzedaz", f"A{HEADER_ROW}:H{LAST_DATA_ROW}", columns=HEADERS)
 
-    options = dict(
+    options: dict[str, Any] = dict(
         merges=["A1:H1", "A2:H2"],
         column_widths=widths,
         styles=styles,
@@ -263,34 +262,30 @@ def build_dashboard(path):
         charts=charts,
         shapes=cards,
         show_grid_lines=False,
+        show_row_col_headers=False,
         zoom=90,
         tab_color="#1F4E79",
-    )
-    if use_formulas:
-        options["slicers"] = [Slicer(table="Sprzedaz", column="Region", anchor="K4",
-                                     width=144, height=180, caption="Region")]
-        options["sparklines"] = [SparklineGroup(
+        sparklines=[SparklineGroup(
             data="L37:Q40", location="R37:R40", kind="line", color="#2E75B6", markers=True,
             last_point=True,
-        )]
+        )],
+        slicers=[Slicer(table="Sprzedaz", column="Region", anchor="K4",
+                        width=144, height=180, caption="Region")],
+    )
 
-    writer_class = XlsxWriter if use_formulas else XlsbWriter
+    writer_class = XlsxWriter if xlsx else XlsbWriter
     with writer_class(path) as writer:
         writer.add_sheet("Dashboard")
         writer.write_sheet(grid, **options)
-    return use_formulas
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n", 1)[0])
     parser.add_argument("--out", default="business_dashboard.xlsx",
                         help="output path; a .xlsb name writes XLSB")
     args = parser.parse_args(argv)
-    xlsx = build_dashboard(args.out)
-    if xlsx:
-        print(f"Wrote {args.out}: cards, slicer, charts, sparklines and table.")
-    else:
-        print(f"Wrote {args.out}: cards, charts and table (no slicer or sparklines in XLSB yet).")
+    build_dashboard(args.out)
+    print(f"Wrote {args.out}: cards, slicer, charts, sparklines and table.")
 
 
 if __name__ == "__main__":
