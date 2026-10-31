@@ -1,0 +1,214 @@
+{
+  "python": "3.14.7",
+  "rows": 50000,
+  "cols": 50,
+  "c_ext": true,
+  "versions": {
+    "python": "3.14.7",
+    "xlspy": "0.12.0",
+    "openpyxl": "3.1.5",
+    "xlsxwriter": "3.2.9",
+    "python-calamine": "0.9.0",
+    "fastexcel": "0.21.0",
+    "pyarrow": "26.0.0",
+    "pyxlsb": "1.0.10",
+    "psutil": "7.2.2"
+  },
+  "results": {
+    "xlspy ExcelReader, XLSX": {
+      "seconds": 0.6025549000005412,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 2.31640625,
+      "runs": [
+        0.614,
+        0.602,
+        0.603,
+        0.605,
+        0.597
+      ]
+    },
+    "xlspy ExcelReader, XLSB": {
+      "seconds": 0.09986109999954351,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 1.30078125,
+      "runs": [
+        0.101,
+        0.1,
+        0.1,
+        0.098,
+        0.098
+      ]
+    },
+    "xlspy ExcelReader, xlsxwriter file": {
+      "seconds": 0.6412270000000717,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 0.296875,
+      "runs": [
+        0.643,
+        0.628,
+        0.647,
+        0.641,
+        0.63
+      ]
+    },
+    "xlspy load_workbook, XLSX": {
+      "seconds": 1.8044884000009915,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 488.87109375,
+      "runs": [
+        1.804,
+        1.811,
+        1.827,
+        1.777,
+        1.767
+      ]
+    },
+    "xlspy load_workbook, XLSB": {
+      "seconds": 1.144494100000884,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 484.0,
+      "runs": [
+        1.128,
+        1.144,
+        1.179,
+        1.169,
+        1.126
+      ]
+    },
+    "python-calamine, XLSX": {
+      "seconds": 0.8910550000000512,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 1.5546875,
+      "runs": [
+        0.891,
+        0.887,
+        0.906,
+        0.886,
+        0.892
+      ]
+    },
+    "python-calamine, XLSB": {
+      "seconds": 0.3189631000022928,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 1.6953125,
+      "runs": [
+        0.319,
+        0.333,
+        0.316,
+        0.323,
+        0.315
+      ]
+    },
+    "python-calamine, xlsxwriter file": {
+      "seconds": 1.0827410999991116,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 1.36328125,
+      "runs": [
+        1.083,
+        1.093,
+        1.076,
+        1.092,
+        1.078
+      ]
+    },
+    "fastexcel, XLSX": {
+      "seconds": 0.996852600001148,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 18.28515625,
+      "runs": [
+        0.995,
+        0.993,
+        0.998,
+        0.997,
+        1.011
+      ]
+    },
+    "fastexcel, XLSB": {
+      "seconds": 0.5477868000016315,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 18.34375,
+      "runs": [
+        0.548,
+        0.556,
+        0.559,
+        0.548,
+        0.545
+      ]
+    },
+    "pyxlsb, XLSB": {
+      "seconds": 6.629090499998711,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 0.984375,
+      "runs": [
+        6.629,
+        6.766,
+        6.642,
+        6.568,
+        6.592
+      ]
+    },
+    "openpyxl read_only, XLSX": {
+      "seconds": 4.819354700000986,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 9.390625,
+      "runs": [
+        4.819,
+        4.976,
+        4.797,
+        4.805,
+        4.949
+      ]
+    },
+    "openpyxl read_only, xlsxwriter file": {
+      "seconds": 8.03020110000216,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 3.6875,
+      "runs": [
+        8.128,
+        8.006,
+        8.03,
+        8.025,
+        8.102
+      ]
+    },
+    "openpyxl load_workbook, XLSX": {
+      "seconds": 12.15291679999791,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 872.2421875,
+      "runs": [
+        12.406,
+        12.064,
+        12.153,
+        12.226,
+        12.016
+      ]
+    },
+    "openpyxl load_workbook, xlsxwriter file": {
+      "seconds": 15.608734699999331,
+      "rows": 50000,
+      "non_empty_cells": 2500000,
+      "peak_rss_delta_mb": 974.515625,
+      "runs": [
+        15.907,
+        15.592,
+        15.636,
+        15.549,
+        15.609
+      ]
+    }
+  }
+}

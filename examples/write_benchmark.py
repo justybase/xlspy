@@ -13,6 +13,9 @@ Writers (``--writers``, comma-separated, default ``all``):
       openpyxl ``Workbook(write_only=True)``; skipped if not installed.
   xlsxwriter
       xlsxwriter ``Workbook(constant_memory=True)``; skipped if not installed.
+  pyexcelerate
+      PyExcelerate ``Workbook().new_sheet(...)``; skipped if not installed.
+      No styles are written, so dates are stored as serial numbers.
 
 What is measured, per run:
 
@@ -42,6 +45,7 @@ Usage:
 import argparse
 import csv
 import datetime
+import importlib.metadata
 import json
 import os
 import platform
@@ -56,7 +60,7 @@ from decimal import Decimal
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SRC = os.path.normpath(os.path.join(HERE, "..", "src"))
 XLSPY_WRITERS = ("xlsx-shared", "xlsx-inline", "xlsb-shared", "xlsb-inline")
-OTHER_WRITERS = ("openpyxl", "xlsxwriter")
+OTHER_WRITERS = ("openpyxl", "xlsxwriter", "pyexcelerate")
 ALL_WRITERS = XLSPY_WRITERS + OTHER_WRITERS
 COMPRESSION_LEVEL = 3  # xlspy's default; openpyxl and xlsxwriter use their own defaults
 
@@ -196,6 +200,12 @@ def _write(writer, path, rows):
                 else:
                     sheet.write(r, c, value)
         workbook.close()
+    elif writer == "pyexcelerate":
+        from pyexcelerate import Workbook
+
+        workbook = Workbook()
+        workbook.new_sheet("Bench", data=rows)
+        workbook.save(path)
     else:
         raise ValueError(f"unknown writer {writer!r}")
 
@@ -252,10 +262,12 @@ def run_worker(args):
 # --------------------------------------------------------- orchestrator
 
 
-def _version(module):
+def _version(distribution):
+    # Package metadata, not __version__: PyExcelerate's module reports 0.10.0 while
+    # its distribution is 0.13.0.
     try:
-        return __import__(module).__version__
-    except Exception:
+        return importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
         return None
 
 
@@ -306,8 +318,10 @@ def environment(args):
         "git_dirty": None if status is None else bool(status),
         "openpyxl": _version("openpyxl"),
         "xlsxwriter": _version("xlsxwriter"),
+        "pyexcelerate": _version("pyexcelerate"),
         "compression": {"xlspy": f"deflate level {COMPRESSION_LEVEL}",
-                        "openpyxl": "library default", "xlsxwriter": "library default"},
+                        "openpyxl": "library default", "xlsxwriter": "library default",
+                        "pyexcelerate": "library default"},
         "peak_memory_source": "peak working set" if sys.platform == "win32" else "ru_maxrss",
     }
 

@@ -166,17 +166,67 @@ static PyObject *_utf16le_to_pystr(const unsigned char *data, Py_ssize_t data_le
     );
 }
 
-/* Date-conversion failure: keep a real error (OverflowError for
-   out-of-range serials, ValueError for NaN, ...) pending so the caller
-   aborts iteration exactly like the Python reference, which lets
-   serial_to_datetime() raise.  A failure with no error set (paranoia)
-   falls back to the numeric value.  Returns 1 when fatal. */
-static int _date_failed(int *fatal, int *is_date)
+/* XLSX reader's serial -> datetime (defined below, with the XLSX code). */
+static PyObject *_xr_serial_datetime(double serial, int date_1904);
+
+/* The reference conversion, datetime + timedelta(days=serial).  Only serials
+   outside the fast range go here, so NaN, infinities and out-of-range values
+   raise the same exception and message as the Python path. */
+static PyObject *_xlsb_date_slow(double serial, int date_1904)
 {
-    if (PyErr_Occurred()) { *fatal = 1; return 1; }
-    PyErr_Clear();
-    *is_date = 0;
-    return 0;
+    _ensure_types();
+    PyObject *epoch = date_1904
+        ? PyDateTime_FromDateAndTime(1904, 1, 1, 0, 0, 0, 0)
+        : PyDateTime_FromDateAndTime(1899, 12, 30, 0, 0, 0, 0);
+    if (!epoch) return NULL;
+    PyObject *noargs = PyTuple_New(0);
+    PyObject *kw = Py_BuildValue("{s:d}", "days", serial);
+    PyObject *td = (noargs && kw) ? PyObject_Call(timedelta_type, noargs, kw) : NULL;
+    Py_XDECREF(noargs);
+    Py_XDECREF(kw);
+    PyObject *value = td ? PyNumber_Add(epoch, td) : NULL;
+    Py_XDECREF(td);
+    Py_DECREF(epoch);
+    return value;
+}
+
+/* XLSB date cell: the value of serial_to_datetime().  Failures stay pending and
+   set *fatal, so the caller aborts iteration like the Python reference. */
+static PyObject *_xlsb_date_value(double serial, int date_1904, int *fatal)
+{
+    PyObject *value = fabs(serial) < 999999999.0
+        ? _xr_serial_datetime(serial, date_1904)
+        : _xlsb_date_slow(serial, date_1904);
+    if (!value) *fatal = 1;
+    return value;
+}
+
+/* One flag per cell style (xf index): 1 when its number format is a date
+   format.  Built once per sheet, so the cell loop does no dict or set lookups.
+   The array has one entry per style; *out_len receives its length. */
+static unsigned char *_xlsb_date_xf_flags(PyObject *styles_list, PyObject *date_num_fmts,
+                                          Py_ssize_t *out_len)
+{
+    Py_ssize_t n = PyList_GET_SIZE(styles_list);
+    unsigned char *flags = (unsigned char *)calloc((size_t)(n > 0 ? n : 1), 1);
+    if (!flags) { PyErr_NoMemory(); return NULL; }
+    for (Py_ssize_t i = 0; i < n; i++)
+    {
+        PyObject *style = PyList_GET_ITEM(styles_list, i);
+        if (!style || !PyDict_Check(style)) continue;
+        PyObject *nf = PyDict_GetItemString(style, "numFmtId");
+        if (!nf) continue;
+        int found = PySet_Contains(date_num_fmts, nf);
+        if (found < 0) { PyErr_Clear(); continue; }
+        flags[i] = (unsigned char)(found == 1);
+    }
+    *out_len = n;
+    return flags;
+}
+
+static int _xlsb_is_date_xf(const unsigned char *date_xf, Py_ssize_t date_xf_len, long xf_idx)
+{
+    return xf_idx > 0 && xf_idx < date_xf_len && date_xf[xf_idx];
 }
 
 /* xlspy._errors.CellError, registered by set_error_type: the str subclass
@@ -189,12 +239,11 @@ static const char *_xlsb_error_text(unsigned char code);
 static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_len,
                                     Py_ssize_t body_start, long rec_id, long rec_len,
                                     PyObject *shared_strings, Py_ssize_t ss_len,
-                                    PyObject *styles_list, Py_ssize_t styles_len,
-                                    PyObject *date_num_fmts, long xf_idx, int *has_cell,
+                                    const unsigned char *date_xf, Py_ssize_t date_xf_len,
+                                    long xf_idx, int *has_cell,
                                     int date_1904, int *fatal, int *skip)
 {
     PyObject *cell_val = NULL;
-    int is_date = 0;
     *fatal = 0;
     *skip = 0;
 
@@ -232,49 +281,12 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
         /* The reference ignores number records shorter than 12 bytes. */
         if (rec_len < 12) { *skip = 1; return NULL; }
         double dval = _read_rk(data, data_len, body_start + 8);
-        if (xf_idx > 0 && xf_idx < styles_len)
+        if (_xlsb_is_date_xf(date_xf, date_xf_len, xf_idx))
         {
-            PyObject *style = PyList_GetItem(styles_list, xf_idx);
-            if (style && PyDict_Check(style))
-            {
-                PyObject *nf = PyDict_GetItemString(style, "numFmtId");
-                if (nf)
-                    is_date = (PySet_Contains(date_num_fmts, nf) == 1);
-            }
+            cell_val = _xlsb_date_value(dval, date_1904, fatal);
+            if (!cell_val) return NULL;
         }
-        if (is_date)
-        {
-            _ensure_types();
-            /* Excel's fictitious 1900-02-29: serials 1..59 read one day later. */
-            double serial = dval;
-            if (!date_1904 && serial >= 1.0 && serial < 60.0)
-                serial += 1.0;
-            PyObject *epoch = date_1904
-                ? PyDateTime_FromDateAndTime(1904, 1, 1, 0, 0, 0, 0)
-                : PyDateTime_FromDateAndTime(1899, 12, 30, 0, 0, 0, 0);
-            if (!epoch) { if (_date_failed(fatal, &is_date)) return NULL; }
-            else
-            {
-                PyObject *td_kw = Py_BuildValue("{s:d}", "days", serial);
-                if (!td_kw) { Py_DECREF(epoch); if (_date_failed(fatal, &is_date)) return NULL; }
-                else
-                {
-                    PyObject *noargs = PyTuple_New(0);
-                    PyObject *td = PyObject_Call(timedelta_type, noargs, td_kw);
-                    Py_DECREF(noargs);
-                    Py_DECREF(td_kw);
-                    if (!td) { Py_DECREF(epoch); if (_date_failed(fatal, &is_date)) return NULL; }
-                    else
-                    {
-                        cell_val = PyNumber_Add(epoch, td);
-                        Py_DECREF(td);
-                        Py_DECREF(epoch);
-                        if (!cell_val) { if (_date_failed(fatal, &is_date)) return NULL; }
-                    }
-                }
-            }
-        }
-        if (!is_date)
+        else
         {
             cell_val = _number_from_double(dval);
         }
@@ -291,49 +303,12 @@ static PyObject *_parse_cell_value(const unsigned char *data, Py_ssize_t data_le
         /* The reference ignores float records shorter than 16 bytes. */
         if (rec_len < 16) { *skip = 1; return NULL; }
         double dval = _read_double(data, data_len, body_start + 8);
-        if (xf_idx > 0 && xf_idx < styles_len)
+        if (_xlsb_is_date_xf(date_xf, date_xf_len, xf_idx))
         {
-            PyObject *style = PyList_GetItem(styles_list, xf_idx);
-            if (style && PyDict_Check(style))
-            {
-                PyObject *nf = PyDict_GetItemString(style, "numFmtId");
-                if (nf)
-                    is_date = (PySet_Contains(date_num_fmts, nf) == 1);
-            }
+            cell_val = _xlsb_date_value(dval, date_1904, fatal);
+            if (!cell_val) return NULL;
         }
-        if (is_date)
-        {
-            _ensure_types();
-            /* Excel's fictitious 1900-02-29: serials 1..59 read one day later. */
-            double serial = dval;
-            if (!date_1904 && serial >= 1.0 && serial < 60.0)
-                serial += 1.0;
-            PyObject *epoch = date_1904
-                ? PyDateTime_FromDateAndTime(1904, 1, 1, 0, 0, 0, 0)
-                : PyDateTime_FromDateAndTime(1899, 12, 30, 0, 0, 0, 0);
-            if (!epoch) { if (_date_failed(fatal, &is_date)) return NULL; }
-            else
-            {
-                PyObject *td_kw = Py_BuildValue("{s:d}", "days", serial);
-                if (!td_kw) { Py_DECREF(epoch); if (_date_failed(fatal, &is_date)) return NULL; }
-                else
-                {
-                    PyObject *noargs = PyTuple_New(0);
-                    PyObject *td = PyObject_Call(timedelta_type, noargs, td_kw);
-                    Py_DECREF(noargs);
-                    Py_DECREF(td_kw);
-                    if (!td) { Py_DECREF(epoch); if (_date_failed(fatal, &is_date)) return NULL; }
-                    else
-                    {
-                        cell_val = PyNumber_Add(epoch, td);
-                        Py_DECREF(td);
-                        Py_DECREF(epoch);
-                        if (!cell_val) { if (_date_failed(fatal, &is_date)) return NULL; }
-                    }
-                }
-            }
-        }
-        if (!is_date)
+        else
         {
             cell_val = _number_from_double(dval);
         }
@@ -2125,13 +2100,13 @@ typedef struct {
     /* Lookup structures */
     PyObject *shared_strings;
     Py_ssize_t ss_len;
-    PyObject *styles_list;
-    Py_ssize_t styles_len;
-    PyObject *date_num_fmts;
+    unsigned char *date_xf;      /* per-xf date flags, see _xlsb_date_xf_flags */
+    Py_ssize_t date_xf_len;
 
     /* Per-row cell buffer */
     PyObject **cur_cells;
     Py_ssize_t cur_cells_len;
+    Py_ssize_t cur_cells_cap;  /* allocated slots in cur_cells, 0 when NULL */
 
     /* State tracking */
     long cur_row_num;          /* row number of currently accumulating row */
@@ -2166,8 +2141,7 @@ static void XlsbReader_dealloc(XlsbReader *self)
     if (self->view.buf)
         PyBuffer_Release(&self->view);
     Py_XDECREF(self->shared_strings);
-    Py_XDECREF(self->styles_list);
-    Py_XDECREF(self->date_num_fmts);
+    free(self->date_xf);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -2196,7 +2170,7 @@ static PyObject *_build_row_and_free_cells(XlsbReader *self)
     {
         /* Absurd width: the reference dies building range(huge). */
         _free_cur_cells(self->cur_cells, self->cur_cells_len);
-        self->cur_cells = NULL; self->cur_cells_len = 0;
+        self->cur_cells = NULL; self->cur_cells_len = 0; self->cur_cells_cap = 0;
         PyErr_NoMemory();
         return NULL;
     }
@@ -2204,7 +2178,7 @@ static PyObject *_build_row_and_free_cells(XlsbReader *self)
     if (!row_list)
     {
         _free_cur_cells(self->cur_cells, self->cur_cells_len);
-        self->cur_cells = NULL; self->cur_cells_len = 0;
+        self->cur_cells = NULL; self->cur_cells_len = 0; self->cur_cells_cap = 0;
         return NULL;
     }
     for (Py_ssize_t c = 0; c < out_cols; c++)
@@ -2225,6 +2199,7 @@ static PyObject *_build_row_and_free_cells(XlsbReader *self)
     free(self->cur_cells);
     self->cur_cells = NULL;
     self->cur_cells_len = 0;
+    self->cur_cells_cap = 0;
     return row_list;
 }
 
@@ -2391,8 +2366,8 @@ static int _process_cell_record(XlsbReader *self, const unsigned char *data,
     PyObject *cell_val = _parse_cell_value(data, data_len, body_start,
                                              rec_id, rec_len,
                                              self->shared_strings, self->ss_len,
-                                             self->styles_list, self->styles_len,
-                                             self->date_num_fmts, xf_idx, &has_cell_alloc,
+                                             self->date_xf, self->date_xf_len,
+                                             xf_idx, &has_cell_alloc,
                                              self->date_1904, &fatal, &skip);
     if (fatal) return -1;  /* exception pending: abort like the reference */
     if (skip || !cell_val) return 1;
@@ -2441,17 +2416,30 @@ static int _process_cell_record(XlsbReader *self, const unsigned char *data,
 
     if (idx >= self->cur_cells_len)
     {
-        PyObject **new_cells = realloc(self->cur_cells,
-                                       sizeof(PyObject*) * (size_t)(idx + 1));
-        if (!new_cells)
+        if (idx >= self->cur_cells_cap)
         {
-            if (has_cell_alloc) Py_DECREF(cell_val);
-            PyErr_NoMemory();
-            return 0;
+            /* Grow geometrically, or to the frozen row width, so a row costs a
+               few allocations instead of one realloc per cell. */
+            Py_ssize_t cap = self->cur_cells_cap * 2;
+            if (cap < idx + 1) cap = idx + 1;
+            if (cap < 16) cap = 16;
+            if (self->cols_per_row > cap && self->cols_per_row <= _XLSB_MAX_COL_SPAN)
+                cap = self->cols_per_row;
+            PyObject **new_cells = realloc(self->cur_cells,
+                                           sizeof(PyObject*) * (size_t)cap);
+            if (!new_cells)
+            {
+                if (has_cell_alloc) Py_DECREF(cell_val);
+                PyErr_NoMemory();
+                return 0;
+            }
+            for (Py_ssize_t c = self->cur_cells_cap; c < cap; c++)
+                new_cells[c] = NULL;
+            self->cur_cells = new_cells;
+            self->cur_cells_cap = cap;
         }
         for (Py_ssize_t c = self->cur_cells_len; c <= idx; c++)
-            new_cells[c] = NULL;
-        self->cur_cells = new_cells;
+            self->cur_cells[c] = NULL;
         self->cur_cells_len = idx + 1;
     }
     /* Uniform array ownership: own a reference on borrowed singletons. */
@@ -2589,8 +2577,12 @@ static PyObject *C_read_xlsb_worksheet(PyObject *self_mod, PyObject *args)
 
     _ensure_types();
 
+    Py_ssize_t date_xf_len = 0;
+    unsigned char *date_xf = _xlsb_date_xf_flags(styles_list, date_num_fmts, &date_xf_len);
+    if (!date_xf) { PyBuffer_Release(&view); return NULL; }
+
     XlsbReader *reader = PyObject_New(XlsbReader, &XlsbReader_Type);
-    if (!reader) { PyBuffer_Release(&view); return NULL; }
+    if (!reader) { free(date_xf); PyBuffer_Release(&view); return NULL; }
 
     memcpy(&reader->view, &view, sizeof(Py_buffer));
     reader->data = (const unsigned char *)view.buf;
@@ -2600,12 +2592,12 @@ static PyObject *C_read_xlsb_worksheet(PyObject *self_mod, PyObject *args)
 
     reader->shared_strings = shared_strings;
     reader->ss_len = PyList_Size(shared_strings);
-    reader->styles_list = styles_list;
-    reader->styles_len = PyList_Size(styles_list);
-    reader->date_num_fmts = date_num_fmts;
+    reader->date_xf = date_xf;
+    reader->date_xf_len = date_xf_len;
 
     reader->cur_cells = NULL;
     reader->cur_cells_len = 0;
+    reader->cur_cells_cap = 0;
     reader->cur_row_num = -1;
     reader->gap_rows_remaining = 0;
     reader->first_col = -1;
@@ -2618,8 +2610,6 @@ static PyObject *C_read_xlsb_worksheet(PyObject *self_mod, PyObject *args)
     _prescan_first_data_row(reader);
 
     Py_INCREF(shared_strings);
-    Py_INCREF(styles_list);
-    Py_INCREF(date_num_fmts);
 
     if (reader->fallback_to_python)
     {
@@ -4283,6 +4273,8 @@ static PyObject *C_xlsb_load_cells(PyObject *self, PyObject *args)
     PyObject *result = NULL, *formulas = NULL, *headers = NULL, *groups = NULL;
     PyObject *type_n = NULL, *type_s = NULL, *type_b = NULL, *type_e = NULL;
     PyObject **columns = NULL;
+    unsigned char *date_xf = NULL;
+    Py_ssize_t date_xf_len = 0;
     PyObject *row_key = NULL, *row_dict = NULL;
     Py_ssize_t offsets[_CS_COUNT];
 
@@ -4310,7 +4302,8 @@ static PyObject *C_xlsb_load_cells(PyObject *self, PyObject *args)
     const unsigned char *data = (const unsigned char *)view.buf;
     Py_ssize_t data_len = view.len;
     Py_ssize_t ss_len = PyList_GET_SIZE(shared_strings);
-    Py_ssize_t styles_len = PyList_GET_SIZE(styles_list);
+    date_xf = _xlsb_date_xf_flags(styles_list, date_num_fmts, &date_xf_len);
+    if (!date_xf) goto done;
     Py_ssize_t pos = 0, data_start = -1, data_end = -1;
     long current_row = -1, previous_column = -1, max_row = 0, max_column = 0;
 
@@ -4422,8 +4415,8 @@ static PyObject *C_xlsb_load_cells(PyObject *self, PyObject *args)
         {
             int fatal = 0, skip = 0;
             value = _parse_cell_value(data, data_len, cell_body, kind, cell_len,
-                                      shared_strings, ss_len, styles_list, styles_len,
-                                      date_num_fmts, xf, &owned, date_1904, &fatal, &skip);
+                                      shared_strings, ss_len, date_xf, date_xf_len,
+                                      xf, &owned, date_1904, &fatal, &skip);
             if (fatal) goto done;
             if (skip || !value) continue;
             if (value == Py_None)
@@ -4493,6 +4486,7 @@ static PyObject *C_xlsb_load_cells(PyObject *self, PyObject *args)
 
 done:
     PyBuffer_Release(&view);
+    free(date_xf);
     Py_XDECREF(row_key);
     if (columns)
     {

@@ -74,6 +74,9 @@ Median wall time to read the 50,000 × 50 workbook back. Each library reads the 
 - xlspy XLSX reads **2.2–2.5× faster** than openpyxl `read_only`.
 - The Mac mini M4 reads **1.8–2.2× faster** than the Windows machine, a larger gap than for writes.
 - WSL2 reads 18–31% faster than Windows, with the same filesystem caveat as for writes.
+- These read runs predate the XLSB read changes of 2026-10-30 (see the comparison
+  below). The XLSB rows were not measured again on macOS or WSL2, so the XLSB numbers
+  in this table are older than the Windows results of the comparison.
 
 ### Read modes and the workbook model
 
@@ -102,63 +105,146 @@ before the 0.11 sprint in brackets,
   (`--compare ... --max-slowdown 1.05`).
 - A loaded XLSB is saved by patching the binary worksheet in place: the time
   depends mostly on the size of the edited sheet, not on the number of edits.
+- The XLSB read numbers in this section predate the 2026-10-30 changes to the C
+  extension's XLSB read path. They were not measured again.
 
-### Comparison with openpyxl and xlsxwriter (2026-10-27)
-
-Re-run of every benchmark on one machine, so the numbers are directly comparable.
-Windows 11, AMD Ryzen 7 7840HS, Python 3.14.7, xlspy 0.10.1 (working tree at
-`0751ab0`, uncommitted changes), openpyxl 3.1.5, xlsxwriter 3.2.9. Median of three
-runs, 50,000 × 50 (2.5 million cells), `mixed` dataset. Raw data:
-[`results-write-compare-2026-10-27.json`](../benchmarks/results-write-compare-2026-10-27.json),
-[`results-read-compare-2026-10-27.json`](../benchmarks/results-read-compare-2026-10-27.json).
-
-**Write**, time in seconds (xlspy with C extension on, deflate level 3, its default;
-openpyxl and xlsxwriter use their own defaults):
-
-| Writer | Time | Peak working set | File |
-| :--- | ---: | ---: | ---: |
-| xlspy XLSB, inline strings | 0.77 s | 42.0 MB | 7.32 MiB |
-| xlspy XLSB, shared strings | 0.94 s | 103.1 MB | 8.10 MiB |
-| xlspy XLSX, inline strings | 1.24 s | 51.4 MB | 6.31 MiB |
-| xlspy XLSX, shared strings | 1.40 s | 104.0 MB | 7.25 MiB |
-| xlsxwriter XLSX (`constant_memory`) | 9.46 s | 29.1 MB | 11.55 MiB |
-| openpyxl XLSX (`write_only`) | 16.03 s | 42.3 MB | 11.71 MiB |
-
-- xlspy XLSX with shared strings is **6.8×** faster than xlsxwriter and **11.5×** faster than openpyxl.
-- xlspy writes smaller files (6.3–8.1 MiB against 11.5–11.7 MiB).
-- The trade-off is memory. Shared-string mode keeps the string table in Python
-  memory, so its peak is about 100 MB against 29–42 MB for the other two writers.
-  Inline mode, at 51 MB, stays in the same range.
-- Without the C extension, the xlspy times are 2.6–3.0 s, which is still faster than
-  xlsxwriter, but the margin is much smaller.
-
-**Read**, time in seconds, reading the whole sheet with `values_only` and counting
-the non-empty cells. Every reader returns the same 2,500,000 non-empty cells:
-
-| Reader | File | Time |
-| :--- | :--- | ---: |
-| xlspy `ExcelReader` | XLSX (xlspy) | 0.82 s |
-| xlspy `ExcelReader` | XLSB (xlspy) | 0.66 s |
-| xlspy `ExcelReader` | XLSX (xlsxwriter) | 0.84 s |
-| openpyxl `read_only=True` | XLSX (xlspy) | 4.95 s |
-| openpyxl `read_only=True` | XLSX (xlsxwriter) | 8.12 s |
-| xlspy `load_workbook` (model) | XLSX (xlspy) | 6.53 s |
-| xlspy `load_workbook` (model) | XLSB (xlspy) | 6.74 s |
-| openpyxl `load_workbook` (model) | XLSX (xlspy) | 11.85 s |
-| openpyxl `load_workbook` (model) | XLSX (xlsxwriter) | 14.61 s |
-
-- `ExcelReader` is **6.0×** faster than openpyxl `read_only` on the same file.
-- The loaded model is **1.8×** faster than openpyxl's on the same file.
-- xlsxwriter cannot read files, so it appears only as the producer of an input file.
-- XLSB has no openpyxl reader, so it is measured for xlspy only.
-
-**Regression check** against `results-write-final.json` (`bench_io.py`, 50,000 × 20):
+**Regression check** against `results-write-final.json` (`bench_io.py`, 50,000 × 20, 2026-10-27):
 every case ran at 0.90–0.99× of the baseline time, so no case is slower than before
 (full results: [`results-2026-10-27.json`](../benchmarks/results-2026-10-27.json)).
 
+### Comparison with other Python libraries (2026-10-30)
+
+Re-run of the writers and readers on one machine, with the Python libraries that
+read or write the same formats. Windows 11, AMD Ryzen 7 7840HS, Python 3.14.7,
+xlspy 0.12.0 at commit `75828a1`. The benchmark scripts and the XLSB read path of
+the C extension (`src/xlspy/c_ext/_c_core.c`) have uncommitted changes; the read
+numbers below are for the changed code.
+Library versions: openpyxl 3.1.5, xlsxwriter 3.2.9, PyExcelerate 0.13.0,
+python-calamine 0.9.0, fastexcel 0.21.0 with pyarrow 26.0.0, pyxlsb 1.0.10.
+Raw data: write, median of three runs, 50,000 × 50 (2.5 million cells):
+[`results-write-2026-10-30.json`](../benchmarks/results-write-2026-10-30.json),
+[`results-write-2026-10-30.csv`](../benchmarks/results-write-2026-10-30.csv);
+read, median of five runs:
+[`results-read-compare-2026-10-30-v2.json`](../benchmarks/results-read-compare-2026-10-30-v2.json).
+
+**Write**, time in seconds. The `mixed` dataset (the eight-type layout of
+`performance_test.py`) goes from a generator to a file. Peak is the writer's peak
+working set. The write path was not changed after this run, so these numbers
+still apply to the current code.
+
+| Writer | Format | Time | Peak | File |
+| :--- | :--- | ---: | ---: | ---: |
+| xlspy, inline strings | XLSB | 0.81 s | 43.5 MB | 7.32 MiB |
+| xlspy, shared strings | XLSB | 0.98 s | 104.3 MB | 8.10 MiB |
+| xlspy, inline strings | XLSX | 1.28 s | 53.2 MB | 6.31 MiB |
+| xlspy, shared strings | XLSX | 1.46 s | 105.4 MB | 7.25 MiB |
+| PyExcelerate | XLSX | 8.47 s | 271.8 MB | 12.31 MiB |
+| xlsxwriter (`constant_memory`) | XLSX | 10.15 s | 29.4 MB | 11.55 MiB |
+| openpyxl (`write_only`) | XLSX | 17.30 s | 32.4 MB | 11.71 MiB |
+
+With the C extension off, the four xlspy writers take 2.6–3.2 s.
+
+- xlspy XLSB with inline strings is **12.5×** faster than xlsxwriter and **21×**
+  faster than openpyxl. XLSX with shared strings is **7.0×** faster than xlsxwriter
+  and **11.8×** faster than openpyxl.
+- PyExcelerate is the fastest of the other XLSX writers, but it holds the whole
+  sheet in memory (272 MB peak, about 219 MB of Python allocations) and writes no
+  styles, so dates are stored as serial numbers and its file is the largest.
+- No other library in this comparison writes XLSB, so the XLSB rows have no
+  competitor here.
+
+**Read**, time in seconds, on the `bench_io.py` dataset (five cell types). The timed
+pass consumes every row. The row and cell counts, which check the readers against
+each other, come from a second pass over the same file that is not timed. Every
+reader counted 50,000 rows and 2,500,000 non-empty cells.
+
+| Reader | File | Time |
+| :--- | :--- | ---: |
+| xlspy `ExcelReader` | XLSB | 0.10 s |
+| python-calamine | XLSB | 0.32 s |
+| fastexcel | XLSB | 0.55 s |
+| xlspy `load_workbook` (model) | XLSB | 1.14 s |
+| pyxlsb | XLSB | 6.63 s |
+| xlspy `ExcelReader` | XLSX (xlspy) | 0.60 s |
+| xlspy `ExcelReader` | XLSX (xlsxwriter) | 0.64 s |
+| python-calamine | XLSX (xlspy) | 0.89 s |
+| python-calamine | XLSX (xlsxwriter) | 1.08 s |
+| fastexcel | XLSX (xlspy) | 1.00 s |
+| xlspy `load_workbook` (model) | XLSX (xlspy) | 1.80 s |
+| openpyxl `read_only=True` | XLSX (xlspy) | 4.82 s |
+| openpyxl `read_only=True` | XLSX (xlsxwriter) | 8.03 s |
+| openpyxl `load_workbook` | XLSX (xlspy) | 12.15 s |
+| openpyxl `load_workbook` | XLSX (xlsxwriter) | 15.61 s |
+
+- XLSB: xlspy `ExcelReader` is the fastest measured reader. It is 3.2× faster than
+  python-calamine, 5.5× faster than fastexcel and about 66× faster than pyxlsb.
+  This favours xlspy: python-calamine returns the whole sheet as lists that stay in
+  memory, and `ExcelReader` drops each row after it is read. When both keep every row
+  (xlspy `list(get_rows())` 0.16 s, python-calamine `to_python()` 0.32 s), xlspy is
+  still about 2× faster.
+- XLSX: xlspy `ExcelReader` is the fastest measured XLSX reader. It is 1.5× faster
+  than python-calamine on the xlspy file, 1.7× faster than fastexcel and 8× faster
+  than openpyxl `read_only=True`.
+- python-calamine and fastexcel build the whole sheet before they return it (a list
+  of lists, and an Arrow batch in which mixed-type columns come back as strings).
+  `ExcelReader` yields rows as it goes.
+- `load_workbook` (the model) is 3.0× slower than `ExcelReader` on XLSX and 11×
+  slower on XLSB, because it creates a `Cell` object for every value.
+
+**XLSB read, before and after the C changes** (same file, same machine, the same
+harness pass, median of five runs; the file is written by `XlsbWriter` from the
+`bench_io.py` generator):
+
+| Case | Before (`_c_core.c` at `75828a1`) | After | Change |
+| :--- | ---: | ---: | ---: |
+| `ExcelReader`, consume rows | 0.453 s | 0.093 s | −80 % |
+| `load_workbook` (model) | 2.448 s | 1.307 s | −47 % |
+
+What changed in `_c_core.c`:
+
+- A date cell no longer looks up its number format in a dict and a set, and no
+  longer builds a `timedelta` for each value. The date flag of every cell style is
+  computed once per sheet, and the conversion reuses the XLSX serial-to-datetime
+  function.
+- The cells of a row are kept in a buffer that grows geometrically, instead of one
+  `realloc` per cell.
+
+Both changes keep the results identical. A differential test compared 45,045 serial
+values in both date systems, including the microsecond rounding and the out-of-range
+errors (exception type and message), with the baseline and with the new build. A
+second test compared 1,000 random worksheets (gaps, unordered and repeated columns,
+empty and wide rows, every cell kind, error cells); both builds returned the same
+rows. The full test suite passes with the C extension (1883 passed, 183 skipped
+because they need Microsoft Excel) and without it (1709 passed, 357 skipped because
+they need the extension).
+
+Method changes in this run:
+
+- The read harness imports each reader's library before the timer starts. Earlier
+  runs timed the import as well.
+- The timed pass only consumes the rows. Earlier runs also counted the non-empty
+  cells inside the timed region, which added about 0.12 s to the xlspy XLSB case and
+  made the comparison with the other readers less even.
+- pyxlsb cannot read a file written by `XlsbWriter` as it is. The writer stores an
+  `A1:A1` placeholder in the `BrtWsDim` record, pyxlsb trusts it, and reading a
+  row wider than one column raises `IndexError`. The pyxlsb row therefore reads a
+  copy in which only that record holds the real bounds. The cells are the same.
+  xlspy, python-calamine and fastexcel read the original file.
+- Read memory is not reported. The `peak_rss_delta_mb` field in the read JSON is
+  the change in resident memory at the end of the read, not the peak.
+
+Reproduce (from the repository root, with the libraries installed:
+`python -m pip install openpyxl==3.1.5 xlsxwriter==3.2.9 PyExcelerate python-calamine fastexcel pyarrow pyxlsb psutil`):
+
+```bash
+python examples/write_benchmark.py --rows 50000 --cols 50 --iterations 3 --writers all --c-ext both --tracemalloc --output benchmarks/results-write-2026-10-30.json --csv benchmarks/results-write-2026-10-30.csv
+python benchmarks/bench_read_compare.py --rows 50000 --cols 50 --repeat 5 --out benchmarks/results-read-compare-2026-10-30-v2.json
+```
+
 **Not measured in this run:** a full-model write of openpyxl (`Workbook().save()`)
-against `Workbook.save()` in xlspy, and read comparisons with other XLSX
-readers. The write table above uses the streaming writers only.
+against `Workbook.save()` in xlspy. pandas and polars call these readers and
+writers underneath and add their own overhead, so they were not measured
+separately.
 
 ### Feature comparison
 
