@@ -6,6 +6,8 @@ fast path (``XlsxWriter``/``XlsbWriter``/``ExcelReader``) does not import it.
 
 from __future__ import annotations
 
+import copy
+
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
 import datetime as _datetime
@@ -2200,17 +2202,23 @@ class Workbook:
             for column, cell in row.items():
                 new_cell = target.cell(row_number, column, cell.value)
                 new_cell._style_id = cell._style_id
-                new_cell._comment = cell.comment
-                new_cell._hyperlink = cell.hyperlink
+                # Own copies, as openpyxl makes: editing one sheet leaves the other alone.
+                new_cell._comment = copy.copy(cell.comment)
+                new_cell._hyperlink = copy.copy(cell.hyperlink)
                 new_cell._named_style = cell._named_style
         target._merged_cells = MultiCellRange(from_worksheet._merged_cells.ranges)
-        target._column_dimensions.update(from_worksheet._column_dimensions)
-        target._row_dimensions.update(from_worksheet._row_dimensions)
+        for name in ("_column_dimensions", "_row_dimensions"):
+            getattr(target, name).update(copy.deepcopy(dict(getattr(from_worksheet, name))))
+        target._row_heights = dict(from_worksheet._row_heights)
+        target._hidden_rows = set(from_worksheet._hidden_rows)
         target._freeze_panes = from_worksheet.freeze_panes
-        target._auto_filter = AutoFilter(from_worksheet.auto_filter.ref)
+        target._auto_filter = copy.deepcopy(from_worksheet.auto_filter)
         target._sheet_state = from_worksheet.sheet_state
-        target._sheet_properties = replace(from_worksheet.sheet_properties)
-        target._sheet_view = replace(from_worksheet.sheet_view)
+        target._sheet_properties = copy.deepcopy(from_worksheet.sheet_properties)
+        target._sheet_view = copy.deepcopy(from_worksheet.sheet_view)
+        for name in ("page_setup", "page_margins", "print_options", "HeaderFooter",
+                     "sheet_format", "row_breaks", "col_breaks"):
+            setattr(target, name, copy.deepcopy(getattr(from_worksheet, name)))
         target._mark_dirty("copy")
         return target
 

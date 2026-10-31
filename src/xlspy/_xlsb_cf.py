@@ -553,7 +553,7 @@ def _scale_records(rule, context, origin) -> bytes:
     flags = (_ICON_ONLY if rule.show_value is False else 0) | (_ICON_REVERSE if rule.reverse else 0)
     out = build_record(BRT_BEGIN_ICON_SET, struct.pack("<IH", ICON_SET_CODES[rule.icon_style], flags))
     for value in rule.values:
-        out += build_record(BRT_CFVO, cfvo_bin(rule.type, value, context, origin, gte=True))
+        out += build_record(BRT_CFVO, cfvo_bin(rule.cfvo_type, value, context, origin, gte=True))
     return out + build_record(BRT_END_ICON_SET)
 
 
@@ -601,7 +601,7 @@ def _scale_rule(sqref, kind, priority, stop, parts, context):
     if kind == _ICON_SET and head[0] == BRT_BEGIN_ICON_SET and cfvos:
         code, flags = struct.unpack_from("<IH", head[1], 0)
         values = [0 if item.value is None else item.value for item in cfvos]
-        return IconSetRule(sqref, _ICON_SET_NAMES[code], values, type=cfvos[0].type,
+        return IconSetRule(sqref, _ICON_SET_NAMES[code], values, cfvo_type=cfvos[0].type,
                            show_value=False if flags & _ICON_ONLY else None,
                            reverse=True if flags & _ICON_REVERSE else None,
                            stop_if_true=stop, priority=priority)

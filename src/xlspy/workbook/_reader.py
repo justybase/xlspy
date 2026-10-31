@@ -626,7 +626,7 @@ def _cf_rule(sqref: str, node, style_table):
             sqref,
             icon_set.get("iconSet", "3TrafficLights1"),
             values,
-            type=cfvos[0].type if cfvos else "percent",
+            cfvo_type=cfvos[0].type if cfvos else "percent",
             show_value=_bool_attr(icon_set, "showValue", None),
             percent=_bool_attr(icon_set, "percent", None),
             reverse=_bool_attr(icon_set, "reverse", None),

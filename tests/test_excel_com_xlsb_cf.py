@@ -31,7 +31,7 @@ def _rules():
                                "FF638EC6", show_value=False)),
         ("D1:D10", IconSetRule("D1", "3Arrows", [0, 33, 67], reverse=True, show_value=False)),
         ("A12:A14 D12:D14", IconSetRule("A12", "5Rating", ["$A$1", "$A$2", "$A$3", "$A$4", "$A$5"],
-                                        type="formula")),
+                                        cfvo_type="formula")),
     ]
 
 

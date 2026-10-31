@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from functools import lru_cache
 import re
+import warnings
 from typing import Mapping, NamedTuple
 
 # Chart and cell-reference models live in their own modules; they are
@@ -701,19 +702,40 @@ class DataBarRule:
         _validate_priority(self.priority)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class IconSetRule:
-    """An ``iconSet`` conditional-formatting rule (openpyxl-like)."""
+    """An ``iconSet`` conditional-formatting rule (openpyxl-like).
+
+    ``cfvo_type`` is the type of the thresholds in ``values``; ``type`` is
+    the rule type, ``"iconSet"``, as in openpyxl.
+    """
 
     sqref: str
     icon_style: str
     values: list[float | str] | tuple[float | str, ...]
-    type: str = "percent"
+    cfvo_type: str = "percent"
     show_value: bool | None = None
     percent: bool | None = None
     reverse: bool | None = None
     stop_if_true: bool | None = None
     priority: int | None = None
+
+    def __init__(self, sqref, icon_style, values, cfvo_type="percent", show_value=None,
+                 percent=None, reverse=None, stop_if_true=None, priority=None, *, type=None):
+        if type is not None and type != "iconSet":
+            warnings.warn(
+                "IconSetRule(type=...) is deprecated; pass cfvo_type= "
+                "(type is the rule type, 'iconSet', as in openpyxl)",
+                DeprecationWarning, stacklevel=2,
+            )
+            cfvo_type = type
+        for name, value in (
+            ("sqref", sqref), ("icon_style", icon_style), ("values", values),
+            ("cfvo_type", cfvo_type), ("show_value", show_value), ("percent", percent),
+            ("reverse", reverse), ("stop_if_true", stop_if_true), ("priority", priority),
+        ):
+            object.__setattr__(self, name, value)
+        self.__post_init__()
 
     def __post_init__(self):
         _validate_sqref(self.sqref)
@@ -727,16 +749,16 @@ class IconSetRule:
         for value in values:
             if isinstance(value, bool) or not isinstance(value, (int, float, str)):
                 raise TypeError("icon set values must be numbers or formulas")
-        if self.type not in _CFVO_TYPES:
-            raise ValueError(f"invalid icon set value type {self.type!r}")
-        if self.type != "formula":
+        if self.cfvo_type not in _CFVO_TYPES:
+            raise ValueError(f"invalid icon set value type {self.cfvo_type!r}")
+        if self.cfvo_type != "formula":
             for value in values:
                 if isinstance(value, str):
                     raise ValueError(
-                        "string values require type='formula'"
+                        "string values require cfvo_type='formula'"
                     )
         elif any(not isinstance(value, str) for value in values):
-            raise ValueError("type='formula' requires string values")
+            raise ValueError("cfvo_type='formula' requires string values")
         for attr in ("show_value", "percent", "reverse", "stop_if_true"):
             value = getattr(self, attr)
             if value is not None and not isinstance(value, bool):
@@ -1711,6 +1733,5 @@ _RULE_TYPES = (
 )
 for _rule_class, _rule_type in _RULE_TYPES:
     setattr(_rule_class, "rule_type", property(_rule_type))
-    if _rule_class is not IconSetRule:
-        setattr(_rule_class, "type", property(_rule_type))
+    setattr(_rule_class, "type", property(_rule_type))
 del _rule_class, _rule_type

@@ -310,9 +310,9 @@ def test_model_validation_rejects_bad_input():
     with pytest.raises(ValueError):
         IconSetRule("A1:A5", "5Arrows", [])
     with pytest.raises(ValueError):
-        IconSetRule("A1:A5", "5Arrows", [0], type="bogus")
+        IconSetRule("A1:A5", "5Arrows", [0], cfvo_type="bogus")
     with pytest.raises(ValueError):
-        IconSetRule("A1:A5", "5Arrows", [0, "=A1"], type="percent")
+        IconSetRule("A1:A5", "5Arrows", [0, "=A1"], cfvo_type="percent")
     with pytest.raises(TypeError):
         IconSetRule("A1:A5", "5Arrows", [0], show_value="yes")
     with pytest.raises(ValueError):
@@ -609,7 +609,7 @@ def test_icon_set_rule_round_trip(tmp_path):
                     "A1:A10",
                     "5Arrows",
                     [0, 20, 40, 60, 80],
-                    type="percent",
+                    cfvo_type="percent",
                     show_value=True,
                     reverse=True,
                     priority=1,
@@ -618,7 +618,7 @@ def test_icon_set_rule_round_trip(tmp_path):
                     "B1:B10",
                     "3TrafficLights1",
                     ["=A1", "=A2", "=A3"],
-                    type="formula",
+                    cfvo_type="formula",
                     percent=False,
                     priority=2,
                 ),
@@ -686,3 +686,12 @@ def test_gradient_fill_in_differential_style(tmp_path):
         (0, "FFFF0000"),
         (1, "FF0000FF"),
     ]
+
+
+def test_icon_set_rule_type_is_the_rule_type_as_in_openpyxl():
+    rule = IconSetRule("A1:A5", "3Arrows", [0, 33, 67], cfvo_type="num")
+    assert rule.type == rule.rule_type == "iconSet"
+    assert rule.cfvo_type == "num"
+    with pytest.warns(DeprecationWarning, match="cfvo_type"):
+        legacy = IconSetRule("A1:A5", "3Arrows", [0, 33, 67], type="num")
+    assert legacy == rule

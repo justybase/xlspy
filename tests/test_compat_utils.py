@@ -268,3 +268,32 @@ def test_read_only_cell_has_number_format(tmp_path):
         assert loaded.active["A1"].number_format == "General"
     finally:
         loaded.close()
+
+
+def test_copy_worksheet_copies_are_independent():
+    from xlspy import Comment, Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = 1
+    ws["A1"].comment = Comment("note", "me")
+    ws.column_dimensions["A"].width = 20
+    ws.row_dimensions[2].height = 30
+    ws.page_setup.orientation = "landscape"
+    ws.sheet_view.zoomScale = 150
+    ws.auto_filter.ref = "A1:B5"
+    ws.auto_filter.add_filter_column(0, ["x"])
+    copied = wb.copy_worksheet(ws)
+    copied.column_dimensions["A"].width = 5
+    copied.row_dimensions[2].height = 10
+    copied.page_setup.orientation = "portrait"
+    copied.sheet_view.zoomScale = 50
+    copied["A1"].comment = Comment("changed", "me")
+    copied.auto_filter.filterColumn.clear()
+    assert ws.column_dimensions["A"].width == 20
+    assert ws.row_dimensions[2].height == 30
+    assert ws.page_setup.orientation == "landscape"
+    assert ws.sheet_view.zoomScale == 150
+    assert ws["A1"].comment.text == "note"
+    assert len(ws.auto_filter.filterColumn) == 1
+    assert copied.column_dimensions["A"].width == 5 and copied.auto_filter.ref == "A1:B5"

@@ -1517,7 +1517,7 @@ class XlsxWriter(StagedWriter, DocumentPropertiesMixin):
             if rule.reverse is not None:
                 attrs.append(f'reverse="{1 if rule.reverse else 0}"')
             cfvos = "".join(
-                self._format_object_xml(FormatObject(rule.type, value))
+                self._format_object_xml(FormatObject(rule.cfvo_type, value))
                 for value in rule.values
             )
             return (
