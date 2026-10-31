@@ -894,7 +894,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         for render in self._pivot_renders:
             render.numfmt_ids = [
                 self._number_format_id(spec.number_format)
-                for spec in render.pivot.values
+                for spec in render.pivot.value_specs
             ]
             cache_path = f"xl/pivotCache/pivotCacheDefinition{render.cache_id}.xml"
             table_path = f"xl/pivotTables/pivotTable{render.pivot_id}.xml"

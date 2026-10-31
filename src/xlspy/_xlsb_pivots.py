@@ -306,7 +306,7 @@ def pivot_table_bin(render: PivotRender, data_field_format_ids: list[int | None]
             parts.append(build_record(_END_PI))
         parts.append(build_record(_END_PIS))
     parts.append(build_record(_DIS, struct.pack("<I", len(render.value_captions))))
-    for column, spec, numfmt in zip(render.value_indices, pivot.values, data_field_format_ids):
+    for column, spec, numfmt in zip(render.value_indices, pivot.value_specs, data_field_format_ids):
         payload = struct.pack(
             "<6I", column, _SUBTOTALS[spec.function], 0, 0, 0, numfmt or 0,
         ) + b"\x01" + wide_string(spec.caption)

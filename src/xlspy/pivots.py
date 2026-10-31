@@ -15,6 +15,7 @@ parts, as before.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import cast
 from datetime import date, datetime
 from decimal import Decimal
 import math
@@ -49,7 +50,7 @@ _FUNCTION_LABELS = {
 _NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 
 
-def _attr(value: str) -> str:
+def _attr(value: object) -> str:
     return saxutils.escape(str(value), {'"': "&quot;"})
 
 
@@ -252,9 +253,9 @@ class PivotTable:
     or left empty and saved as is.
     """
 
-    source: object
+    source: ExcelTable | str
     rows: str | tuple[str, ...]
-    values: object
+    values: object  # PivotValue, a field name or a sequence of them; see value_specs
     location: str = "A3"
     columns: str | tuple[str, ...] = ()
     filters: str | tuple[str, ...] = ()
@@ -309,6 +310,11 @@ class PivotTable:
         for attr, value in (("style", self.style), ("data_caption", self.data_caption)):
             if not isinstance(value, str) or not value:
                 raise ValueError(f"pivot {attr} must be a non-empty string")
+
+    @property
+    def value_specs(self) -> tuple[PivotValue, ...]:
+        """``values`` as ``__post_init__`` normalised it."""
+        return cast("tuple[PivotValue, ...]", self.values)
 
     @property
     def table_name(self) -> str:
@@ -441,8 +447,8 @@ class PivotFeeder:
         self._last_row = last_row - 1 if plan.table.totals_row else last_row
         # Field indices below are table-relative; cells are read at first_col + index.
         self._names: list[str] | None = None
-        self._row_index = None
-        self._col_index = None
+        self._row_index = -1  # set by _resolve_fields from the header row
+        self._col_index: int | None = None
         self._filter_indices: list[int] = []
         self._value_indices: list[int] = []
         self._records = 0
@@ -481,13 +487,13 @@ class PivotFeeder:
         self._row_index = find(self.pivot.rows[0])
         self._col_index = find(self.pivot.columns[0]) if self.pivot.columns else None
         self._filter_indices = [find(field) for field in self.pivot.filters]
-        self._value_indices = [find(spec.field) for spec in self.pivot.values]
+        self._value_indices = [find(spec.field) for spec in self.pivot.value_specs]
         stat_fields = set(self._value_indices)
         if self._track_all_fields:
             axes = {self._row_index, self._col_index, *self._filter_indices}
             stat_fields |= set(range(len(names))) - axes
         self._value_stats = {index: _Stats() for index in sorted(stat_fields)}
-        self._grand = _new_metrics(len(self.pivot.values))
+        self._grand = _new_metrics(len(self.pivot.value_specs))
 
     def _feed_row(self, row) -> None:
         def cell_value_at(index: int):
@@ -509,12 +515,12 @@ class PivotFeeder:
             if key not in seen:
                 seen[key] = len(seen)
 
-        group = self._groups.setdefault((row_key, col_key), _new_metrics(len(self.pivot.values)))
-        row_total = self._row_totals.setdefault(row_key, _new_metrics(len(self.pivot.values)))
+        group = self._groups.setdefault((row_key, col_key), _new_metrics(len(self.pivot.value_specs)))
+        row_total = self._row_totals.setdefault(row_key, _new_metrics(len(self.pivot.value_specs)))
         metrics = [group, row_total, self._grand]
         col_total = None
         if self._col_index is not None:
-            col_total = self._col_totals.setdefault(col_key, _new_metrics(len(self.pivot.values)))
+            col_total = self._col_totals.setdefault(col_key, _new_metrics(len(self.pivot.value_specs)))
             metrics.append(col_total)
         for index, field_index in enumerate(self._value_indices):
             value = cell_value_at(field_index)
@@ -539,7 +545,7 @@ class PivotFeeder:
             row_field=self._row_index,
             col_field=self._col_index,
             value_indices=self._value_indices,
-            value_captions=[spec.caption for spec in self.pivot.values],
+            value_captions=[spec.caption for spec in self.pivot.value_specs],
             filter_indices=self._filter_indices,
             row_items=[self._row_seen[key] for key in row_display],
             col_items=[self._col_seen[key] for key in col_display],
@@ -567,13 +573,13 @@ class PivotFeeder:
 
     def _first_header_row(self) -> int:
         if self._col_index is None:
-            return 1 if len(self.pivot.values) == 1 else 0
+            return 1 if len(self.pivot.value_specs) == 1 else 0
         return 1
 
     def _first_data_row(self) -> int:
         if self._col_index is None:
             return 1
-        return 2 if len(self.pivot.values) == 1 else 3
+        return 2 if len(self.pivot.value_specs) == 1 else 3
 
     def _render_cells(self, row_display, col_display) -> list[tuple[int, int, object]]:
         cells: list[tuple[int, int, object]] = []
@@ -585,13 +591,13 @@ class PivotFeeder:
                 return
             cells.append((row, column, (value, fmt) if fmt is not None else value))
 
-        specs = self.pivot.values
+        specs = self.pivot.value_specs
         formats = [spec.number_format for spec in specs]
         count = len(specs)
 
         # Page fields sit above the pivot, outside its location range.
         for offset, (field_index, name) in enumerate(
-            zip(self._filter_indices, [self._names[i] for i in self._filter_indices])
+            zip(self._filter_indices, [(self._names or [])[i] for i in self._filter_indices])
         ):
             page_row = start_row - 1 - len(self._filter_indices) + offset
             if page_row < 0:
@@ -682,7 +688,7 @@ class PivotFeeder:
     def _render_ref(self, row_display, col_display) -> str:
         start_col = self.plan.start_col
         start_row = self.plan.start_row
-        count = len(self.pivot.values)
+        count = len(self.pivot.value_specs)
         if self._col_index is None:
             end_row = start_row + 1 + len(row_display)
             end_col = start_col + count
@@ -934,8 +940,8 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
             )
             seen = render.shared_items[index]
             positions = {value: position for position, value in enumerate(seen)}
-            items = "".join(f'<item x="{positions[value]}"/>' for value in display)
-            attrs_children = f'<items count="{len(display) + 1}">{items}<item t="default"/></items>'
+            field_items = "".join(f'<item x="{positions[value]}"/>' for value in display)
+            attrs_children = f'<items count="{len(display) + 1}">{field_items}<item t="default"/></items>'
         else:
             attrs_children = ""
         fields.append(f"<pivotField{attrs}>{attrs_children}</pivotField>")
@@ -995,7 +1001,7 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
         page_xml = f'<pageFields count="{len(render.filter_indices)}">{pages}</pageFields>'
 
     data_fields_xml = []
-    for index, (column, spec) in enumerate(zip(render.value_indices, render.pivot.values)):
+    for index, (column, spec) in enumerate(zip(render.value_indices, render.pivot.value_specs)):
         numfmt = ""
         if data_field_format_ids[index] is not None:
             numfmt = f' numFmtId="{data_field_format_ids[index]}"'

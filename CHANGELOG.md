@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ElementTree, workbook model). A reference without a row (`r="A"`), with row 0 or past row 1,048,576, or with a
   column past `XFD` now raises `ValueError`; the fast paths used to accept some of them, reading only the column
   letters, depending on which letters the sheet had used before. Leading zeros (`A01`) are accepted everywhere.
+- The type annotations of `PivotTable` (`source`, and `value_specs` for the normalised `values`) pass mypy.
 - XLSB tables are written with the same name and display name, as Excel does. The display name used to get a
   trailing `_`, so Excel could not resolve the table by its name as a pivot source ("cannot retrieve data from
   range").

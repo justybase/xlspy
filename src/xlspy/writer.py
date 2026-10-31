@@ -838,7 +838,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         for render in self._pivot_renders:
             numfmts = [
                 self._register_numfmt(spec.number_format) if spec.number_format else None
-                for spec in render.pivot.values
+                for spec in render.pivot.value_specs
             ]
             self._zf.writestr(
                 f"xl/pivotCache/pivotCacheDefinition{render.cache_id}.bin", pivot_cache_bin(render),
