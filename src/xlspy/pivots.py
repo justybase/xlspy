@@ -429,7 +429,9 @@ class PivotFeeder:
     last row (the totals row, when the table has one, is not source data).
     """
 
-    def __init__(self, plan: _PivotPlan):
+    def __init__(self, plan: _PivotPlan, *, track_all_fields: bool = False):
+        # The binary cache types every field, so XLSB tracks the unused ones too.
+        self._track_all_fields = track_all_fields
         self.plan = plan
         self.pivot = plan.pivot
         self.table = plan.table
@@ -480,7 +482,11 @@ class PivotFeeder:
         self._col_index = find(self.pivot.columns[0]) if self.pivot.columns else None
         self._filter_indices = [find(field) for field in self.pivot.filters]
         self._value_indices = [find(spec.field) for spec in self.pivot.values]
-        self._value_stats = {index: _Stats() for index in self._value_indices}
+        stat_fields = set(self._value_indices)
+        if self._track_all_fields:
+            axes = {self._row_index, self._col_index, *self._filter_indices}
+            stat_fields |= set(range(len(names))) - axes
+        self._value_stats = {index: _Stats() for index in sorted(stat_fields)}
         self._grand = _new_metrics(len(self.pivot.values))
 
     def _feed_row(self, row) -> None:
@@ -512,9 +518,10 @@ class PivotFeeder:
             metrics.append(col_total)
         for index, field_index in enumerate(self._value_indices):
             value = cell_value_at(field_index)
-            self._value_stats[field_index].add(value)
             for target in metrics:
                 target[index].add(value)
+        for field_index, stats in self._value_stats.items():
+            stats.add(cell_value_at(field_index))
         self._records += 1
 
     def result(self) -> "PivotRender":
@@ -816,11 +823,13 @@ class _Stats:
     with a numeric column field or several value fields.
     """
 
-    __slots__ = ("blank", "other", "count", "integer", "low", "high")
+    __slots__ = ("blank", "other", "text", "unsupported", "count", "integer", "low", "high")
 
     def __init__(self):
         self.blank = False  # some cells are empty
         self.other = False  # some cells are text, bool, date or NaN/inf
+        self.text = False  # some cells are text
+        self.unsupported = False  # some cells are bool, date or NaN/inf
         self.count = 0  # numeric cells
         self.integer = True  # every numeric cell is a whole number
         self.low = None
@@ -832,10 +841,15 @@ class _Stats:
             return
         if not _is_number(value):
             self.other = True
+            if isinstance(value, str):
+                self.text = True
+            else:
+                self.unsupported = True
             return
         number = float(value)
         if not math.isfinite(number):
             self.other = True
+            self.unsupported = True
             return
         self.count += 1
         if not number.is_integer():
@@ -963,7 +977,8 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
                 else "<i><x/><x/></i>"
             )
             for index in range(1, count):
-                items.append(f'<i r="1" i="{index}"><x v="{position}"/></i>')
+                # A repeated column item names the data field, not the column.
+                items.append(f'<i r="1" i="{index}"><x v="{index}"/></i>')
         items.append('<i t="grand"><x/></i>')
         for index in range(1, count):
             items.append(f'<i t="grand" i="{index}"><x/></i>')
@@ -1024,12 +1039,48 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
     )
 
 
-def pivot_table_rels_xml(cache_id: int) -> str:
+def pivot_table_rels_xml(cache_id: int, extension: str = ".xml") -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
         '<Relationship Id="rId1" '
         'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition" '
-        f'Target="../pivotCache/pivotCacheDefinition{cache_id}.xml"/>'
+        f'Target="../pivotCache/pivotCacheDefinition{cache_id}{extension}"/>'
         "</Relationships>"
     )
+
+
+def append_rows(rows, feeders: list[PivotFeeder], sheet_name: str, sink: list):
+    """Yield ``rows``, then the rows of the pivots that sit on this sheet.
+
+    The feeders have seen every row once the stream ends, so the pivots can be
+    rendered then; ``sink`` receives all their renders (also those placed on
+    other sheets). Output below the data is the only place the pivot cells can
+    go, so a pivot that starts inside the data is refused.
+    """
+    count = 0
+    for row in rows:
+        count += 1
+        yield row
+    renders = [feeder.result() for feeder in feeders]
+    sink.extend(renders)
+    own = [r for r in renders if r.plan.target_sheet.casefold() == sheet_name.casefold()]
+    by_row: dict[int, dict[int, object]] = {}
+    for (row, column), value in merge_cells(own).items():
+        by_row.setdefault(row, {})[column] = value
+    if not by_row:
+        return
+    if min(by_row) < count:
+        raise ValueError(
+            "a pivot table on the source sheet must start below the sheet's "
+            f"data (first free row {count + 1}); got row {min(by_row) + 1}"
+        )
+    for row_idx in range(count, max(by_row) + 1):
+        cells = by_row.get(row_idx)
+        if not cells:
+            yield []
+            continue
+        row = [None] * (max(cells) + 1)
+        for column, value in cells.items():
+            row[column] = value
+        yield row

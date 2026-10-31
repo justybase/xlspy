@@ -1,6 +1,6 @@
 """Opt-in checks in Microsoft Excel (COM): a pivot table written by XlsxWriter
-opens in Excel with the range and the numbers the writer pre-renders. Set
-XLSPY_RUN_EXCEL_COM=1 to run.
+or XlsbWriter opens in Excel, refreshes, and shows the range and the numbers
+the writer pre-renders. Set XLSPY_RUN_EXCEL_COM=1 to run.
 
 Labels are not compared: Excel localises them ("Row Labels" becomes
 "Etykiety wierszy" in Polish) when it refreshes the pivot on open.
@@ -19,7 +19,9 @@ pytestmark = pytest.mark.skipif(
     reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation",
 )
 
-from xlspy import ExcelTable, PivotTable, PivotValue, XlsxWriter  # noqa: E402
+from xlspy import (  # noqa: E402
+    ExcelTable, PivotTable, PivotValue, XlsbWriter, XlsxWriter, load_workbook,
+)
 
 ROWS = [
     ["Region", "Product", "Quarter", "Sales", "Units"],
@@ -35,7 +37,8 @@ ROWS = [
 
 
 def _table_pivot(**kwargs):
-    return PivotTable(source="SalesTable", location="A12", **kwargs)
+    kwargs.setdefault("location", "A12")
+    return PivotTable(source="SalesTable", **kwargs)
 
 
 CASES = {
@@ -60,6 +63,35 @@ CASES = {
         {"rows": "Region", "values": [PivotValue("Units", "average")], "filters": "Product"},
         "Data", "A10:B16",
     ),
+    "row_column_with_filter": (
+        {"rows": "Region", "columns": "Quarter", "values": "Sales", "filters": "Product"},
+        "Data", "A10:D17",
+    ),
+    "text_column_field": (
+        {"rows": "Region", "columns": "Product", "values": "Sales"},
+        "Data", "A12:D17",
+    ),
+    "count": (
+        {"rows": "Region", "values": [PivotValue("Sales", "count")]},
+        "Data", "A12:B16",
+    ),
+    "min": (
+        {"rows": "Region", "values": [PivotValue("Sales", "min")]},
+        "Data", "A12:B16",
+    ),
+    "max": (
+        {"rows": "Region", "values": [PivotValue("Sales", "max")]},
+        "Data", "A12:B16",
+    ),
+    "other_sheet": (
+        {"rows": "Region", "values": "Sales", "location": "A3", "sheet": "Summary"},
+        "Summary", "A3:B7",
+    ),
+    "other_sheet_row_column_several_values": (
+        {"rows": "Region", "columns": "Quarter", "values": ["Sales", "Units"],
+         "location": "B2", "sheet": "Summary"},
+        "Summary", "B2:H8",
+    ),
 }
 
 
@@ -77,50 +109,100 @@ def excel():
     gc.collect()
 
 
-def _open(excel, path):
-    """Open read-only, retrying the calls Excel rejects while it is busy."""
+def _retry(call):
+    """Run ``call``, retrying while Excel rejects calls because it is busy."""
     import pywintypes
 
     rejected = -2147418111  # RPC_E_CALL_REJECTED
-    for attempt in range(10):
+    for attempt in range(20):
         try:
-            return excel.Workbooks.Open(str(path), 0, True)
+            return call()
         except pywintypes.com_error as error:
-            if error.hresult != rejected or attempt == 9:
+            if error.hresult != rejected or attempt == 19:
                 raise
             time.sleep(0.5)
 
 
-def _write(path, pivot_kwargs):
+def _open(excel, path):
+    """Open read-only, retrying the calls Excel rejects while it is busy."""
+    return _retry(lambda: excel.Workbooks.Open(str(path), 0, True))
+
+
+WRITERS = [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")]
+
+
+def _write(path, pivot_kwargs, writer, *, summary=False):
     out = io.BytesIO()
-    with XlsxWriter(out) as w:
+    with writer(out) as w:
         w.add_sheet("Data")
         w.write_sheet(
             ROWS,
             tables=[ExcelTable("SalesTable", "A1:E9")],
             pivots=[_table_pivot(**pivot_kwargs)],
         )
+        if summary:
+            w.add_sheet("Summary")
+            w.write_sheet([])
     path.write_bytes(out.getvalue())
 
 
-@pytest.mark.parametrize("name", sorted(CASES))
-def test_excel_lays_out_the_pivot_as_written(tmp_path, excel, name):
-    pivot_kwargs, sheet, ref = CASES[name]
-    path = tmp_path / f"{name}.xlsx"
-    _write(path, pivot_kwargs)
+def _written_cells(path, sheet, ref):
+    """The cells the writer pre-rendered for ``ref``."""
+    if path.suffix == ".xlsb":
+        book = load_workbook(path)
+        try:
+            return [[cell.value for cell in row] for row in book[sheet][ref]]
+        finally:
+            book.close()
+    return [[cell.value for cell in row] for row in openpyxl.load_workbook(path)[sheet][ref]]
 
-    ours = openpyxl.load_workbook(path)[sheet][ref]
-    expected = [[cell.value for cell in row] for row in ours]
 
+def _excel_range(excel, path, sheet):
+    """The first pivot's ``TableRange2`` address and values after Excel refreshes it.
+
+    The refresh is explicit: when it fails Excel keeps the cells the writer
+    rendered, so reading them alone would pass for a pivot Excel cannot build.
+    """
     workbook = _open(excel, path)
     try:
-        pivot_table = workbook.Worksheets(sheet).PivotTables(1)
-        target = pivot_table.TableRange2
+        pivot_table = _retry(lambda: workbook.Worksheets(sheet).PivotTables(1))
+        _retry(lambda: pivot_table.RefreshTable())
+        target = _retry(lambda: pivot_table.TableRange2)
         # pywin32 exposes Address as a property ("$A$12:$B$16" with the default arguments).
-        assert target.Address.replace("$", "") == ref
-        actual = target.Value2
+        return _retry(lambda: target.Address).replace("$", ""), _retry(lambda: target.Value2)
     finally:
-        workbook.Close(False)
+        _retry(lambda: workbook.Close(False))
+
+
+@pytest.mark.parametrize(("writer", "extension"), WRITERS)
+def test_pivot_still_refreshes_after_the_workbook_is_loaded_and_saved(
+    tmp_path, excel, writer, extension,
+):
+    source = tmp_path / f"source.{extension}"
+    _write(source, {"rows": "Region", "columns": "Quarter", "values": "Sales"}, writer)
+    book = load_workbook(source)
+    try:
+        book["Data"]["H1"] = "added after loading"
+        copy = tmp_path / f"copy.{extension}"
+        book.save(copy)
+    finally:
+        book.close()
+
+    address, actual = _excel_range(excel, copy, "Data")
+    assert address == "A12:D17"
+    assert actual[-1][-1] == 9100
+
+
+@pytest.mark.parametrize(("writer", "extension"), WRITERS)
+@pytest.mark.parametrize("name", sorted(CASES))
+def test_excel_lays_out_the_pivot_as_written(tmp_path, excel, name, writer, extension):
+    pivot_kwargs, sheet, ref = CASES[name]
+    path = tmp_path / f"{name}.{extension}"
+    _write(path, pivot_kwargs, writer, summary=sheet == "Summary")
+    expected = _written_cells(path, sheet, ref)
+
+    address, actual = _excel_range(excel, path, sheet)
+    assert address == ref
 
     for row_index, row in enumerate(expected):
         for column_index, value in enumerate(row):

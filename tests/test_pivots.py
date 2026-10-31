@@ -199,6 +199,14 @@ def test_pivot_parts_follow_the_cache_without_records():
     assert "../pivotTables/pivotTable1.xml" in sheet_rels
 
 
+def test_repeated_column_items_name_the_data_field():
+    # As Excel writes them: the item that repeats the quarter holds the data field's index.
+    files = parts(make([pivot(["Sales", "Units"], columns="Quarter")]))
+    table = files["xl/pivotTables/pivotTable1.xml"]
+    assert '<i r="1" i="1"><x v="1"/></i>' in table
+    assert '<i r="1" i="1"><x v="0"/></i>' not in table
+
+
 def test_workbook_without_pivots_has_no_pivot_parts():
     files = parts(make([]))
     assert not any("pivot" in name.lower() for name in files)

@@ -1012,13 +1012,14 @@ report.
 | Sparklines (`SparklineGroup`) | Yes | Yes |
 | Table slicers (`Slicer`) | Yes | Yes |
 | Headings, zero values, right-to-left (`show_row_col_headers`, `show_zero_values`, `right_to_left`) | Yes | Yes |
-| Pivot tables (`PivotTable`, compact layout) | Yes | No |
+| Pivot tables (`PivotTable`, compact layout) | Yes | Yes (no dates, booleans or NaN in the fields) |
 | Pivot-table slicers, timelines | No | No |
 
-## Pivot tables (XLSX)
+## Pivot tables (XLSX and XLSB)
 
 `PivotTable` creates a pivot table over a table written in the same `write_sheet`
-call. Pass the pivots with `pivots=`:
+call. Pass the pivots with `pivots=`; `XlsxWriter` and `XlsbWriter` take the same
+arguments:
 
 ```python
 from xlspy import ExcelTable, PivotTable, PivotValue, XlsxWriter
@@ -1051,7 +1052,8 @@ with XlsxWriter("pivot.xlsx") as writer:
 
 To put a pivot on another sheet, name it with `sheet=` (or `location="Summary!A3"`) in
 the call that writes the source table. That sheet must be added after the source
-sheet, or be left empty.
+sheet. `XlsxWriter` also accepts a sheet that is never written; `XlsbWriter` needs it
+written with `write_sheet` (an empty list is enough).
 
 - **Layout:** one `rows` field; `columns` takes at most one field; `filters` add
   page fields above the report; `values` takes one or more `PivotValue(field,
@@ -1062,9 +1064,12 @@ sheet, or be left empty.
 - **Output:** the report cells are written by the writer, from the rows as they
   stream past. The cache holds no records and refreshes when the file opens, so
   Excel rebuilds the layout and shows its own (localised) labels.
-- **Not included:** XLSB, layouts beyond the compact form, and changes to pivot
-  tables already in a loaded workbook. Removing a loaded sheet that holds a pivot
-  table is refused.
+- **XLSB:** the same pivots as binary parts (the records were mapped from files
+  Excel saved). The fields a pivot reads cannot hold dates, booleans or NaN: a
+  `ValueError` names the field, and XLSX takes those.
+- **Not included:** layouts beyond the compact form, and changes to pivot tables
+  already in a loaded workbook (XLSX or XLSB), which are kept as they are. Removing a
+  loaded sheet that holds a pivot table is refused.
 
 ## Comments and template metadata (XLSX/XLSM/XLSB)
 

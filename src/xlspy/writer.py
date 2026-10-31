@@ -5,6 +5,7 @@ import struct
 from typing import Any, Iterable, Tuple
 import io
 import itertools
+import re
 import uuid
 import xml.sax.saxutils as saxutils
 from ._accel import encode_xlsb_row, encode_xlsb_row_inline
@@ -42,6 +43,9 @@ from .styles import (
     table_column_names,
 )
 from ._extlst import REL_SLICER, REL_SLICER_CACHE
+
+_REL_PIVOT_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable"
+_REL_PIVOT_CACHE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition"
 from .biff_utils import build_record, iter_records
 from ._xlsb_style_records import (
     border_record,
@@ -66,8 +70,15 @@ from ._xlsb_slicers import (
     CT_SLICER_BIN, CT_SLICER_CACHE_BIN, sheet_slicers_bin, slicer_cache_bin, slicers_part_bin,
     workbook_slicer_caches_bin,
 )
+from ._xlsb_pivots import (
+    CT_PIVOT_CACHE_BIN, CT_PIVOT_TABLE_BIN, pivot_cache_bin, pivot_table_bin,
+    workbook_pivot_caches_bin,
+)
 from ._xlsb_sparklines import sparklines_bin
 from .shapes import Shape, normalize_shapes
+from .pivots import (
+    PivotFeeder, append_rows, normalize_pivots, overlay_rows, pivot_table_rels_xml, tee_rows,
+)
 from .slicers import Slicer, normalize_slicers
 from .sparklines import normalize_sparklines
 from .printing import PrintSettings, normalize_print_settings
@@ -238,6 +249,14 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         self._sheet_slicer_parts: dict[int, tuple[int, str]] = {}
         # Cache names, in cache part order (slicerCache1.bin, ...).
         self._slicer_cache_names: list[str] = []
+        # Casefolded pivot-table names, the rendered pivots (cache i is workbook
+        # relationship i), the sheet each is placed on and cells waiting for a
+        # target sheet that is written later.
+        self._pivot_names: set[str] = set()
+        self._pivot_renders: list = []
+        self._sheet_pivots: dict[int, list] = {}
+        self._pending_pivots: dict[str, list] = {}
+        self._written_sheets: set[int] = set()
         self._seen_cf_priorities: set[int] = set()
         self._reserved_cf_priorities: set[int] = set()
         self._next_cf_priority = 1
@@ -245,6 +264,13 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         self._sheet_comments = {}
         self._sheet_link_rels = {}
         self._workbook_protection = None
+
+    def _sheet_index_by_name(self, name: str) -> int | None:
+        folded = name.casefold()
+        for index, (sheet_name, _data, _hidden) in enumerate(self._worksheet_data):
+            if sheet_name.casefold() == folded:
+                return index
+        return None
 
     def _register_numfmt(self, fmt_string: str) -> int:
         numfmt_id = self._format_registry.get(fmt_string)
@@ -401,13 +427,12 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         for _ in range(6):
             payload.extend(struct.pack("<i", -1))  # dxfIds
         payload.extend(struct.pack("<I", 0))  # dwConnID
-        # Excel stores Name and DisplayName separately; COM shows
-        # Name=T1, DisplayName=T1_ when Name is set. Store DisplayName with
-        # trailing underscore to match Excel-generated files.
+        # stName and stDisplayName hold the same name in files Excel saves. The
+        # display name is what a pivot cache's table source and structured
+        # references resolve, so it must equal the name the table is used by.
         display = table.display_name
-        disp_display = display if display.endswith("_") else display + "_"
         payload.extend(self._encode_nullable_wstring(display))
-        payload.extend(self._encode_nullable_wstring(disp_display))
+        payload.extend(self._encode_nullable_wstring(display))
         payload.extend(struct.pack("<I", 0))  # stComment empty
         for _ in range(3):
             payload.extend(self._encode_nullable_wstring(None))
@@ -534,6 +559,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         show_row_col_headers: bool = True,
         show_zero_values: bool = True,
         right_to_left: bool = False,
+        pivots: list | tuple | None = None,
     ):
         self._require_writable()
         view = check_sheet_view(show_row_col_headers, show_zero_values, right_to_left)
@@ -577,6 +603,20 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         slicer_specs = normalize_slicers(
             slicers, table_specs, self._slicer_names, self._slicer_caches, self._slicer_targets,
         )
+        current_sheet = self._worksheet_data[-1][0] if self._worksheet_data else "Sheet1"
+        pivot_names = set(self._pivot_names)
+        pivot_plans = normalize_pivots(pivots, table_specs, pivot_names, current_sheet)
+        for plan in pivot_plans:
+            target_index = self._sheet_index_by_name(plan.target_sheet)
+            if (
+                target_index is not None
+                and target_index != max(self._sheet_count - 1, 0)
+                and target_index in self._written_sheets
+            ):
+                raise ValueError(
+                    f"pivot target sheet {plan.target_sheet!r} was written before its "
+                    "source sheet; write the pivot's sheet after the source sheet"
+                )
         cf_specs = self._normalize_cf_rules(conditional_formats)
         # Pre-reserve explicit priorities (like XLSX) so auto-assigned ones skip them.
         cf_priorities = explicit_cf_priorities(
@@ -632,6 +672,18 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             # Column names must match the header cells, which stream past with
             # the rows; a mismatch fails as soon as the header row is read.
             data = capture_table_headers(data, table_specs, table_header_cells)
+        # Pivots aggregate the sheet's own rows as they stream; the cells of pivots
+        # from earlier sheets are merged in after, and this sheet's own pivots are
+        # appended below the data once the stream has ended.
+        pending_pivots = self._pending_pivots.pop(sheet_name, None) or []
+        pivot_renders: list = []
+        if pivot_plans:
+            feeders = [PivotFeeder(plan, track_all_fields=True) for plan in pivot_plans]
+            data = tee_rows(data, feeders)
+        if pending_pivots:
+            data = overlay_rows(data, pending_pivots)
+        if pivot_plans:
+            data = append_rows(data, feeders, sheet_name, pivot_renders)
         if table_specs and auto_filter is None:
             # Tables carry their own AutoFilter; skip sheet-level filter.
             auto_filter = False
@@ -670,6 +722,18 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                     sparklines=sparkline_groups, slicer_rel=slicer_rid,
                 )
             self._sheet_link_rels[sheet_id] = link_rids
+            own_pivots = []
+            for render in pivot_renders:
+                render.assign_ids(len(self._pivot_renders) + 1)
+                self._pivot_renders.append(render)
+                if render.plan.target_sheet.casefold() == sheet_name.casefold():
+                    own_pivots.append(render)
+                else:
+                    self._pending_pivots.setdefault(render.plan.target_sheet, []).append(render)
+            if pending_pivots or own_pivots:
+                self._sheet_pivots[sheet_id] = pending_pivots + own_pivots
+            self._pivot_names = pivot_names
+            self._written_sheets.add(self._sheet_count - 1)
             table_columns = {}
             for table, table_id in zip(table_specs, table_ids):
                 names = table_column_names(table, table_header_cells.get(parse_cell_range(table.ref)[1]))
@@ -711,6 +775,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         show_row_col_headers: bool = True,
         show_zero_values: bool = True,
         right_to_left: bool = False,
+        pivots: list | tuple | None = None,
     ):
         """Write a pandas or polars DataFrame to the current sheet.
 
@@ -758,7 +823,37 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             show_row_col_headers=show_row_col_headers,
             show_zero_values=show_zero_values,
             right_to_left=right_to_left,
+            pivots=pivots,
         )
+
+    def _write_pivot_parts(self) -> None:
+        """Write each pivot's cache and table parts; they need the registered number formats."""
+        if self._pending_pivots:
+            names = ", ".join(sorted(self._pending_pivots))
+            raise ValueError(
+                f"pivot target sheet(s) {names} were never written; write each one "
+                "with write_sheet (an empty list is enough) after the source sheet"
+            )
+        for render in self._pivot_renders:
+            numfmts = [
+                self._register_numfmt(spec.number_format) if spec.number_format else None
+                for spec in render.pivot.values
+            ]
+            self._zf.writestr(
+                f"xl/pivotCache/pivotCacheDefinition{render.cache_id}.bin", pivot_cache_bin(render),
+            )
+            self._zf.writestr(
+                f"xl/pivotTables/pivotTable{render.pivot_id}.bin", pivot_table_bin(render, numfmts),
+            )
+            self._zf.writestr(
+                f"xl/pivotTables/_rels/pivotTable{render.pivot_id}.bin.rels",
+                pivot_table_rels_xml(render.cache_id, ".bin"),
+            )
+
+    def _pivot_cache_rel_ids(self) -> list[str]:
+        """Workbook relationship ids of the pivot caches, after the slicer caches."""
+        first = self._sheet_count + 4 + len(self._slicer_cache_names)
+        return [f"rId{first + index}" for index in range(len(self._pivot_renders))]
 
     def _write_workbook_parts(self):
         if self._sheet_comments:
@@ -806,7 +901,8 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
 
         for table_id, table_bin in self._tables_bin.items():
             self._zf.writestr(f"xl/tables/table{table_id}.bin", table_bin)
-            
+
+        self._write_pivot_parts()
         self._zf.writestr("[Content_Types].xml", self._create_content_types())
         self._zf.writestr("_rels/.rels", self._create_root_rels())
         self._zf.writestr("xl/workbook.bin", self._create_workbook_bin())
@@ -848,6 +944,11 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         ) + ''.join(
             f'<Override PartName="/xl/slicerCaches/slicerCache{index + 1}.bin" ContentType="{CT_SLICER_CACHE_BIN}"/>'
             for index in range(len(self._slicer_cache_names))
+        )
+        comment_parts += ''.join(
+            f'<Override PartName="/xl/pivotTables/pivotTable{render.pivot_id}.bin" ContentType="{CT_PIVOT_TABLE_BIN}"/>'
+            f'<Override PartName="/xl/pivotCache/pivotCacheDefinition{render.cache_id}.bin" ContentType="{CT_PIVOT_CACHE_BIN}"/>'
+            for render in self._pivot_renders
         )
         theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
 
@@ -894,6 +995,11 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         relationships.extend(
             f'<Relationship Id="{rel_id}" Type="{REL_SLICER_CACHE}" Target="slicerCaches/slicerCache{index + 1}.bin"/>'
             for index, rel_id in enumerate(self._slicer_cache_rel_ids())
+        )
+        relationships.extend(
+            f'<Relationship Id="{rel_id}" Type="{_REL_PIVOT_CACHE}" '
+            f'Target="pivotCache/pivotCacheDefinition{render.cache_id}.bin"/>'
+            for render, rel_id in zip(self._pivot_renders, self._pivot_cache_rel_ids())
         )
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -956,6 +1062,13 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                 f'<Relationship Id="{rel_id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
                 f'Target="{saxutils.escape(target, {chr(34): "&quot;"})}" TargetMode="External"/>'
             )
+        # Pivot tables take the ids after every other relationship of the sheet.
+        next_id = 1 + max((int(rid) for rid in re.findall(r'Id="rId(\d+)"', rels)), default=0)
+        for offset, render in enumerate(self._sheet_pivots.get(sheet_id, [])):
+            rels += (
+                f'<Relationship Id="rId{next_id + offset}" Type="{_REL_PIVOT_TABLE}" '
+                f'Target="../pivotTables/pivotTable{render.pivot_id}.bin"/>'
+            )
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 {rels}
@@ -996,6 +1109,14 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             self._register_print_names()
             self._register_slicer_names()
         end = self._workbookBinEnd
+        pivot_caches = workbook_pivot_caches_bin([
+            (render.cache_id, rel_id)
+            for render, rel_id in zip(self._pivot_renders, self._pivot_cache_rel_ids())
+        ])
+        if pivot_caches:
+            # The pivot cache list sits between BrtCalcProp and BrtFileRecover.
+            split = next(record.header_start for record in iter_records(end) if record.record_id == 0x9B)
+            end = end[:split] + pivot_caches + end[split:]
         caches = workbook_slicer_caches_bin(self._slicer_cache_rel_ids())
         if caches:
             # The slicer cache list follows BrtFileRecover, before the other FRT blocks.

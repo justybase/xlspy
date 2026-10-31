@@ -17,6 +17,23 @@ function Release-ComObject {
     }
 }
 
+# Excel answers RPC_E_CALL_REJECTED (0x80010001) while it is busy; a rejected call
+# is not a verdict on the file, so retry it.
+function Invoke-Com {
+    param([scriptblock] $Call)
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            return & $Call
+        }
+        catch {
+            $rejected = $_.Exception -is [System.Runtime.InteropServices.COMException] -and
+                $_.Exception.HResult -eq -2147418111
+            if (-not $rejected -or $attempt -ge 20) { throw }
+            Start-Sleep -Milliseconds 500
+        }
+    }
+}
+
 try {
     $excel = New-Object -ComObject Excel.Application
     $excel.Visible = $false
@@ -37,9 +54,18 @@ try {
             # Open read-only with Excel's normal loader.  A corrupt-load mode
             # is deliberately not used: silent repair would make validation
             # report a damaged file as valid.
-            $workbook = $workbooks.Open($fullPath, 0, $true)
-            $worksheets = $workbook.Worksheets
-            $sheetCount = [int]$worksheets.Count
+            $workbook = Invoke-Com { $workbooks.Open($fullPath, 0, $true) }
+            # (Open returns one COM object, so Invoke-Com does not enumerate it.)
+            # A busy Excel can hand back a workbook whose sheets are not loaded yet
+            # (Count 0 without an error); give it a moment before calling it empty.
+            $sheetCount = 0
+            for ($attempt = 1; $attempt -le 20; $attempt++) {
+                $worksheets = $workbook.Worksheets
+                $sheetCount = [int](Invoke-Com { $worksheets.Count })
+                if ($sheetCount -ge 1) { break }
+                Release-ComObject $worksheets
+                Start-Sleep -Milliseconds 500
+            }
             if ($sheetCount -lt 1) {
                 throw "Workbook has no worksheets: $fullPath"
             }
@@ -48,17 +74,18 @@ try {
                 $worksheet = $null
                 $usedRange = $null
                 try {
-                    $worksheet = $worksheets.Item($sheetIndex)
-                    $usedRange = $worksheet.UsedRange
+                    $worksheet = Invoke-Com { $worksheets.Item($sheetIndex) }
+                    $usedRange = Invoke-Com { $worksheet.UsedRange }
                     # Force Excel to materialise the complete used region.
-                    $null = $usedRange.Value2
+                    $null = Invoke-Com { $usedRange.Value2 }
                     if ($RefreshPivots) {
                         $pivotTables = $worksheet.PivotTables()
-                        for ($pivotIndex = 1; $pivotIndex -le [int]$pivotTables.Count; $pivotIndex++) {
+                        $pivotCount = [int](Invoke-Com { $pivotTables.Count })
+                        for ($pivotIndex = 1; $pivotIndex -le $pivotCount; $pivotIndex++) {
                             $pivotTable = $null
                             try {
-                                $pivotTable = $pivotTables.Item($pivotIndex)
-                                $null = $pivotTable.RefreshTable()
+                                $pivotTable = Invoke-Com { $pivotTables.Item($pivotIndex) }
+                                $null = Invoke-Com { $pivotTable.RefreshTable() }
                             }
                             finally {
                                 Release-ComObject $pivotTable

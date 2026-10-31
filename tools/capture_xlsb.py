@@ -1,15 +1,17 @@
-"""Capture how Excel stores sparklines and table slicers in XLSB, one option at a time.
+"""Capture how Excel stores sparklines, table slicers and pivot tables in XLSB, one option at a time.
 
 Builds one workbook per variant through Excel COM (pywin32), saves it as XLSB,
 and prints the records of interest with the bytes that differ from the base
 variant marked: BrtBeginSparklineGroup (0x0411) and BrtSparkline (0x0413), or
 with ``--slicers`` the slicer (0x043B) and slicer cache (0x0435, 0x043D, 0x081D)
-records. Use it to map record fields before changing ``_xlsb_sparklines`` or
-``_xlsb_slicers``.
+records, or with ``--pivots`` every record of the pivot table part and the pivot
+cache definition. Use it to map record fields before changing ``_xlsb_sparklines``,
+``_xlsb_slicers`` or ``_xlsb_pivots``.
 
 Usage:
     py -3.14 tools/capture_xlsb.py OUT_DIR [variant ...]
     py -3.14 tools/capture_xlsb.py OUT_DIR --slicers [variant ...]
+    py -3.14 tools/capture_xlsb.py OUT_DIR --pivots [variant ...]
 
 The XLSB files stay in OUT_DIR for inspection. Excel must be installed.
 """
@@ -151,6 +153,89 @@ def slicer_records(path):
     return found
 
 
+PIVOT_ROWS = [
+    ("Region", "Product", "Quarter", "Sales", "Units"),
+    ("North", "Coffee", 1, 1200, 40), ("North", "Tea", 1, 800, 50),
+    ("South", "Coffee", 1, 1500, 55), ("South", "Tea", 2, 700, 30),
+    ("East", "Coffee", 2, 900, 33), ("East", "Tea", 2, 1100, 60),
+    ("North", "Coffee", 2, 1300, 44), ("South", "Coffee", 2, 1600, 58),
+]
+XL_ROW, XL_COLUMN, XL_PAGE, XL_DATA = 1, 2, 3, 4
+XL_SUM, XL_COUNT, XL_AVERAGE, XL_MAX, XL_MIN = -4157, -4112, -4106, -4136, -4139
+
+
+def _pivot_variant(*, rows=("Region",), columns=(), filters=(), values=(("Sales", XL_SUM),),
+                   location="A3", number_format=None):
+    return {"rows": rows, "columns": columns, "filters": filters, "values": values,
+            "location": location, "number_format": number_format}
+
+
+PIVOT_VARIANTS = {
+    "pivot_base": _pivot_variant(),
+    "pivot_column": _pivot_variant(columns=("Quarter",)),
+    "pivot_text_column": _pivot_variant(columns=("Product",)),
+    "pivot_two_values": _pivot_variant(values=(("Sales", XL_SUM), ("Units", XL_SUM))),
+    "pivot_column_two_values": _pivot_variant(
+        columns=("Quarter",), values=(("Sales", XL_SUM), ("Units", XL_SUM))),
+    "pivot_filter": _pivot_variant(filters=("Product",)),
+    "pivot_average": _pivot_variant(values=(("Units", XL_AVERAGE),)),
+    "pivot_count": _pivot_variant(values=(("Sales", XL_COUNT),)),
+    "pivot_min": _pivot_variant(values=(("Sales", XL_MIN),)),
+    "pivot_max": _pivot_variant(values=(("Sales", XL_MAX),)),
+    "pivot_number_format": _pivot_variant(number_format="#,##0"),
+    "pivot_moved": _pivot_variant(location="C6"),
+}
+# The pivot table part and the cache definition; the first record of each is a
+# random revision id (0x0C00), which would differ in every file.
+PIVOT_PARTS = ("xl/pivotTables/pivotTable1.bin", "xl/pivotCache/pivotCacheDefinition1.bin")
+UID_RECORD = 0x0C00
+
+
+def build_pivot(excel, out_dir, name, spec):
+    """A table on "Data" and a pivot over it on "Summary", saved without cache records."""
+    book = excel.Workbooks.Add()
+    try:
+        data = book.Worksheets(1)
+        data.Name = "Data"
+        for row, values in enumerate(PIVOT_ROWS, start=1):
+            for column, value in enumerate(values, start=1):
+                data.Cells(row, column).Value = value
+        data.ListObjects.Add(1, data.Range("A1:E9"), None, 1).Name = "SalesTable"
+        summary = book.Worksheets.Add(After=data)
+        summary.Name = "Summary"
+        cache = book.PivotCaches().Create(1, "SalesTable")
+        cache.RefreshOnFileOpen = True
+        pivot = cache.CreatePivotTable(summary.Range(spec["location"]), "PT")
+        for orientation, fields in ((XL_ROW, spec["rows"]), (XL_COLUMN, spec["columns"]),
+                                    (XL_PAGE, spec["filters"])):
+            for field in fields:
+                pivot.PivotFields(field).Orientation = orientation
+        for field, function in spec["values"]:
+            target = pivot.PivotFields(field)
+            target.Orientation = XL_DATA
+            target.Function = function
+            if spec["number_format"]:
+                target.NumberFormat = spec["number_format"]
+        pivot.SaveData = False
+        path = os.path.join(out_dir, f"{name}.xlsb")
+        if os.path.exists(path):
+            os.remove(path)
+        book.SaveAs(path, XL_EXCEL12)
+    finally:
+        book.Close(False)
+    return path
+
+
+def pivot_records(path):
+    found = []
+    with zipfile.ZipFile(path) as archive:
+        for part in PIVOT_PARTS:
+            data = archive.read(part)
+            found += [(record.record_id, bytes(data[record.data_start:record.data_end]))
+                      for record in iter_records(data) if record.record_id != UID_RECORD]
+    return found
+
+
 def build(excel, out_dir, name, spec):
     book = excel.Workbooks.Add()
     try:
@@ -207,10 +292,16 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     out_dir = os.path.abspath(argv[0])
     slicers = "--slicers" in argv
-    argv = [arg for arg in argv if arg != "--slicers"]
-    variants, builder, reader, base_name = (
-        (SLICER_VARIANTS, build_slicer, slicer_records, "slicer_base") if slicers
-        else (VARIANTS, build, sparkline_records, "base"))
+    pivots = "--pivots" in argv
+    argv = [arg for arg in argv if arg not in ("--slicers", "--pivots")]
+    if slicers:
+        variants, builder, reader, base_name = (
+            SLICER_VARIANTS, build_slicer, slicer_records, "slicer_base")
+    elif pivots:
+        variants, builder, reader, base_name = (
+            PIVOT_VARIANTS, build_pivot, pivot_records, "pivot_base")
+    else:
+        variants, builder, reader, base_name = VARIANTS, build, sparkline_records, "base"
     names = list(dict.fromkeys([base_name, *(argv[1:] or variants)]))
     os.makedirs(out_dir, exist_ok=True)
     excel = win32com.client.DispatchEx("Excel.Application")

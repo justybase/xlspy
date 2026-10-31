@@ -1,12 +1,15 @@
-"""Pivot tables written with XlsxWriter.
+"""Pivot tables written with XlsxWriter or XlsbWriter.
 
 A pivot reads a table written in the same ``write_sheet`` call. The report is
 rendered from the rows as they stream past and refreshes when Excel opens the file.
+
+    py examples/pivot_tables.py pivot_tables.xlsx
+    py examples/pivot_tables.py pivot_tables.xlsb
 """
 
 import sys
 
-from xlspy import ExcelTable, PivotTable, PivotValue, XlsxWriter
+from xlspy import ExcelTable, PivotTable, PivotValue, XlsbWriter, XlsxWriter
 
 ROWS = [
     ["Region", "Product", "Quarter", "Sales", "Units"],
@@ -22,8 +25,9 @@ ROWS = [
 
 
 def main(path: str = "pivot_tables.xlsx") -> None:
+    writer_class = XlsbWriter if path.lower().endswith(".xlsb") else XlsxWriter
     sales = ExcelTable("SalesTable", "A1:E9")
-    with XlsxWriter(path) as writer:
+    with writer_class(path) as writer:
         writer.add_sheet("Data")
         writer.write_sheet(
             ROWS,

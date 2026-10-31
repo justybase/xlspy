@@ -9,12 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Pivot tables (`PivotTable`, `PivotValue`): new pivots in XLSX, passed as `write_sheet(..., pivots=[...])`
-  (and `write_dataframe`). One row field, at most one column field, any number of filters (page fields) and
-  values (sum, count, average, min, max). The source is a table written in the same call; the pivot can sit on
-  that sheet below the data or on a sheet added after it. The report is rendered from the streamed rows and the
-  cache refreshes when the file opens. Compared against Excel's own layouts through COM. XLSB and editing
-  existing pivots are not included.
+- Pivot tables (`PivotTable`, `PivotValue`): new pivots in XLSX and XLSB, passed as
+  `write_sheet(..., pivots=[...])` (and `write_dataframe`). One row field, at most one column field, any number of
+  filters (page fields) and values (sum, count, average, min, max). The source is a table written in the same
+  call; the pivot can sit on that sheet below the data or on a sheet written after it. The report is rendered
+  from the streamed rows and the cache refreshes when the file opens. Compared against Excel's own layouts and
+  refreshed in Excel through COM. The XLSB records were mapped from files Excel saved
+  (`tools/capture_xlsb.py --pivots`). Editing existing pivots is not included.
+- XLSB pivot tables cannot read dates, booleans or NaN in their fields (`ValueError`), and a pivot placed on
+  another sheet needs that sheet written with `write_sheet` (an empty list is enough).
 - Sparklines (`SparklineGroup`): line, column and win/loss groups with colours, markers, high/low/first/last/negative
   points, empty-cell handling and axis limits, in XLSX and XLSB. The XLSB records were mapped from files Excel
   saved, one option at a time (`tools/capture_xlsb.py`).
@@ -30,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   XLSX or XLSB from the same code. Its figures are `SUMIFS` over the rows the slicer leaves visible.
 - `tools/capture_xlsb.py`: builds sparkline and slicer variants in Excel (COM) and prints the XLSB record bytes
   that differ from a base file.
+
+### Fixed
+
+- XLSB tables are written with the same name and display name, as Excel does. The display name used to get a
+  trailing `_`, so Excel could not resolve the table by its name as a pivot source ("cannot retrieve data from
+  range").
+- XLSX pivot tables with several values and a column field list the data field in the repeated column items,
+  as Excel does.
 
 ### Changed
 

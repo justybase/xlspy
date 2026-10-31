@@ -184,7 +184,7 @@ gap is implemented the same test starts passing without changes.
 | A4 | Defined names | read-only list; `DefinedName(name, formula, scope)` | L3 | 1 |
 | A5 | New `.xlsm` / templates | `ValueError` → **done** (content types, `keep_vba`/`vba_archive`) | L2/L3 | 7 |
 | A6 | External links | preservation only | L2 | 7 |
-| A7 | Pivot tables | preservation/retarget only; creation in XLSX (compact layout) → **done** | L2 | 7 |
+| A7 | Pivot tables | preservation/retarget only; creation in XLSX and XLSB (compact layout) → **done** | L2 | 7 |
 | A8 | Chartsheets | preserved but not loaded into the model → **done** for XLSX (read, `create_chartsheet()`) | L2/L3 | 4 |
 | A9 | OLE / controls / shapes | preservation only | L1/L2 | 7 |
 | A10 | read-only / write-only | no `ReadOnlyCell.number_format`, no `WriteOnlyCell` | L3 | 1 |
