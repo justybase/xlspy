@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `y_axis_title` and `legend_position` (`None` removes the title or legend). The chart part is
   edited as text, so the rest of the file stays as Excel wrote it.
 - `LoadedChart.set_series_title()`, `set_series_color()` and `series_titles`.
+- XLSB formulas: the Analysis ToolPak functions (`EOMONTH`, `WORKDAY`, `NETWORKDAYS`, `GCD`, `XIRR`, ...,
+  98 in all) with the ids, arities and operand classes Excel writes, and the newer `_xlfn` functions
+  (`BITAND`, `NUMBERVALUE`, `UNICHAR`, `RRI`, ... also prefixed in XLSX). `RANDBETWEEN` is volatile.
 - Charts: combined charts (`ChartSeries.chart_type`), a secondary value axis (`secondary_axis`,
   `Chart.y2_axis`), `Trendline` and `ErrorBars`, in XLSX and XLSB.
 - Charts and images can be added to a loaded XLSB workbook, including on new sheets, and so can tables.
@@ -23,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `load_workbook()` of an XLSB file with formulas that refer to another workbook raised
+  `NotImplementedError`; they now read as `='[1]Sheet'!A1`. Writing such a reference is still refused.
 - `LoadedChart.title` is the chart's own title, not the title of its first axis.
 - `load_workbook()` of an XLSB file with a chartsheet raised `KeyError`; chartsheets are now loaded
   (`Workbook.chartsheets`) and kept when sheets are renamed, added or reordered.

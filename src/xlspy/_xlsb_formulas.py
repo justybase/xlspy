@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import datetime
 from decimal import Decimal
 import math
+import posixpath
 import re
 import struct
 
@@ -22,6 +23,7 @@ from .formulas import _XLFN_FUNCTIONS
 from .refs import parse_cell_range, column_label, quote_sheet_name
 
 NAME, BEGIN_EXTERNALS, END_EXTERNALS, SUP_SELF, EXTERN_SHEET = 0x27, 0x161, 0x162, 0x165, 0x16A
+SUP_BOOK_SRC, SUP_TABS = 0x163, 0x167
 ERRORS = {0: '#NULL!', 7: '#DIV/0!', 15: '#VALUE!', 23: '#REF!', 29: '#NAME?', 36: '#NUM!', 42: '#N/A', 43: '#GETTING_DATA'}
 _OPS = {3: '+', 4: '-', 5: '*', 6: '/', 7: '^', 8: '&', 9: '<', 10: '<=', 11: '=', 12: '>=', 13: '>', 14: '<>', 15: ' ', 16: ',', 17: ':'}
 _OP_IDS = {value: key for key, value in _OPS.items()}
@@ -160,7 +162,7 @@ def _location(ref, *, relative_offsets=False, origin=(0, 0)):
 
 # Functions Excel recalculates on every change; formulas using them start
 # with PtgAttrSemi in Excel-written files.
-_VOLATILE_FUNCTIONS = frozenset({'NOW', 'TODAY', 'RAND', 'OFFSET', 'INDIRECT', 'CELL', 'INFO'})
+_VOLATILE_FUNCTIONS = frozenset({'NOW', 'TODAY', 'RAND', 'RANDBETWEEN', 'OFFSET', 'INDIRECT', 'CELL', 'INFO'})
 
 
 def _is_relative(ref):
@@ -433,13 +435,32 @@ class _Name:
     definition: DefinedName | None = None
 
 
+def external_sheet_names(part: bytes | None) -> list[str]:
+    """The sheet names of an external workbook (BrtSupTabs of an externalLink part)."""
+    if not part:
+        return []
+    for record, payload in records(part):
+        if record.record_id == SUP_TABS and len(payload) >= 4:
+            count, offset = struct.unpack_from('<I', payload)[0], 4
+            names = []
+            for _ in range(count):
+                name, offset = read_wide(payload, offset)
+                names.append(name)
+            return names
+    return []
+
+
 class FormulaContext:
-    def __init__(self, sheets, workbook=None):
+    """``parts`` (path -> bytes or None) lets references to other workbooks show their sheet names."""
+
+    def __init__(self, sheets, workbook=None, parts=None):
         self._sheets = sheets
         self.names = []
         self.links = []
         self.xti = []
         self._external_block = None
+        self.external_rids = []
+        self.external_names = []
         if workbook is not None:
             external_start = None
             for record, payload in records(workbook):
@@ -454,11 +475,27 @@ class FormulaContext:
                     self._external_block = workbook[external_start:record.data_end]
                 elif kind in (0x163, 0x165, 0x166):
                     self.links.append(kind)
+                    if kind == SUP_BOOK_SRC:
+                        self.external_rids.append(read_wide(payload, 0)[0])
                 elif kind == EXTERN_SHEET:
                     count = struct.unpack_from('<I', payload)[0]
                     if len(payload) != 4 + count * 12:
                         raise ValueError("invalid XLSB external sheet table")
                     self.xti = [struct.unpack_from('<Iii', payload, 4 + i * 12) for i in range(count)]
+        if parts is not None and self.external_rids:
+            self._load_external_names(parts)
+
+    def _load_external_names(self, parts):
+        rels = parts('xl/_rels/workbook.bin.rels')
+        targets = {}
+        if rels:
+            from xml.etree import ElementTree as ET
+
+            targets = {node.get('Id'): node.get('Target') for node in ET.fromstring(rels)}
+        for rid in self.external_rids:
+            target = targets.get(rid)
+            path = None if not target else ('xl/' + target if not target.startswith('/') else target[1:])
+            self.external_names.append(external_sheet_names(parts(posixpath.normpath(path)) if path else None))
 
     @property
     def sheets(self):
@@ -482,12 +519,27 @@ class FormulaContext:
         if isinstance(entry, str):
             return quote_sheet_name(entry) + '!'
         link, first, last = entry
+        if link < len(self.links) and self.links[link] == SUP_BOOK_SRC:
+            return self._external_label(link, first, last)
         if link >= len(self.links) or self.links[link] != SUP_SELF:
-            raise NotImplementedError("external-workbook formula references are not supported")
+            raise NotImplementedError("this kind of external reference is not supported")
         if first < 0 or last < 0:
             return '#REF!'
         title = self.sheets[first] if first == last else self.sheets[first] + ':' + self.sheets[last]
         return quote_sheet_name(title) + '!'
+
+    def _external_label(self, link, first, last):
+        """``'[1]Sheet'!`` for a sheet of the n-th external workbook."""
+        number = sum(kind == SUP_BOOK_SRC for kind in self.links[:link + 1])
+        names = self.external_names[number - 1] if number <= len(self.external_names) else []
+
+        def name(index):
+            return names[index] if 0 <= index < len(names) else f'Sheet{index + 1}'
+
+        if first < 0 or last < 0:
+            return '#REF!'
+        title = name(first) if first == last else name(first) + ':' + name(last)
+        return quote_sheet_name(f'[{number}]{title}') + '!'
 
     def _scope(self, entry):
         return self.sheets[entry.scope] if isinstance(entry.scope, int) else entry.scope

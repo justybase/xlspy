@@ -103,6 +103,9 @@ class XlsbUpdater(XlsbSheetsMixin, XlsbEditMixin):
 
         return list(self._sheets)
 
+    def _part_or_none(self, path: str) -> bytes | None:
+        return self._package.get(path) if self._package.has(path) else None
+
     def get_worksheet_names(self) -> list[str]:
         """The names of the worksheets alone, in workbook order."""
 

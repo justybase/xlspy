@@ -72,7 +72,7 @@ def _load_cells(sheet, reader, name, sheet_data, data_only):
         row_header(sheet, payload)
     if formulas:
         context = None if data_only else FormulaContext(
-            reader.get_sheet_names(), reader._archive.read("xl/workbook.bin"),
+            reader.get_sheet_names(), reader._archive.read("xl/workbook.bin"), reader.read_part,
         )
         shared = formula_groups(groups)
         for row, kind, payload in formulas:
@@ -240,6 +240,7 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
             if (validations or conditional) and formula_context is None:
                 formula_context = FormulaContext(
                     updater.get_sheet_names(), updater._package.get("xl/workbook.bin"),
+                    updater._part_or_none,
                 )
             read = 0
             extensions: dict = {}

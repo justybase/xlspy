@@ -218,6 +218,13 @@ class ExcelReader:
     def get_sheet_names(self) -> List[str]:
         return list(self._worksheet_name_to_id.keys())
 
+    def read_part(self, path: str) -> bytes | None:
+        """The bytes of a package part, or None when the package has no such part."""
+        try:
+            return self._archive.read(path)
+        except KeyError:
+            return None
+
     def get_sheet_index(self, sheet_name: str) -> int:
         names = self.get_sheet_names()
         for i, n in enumerate(names):
@@ -270,7 +277,7 @@ class ExcelReader:
         """Return global and worksheet-local user names (not built-in names)."""
         if self._is_xlsb:
             from ._xlsb_formulas import FormulaContext
-            return FormulaContext(self.get_sheet_names(), self._archive.read('xl/workbook.bin')).defined_names()
+            return FormulaContext(self.get_sheet_names(), self._archive.read('xl/workbook.bin'), self.read_part).defined_names()
         from ._metadata import read_defined_names
         return read_defined_names(self._archive.read("xl/workbook.xml"), self.get_sheet_names())
 

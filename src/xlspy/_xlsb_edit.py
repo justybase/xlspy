@@ -156,7 +156,7 @@ class XlsbEditMixin(XlsxEditMixin):
         self._apply_parts(updates, removed)
 
     def get_defined_names(self) -> list[DefinedName]:
-        return FormulaContext(self._sheets, self._package.get('xl/workbook.bin')).defined_names()
+        return FormulaContext(self._sheets, self._package.get('xl/workbook.bin'), self._part_or_none).defined_names()
 
     def set_defined_name(self, definition: DefinedName) -> None:
         if not isinstance(definition, DefinedName):

@@ -79,7 +79,7 @@ def iter_indexed_rows(reader, sheet_name, *, data_only=True, data=None, with_sty
     if data is None:
         rid = reader._worksheet_name_to_id[sheet_name]
         path = reader._resolve_path(reader._worksheet_id_to_location[rid])
-    context = FormulaContext(reader.get_sheet_names(), reader._archive.read('xl/workbook.bin')) if not data_only else None
+    context = FormulaContext(reader.get_sheet_names(), reader._archive.read('xl/workbook.bin'), reader.read_part) if not data_only else None
     groups = {}
     current_row = None
     cells = []
