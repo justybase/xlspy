@@ -72,6 +72,8 @@ def _reject_unsupported_edits(workbook) -> None:
         raise _unsupported("style changes (the file has no style sheet)")
     for sheet in workbook._sheets:
         _reject_unsupported_sheet_edits(sheet)
+    if any(sheet._part is None for sheet in workbook._chartsheets):
+        raise _unsupported("a new chartsheet")
 
 
 def _sync_sheet_list(workbook, updater) -> None:

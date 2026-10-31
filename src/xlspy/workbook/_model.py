@@ -2041,7 +2041,11 @@ class WriteOnlyWorksheet(Worksheet):
 
 
 class Chartsheet:
-    """A chartsheet read from a workbook."""
+    """A chartsheet: a sheet that shows one chart.
+
+    A new chartsheet's chart reads its ranges from ``source`` (a worksheet or
+    its title; by default the workbook's first worksheet).
+    """
 
     def __init__(self, workbook, title: str, index: int | None = None):
         self._workbook = workbook
@@ -2049,6 +2053,8 @@ class Chartsheet:
         self.sheet_state = "visible"
         self._index = index
         self._charts: list = []
+        self._part: str | None = None  # the package part, once in a file
+        self._source = None
 
     def __repr__(self):
         return f"<Chartsheet {self.title!r}>"
@@ -2057,7 +2063,13 @@ class Chartsheet:
     def charts(self):
         return self._charts
 
-    def add_chart(self, chart) -> None:
+    def add_chart(self, chart, source: "Worksheet | str | None" = None) -> None:
+        if self._part is None:
+            _expect(chart, Chart, "chart", "an xlspy Chart")
+            if self._charts:
+                raise ValueError("a chartsheet holds one chart")
+            if source is not None:
+                self._source = source
         self._charts.append(chart)
 
 
@@ -2162,6 +2174,25 @@ class Workbook:
             for position, item in enumerate(self._sheets):
                 item._index = position
         sheet._loaded = self._loaded
+        return sheet
+
+    def create_chartsheet(self, title: str | None = None, index: int | None = None) -> Chartsheet:
+        """Add a chartsheet after the other sheets (XLSX only), as openpyxl does."""
+        if self.write_only:
+            raise TypeError("create_chartsheet is not available in write-only mode")
+        taken = set(self.sheetnames) | {sheet.title for sheet in self._chartsheets}
+        if title is None:
+            number = 1
+            while f"Chart{number}" in taken:
+                number += 1
+            title = f"Chart{number}"
+        if title in taken:
+            raise ValueError(f"a sheet named {title!r} already exists")
+        count = len(self._sheets) + len(self._chartsheets)
+        if index is not None and index < count:
+            raise NotImplementedError("new chartsheets are added after the other sheets")
+        sheet = Chartsheet(self, title, index=count)
+        self._chartsheets.append(sheet)
         return sheet
 
     def move_sheet(self, sheet: Worksheet | str, offset: int = 0) -> None:

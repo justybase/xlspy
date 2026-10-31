@@ -1486,6 +1486,7 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
     for index, (name, part, state) in enumerate(chartsheet_entries):
         sheet = Chartsheet(workbook, name, index=index)
         sheet.sheet_state = state
+        sheet._part = part
         read_chartsheet(package, part, name, sheet)
         workbook._chartsheets.append(sheet)
     if not workbook._sheets:

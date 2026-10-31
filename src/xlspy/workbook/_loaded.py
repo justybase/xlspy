@@ -1167,6 +1167,9 @@ def save_loaded(workbook: Workbook, filename) -> None:
     updater = workbook._updater
     if updater is None:
         raise ValueError("this workbook was not loaded from an XLSX package")
+    from ._chartsheets import check_chartsheets
+
+    check_chartsheets(workbook)
     if workbook._styles_dirty:
         updater._package.set("xl/styles.xml", workbook._styles.to_bytes())
         workbook._styles_dirty = False
@@ -1291,8 +1294,10 @@ def save_loaded(workbook: Workbook, filename) -> None:
                 updater._package.set("xl/styles.xml", workbook._styles.to_bytes())
                 workbook._styles_dirty = False
             add_objects(updater, workbook, sheet, final_order)
+    from ._chartsheets import add_chartsheets
     from ._props import save_properties
 
+    add_chartsheets(updater, workbook)
     save_properties(updater, workbook)
     updater.save(filename)
     for sheet in workbook._sheets:

@@ -211,7 +211,33 @@ def _save_new(workbook: Workbook, filename) -> None:
         )
     if extension in {"xltx", "xltm"}:
         raise ValueError("template formats are not supported by the new workbook API")
+    from ._chartsheets import add_chartsheets, check_chartsheets, pending_chartsheets
+
+    if pending_chartsheets(workbook):
+        if extension == "xlsb":
+            raise NotImplementedError("chartsheets can be saved to XLSX only")
+        check_chartsheets(workbook)
+        # The chartsheets go into the written package.
+        with tempfile.TemporaryDirectory(prefix="xlspy-workbook-") as directory:
+            temporary = os.path.join(directory, "workbook.xlsx")
+            _write_new(workbook, temporary, XlsxWriter, "xlsx")
+            from ..xlsx_updater import XlsxUpdater
+
+            updater = XlsxUpdater(temporary)
+            try:
+                add_chartsheets(updater, workbook)
+                if isinstance(filename, (str, os.PathLike)):
+                    updater.save(os.fspath(filename))
+                else:
+                    filename.write(updater.to_bytes())
+            finally:
+                updater.close()
+        return
     writer_class = XlsbWriter if extension == "xlsb" else XlsxWriter
+    _write_new(workbook, filename, writer_class, extension)
+
+
+def _write_new(workbook: Workbook, filename, writer_class, extension: str) -> None:
     with writer_class(filename) as writer:
         _set_properties(writer, workbook.properties)
         for definition in workbook.defined_names:
