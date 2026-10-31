@@ -11,6 +11,7 @@ from . import _props
 from ._loaded import _value_for_save
 from ._drawings import check_removals, remember_drawing_objects, remove_drawing_objects, save_chart_edits
 from ._xlsb_drawings import add_drawing_objects
+from ._xlsb_tables import add_tables
 from ._objects import _object_values, check_unread, object_signatures
 from ._xlsb_layout import changed_groups, layout_state, patch_layout, save_builtin_names
 
@@ -48,13 +49,13 @@ def _is_new(sheet) -> bool:
 
 def _reject_unsupported_sheet_edits(sheet) -> None:
     if _is_new(sheet):
-        if _object_values(sheet, "tables"):
-            raise _unsupported("tables on a new sheet")
         return
     check_removals(sheet)
     saved = sheet._saved_object_signatures
     current = object_signatures(sheet)
-    if current["tables"] != saved.get("tables", ()):
+    before = saved.get("tables", ())
+    # Tables can be added; changing or removing a loaded one is not saved yet.
+    if current["tables"][:len(before)] != before:
         raise _unsupported("table changes")
     check_unread(sheet, [
         name for name in ("data_validations", "conditional_formatting")
@@ -231,6 +232,7 @@ def save_loaded_xlsb(workbook, filename) -> None:
         remove_drawing_objects(updater, sheet)
         save_chart_edits(updater, sheet)
         add_drawing_objects(updater, sheet)
+        add_tables(updater, sheet)
     _props.save_properties(updater, workbook)
     # After the sheets: their conditional formats may add differential styles.
     styles = workbook._styles

@@ -455,7 +455,7 @@ def test_loaded_xlsb_saves_with_formatting_and_tables(formatted, tmp_path):
 
 def test_table_edits_are_refused(formatted, tmp_path):
     with pytest.raises(NotImplementedError, match="table"):
-        save_after(formatted, tmp_path, lambda s: s.add_table(ExcelTable(display_name="More", ref="E1:F3")))
+        save_after(formatted, tmp_path, lambda s: s.tables.pop(0))
 
 
 def test_conditional_formats_are_added_next_to_the_files_own(formatted, tmp_path):
