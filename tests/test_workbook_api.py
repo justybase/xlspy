@@ -476,7 +476,7 @@ def test_xlsb_model_and_unsupported_named_style(tmp_path):
         workbook.active["A1"].style = "Title"
 
 
-def test_loaded_xlsb_rejects_edits_it_cannot_persist(tmp_path):
+def test_loaded_xlsb_saves_value_rename_and_style_edits(tmp_path):
     source = tmp_path / "model.xlsb"
     created = Workbook()
     created.active["A1"] = "hello"
@@ -488,10 +488,16 @@ def test_loaded_xlsb_rejects_edits_it_cannot_persist(tmp_path):
         loaded["Sheet"]["A1"] = "edited"
         loaded.save(tmp_path / "ok.xlsb")
         loaded["Sheet"].title = "Renamed"
-        with pytest.raises(NotImplementedError, match="sheets"):
-            loaded.save(tmp_path / "renamed.xlsb")
+        loaded.save(tmp_path / "renamed.xlsb")
     finally:
         loaded.close()
+
+    renamed = load_workbook(tmp_path / "renamed.xlsb")
+    try:
+        assert renamed.sheetnames == ["Renamed"]
+        assert renamed["Renamed"]["A1"].value == "edited"
+    finally:
+        renamed.close()
 
     loaded = load_workbook(tmp_path / "ok.xlsb")
     try:

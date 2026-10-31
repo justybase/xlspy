@@ -30,17 +30,6 @@ def save_after(path, tmp_path, edit):
         workbook.close()
 
 
-@pytest.mark.parametrize("edit, message", [
-    (lambda s: setattr(s.column_dimensions["A"], "width", 30), "dimensions"),
-    (lambda s: setattr(s.row_dimensions[2], "hidden", True), "dimensions"),
-    (lambda s: setattr(s, "freeze_panes", "B2"), "freeze panes"),
-    (lambda s: setattr(s.page_setup, "orientation", "landscape"), "print"),
-])
-def test_unsupported_edits_are_refused(source, tmp_path, edit, message):
-    with pytest.raises(NotImplementedError, match=message):
-        save_after(source, tmp_path, edit)
-
-
 def test_reading_dimensions_is_not_an_edit(source, tmp_path):
     def read_only(sheet):
         assert sheet.row_dimensions[30].height is None
@@ -471,13 +460,3 @@ def test_loaded_xlsb_saves_with_formatting_and_tables(formatted, tmp_path):
 def test_formatting_and_table_edits_are_refused(formatted, tmp_path, edit, message):
     with pytest.raises(NotImplementedError, match=message):
         save_after(formatted, tmp_path, edit)
-
-
-def test_document_property_edits_are_refused(source, tmp_path):
-    workbook = load_workbook(source)
-    try:
-        workbook.properties.title = "changed"
-        with pytest.raises(NotImplementedError, match="document property"):
-            workbook.save(tmp_path / "out.xlsb")
-    finally:
-        workbook.close()

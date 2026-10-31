@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import struct
 
-from .._metadata import SheetProtection as MetadataProtection
 from .._xlsb_metadata import read_wide
 from .._xlsb_print import (
     BRT_BEGIN_COL_BREAKS, BRT_BEGIN_HEADER_FOOTER, BRT_BEGIN_ROW_BREAKS, BRT_BREAK,
@@ -18,17 +17,20 @@ from .._xlsb_print import (
 )
 from .._xlsb_styles import _color
 from ..refs import column_label
-from ._model import Break, ColBreak, Pane, RowBreak
+from ._model import Break, ColBreak, Pane, RowBreak, Selection
 
 ROW_HEADER = 0x00
 COL_INFO = 0x3C
 WS_PROP = 0x93
 BEGIN_WS_VIEW = 0x89
 PANE = 0x97
+SELECTION = 0x98
+FORMAT_INFO = 0x1E5
 SHEET_PROTECTION = 0x217
 # Records collected for apply_sheet_records (row headers are filtered first).
 RECORDS = frozenset({
-    COL_INFO, WS_PROP, BEGIN_WS_VIEW, PANE, SHEET_PROTECTION, BRT_PRINT_OPTIONS,
+    COL_INFO, WS_PROP, BEGIN_WS_VIEW, PANE, SELECTION, FORMAT_INFO, SHEET_PROTECTION,
+    BRT_PRINT_OPTIONS,
     BRT_MARGINS, BRT_PAGE_SETUP, BRT_BEGIN_HEADER_FOOTER, BRT_BEGIN_ROW_BREAKS,
     BRT_END_ROW_BREAKS, BRT_BEGIN_COL_BREAKS, BRT_END_COL_BREAKS, BRT_BREAK,
 })
@@ -41,6 +43,7 @@ _PROTECTION_FIELDS = (
     "selectLockedCells", "sort", "autoFilter", "pivotTables", "selectUnlockedCells",
 )
 _VIEWS = {1: "pageBreakPreview", 2: "pageLayout"}
+_PANES = {0: "bottomRight", 1: "topRight", 2: "bottomLeft"}
 _HEADER_FOOTER_PARTS = (
     "oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter",
 )
@@ -124,22 +127,42 @@ def _pane(sheet, payload: bytes) -> None:
         sheet._freeze_panes = cell
 
 
+def _selection(sheet, payload: bytes) -> None:
+    pane, row, column, active_id, count = struct.unpack_from("<5I", payload, 0)
+    ranges = []
+    for index in range(count):
+        r1, r2, c1, c2 = struct.unpack_from("<4I", payload, 20 + index * 16)
+        first = f"{column_label(c1)}{r1 + 1}"
+        ranges.append(first if (r1, c1) == (r2, c2) else f"{first}:{column_label(c2)}{r2 + 1}")
+    sheet._sheet_view.selection.append(Selection(
+        pane=_PANES.get(pane), activeCell=f"{column_label(column)}{row + 1}",
+        activeCellId=active_id or None, sqref=" ".join(ranges) or "A1",
+    ))
+
+
+def _sheet_format(sheet, payload: bytes) -> None:
+    width, base, height, flags, row_level, column_level = struct.unpack_from("<IHHHBB", payload, 0)
+    fmt = sheet.sheet_format
+    fmt.defaultColWidth = None if width == 0xFFFFFFFF else width / 256
+    fmt.baseColWidth = base
+    fmt.defaultRowHeight = height / 20
+    fmt.customHeight = True if flags & 0x01 else None
+    fmt.zeroHeight = True if flags & 0x02 else None
+    fmt.thickTop = True if flags & 0x04 else None
+    fmt.thickBottom = True if flags & 0x08 else None
+    fmt.outlineLevelRow = row_level or None
+    fmt.outlineLevelCol = column_level or None
+
+
 def _protection(sheet, payload: bytes) -> None:
     values = struct.unpack_from("<H16I", payload, 0)
     password, flags = values[0], values[1:]
     protection = sheet.protection
-    for name, value in zip(_PROTECTION_FIELDS, flags):
-        setattr(protection, name, bool(value))
-    protection.password = f"{password:04X}" if password else None
-    try:
-        sheet._sheet_protection = MetadataProtection(
-            enabled=protection.sheet,
-            select_locked_cells=protection.selectLockedCells,
-            select_unlocked_cells=protection.selectUnlockedCells,
-            password=protection.password,
-        )
-    except (TypeError, ValueError):
-        pass
+    # Except fLocked (the sheet), the record stores what users may do: the
+    # inverse of the OOXML attributes, which say what is protected.
+    for index, (name, value) in enumerate(zip(_PROTECTION_FIELDS, flags)):
+        setattr(protection, name, bool(value) if index == 0 else not value)
+    protection.set_password(f"{password:04X}" if password else None, already_hashed=True)
 
 
 def _page_setup(sheet, payload: bytes) -> None:
@@ -170,6 +193,30 @@ def _header_footer(sheet, payload: bytes) -> None:
         text, offset = read_wide(payload, offset, nullable=True)
         if text:
             getattr(footer, name).load_code(text)
+
+
+# BrtBeginFilterColumn, BrtBeginFilters and BrtFilter of the sheet's auto filter.
+FILTER_RECORDS = frozenset({0xA3, 0xA5, 0xA7})
+
+
+def read_filter_record(auto_filter, record_id: int, payload: bytes) -> None:
+    """Filter columns with value lists ([MS-XLSB] 2.4.380 ff.); other filters stay in the file."""
+    from ._model import FilterColumn
+
+    if auto_filter.ref is None:
+        return
+    try:
+        if record_id == 0xA3:
+            column, flags = struct.unpack_from("<IH", payload)
+            auto_filter.filterColumn.append(FilterColumn(
+                colId=column, hiddenButton=bool(flags & 0x01), showButton=not flags & 0x02,
+            ))
+        elif auto_filter.filterColumn and record_id == 0xA5:
+            auto_filter.filterColumn[-1].blank = bool(struct.unpack_from("<I", payload)[0])
+        elif auto_filter.filterColumn and record_id == 0xA7:
+            auto_filter.filterColumn[-1].vals.append(read_wide(payload, 0)[0])
+    except (struct.error, ValueError):
+        pass
 
 
 LIST_PART = 0x295
@@ -240,6 +287,10 @@ def apply_sheet_records(sheet, items) -> None:
                 _sheet_view(sheet, payload)
             elif record_id == PANE:
                 _pane(sheet, payload)
+            elif record_id == SELECTION:
+                _selection(sheet, payload)
+            elif record_id == FORMAT_INFO:
+                _sheet_format(sheet, payload)
             elif record_id == SHEET_PROTECTION:
                 _protection(sheet, payload)
             elif record_id == BRT_PRINT_OPTIONS:

@@ -238,14 +238,22 @@ class SheetProtection:
     select_locked_cells: bool = True
     select_unlocked_cells: bool = True
     password: str | None = None
+    # The legacy hash itself (four hex digits), e.g. from a loaded workbook.
+    hashed_password: str | None = None
 
     def __post_init__(self):
         _validate_protection(self)
 
+    @property
+    def password_hash(self) -> str | None:
+        if self.hashed_password is not None:
+            return self.hashed_password
+        return None if self.password is None else password_hash(self.password)
+
     def to_xml(self):
         if not self.enabled:
             return ""
-        password = "" if self.password is None else f' password="{password_hash(self.password)}"'
+        password = "" if self.password_hash is None else f' password="{self.password_hash}"'
         return (f'<sheetProtection xmlns="{MAIN}" sheet="1" objects="1" scenarios="1"'
                 f' selectLockedCells="{int(not self.select_locked_cells)}"'
                 f' selectUnlockedCells="{int(not self.select_unlocked_cells)}"{password}/>')
@@ -274,6 +282,9 @@ def _validate_protection(obj):
         if field.name == "password":
             if value is not None and (not isinstance(value, str) or len(value) > 15 or not value.isascii()):
                 raise ValueError("legacy protection passwords must be ASCII strings of at most 15 characters")
+        elif field.name == "hashed_password":
+            if value is not None and (not isinstance(value, str) or not re.fullmatch(r"[0-9A-Fa-f]{1,4}", value)):
+                raise ValueError("hashed_password must be the legacy hash: up to four hex digits")
         elif not isinstance(value, bool):
             raise TypeError(f"{field.name} must be bool")
 

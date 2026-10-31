@@ -150,7 +150,7 @@ def sheet_protection_bin(protection):
         return b""
     flags = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
              int(protection.select_locked_cells), 0, 0, 0, int(protection.select_unlocked_cells)]
-    password = 0 if protection.password is None else int(password_hash(protection.password), 16)
+    password = 0 if protection.password_hash is None else int(protection.password_hash, 16)
     return build_record(SHEET_PROTECTION, struct.pack("<H16I", password, *flags))
 
 

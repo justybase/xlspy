@@ -15,6 +15,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from .._metadata import MAIN, REL, PKG_REL, CT, element_pattern, replace_element, serialize_like
 from .._xlsx_edit import _attributes, _bytes, _cell_value
+from ..formula.sheets import rename_sheet_references
 from ..formulas import Formula
 from ._objects import add_objects, has_pending_objects, mark_objects_saved, sync_objects
 from ..refs import column_label, parse_cell_range
@@ -942,6 +943,15 @@ def rename_sheet(updater, old: str, new: str) -> None:
         )
         workbook_xml = workbook_xml[:match.start()] + fragment + workbook_xml[match.end():]
         break
+
+    def rename_references(match):
+        fragment = match[0]
+        opening = re.match(r"<[^>]+>", fragment)[0]
+        body = fragment[len(opening):]
+        return opening + rename_sheet_references(body, old, new)
+
+    # Formulas of defined names hold sheet titles (the cells' were updated in the model).
+    workbook_xml = element_pattern("definedName").sub(rename_references, workbook_xml)
     package.set(workbook_path, workbook_xml.encode("utf-8"))
     path = updater._sheets.pop(old, None)
     if path is not None:
@@ -1277,6 +1287,9 @@ def save_loaded(workbook: Workbook, filename) -> None:
                 updater._package.set("xl/styles.xml", workbook._styles.to_bytes())
                 workbook._styles_dirty = False
             add_objects(updater, workbook, sheet, final_order)
+    from ._props import save_properties
+
+    save_properties(updater, workbook)
     updater.save(filename)
     for sheet in workbook._sheets:
         sheet._original_title = sheet.title

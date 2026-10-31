@@ -7,24 +7,10 @@ import shutil
 import tempfile
 
 from ..refs import parse_cell_range
-from ._loaded import _meta_signature, _value_for_save
+from . import _props
+from ._loaded import _value_for_save
 from ._objects import _object_values, object_signatures
-from ._print import print_settings_for
-
-# Index of the merged ranges in _meta_signature(): merges are saved on their own.
-_MERGES = 4
-
-
-def _layout_signature(sheet):
-    """Sheet metadata other than merges: views, dimensions, print, protection."""
-    signature = _meta_signature(sheet)
-    # Reading row_dimensions[n] or column_dimensions["X"] creates an entry with
-    # default values; only entries that set something count as edits.
-    columns, rows = (
-        tuple(entry for entry in entries if any(entry[1:]))
-        for entries in signature[:2]
-    )
-    return (columns, rows) + signature[2:_MERGES] + signature[_MERGES + 1:]
+from ._xlsb_layout import changed_groups, layout_state, patch_layout, save_builtin_names
 
 
 def _merge_signature(sheet):
@@ -33,22 +19,17 @@ def _merge_signature(sheet):
 
 def remember_saved_state(sheet) -> None:
     """Record what the file holds, so that save can tell which parts were edited."""
-    sheet._meta_signature = _layout_signature(sheet)
     sheet._saved_merges = _merge_signature(sheet)
     sheet._saved_object_counts = {
         name: len(_object_values(sheet, name))
         for name in ("charts", "images", "tables", "data_validations", "conditional_formatting")
     }
     sheet._saved_object_signatures = object_signatures(sheet)
-    sheet._saved_print_settings = print_settings_for(sheet)
-
-
-def _properties_signature(workbook):
-    return repr(workbook.properties), repr(workbook.custom_doc_props)
+    sheet._saved_layout = layout_state(sheet)
 
 
 def remember_workbook_state(workbook) -> None:
-    workbook._saved_properties = _properties_signature(workbook)
+    _props.remember(workbook)
 
 
 def _unsupported(what: str):
@@ -58,14 +39,16 @@ def _unsupported(what: str):
     )
 
 
+def _is_new(sheet) -> bool:
+    return sheet._path is None
+
+
 def _reject_unsupported_sheet_edits(sheet) -> None:
-    if _layout_signature(sheet) != sheet._meta_signature:
-        raise _unsupported(
-            "changes to column/row dimensions, sheet views, freeze panes, "
-            "auto-filter, print settings or protection"
-        )
-    if print_settings_for(sheet) != sheet._saved_print_settings:
-        raise _unsupported("print setting changes")
+    if _is_new(sheet):
+        for name in ("charts", "images", "tables", "conditional_formatting"):
+            if _object_values(sheet, name):
+                raise _unsupported(f"{name.replace('_', ' ')} on a new sheet")
+        return
     counts = sheet._saved_object_counts
     for name in ("charts", "images"):
         if len(_object_values(sheet, name)) != counts.get(name, 0):
@@ -80,19 +63,7 @@ def _reject_unsupported_sheet_edits(sheet) -> None:
 
 
 def _reject_unsupported_edits(workbook) -> None:
-    """Fail loudly on edits the XLSB updater cannot persist yet."""
-    sheets = workbook._sheets
-    original = [sheet._original_title for sheet in sheets]
-    if (
-        any(sheet.title != sheet._original_title for sheet in sheets)
-        or set(workbook.sheetnames) != workbook._loaded_worksheet_names
-        or len(set(original)) != len(original)
-        or original != list(workbook._updater.get_sheet_names())
-    ):
-        raise NotImplementedError(
-            "adding, removing, renaming or reordering sheets is not supported "
-            "when saving a loaded XLSB workbook"
-        )
+    """Fail loudly, before anything is written, on edits that cannot be saved yet."""
     styles = workbook._styles
     if workbook._styles_dirty and not hasattr(styles, "to_bin"):
         raise NotImplementedError(
@@ -100,10 +71,136 @@ def _reject_unsupported_edits(workbook) -> None:
         )
     if styles.is_modified() and not getattr(workbook, "_xlsb_styles_path", None):
         raise _unsupported("style changes (the file has no style sheet)")
-    if _properties_signature(workbook) != getattr(workbook, "_saved_properties", None):
-        raise _unsupported("document property changes")
-    for sheet in sheets:
+    for sheet in workbook._sheets:
         _reject_unsupported_sheet_edits(sheet)
+
+
+def _sync_sheet_list(workbook, updater) -> None:
+    """Remove, rename, add and reorder the package's sheets to match the model."""
+    sheets = workbook._sheets
+    loaded = [sheet for sheet in sheets if not _is_new(sheet)]
+    kept = {sheet._original_title for sheet in loaded}
+    for name in updater.get_sheet_names():
+        if name in workbook._loaded_worksheet_names and name not in kept:
+            updater.remove_sheet(name)
+    renamed = [sheet for sheet in loaded if sheet.title != sheet._original_title]
+    # Through temporary names, so that sheets can swap titles.
+    taken = set(updater.get_sheet_names()) | {sheet.title for sheet in sheets}
+    temporary = {}
+    for sheet in renamed:
+        number = len(temporary)
+        while f"~xlspy{number}" in taken:
+            number += 1
+        name = f"~xlspy{number}"
+        taken.add(name)
+        temporary[sheet] = name
+        updater.rename_sheet(sheet._original_title, name)
+    for sheet, name in temporary.items():
+        updater.rename_sheet(name, sheet.title)
+    for sheet in sheets:
+        if _is_new(sheet):
+            sheet._path = updater.add_sheet(sheet.title)
+    titles = [sheet.title for sheet in sheets]
+    current = updater.get_sheet_names()
+    # Sheets the model does not hold (if any) keep their positions.
+    order = list(titles)
+    for index, name in enumerate(current):
+        if name not in titles:
+            order.insert(min(index, len(order)), name)
+    updater.reorder_sheets(order)
+    states = updater.get_sheet_states()
+    for sheet in sheets:
+        if states.get(sheet.title) != sheet.sheet_state:
+            updater.set_sheet_state(sheet.title, sheet.sheet_state)
+    active = order.index(titles[min(workbook._active_index, len(titles) - 1)])
+    if active != updater.get_active_sheet():
+        updater.set_active_sheet(active)
+
+
+def _save_defined_names(workbook, updater, renamed) -> None:
+    names = {(item.name, item.formula, item.scope) for item in workbook.defined_names}
+    previous = getattr(workbook, "_loaded_defined_names", names)
+    if names == previous:
+        return
+    for name, _formula, scope in previous - names:
+        scope = renamed.get(scope, scope)
+        # Names local to a removed sheet went with it.
+        if scope is None or scope in updater._sheets:
+            updater.remove_defined_name(name, scope)
+    for item in workbook.defined_names:
+        if item.scope is None or item.scope in updater._sheets:
+            updater.set_defined_name(item)
+    workbook._loaded_defined_names = names
+
+
+def _save_cells(sheet, updater, everything: bool) -> None:
+    updates = {}
+    style_ids = {}
+    if everything:
+        cells = [cell for row in sheet._cells.values() for cell in row.values()]
+    else:
+        cells = [
+            cell for cell in (sheet._existing_cell(row, column) for row, column in list(sheet._dirty_cells))
+            if cell is not None
+        ]
+    for cell in cells:
+        value = _value_for_save(cell, updater._date_1904)
+        if everything and value is None and not cell._style_id:
+            continue
+        updates[cell.coordinate] = value
+        style_ids[cell.coordinate] = cell._style_id
+    if not everything:
+        for ref in sheet._dirty_styles:
+            col, row, _, _ = parse_cell_range(ref)
+            cell = sheet._existing_cell(row + 1, col + 1)
+            if cell is not None:
+                style_ids[ref] = cell._style_id
+    if updates or style_ids:
+        updater.update_cells(sheet.title, updates, styles=style_ids)
+
+
+def _save_sheet(sheet, updater) -> None:
+    new = getattr(sheet, "_saved_layout", None) is None
+    _save_cells(sheet, updater, new)
+    groups = changed_groups(sheet)
+    if groups - {"print_names"}:
+        path, data = updater._sheet_bin(sheet.title)
+        patched = patch_layout(data, sheet, groups)
+        if patched != data:
+            updater._apply_parts({path: patched})
+    save_builtin_names(updater, sheet, groups)
+    merges = sheet._merged_cells.ranges
+    if merges if new else _merge_signature(sheet) != sheet._saved_merges:
+        updater.set_merged_cells(sheet.title, sorted(str(item) for item in merges))
+    validations_changed = (
+        bool(sheet.data_validations) if new else
+        object_signatures(sheet)["data_validations"]
+        != sheet._saved_object_signatures.get("data_validations", ())
+    )
+    if validations_changed:
+        updater.set_data_validations(sheet.title, sheet.data_validations)
+    if new or sheet._dirty_hyperlinks:
+        links = {
+            cell.coordinate: cell._hyperlink
+            for row in sheet._cells.values() for cell in row.values()
+            if cell._hyperlink is not None
+        }
+        if links or not new:
+            updater.set_hyperlinks(sheet.title, links)
+    if new:
+        comments = {
+            cell.coordinate: cell._comment
+            for row in sheet._cells.values() for cell in row.values()
+            if cell._comment is not None
+        }
+    else:
+        comments = {}
+        for ref in sheet._dirty_comments:
+            col, row, _, _ = parse_cell_range(ref)
+            cell = sheet._existing_cell(row + 1, col + 1)
+            comments[ref] = cell.comment if cell is not None else None
+    if comments:
+        updater.set_comments(sheet.title, comments)
 
 
 def save_loaded_xlsb(workbook, filename) -> None:
@@ -113,56 +210,16 @@ def save_loaded_xlsb(workbook, filename) -> None:
 
     _reject_unsupported_edits(workbook)
 
-    names = {
-        (item.name, item.formula, item.scope) for item in workbook.defined_names
-    }
-    previous = getattr(workbook, "_loaded_defined_names", names)
-    if names != previous:
-        for name, _formula, scope in previous - names:
-            updater.remove_defined_name(name, scope)
-        for item in workbook.defined_names:
-            updater.set_defined_name(item)
-        workbook._loaded_defined_names = names
-
     styles = workbook._styles
     if styles.is_modified():
         updater._package.set(workbook._xlsb_styles_path, styles.to_bin())
 
+    renamed = {sheet._original_title: sheet.title for sheet in workbook._sheets if not _is_new(sheet)}
+    _sync_sheet_list(workbook, updater)
+    _save_defined_names(workbook, updater, renamed)
     for sheet in workbook._sheets:
-        updates = {}
-        style_ids = {}
-        for row, column in list(sheet._dirty_cells):
-            cell = sheet._existing_cell(row, column)
-            if cell is not None:
-                updates[cell.coordinate] = _value_for_save(
-                    cell, updater._date_1904
-                )
-                style_ids[cell.coordinate] = cell._style_id
-        for ref in sheet._dirty_styles:
-            col, row, _, _ = parse_cell_range(ref)
-            cell = sheet._existing_cell(row + 1, col + 1)
-            if cell is not None:
-                style_ids[ref] = cell._style_id
-        if _merge_signature(sheet) != sheet._saved_merges:
-            updater.set_merged_cells(sheet.title, sorted(str(item) for item in sheet._merged_cells.ranges))
-        if updates or style_ids:
-            updater.update_cells(sheet.title, updates, styles=style_ids)
-        if (object_signatures(sheet)["data_validations"]
-                != sheet._saved_object_signatures.get("data_validations", ())):
-            updater.set_data_validations(sheet.title, sheet.data_validations)
-        if sheet._dirty_hyperlinks:
-            updater.set_hyperlinks(sheet.title, {
-                cell.coordinate: cell._hyperlink
-                for row in sheet._cells.values() for cell in row.values()
-                if cell._hyperlink is not None
-            })
-        if sheet._dirty_comments:
-            comments = {}
-            for ref in sheet._dirty_comments:
-                col, row, _, _ = parse_cell_range(ref)
-                cell = sheet._existing_cell(row + 1, col + 1)
-                comments[ref] = cell.comment if cell is not None else None
-            updater.set_comments(sheet.title, comments)
+        _save_sheet(sheet, updater)
+    _props.save_properties(updater, workbook)
 
     if isinstance(filename, (str, os.PathLike)):
         updater.save(os.fspath(filename))

@@ -612,6 +612,30 @@ class SheetProtection:
     spinCount: int | None = None
     hashValue: str | None = None
 
+    def __setattr__(self, name, value):
+        # As in openpyxl, a password set directly is stored as its legacy hash.
+        if name == "password" and value is not None:
+            from .._metadata import password_hash
+
+            value = password_hash(value)
+        object.__setattr__(self, name, value)
+
+    def set_password(self, value: str | None = "", already_hashed: bool = False) -> None:
+        if value is not None and not already_hashed:
+            from .._metadata import password_hash
+
+            value = password_hash(value)
+        object.__setattr__(self, "password", value)
+
+    def enable(self) -> None:
+        self.sheet = True
+
+    def disable(self) -> None:
+        self.sheet = False
+
+    def __bool__(self) -> bool:
+        return self.sheet
+
 
 @dataclass
 class CustomProperty:
@@ -1331,7 +1355,6 @@ class Worksheet:
         self._print_area: str | None = None
         self._print_title_rows: str | None = None
         self._print_title_cols: str | None = None
-        self._sheet_protection = None
         self._comments: dict[str, Comment] = {}
         self._legacy_drawing = None
 
@@ -2122,6 +2145,21 @@ class Workbook:
         sheet._loaded = self._loaded
         return sheet
 
+    def move_sheet(self, sheet: Worksheet | str, offset: int = 0) -> None:
+        """Move a sheet ``offset`` positions (negative: towards the front), as openpyxl does."""
+        if isinstance(sheet, str):
+            sheet = self[sheet]
+        if sheet not in self._sheets:
+            raise ValueError("worksheet is not part of this workbook")
+        active = self._sheets[self._active_index] if self._sheets else None
+        index = self._sheets.index(sheet)
+        self._sheets.remove(sheet)
+        self._sheets.insert(max(0, min(index + offset, len(self._sheets))), sheet)
+        for position, item in enumerate(self._sheets):
+            item._index = position
+        if active is not None:
+            self._active_index = self._sheets.index(active)
+
     def remove(self, worksheet: Worksheet):
         if worksheet not in self._sheets:
             raise ValueError("worksheet is not part of this workbook")
@@ -2183,6 +2221,41 @@ class Workbook:
         return self._defined_names
 
     def _rename_sheet(self, sheet: Worksheet, title: str):
+        """Point formulas, validations and defined names at the new title, as Excel does."""
+        from ..formula.sheets import rename_sheet_references
+
+        old = sheet.title
+
+        def renamed(text):
+            if not isinstance(text, str) or "!" not in text:
+                return text
+            return rename_sheet_references(text, old, title)
+
+        for other in self._sheets:
+            for row in other._cells.values():
+                for cell in row.values():
+                    formula = cell._formula
+                    if formula is None:
+                        continue
+                    text = formula.text if isinstance(formula, Formula) else formula
+                    updated = renamed(text)
+                    if updated != text:
+                        cell.value = (
+                            replace(formula, text=updated) if isinstance(formula, Formula)
+                            else "=" + updated
+                        )
+            for index, rule in enumerate(other._data_validations):
+                values = {name: renamed(getattr(rule, name)) for name in ("formula1", "formula2")}
+                if any(values[name] != getattr(rule, name) for name in values):
+                    other._data_validations[index] = replace(rule, **values)
+        names = self.defined_names
+        names._items = [
+            DefinedName(
+                item.name, renamed(item.formula), title if item.scope == old else item.scope,
+                item.localSheetId, item.hidden, item.comment,
+            ) if renamed(item.formula) != item.formula or item.scope == old else item
+            for item in names._items
+        ]
         if self._loaded:
             self._mark_loaded = True
 

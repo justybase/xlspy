@@ -21,12 +21,13 @@ from ..xlsb_updater import XlsbUpdater
 from ..chart_reader import read_drawing
 from ..updater_utils import resolve_zip_target
 from ._model import AutoFilter, DefinedNameList, Workbook, Worksheet
-from ._reader import _read_custom_properties, _read_properties, _read_sheet_relationships
+from ._reader import _read_custom_properties, _read_print_names, _read_properties, _read_sheet_relationships
+from ._xlsb_layout import builtin_names
 from ._xlsb_loaded import remember_saved_state, remember_workbook_state
 from .._xlsb_cf import BRT_BEGIN_CF_RULE, BRT_BEGIN_CONDITIONAL_FORMATTING, read_conditional_formats
 from ._xlsb_sheet_meta import (
-    LIST_PART, RECORDS as SHEET_RECORDS, ROW_FLAGS, ROW_HEADER, apply_sheet_records,
-    read_table_part, row_header,
+    FILTER_RECORDS, LIST_PART, RECORDS as SHEET_RECORDS, ROW_FLAGS, ROW_HEADER,
+    apply_sheet_records, read_filter_record, read_table_part, row_header,
 )
 
 
@@ -126,6 +127,9 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
                             f"{column_label(c1)}{r1 + 1}:{column_label(c2)}{r2 + 1}"
                         )
                     continue
+                if record_id in FILTER_RECORDS:
+                    read_filter_record(sheet._auto_filter, record_id, payload)
+                    continue
                 if record_id != 0x1EE or len(payload) < 16:
                     continue
                 row, _row2, column, _column2 = struct.unpack_from("<4I", payload)
@@ -190,8 +194,6 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
                 if cell is None:
                     cell = sheet._set_cell_raw(row + 1, col + 1, None)
                 cell._comment = comment
-            sheet._clear_dirty()
-            remember_saved_state(sheet)
             workbook._sheets.append(sheet)
         names = reader.get_defined_names()
         workbook._defined_names = DefinedNameList(workbook, names)
@@ -199,9 +201,18 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
             (item.name, item.formula, item.scope) for item in names
         }
         workbook._loaded_worksheet_names = set(workbook.sheetnames)
-        workbook._loaded_active_index = 0
+        states = updater.get_sheet_states()
+        for sheet in workbook._sheets:
+            sheet._sheet_state = states.get(sheet.title, "visible")
+        workbook._active_index = min(updater.get_active_sheet(), len(workbook._sheets) - 1)
+        workbook._loaded_active_index = workbook._active_index
         workbook._properties = _read_properties(updater._package)
         workbook.custom_doc_props = _read_custom_properties(updater._package)
+        print_names = builtin_names(FormulaContext(updater._sheets, updater._package.get("xl/workbook.bin")))
+        for sheet in workbook._sheets:
+            _read_print_names(sheet, print_names.get(sheet.title, {}))
+            sheet._clear_dirty()
+            remember_saved_state(sheet)
         remember_workbook_state(workbook)
         return workbook
     except BaseException:

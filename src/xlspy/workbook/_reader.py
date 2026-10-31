@@ -1023,8 +1023,6 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
             elif tag == "conditionalFormatting":
                 _read_conditional_formatting(sheet, node, style_table)
             elif tag == "sheetProtection":
-                from .._metadata import SheetProtection as MetadataProtection
-
                 protection = sheet.protection
                 for name in (
                     "sheet", "objects", "scenarios", "formatCells", "formatRows",
@@ -1034,21 +1032,12 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                 ):
                     if node.get(name) is not None:
                         setattr(protection, name, _bool_attr(node, name, None))
-                protection.password = node.get("password")
+                protection.set_password(node.get("password"), already_hashed=True)
                 protection.algorithmName = node.get("algorithmName")
                 protection.saltValue = node.get("saltValue")
                 protection.hashValue = node.get("hashValue")
                 if node.get("spinCount") is not None:
                     protection.spinCount = int(node.get("spinCount"))
-                try:
-                    sheet._sheet_protection = MetadataProtection(
-                        enabled=protection.sheet,
-                        select_locked_cells=protection.selectLockedCells,
-                        select_unlocked_cells=protection.selectUnlockedCells,
-                        password=node.get("password"),
-                    )
-                except (TypeError, ValueError):
-                    pass
             elif tag == "pageMargins":
                 for name in ("left", "right", "top", "bottom", "header", "footer"):
                     value = node.get(name)
@@ -1496,6 +1485,8 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
     else:
         workbook._active_index = min(max(active_tab, 0), len(workbook._sheets) - 1)
     workbook._loaded_active_index = workbook._active_index
+    from ._props import remember as _remember_properties
+    _remember_properties(workbook)
     try:
         # localSheetId counts every <sheet>, including chartsheets.
         all_sheets = [node.get("name", "") for node in workbook_root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")]

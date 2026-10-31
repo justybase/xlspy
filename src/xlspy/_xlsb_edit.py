@@ -299,7 +299,7 @@ class XlsbEditMixin(XlsxEditMixin):
     def _invalidate_calculation(self, updates, removed):
         updates['xl/workbook.bin'] = request_recalculation(updates.get('xl/workbook.bin', self._package.get('xl/workbook.bin')))
         rp = 'xl/_rels/workbook.bin.rels'
-        rels = ET.fromstring(self._package.get(rp))
+        rels = ET.fromstring(updates.get(rp, self._package.get(rp)))
         types = ET.fromstring(updates.get('[Content_Types].xml', self._package.get('[Content_Types].xml')))
         for node in list(rels):
             if node.get('Type') == REL + '/calcChain':

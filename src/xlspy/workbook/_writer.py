@@ -5,9 +5,11 @@ from __future__ import annotations
 import datetime as _datetime
 import io
 import os
+import re
 import shutil
 import tempfile
 
+from .._metadata import SheetProtection as MetadataProtection
 from ..formulas import Formula
 from ..rich_text import CellRichText
 from ..styles import Style
@@ -120,6 +122,22 @@ def _comments(sheet: Worksheet):
     return result or None
 
 
+def _sheet_protection(sheet: Worksheet):
+    protection = sheet.protection
+    if not protection.sheet:
+        return None
+    password = protection.password
+    if password is not None and not re.fullmatch(r"[0-9A-Fa-f]{1,4}", password):
+        password = None
+    # The model follows OOXML (True = protected); the writer takes "allowed".
+    return MetadataProtection(
+        enabled=True,
+        select_locked_cells=not protection.selectLockedCells,
+        select_unlocked_cells=not protection.selectUnlockedCells,
+        hashed_password=password,
+    )
+
+
 def _common_options(sheet: Worksheet, *, xlsb: bool = False):
     widths = {}
     hidden_columns = []
@@ -149,7 +167,7 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
         "hidden_rows": hidden_rows or None,
         "freeze_panes": sheet.freeze_panes or "",
         "comments": _comments(sheet),
-        "sheet_protection": sheet._sheet_protection,
+        "sheet_protection": _sheet_protection(sheet),
         "show_grid_lines": sheet.sheet_view.showGridLines is not False,
         "tab_color": sheet.sheet_properties.tabColor,
         "zoom": sheet.sheet_view.zoomScale,
