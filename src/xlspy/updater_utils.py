@@ -378,6 +378,32 @@ def renamed_chart_parts(package, old: str, new: str) -> dict[str, bytes]:
     return parts
 
 
+_WORKSHEET_PART = re.compile(r"xl/worksheets/sheet[^/]*\.xml")
+# Sparkline formulas live in the sheet's extLst under the x14 ``xm`` prefix.
+_SPARKLINE_FORMULA = re.compile(r"(<xm:f>)([^<]*)(</xm:f>)")
+
+
+def renamed_sparkline_parts(package, old: str, new: str) -> dict[str, bytes]:
+    """The worksheet parts whose sparkline formulas (``<xm:f>``) name sheet ``old``."""
+    from .formula.sheets import rename_sheet_references
+
+    def rename(match):
+        text = unescape_xml_text(match[2])
+        updated = rename_sheet_references(text, old, new)
+        if updated == text:
+            return match[0]
+        return match[1] + saxutils.escape(updated) + match[3]
+
+    parts = {}
+    for name in package.names():
+        if _WORKSHEET_PART.fullmatch(name):
+            xml = package.get(name).decode("utf-8")
+            updated = _SPARKLINE_FORMULA.sub(rename, xml)
+            if updated != xml:
+                parts[name] = updated.encode("utf-8")
+    return parts
+
+
 def column_index_to_letter(index: int) -> str:
     """Convert a zero-based column index to an Excel column name."""
 

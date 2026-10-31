@@ -37,6 +37,8 @@ from .charts import (
     DataLabels,
 )
 from .refs import parse_cell_range, quote_sheet_name  # noqa: F401
+from .shapes import shape_frame_xml
+from .slicers import slicer_frame_xml
 
 _CHART_AXES_XML = (
     "<catAx><axId val=\"10\"/><scaling><orientation val=\"minMax\"/></scaling>"
@@ -671,6 +673,8 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
         labels = _dlbls_xml(chart.data_labels or DataLabels())
     parts.append("<plotArea>")
     grouping = GROUPINGS.get(chart.grouping)
+    gap = 150 if chart.gap_width is None else chart.gap_width
+    hole = 50 if chart.hole_size is None else chart.hole_size
     groups = _series_groups(chart)
     if len(groups) > 1 or any(secondary for _kind, secondary in groups):
         # Mixed types and/or a secondary axis: one plot element per (type, axis).
@@ -683,7 +687,7 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
                 for index in indexes
             )
             axes = '<axId val="20"/><axId val="200"/>' if secondary else '<axId val="10"/><axId val="100"/>'
-            parts.append(_group_xml(kind, group_xml, grouping, vary, labels, axes))
+            parts.append(_group_xml(kind, group_xml, grouping, vary, labels, axes, gap=gap))
         parts.append(_combined_axes_xml(chart, groups, xlsb))
         return _finish_chart(parts, chart)
     series_xml = "".join(
@@ -701,7 +705,7 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
             f"<barChart><barDir val=\"{bar_dir}\"/>"
             f"<grouping val=\"{grouping or 'clustered'}\"/>"
             f"{vary}{series_xml}{labels}"
-            f"<gapWidth val=\"150\"/>{overlap}<axId val=\"10\"/><axId val=\"100\"/></barChart>"
+            f"<gapWidth val=\"{gap}\"/>{overlap}<axId val=\"10\"/><axId val=\"100\"/></barChart>"
             f"{_axes_xml(chart, xlsb)}"
         )
     elif chart.chart_type in ("line", "area"):
@@ -722,7 +726,7 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
     elif chart.chart_type == "doughnut":
         parts.append(
             f"<doughnutChart><varyColors val=\"1\"/>{series_xml}{labels}"
-            "<firstSliceAng val=\"0\"/><holeSize val=\"50\"/></doughnutChart>"
+            f"<firstSliceAng val=\"0\"/><holeSize val=\"{hole}\"/></doughnutChart>"
         )
     else:
         parts.append(
@@ -740,12 +744,13 @@ def _series_groups(chart) -> dict[tuple[str, bool], list[int]]:
     return groups
 
 
-def _group_xml(kind: str, series_xml: str, grouping, vary: str, labels: str, axes: str) -> str:
+def _group_xml(kind: str, series_xml: str, grouping, vary: str, labels: str, axes: str,
+               *, gap: int = 150) -> str:
     if kind == "bar":
         overlap = "<overlap val=\"100\"/>" if grouping else ""
         return (
             f"<barChart><barDir val=\"col\"/><grouping val=\"{grouping or 'clustered'}\"/>"
-            f"{vary}{series_xml}{labels}<gapWidth val=\"150\"/>{overlap}{axes}</barChart>"
+            f"{vary}{series_xml}{labels}<gapWidth val=\"{gap}\"/>{overlap}{axes}</barChart>"
         )
     tag = f"{kind}Chart"
     return (
@@ -769,13 +774,41 @@ def _combined_axes_xml(chart, groups, xlsb: bool) -> str:
     return xml
 
 
+def _shape_props_xml(fill: str | None, border: str | None = None) -> str:
+    """``spPr`` for the chart or plot area: a solid or no fill, and an outline or none."""
+    fill_xml = f'<a:solidFill><a:srgbClr val="{fill}"/></a:solidFill>' if fill else "<a:noFill/>"
+    line_xml = (
+        f'<a:ln w="9525"><a:solidFill><a:srgbClr val="{border}"/></a:solidFill></a:ln>'
+        if border else "<a:ln><a:noFill/></a:ln>"
+    )
+    return f"<spPr>{fill_xml}{line_xml}</spPr>"
+
+
+def _chart_text_xml(size: float | None, color: str | None) -> str:
+    """``txPr`` giving the default size and colour of all chart text."""
+    size_attr = f' sz="{round(size * 100)}"' if size is not None else ""
+    fill_xml = f'<a:solidFill><a:srgbClr val="{color}"/></a:solidFill>' if color else ""
+    return (
+        "<txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>"
+        f'<a:defRPr{size_attr}>{fill_xml}</a:defRPr></a:pPr>'
+        '<a:endParaRPr lang="en-US"/></a:p></txPr>'
+    )
+
+
 def _finish_chart(parts: list, chart) -> str:
+    if chart.plot_fill is not None:
+        parts.append(_shape_props_xml(chart.plot_fill))
     parts.append("</plotArea>")
     parts.append(
         f"{_legend_xml(chart.legend)}"
         "<plotVisOnly val=\"1\"/><dispBlanksAs val=\"gap\"/>"
     )
     parts.append("</chart>")
+    # Chart-space formatting follows </chart>: its spPr, then the default text.
+    if chart.fill is not None or chart.border is not None:
+        parts.append(_shape_props_xml(chart.fill, chart.border))
+    if chart.font_size is not None or chart.font_color is not None:
+        parts.append(_chart_text_xml(chart.font_size, chart.font_color))
     return (
         "<chartSpace "
         "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
@@ -832,8 +865,13 @@ def _picture_frame_xml(image, position: int) -> str:
     )
 
 
-def drawing_xml(charts: list, chart_ids: list[int], images=()) -> str:
-    """``wsDr`` part; relationship ids run charts first, then pictures."""
+def drawing_xml(charts: list, chart_ids: list[int], images=(), shapes=(), slicers=()) -> str:
+    """``wsDr`` part; relationship ids run charts first, then pictures.
+
+    Shapes and slicers add no relationships: a shape's text link and a slicer
+    both refer to cells or parts by name. Every object takes the next free
+    ``cNvPr`` id, in the order charts, pictures, shapes, slicers.
+    """
     frames = [
         _chart_frame_xml(chart, position)
         for position, (chart, _chart_id) in enumerate(zip(charts, chart_ids), start=1)
@@ -842,6 +880,16 @@ def drawing_xml(charts: list, chart_ids: list[int], images=()) -> str:
     frames.extend(
         _picture_frame_xml(image, offset + position)
         for position, image in enumerate(images, start=1)
+    )
+    offset += len(images)
+    frames.extend(
+        shape_frame_xml(shape, offset + position)
+        for position, shape in enumerate(shapes, start=1)
+    )
+    offset += len(shapes)
+    frames.extend(
+        slicer_frame_xml(slicer, offset + position)
+        for position, slicer in enumerate(slicers, start=1)
     )
     return (
         "<wsDr "

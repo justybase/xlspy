@@ -729,6 +729,101 @@ Chart(
 )
 ```
 
+### Chart formatting
+
+Charts also take the chart-area and plot-area styling and the gap and hole sizes:
+
+- `gap_width=0..500` (percent) sets the space between bar groups; bar and horizontal bar charts only.
+- `hole_size=10..90` (percent) sets the hole of a doughnut; doughnut charts only.
+- `fill`, `border` and `plot_fill` take colours (`"#RRGGBB"`); `fill` and `border` style the chart area,
+  `plot_fill` the plot area.
+- `font_size` (points) and `font_color` set the chart text.
+
+```python
+Chart("doughnut", [ChartSeries("L22:L24", categories="K22:K24")],
+      anchor="F9", width=8, height=7, hole_size=60, fill="#FFFFFF", border="#D9D9D9", font_size=9)
+```
+
+These work in XLSX and XLSB.
+
+### Sparklines (XLSX)
+
+A sparkline is a tiny chart inside one cell. `SparklineGroup(data, location, kind=)` draws one
+sparkline per row or column of `location`, reading the matching row or column of `data`:
+
+```python
+from xlspy import SparklineGroup
+
+writer.write_sheet(rows, sparklines=[
+    SparklineGroup(data="B2:D4", location="E2:E4", kind="line", color="#2E75B6", markers=True,
+                   last_point=True),
+    SparklineGroup(data="B2:D2", location="F2", kind="column", color="#70AD47"),
+])
+```
+
+- `kind`: `"line"` (default), `"column"` or `"win_loss"`.
+- `color`, `negative_color`, `marker_color`, `high_color`, `low_color`, `first_color`, `last_color`,
+  `axis_color` are `"#RRGGBB"` colours.
+- `markers`, `high_point`, `low_point`, `first_point`, `last_point` and `negative_points` are booleans.
+- `empty_cells`: `"gap"` (default), `"zero"` or `"connect"`. `show_hidden`, `show_axis` and
+  `right_to_left` are booleans. `axis_min` and `axis_max` fix the vertical scale.
+
+Sparklines are part of the sheet's extension list, so they need XLSX. `XlsbWriter` raises
+`NotImplementedError` for them. Renaming the sheet rewrites the references in a loaded workbook.
+The library does not shift sparkline or slicer ranges when rows or columns are inserted or deleted
+in a loaded workbook; update those ranges yourself if the layout changes.
+
+### Table slicers (XLSX)
+
+A slicer filters a table by one of its columns. The table must have a header row and be on the
+same sheet as the slicer:
+
+```python
+from xlspy import ExcelTable, Slicer
+
+writer.write_sheet(rows, tables=[ExcelTable("Sprzedaz", "A1:H200")],
+                   slicers=[Slicer(table="Sprzedaz", column="Region", anchor="K4",
+                                   width=144, height=180, caption="Region")])
+```
+
+`Slicer(table, column, anchor="H2", width=144, height=180, caption=None, name=None, columns=1)`.
+`column` is the header text. `name` defaults to `Slicer_<column>`, which must be unique in the
+workbook. Only one slicer per column is allowed. Validation runs before any rows are written, so a
+rejected call leaves no partial file.
+
+The slicer's effect is on rows, not on formulas. A plain `SUM` or `SUMIFS` ignores the filter.
+To make totals react, add a helper column with `SUBTOTAL(103, A2)` (1 when the row is visible
+under the table's filter) and sum with `SUMIFS(..., Visible, 1)`. The dashboard example does this
+for its KPI cards.
+
+Slicers are XLSX only. `XlsbWriter` raises `NotImplementedError`. Removing a sheet that holds
+table slicers from a loaded workbook is refused, because the slicer parts would be left behind.
+Pivot-table slicers and timelines are not supported.
+
+### Shapes and KPI cards
+
+`Shape` adds a rectangle, rounded rectangle, ellipse or text box to a sheet. It works in XLSX and
+XLSB:
+
+```python
+from xlspy import Shape
+
+writer.write_sheet(rows, shapes=[
+    Shape(anchor="A5", width=196, height=60, kind="round", fill="#F2F7FC", line="#BDD7EE",
+          text="Sprzedaż", font_size=20, bold=True, align="center", valign="center",
+          link_cell="T5", name="Karta sprzedaży"),
+])
+```
+
+- `anchor` is the top-left cell; `width` and `height` are pixels.
+- `kind`: `"rect"`, `"round"`, `"ellipse"` or `"textbox"`.
+- `text`, `font_size`, `font_color`, `bold`, `align` (`"left"`, `"center"`, `"right"`) and
+  `valign` (`"top"`, `"center"`, `"bottom"`) style the text. `fill` and `line` are colours.
+- `link_cell` puts a cell's value into the shape's first paragraph and keeps it updated when the cell
+  changes. Use it for KPI cards that show a formula result.
+
+Shapes and charts can share a sheet, and their drawing ids are kept unique.
+
 ### Rich text
 
 `CellRichText` puts several fonts in one cell (both writers, the workbook
@@ -896,6 +991,11 @@ report.
 | Streaming: one-pass input, spooled rows | Yes | Yes (rows written as produced) |
 | Inline strings (`useSharedStrings=False`) | Yes | Yes (C row encoder; Python fallback) |
 | Chart caches from streamed rows | n/a (no caches) | Yes (only chart cells are kept) |
+| Chart formatting (`gap_width`, `hole_size`, `fill`, `border`, `plot_fill`, `font_size`, `font_color`) | Yes | Yes |
+| Shapes and text boxes (`Shape`, `link_cell` KPI cards) | Yes | Yes |
+| Sparklines (`SparklineGroup`) | Yes | No (`NotImplementedError`) |
+| Table slicers (`Slicer`) | Yes | No (`NotImplementedError`) |
+| Pivot-table slicers, timelines | No | No |
 
 ## Comments and template metadata (XLSX/XLSM/XLSB)
 

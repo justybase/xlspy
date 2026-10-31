@@ -22,6 +22,21 @@ from .formulas import Formula
 from .comments import Comment, normalize_comments, comments_xml, vml_xml, COMMENTS_TYPE
 from ._metadata import DefinedName, SheetProtection, WorkbookProtection, replace_element
 from .ignored_errors import ignored_errors_xml
+from ._extlst import (
+    CT_SLICER,
+    CT_SLICER_CACHE,
+    EXT_SHEET_SLICER_LIST,
+    EXT_WORKBOOK_SLICER_CACHES,
+    REL_SLICER,
+    REL_SLICER_CACHE,
+    X14,
+    X15,
+    ext,
+    ext_list,
+)
+from .shapes import Shape, normalize_shapes
+from .slicers import Slicer, normalize_slicers, slicer_cache_xml, slicer_part_xml
+from .sparklines import normalize_sparklines, sparklines_ext
 from .hyperlinks import Hyperlink
 from .images import Image, MediaParts, normalize_images
 from .outline import build_outline
@@ -230,6 +245,20 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         self._next_table_id = 1
         self._table_names: set[str] = set()
         self._tables_xml: dict[int, str] = {}
+        # Casefolded table name -> (table id, column names), for slicer caches.
+        self._table_info: dict[str, tuple[int, list[str]]] = {}
+        # Slicer names, cache names and (table, column) targets used workbook-wide.
+        self._slicer_names: set[str] = set()
+        self._slicer_caches: set[str] = set()
+        self._slicer_targets: set[tuple[str, str]] = set()
+        # Each slicer owns one slicer part and one cache, both numbered alike.
+        self._next_slicer_part = 1
+        self._sheet_slicers: dict[int, list[Slicer]] = {}
+        self._sheet_shapes: dict[int, list[Shape]] = {}
+        # (path, xml, content type) of each slicer and cache part, in write order.
+        self._slicer_part_files: list[tuple[str, str, str]] = []
+        # Cache defined names; cache i is the workbook relationship of index i.
+        self._slicer_cache_names: list[str] = []
         self._sheet_charts: dict[int, list] = {}
         self._sheet_chart_ids: dict[int, list[int]] = {}
         self._sheet_drawings: set[int] = set()
@@ -358,6 +387,9 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         tab_color: Color | str | None = None,
         zoom: int | None = None,
         ignored_errors: list | tuple | None = None,
+        sparklines: list | tuple | None = None,
+        slicers: list | tuple | None = None,
+        shapes: list | tuple | None = None,
     ):
         """Write rows to the current sheet.
 
@@ -388,9 +420,14 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             parse_cell_range(auto_filter_ref)
         cf_rules = self._normalize_cf_rules(conditional_formats)
         table_specs = self._normalize_tables(tables)
+        spark_groups = normalize_sparklines(sparklines)
+        slicer_specs = normalize_slicers(
+            slicers, table_specs, self._slicer_names, self._slicer_caches, self._slicer_targets,
+        )
         chart_specs = self._normalize_charts(charts)
         validations = normalize_validations(data_validations)
         image_specs = normalize_images(images)
+        shape_specs = normalize_shapes(shapes)
         print_spec = normalize_print_settings(print_settings)
         widths = self._normalize_widths(column_widths, "column_widths")
         hidden_cols = normalize_hidden_columns(hidden_columns)
@@ -408,6 +445,11 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         )
         # Every option is valid; only now record what this sheet claims.
         self._table_names.update(table.display_name for table in table_specs)
+        self._slicer_names.update(slicer.display_name.casefold() for slicer in slicer_specs)
+        self._slicer_caches.update(slicer.cache_name.casefold() for slicer in slicer_specs)
+        self._slicer_targets.update(
+            (slicer.table.casefold(), slicer.column.casefold()) for slicer in slicer_specs
+        )
         for priority in cf_priorities:
             self._reserved_cf_priorities.add(priority)
             self._next_cf_priority = max(self._next_cf_priority, priority + 1)
@@ -444,12 +486,22 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             rels = list(table_rels)
             link_rels = self._link_relationships(body.hyperlinks, rels)
             rels.extend(link_rels)
+            slicer_parts = self._resolve_slicers(slicer_specs)
             drawing_rid = None
-            if chart_specs or image_specs:
+            if chart_specs or image_specs or shape_specs or slicer_parts:
                 drawing_rid = f"rId{len(rels) + 1}"
                 rels.append((drawing_rid, _REL_DRAWING,
                              f"../drawings/drawing{sheet_id}.xml", False))
                 self._sheet_drawings.add(sheet_id)
+            slicer_rids = []
+            for _slicer, part_no in slicer_parts:
+                rid = f"rId{len(rels) + 1}"
+                rels.append((rid, REL_SLICER, f"../slicers/slicer{part_no}.xml", False))
+                slicer_rids.append(rid)
+            if slicer_parts:
+                self._sheet_slicers[sheet_id] = [slicer for slicer, _ in slicer_parts]
+            if shape_specs:
+                self._sheet_shapes[sheet_id] = shape_specs
             if chart_specs:
                 self._sheet_charts[sheet_id] = chart_specs
             if image_specs:
@@ -503,6 +555,16 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 rels.append((vml_rid, _REL_WORKSHEET.rsplit('/', 1)[0] + '/vmlDrawing',
                              f'../drawings/commentsDrawing{sheet_id}.vml', False))
                 tail = replace_element(tail, 'legacyDrawing', f'<legacyDrawing r:id="{vml_rid}"/>', before=('tableParts',))
+            # Sparklines and slicers live in the sheet's extLst, which must be the last child.
+            sheet_exts = [sparklines_ext(spark_groups, sheet_name)]
+            if slicer_rids:
+                items = "".join(f'<x14:slicer r:id="{rid}"/>' for rid in slicer_rids)
+                sheet_exts.append(ext(EXT_SHEET_SLICER_LIST,
+                                      f"<x14:slicerList>{items}</x14:slicerList>",
+                                      ("x14", X14), ("x15", X15)))
+            extensions = ext_list(sheet_exts)
+            if extensions:
+                tail = replace_element(tail, 'extLst', extensions)
             if rels:
                 self._sheet_rels[sheet_id] = rels
             spool.seek(0)
@@ -746,7 +808,9 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             self._sheet_chart_ids[sheet_id] = chart_ids
             self._zf.writestr(
                 f"xl/drawings/drawing{sheet_id}.xml",
-                chart_parts.drawing_xml(charts, chart_ids, images=images),
+                chart_parts.drawing_xml(charts, chart_ids, images=images,
+                                        shapes=self._sheet_shapes.get(sheet_id, []),
+                                        slicers=self._sheet_slicers.get(sheet_id, [])),
             )
             self._zf.writestr(
                 f"xl/drawings/_rels/drawing{sheet_id}.xml.rels",
@@ -770,6 +834,8 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             )
         for table_id, table_xml in self._tables_xml.items():
             self._zf.writestr(f"xl/tables/table{table_id}.xml", table_xml)
+        for path, slicer_xml, _content_type in self._slicer_part_files:
+            self._zf.writestr(path, slicer_xml)
 
         self._zf.writestr("[Content_Types].xml", self._create_content_types())
         self._zf.writestr("_rels/.rels", self._create_root_rels())
@@ -852,6 +918,10 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             comment_parts += '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
         if self._useSharedStrings and self._shared_strings:
             shared_strings_part = '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
+        slicer_parts = "".join(
+            f'<Override PartName="/{path}" ContentType="{content_type}"/>'
+            for path, _xml, content_type in self._slicer_part_files
+        )
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -867,6 +937,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
 {theme_part}
 {shared_strings_part}
 {comment_parts}
+{slicer_parts}
 {self._doc_props_content_types()}
 </Types>'''
 
@@ -893,6 +964,13 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         if self._sheet_drawings:
             theme_rid = len(relationships) + 1
             relationships.append(f'<Relationship Id="rId{theme_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>')
+
+        # Cache i is the (i+1)th relationship after the base count; see _workbook_rel_base.
+        for index in range(len(self._slicer_cache_names)):
+            relationships.append(
+                f'<Relationship Id="rId{self._workbook_rel_base() + index + 1}" '
+                f'Type="{REL_SLICER_CACHE}" Target="slicerCaches/slicerCache{index + 1}.xml"/>'
+            )
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -935,8 +1013,14 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 )
         sheet_titles = [name for name, _, _ in self._worksheet_data]
         names.extend(definition.to_xml(sheet_titles) for definition in self._defined_names.values())
+        # Excel links each slicer cache to a defined name that holds #N/A.
+        names.extend(
+            f'<definedName name="{saxutils.escape(cache_name)}">#N/A</definedName>'
+            for cache_name in self._slicer_cache_names
+        )
         defined_names = f"<definedNames>{''.join(names)}</definedNames>" if names else ""
         protection = self._workbook_protection.to_xml() if self._workbook_protection else ""
+        workbook_ext = self._workbook_extensions()
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -947,7 +1031,22 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
 <sheets>{sheets}</sheets>
 {defined_names}
 <calcPr calcId="124519" fullCalcOnLoad="1"/>
+{workbook_ext}
 </workbook>'''
+
+    def _workbook_extensions(self) -> str:
+        """The workbook ``extLst``: the list of slicer caches, one relationship each."""
+        if not self._slicer_cache_names:
+            return ""
+        base = self._workbook_rel_base()
+        caches = "".join(
+            f'<x14:slicerCache r:id="rId{base + index + 1}"/>'
+            for index in range(len(self._slicer_cache_names))
+        )
+        return ext_list([
+            ext(EXT_WORKBOOK_SLICER_CACHES, f"<x15:slicerCaches>{caches}</x15:slicerCaches>",
+                ("x15", X15), ("x14", X14)),
+        ])
 
     @staticmethod
     def _color_attrs(color_key) -> str:
@@ -1687,12 +1786,54 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             self._next_table_id += 1
             body.table_refs.add(f"{self._letters[c1]}{r1 + 1}:{self._letters[c2]}{r2 + 1}")
             names = table_column_names(table, body.header_rows.get(r1))
+            self._table_info[table.display_name.casefold()] = (table_id, list(names))
             self._tables_xml[table_id] = self._table_xml(table, table_id, names)
             rid = f"rId{position}"
             rels.append((rid, _REL_TABLE, f"../tables/table{table_id}.xml", False))
             sheet_tables.append((rid, table_id))
         body.tables = sheet_tables
         return rels, bounds
+
+    def _resolve_slicers(self, slicer_specs):
+        """Write the slicer and cache parts; returns ``[(slicer, part number)]``.
+
+        Runs once the sheet's tables are registered, so their ids and column
+        names are known. A header-derived column name is only known now, so a
+        missing column is reported here rather than before the rows.
+        """
+        resolved = []
+        for slicer in slicer_specs:
+            table_id, names = self._table_info[slicer.table.casefold()]
+            column_id = next(
+                (index + 1 for index, name in enumerate(names)
+                 if name.casefold() == slicer.column.casefold()),
+                None,
+            )
+            if column_id is None:
+                raise ValueError(
+                    f"slicer column {slicer.column!r} is not a column of table {slicer.table!r}"
+                )
+            part_no = self._next_slicer_part
+            self._next_slicer_part += 1
+            self._slicer_part_files.append((
+                f"xl/slicers/slicer{part_no}.xml", slicer_part_xml(slicer), CT_SLICER,
+            ))
+            self._slicer_part_files.append((
+                f"xl/slicerCaches/slicerCache{part_no}.xml",
+                slicer_cache_xml(slicer, table_id, column_id), CT_SLICER_CACHE,
+            ))
+            self._slicer_cache_names.append(slicer.cache_name)
+            resolved.append((slicer, part_no))
+        return resolved
+
+    def _workbook_rel_base(self) -> int:
+        """Relationship count before the slicer caches: sheets, styles, strings, theme."""
+        count = self._sheet_count + 1
+        if self._useSharedStrings and self._shared_strings:
+            count += 1
+        if self._sheet_drawings:
+            count += 1
+        return count
 
     def _link_relationships(self, hyperlinks, rels):
         """External hyperlink relationships; ``rels`` supplies the next free ids."""

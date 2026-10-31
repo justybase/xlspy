@@ -60,6 +60,7 @@ from ._text import check_cell_text
 from .formulas import Formula
 from .hyperlinks import Hyperlink
 from .images import Image, MediaParts, normalize_images
+from .shapes import Shape, normalize_shapes
 from .printing import PrintSettings, normalize_print_settings
 from .data_validation import DataValidation, normalize_validations
 from .outline import build_outline
@@ -208,6 +209,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         # Sheets with a drawing part: charts, pictures or both.
         self._sheet_drawings: set[int] = set()
         self._sheet_images: dict[int, list[Image]] = {}
+        self._sheet_shapes: dict[int, list[Shape]] = {}
         self._sheet_image_media: dict[int, list[str]] = {}
         self._media = MediaParts()
         # Sheet index -> print settings; print area and titles become names.
@@ -508,8 +510,16 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         header_rows: int = 1,
         tab_color=None,
         zoom: int | None = None,
+        sparklines=None,
+        slicers=None,
+        shapes=None,
     ):
         self._require_writable()
+        # Both need BIFF12 parts whose layout is not reverse engineered yet (see the XLSB plan).
+        if sparklines:
+            raise NotImplementedError("sparklines are not supported for XLSB output yet; use XlsxWriter")
+        if slicers:
+            raise NotImplementedError("table slicers are not supported for XLSB output yet; use XlsxWriter")
         if not isinstance(show_grid_lines, bool):
             raise TypeError("show_grid_lines must be a bool")
         if header_style is not None and not isinstance(header_style, Style):
@@ -542,6 +552,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             self._split_freeze_cell(freeze_panes)
         chart_specs = self._normalize_charts(charts)
         image_specs = normalize_images(images)
+        shape_specs = normalize_shapes(shapes)
         print_spec = normalize_print_settings(print_settings)
         validations = normalize_validations(data_validations)
         table_specs = self._normalize_tables(tables)
@@ -572,7 +583,9 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             self._sheet_image_media[sheet_id] = [self._media.name(image) for image in image_specs]
         if print_spec is not None:
             self._sheet_print[sheet_id - 1] = print_spec
-        has_drawing = bool(chart_specs or image_specs)
+        if shape_specs:
+            self._sheet_shapes[sheet_id] = shape_specs
+        has_drawing = bool(chart_specs or image_specs or shape_specs)
         if has_drawing:
             self._sheet_drawings.add(sheet_id)
         table_ids: list[int] = []
@@ -733,7 +746,8 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             self._sheet_chart_ids[sheet_id] = chart_ids
             self._zf.writestr(
                 f"xl/drawings/drawing{sheet_id}.xml",
-                chart_parts.drawing_xml(charts, chart_ids, images=self._sheet_images.get(sheet_id, [])),
+                chart_parts.drawing_xml(charts, chart_ids, images=self._sheet_images.get(sheet_id, []),
+                                        shapes=self._sheet_shapes.get(sheet_id, [])),
             )
             self._zf.writestr(
                 f"xl/drawings/_rels/drawing{sheet_id}.xml.rels",

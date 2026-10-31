@@ -23,7 +23,9 @@ from ._objects import (
 )
 from ..refs import column_label, parse_cell_range
 from ..styles import _coerce_color, _color_key
-from ..updater_utils import renamed_chart_parts, replace_or_add_xml_attribute
+from ..updater_utils import (
+    renamed_chart_parts, renamed_sparkline_parts, replace_or_add_xml_attribute,
+)
 from ._model import Workbook, Worksheet, _coordinate, _normalize_range
 from ._styles import XlsxStyleTable
 
@@ -902,9 +904,25 @@ def _remove_sheet_node(workbook_xml: str, name: str) -> tuple[str, str | None]:
     return workbook_xml, None
 
 
+def sheet_has_slicers(package, sheet_path: str | None) -> bool:
+    """True when the sheet part relates to a table slicer."""
+    if not sheet_path:
+        return False
+    rels_path = rels_path_for_part(sheet_path)
+    if rels_path not in package.names():
+        return False
+    return re.search(rb'Type="[^"]*/slicer"', package.get(rels_path)) is not None
+
+
 def remove_sheet(updater, workbook: Workbook, name: str) -> None:
     package = updater._package
     path = updater._sheets.get(name)
+    # A slicer's cache lives in the workbook, outside the sheet: removing the sheet would
+    # leave the cache pointing at a table that no longer exists, which Excel repairs away.
+    if sheet_has_slicers(package, path):
+        raise NotImplementedError(
+            f"sheet {name!r} holds table slicers; removing it is not supported yet"
+        )
     workbook_path = "xl/workbook.xml"
     workbook_xml = package.get(workbook_path).decode("utf-8")
     workbook_xml, rid = _remove_sheet_node(workbook_xml, name)
@@ -961,7 +979,8 @@ def rename_sheet(updater, old: str, new: str) -> None:
     # Formulas of defined names hold sheet titles (the cells' were updated in the model).
     workbook_xml = element_pattern("definedName").sub(rename_references, workbook_xml)
     package.set(workbook_path, workbook_xml.encode("utf-8"))
-    for part, data in renamed_chart_parts(package, old, new).items():
+    for part, data in {**renamed_chart_parts(package, old, new),
+                       **renamed_sparkline_parts(package, old, new)}.items():
         package.set(part, data)
     path = updater._sheets.pop(old, None)
     if path is not None:

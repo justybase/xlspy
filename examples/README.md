@@ -29,6 +29,7 @@ python examples/simple_usage.py
 | [`xlsx_comments_and_templates.py`](xlsx_comments_and_templates.py) | Classic notes, sparse template edits, named ranges, sheet protection and reading formula text; `--out reviewed.xlsb` writes XLSB. |
 | [`xlsx_grouping.py`](xlsx_grouping.py) | Two-level row and column groups (`row_groups`, `column_groups`) with region subtotals and quarter columns; `--out grouping.xlsb` writes XLSB. |
 | [`xlsx_streaming_export.py`](xlsx_streaming_export.py) | Streams rows from a DB-API cursor (sqlite3 here) into XLSX or XLSB with `useSharedStrings=False` and reports the peak Python allocations. |
+| [`business_dashboard.py`](business_dashboard.py) | A sales dashboard on one sheet: KPI cards linked to helper cells, bar, doughnut and combo charts, a table slicer and sparklines. `--out dashboard.xlsb` writes XLSB with static values and no slicer or sparklines. |
 
 ## DataFrames (optional pandas / polars)
 

@@ -50,6 +50,9 @@ from .comments import Comment
 from ._metadata import DefinedName, SheetProtection, WorkbookProtection
 from .hyperlinks import Hyperlink
 from .images import Image
+from .shapes import Shape
+from .slicers import Slicer
+from .sparklines import SparklineGroup
 from .outline import Group
 from .printing import PageMargins, PrintSettings
 from .dataframe import dataframe_to_rows, to_xlsb, to_xlsx
@@ -153,6 +156,9 @@ __all__ = [
     'DataValidation',
     'Hyperlink',
     'Image',
+    'Shape',
+    'Slicer',
+    'SparklineGroup',
     'CellRichText',
     'TextBlock',
     'InlineFont',

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Sparklines (`SparklineGroup`): line, column and win/loss groups with colours, markers, high/low/first/last/negative
+  points, empty-cell handling and axis limits. XLSX only; XLSB raises `NotImplementedError`.
+- Table slicers (`Slicer`): a slicer on a table column, placed on the same sheet as the table, with a caption and
+  size. The slicer and its cache are written as Excel 2010+ extension parts. XLSX only; XLSB raises
+  `NotImplementedError`.
+- Shapes and text boxes (`Shape`): rectangles, rounded rectangles, ellipses and text boxes with fill, border, font,
+  alignment and an optional `link_cell` that shows a cell's value live (KPI cards). XLSX and XLSB.
+- Chart formatting: `Chart.gap_width` and `hole_size` (doughnut), and chart-area and plot-area `fill`, `border`
+  and `plot_fill`, plus `font_size` and `font_color`. XLSX and XLSB.
+- `examples/business_dashboard.py`: a sales dashboard with KPI cards, charts, a slicer and sparklines (XLSX), and
+  the same layout with static values for XLSB.
+
+### Changed
+
+- Renaming a sheet rewrites the sparkline formulas that refer to it.
+- Removing a sheet that holds table slicers from a loaded workbook raises `NotImplementedError` before anything is
+  written.
+
 ## [0.12.0] - 2026-10-29
 
 ### Added

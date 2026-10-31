@@ -488,6 +488,14 @@ class Chart:
     show_data_labels: bool = False
     title_size: float | None = None
     grouping: str | None = None
+    # Formatting. None keeps the chart's default; colours are '#RRGGBB'.
+    gap_width: int | None = None
+    hole_size: int | None = None
+    fill: str | None = None
+    border: str | None = None
+    plot_fill: str | None = None
+    font_size: float | None = None
+    font_color: str | None = None
 
     def __post_init__(self):
         if self.chart_type not in CHART_TYPES:
@@ -542,6 +550,26 @@ class Chart:
                     f"grouping is only valid for {sorted(_GROUPED_TYPES)} charts, "
                     f"not {self.chart_type!r}"
                 )
+        self._check_formatting()
+
+    def _check_formatting(self) -> None:
+        if self.gap_width is not None:
+            if isinstance(self.gap_width, bool) or not isinstance(self.gap_width, int) \
+                    or not 0 <= self.gap_width <= 500:
+                raise ValueError("chart gap_width must be an int from 0 to 500")
+            if not {"bar", "barh"} & set(self.series_types):
+                raise ValueError("gap_width is only valid for bar and horizontal bar charts")
+        if self.hole_size is not None:
+            if isinstance(self.hole_size, bool) or not isinstance(self.hole_size, int) \
+                    or not 10 <= self.hole_size <= 90:
+                raise ValueError("chart hole_size must be an int from 10 to 90")
+            if self.chart_type != "doughnut":
+                raise ValueError("hole_size is only valid for doughnut charts")
+        for name in ("fill", "border", "plot_fill", "font_color"):
+            object.__setattr__(self, name, _normalize_rgb(getattr(self, name), f"chart {name}"))
+        object.__setattr__(self, "font_size", _check_number(
+            self.font_size, "chart font_size", minimum=1, maximum=400,
+        ))
 
     def _check_series_for_type(self, series) -> None:
         for item in series:
@@ -620,6 +648,11 @@ class Chart:
         if self.chart_type in ("area", "barh", "doughnut", "scatter"):
             return True
         if self.grouping is not None:
+            return True
+        if any(value is not None for value in (
+            self.gap_width, self.hole_size, self.fill, self.border,
+            self.plot_fill, self.font_size, self.font_color,
+        )):
             return True
         if self.x_axis is not None or self.y_axis is not None:
             return True
