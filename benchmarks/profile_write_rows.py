@@ -76,26 +76,35 @@ def main():
                         help="a row shape from variant_rows; 'plain' is bench_io's mixed rows")
     parser.add_argument("--variants", action="store_true",
                         help="time every variant without a profiler instead of profiling one")
+    parser.add_argument("--no-native-rows", action="store_true",
+                        help="write every row with the Python encoder (the pre-native baseline "
+                             "for rows that hold Formula or Hyperlink cells)")
     parser.add_argument("--out")
     args = parser.parse_args()
 
     from bench_io import rows
-    from xlspy import _accel
+    from xlspy import _accel, xlsx_writer
+
+    if args.no_native_rows:
+        xlsx_writer.accel_encode_xlsx_row = lambda *a, **k: None
 
     def data():
         if args.data == "plain":
             return rows(args.rows, args.cols)
         return variant_rows(args.rows, args.cols, args.data)
 
+    # The rows are built before any timing or profiling: building Formula and
+    # Hyperlink objects (Formula normalizes its text) is not part of writing.
     if args.variants:
         timings = {}
         with tempfile.TemporaryDirectory(prefix="xlspy-profile-") as directory:
             path = os.path.join(directory, "v.xlsx")
             for variant in VARIANTS:
+                built = list(variant_rows(args.rows, args.cols, variant))
                 runs = []
                 for _ in range(args.repeat):
                     start = time.perf_counter()
-                    _write(path, variant_rows(args.rows, args.cols, variant))
+                    _write(path, built)
                     runs.append(time.perf_counter() - start)
                 timings[variant] = {"median_seconds": statistics.median(runs),
                                     "runs": [round(r, 3) for r in runs]}
@@ -107,18 +116,19 @@ def main():
                           handle, indent=2)
         return 0
 
+    built = list(data())
     with tempfile.TemporaryDirectory(prefix="xlspy-profile-") as directory:
         path = os.path.join(directory, "p.xlsx")
         runs = []
         for _ in range(args.repeat):
             start = time.perf_counter()
-            _write(path, data())
+            _write(path, built)
             runs.append(time.perf_counter() - start)
         unprofiled = statistics.median(runs)
 
         profile = cProfile.Profile()
         profile.enable()
-        _write(path, data())
+        _write(path, built)
         profile.disable()
 
     stats = pstats.Stats(profile).stats
@@ -148,6 +158,7 @@ def main():
     glue_total = body["tottime"] + sum(glue.values())
     result = {
         "data": args.data,
+        "native_rows": not args.no_native_rows,
         "rows": args.rows, "cols": args.cols, "repeat": args.repeat,
         "accel_backends": dict(_accel.ACCEL_BACKEND),
         "unprofiled_seconds": unprofiled,

@@ -14,7 +14,7 @@ use crate::cells::{
 };
 use crate::numfmt::{write_repr, write_u32};
 use crate::sst::u32_mask;
-use crate::types::{decimal_type, style_type};
+use crate::types::{decimal_type, formula_type, style_type, type_check};
 
 fn is_hex(c: u8) -> bool {
     c.is_ascii_hexdigit()
@@ -62,6 +62,24 @@ fn write_escaped(out: &mut Vec<u8>, s: &[u8]) -> bool {
     }
     out.extend_from_slice(&s[run..]);
     true
+}
+
+/// XML-escape & < > only, as `saxutils.escape` does for formula text. The
+/// Python writer does not apply the `_xHHHH_` escapes there, so neither does this.
+fn write_plain_escaped(out: &mut Vec<u8>, s: &[u8]) {
+    let mut run = 0;
+    for (i, &c) in s.iter().enumerate() {
+        let entity: &[u8] = match c {
+            b'&' => b"&amp;",
+            b'<' => b"&lt;",
+            b'>' => b"&gt;",
+            _ => continue,
+        };
+        out.extend_from_slice(&s[run..i]);
+        out.extend_from_slice(entity);
+        run = i + 1;
+    }
+    out.extend_from_slice(&s[run..]);
 }
 
 fn style_attr(out: &mut Vec<u8>, style: u32) {
@@ -249,8 +267,101 @@ impl Row<'_, '_> {
                 }
             };
         }
-        // Formula, Hyperlink and anything else: the Python writer.
+        if formula_type(py).is_some_and(|t| type_check(cell, &t)) {
+            return self.formula(cell, style);
+        }
+        // Hyperlink and anything else: the Python writer.
         Ok(Cell::Fallback)
+    }
+
+    /// Formula cell, mirroring `_write_formula_cell`: the cell's own style only,
+    /// then the formula text and the cached value. Array formulas and values
+    /// the native code does not reproduce exactly fall back, and nothing of a
+    /// fallen-back cell is kept.
+    fn formula(&mut self, cell: &Bound<'_, PyAny>, style: u32) -> PyResult<Cell> {
+        let start = self.out.len();
+        if self.formula_xml(cell, style)? {
+            Ok(Cell::Done)
+        } else {
+            self.out.truncate(start);
+            Ok(Cell::Fallback)
+        }
+    }
+
+    /// False when the cell must go to the Python writer (the caller drops any
+    /// partial output).
+    fn formula_xml(&mut self, cell: &Bound<'_, PyAny>, style: u32) -> PyResult<bool> {
+        let py = cell.py();
+        if !cell.getattr("array_ref")?.is_none() {
+            return Ok(false);
+        }
+        let text_obj = cell.getattr("text")?;
+        let Ok(text) = text_obj.cast::<PyString>() else {
+            return Ok(false);
+        };
+        let Ok(text) = text.to_str() else {
+            return Ok(false); // lone surrogates
+        };
+        let value = cell.getattr("value")?;
+        self.out.extend_from_slice(b"<c");
+        style_attr(&mut self.out, style);
+        if value.is_none() {
+            self.out.extend_from_slice(b"><f>");
+            write_plain_escaped(&mut self.out, text.as_bytes());
+            self.out.extend_from_slice(b"</f></c>");
+            return Ok(true);
+        }
+        if let Ok(s) = value.cast::<PyString>() {
+            // t="str" with the value escaped as a string cell's text is.
+            if !text_fits(s)? {
+                return Ok(false); // over the cell limit: the Python writer raises
+            }
+            let Ok(v) = s.to_str() else {
+                return Ok(false);
+            };
+            self.out.extend_from_slice(b" t=\"str\"><f>");
+            write_plain_escaped(&mut self.out, text.as_bytes());
+            self.out.extend_from_slice(b"</f><v>");
+            if !write_escaped(&mut self.out, v.as_bytes()) {
+                return Ok(false);
+            }
+            self.out.extend_from_slice(b"</v></c>");
+            return Ok(true);
+        }
+        self.out.extend_from_slice(b"><f>");
+        write_plain_escaped(&mut self.out, text.as_bytes());
+        self.out.extend_from_slice(b"</f><v>");
+        if value.is_exact_instance_of::<PyInt>() {
+            // _format_number: str(int) of the value, here within int64.
+            let v = unsafe { pyo3::ffi::PyLong_AsLongLong(value.as_ptr()) };
+            if v == -1 && PyErr::take(py).is_some() {
+                return Ok(false);
+            }
+            self.out.extend_from_slice(v.to_string().as_bytes());
+        } else if let Ok(f) = value.cast::<PyFloat>() {
+            // Exact floats only: a subclass may print differently from float.
+            if !value.is_exact_instance_of::<PyFloat>() {
+                return Ok(false);
+            }
+            let d = f.value();
+            if !d.is_finite() {
+                return Ok(false);
+            }
+            if d.fract() == 0.0 {
+                // _format_number: str(int(d)), exact below 2**53.
+                if d.abs() >= 9_007_199_254_740_992.0 {
+                    return Ok(false);
+                }
+                self.out.extend_from_slice((d as i64).to_string().as_bytes());
+            } else {
+                write_repr(py, &mut self.out, d)?;
+            }
+        } else {
+            // Decimal (converted by the Python writer), bool and other types.
+            return Ok(false);
+        }
+        self.out.extend_from_slice(b"</v></c>");
+        Ok(true)
     }
 }
 

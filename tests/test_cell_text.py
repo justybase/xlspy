@@ -298,6 +298,8 @@ def test_native_encoders_hand_unusual_cells_back():
     for cell in (BrokenStr(), Plain(), Formula("A1"), Hyperlink("https://example.com")):
         assert _rs_core.encode_xlsb_row_inline(["a", cell], 1) is None
         assert _rs_core.encode_xlsb_row(["a", cell], {}, [], 0, 0, 1) is None
+    # XLSX writes plain formula cells itself (C5, test_native_formula.py).
+    for cell in (BrokenStr(), Plain(), Hyperlink("https://example.com")):
         assert _rs_core.encode_xlsx_row(["a", cell], {}, [], 0, 0, 1, False) is None
     for text in ("bell\x07", "cr\r", "lit _x0041_", "ff￾"):
         assert _rs_core.encode_xlsx_row([text], {}, [], 0, 0, 1, False) is None

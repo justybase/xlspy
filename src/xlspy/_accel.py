@@ -82,6 +82,10 @@ for _module in _loaded.values():
         # (value, Style) cells: the native encoders and width scan recognise them.
         from xlspy.styles import Style as _Style
         _module.set_style_type(_Style)
+    if hasattr(_module, "set_formula_type"):
+        # Formula cells: the native row encoder writes them (see xlsx_write.rs).
+        from xlspy.formulas import Formula as _Formula
+        _module.set_formula_type(_Formula)
 
 
 def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header=None):
