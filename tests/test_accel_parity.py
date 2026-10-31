@@ -53,6 +53,11 @@ class BadStr:
         raise RuntimeError("str failed on purpose")
 
 
+class BadBool:
+    def __bool__(self):
+        raise RuntimeError("bool failed on purpose")
+
+
 class BadLenTuple(tuple):
     def __len__(self):
         raise RuntimeError("len failed on purpose")
@@ -546,3 +551,176 @@ def test_read_xlsb_corrupted(index, data):
         sheet[data.draw(st.integers(0, len(sheet) - 1))] = data.draw(st.integers(0, 255))
     cut = data.draw(st.integers(0, len(sheet)))
     same_rows(bytes(sheet[:cut]), SYNTH_SHARED, SYNTH_STYLES, SYNTH_DATES, data.draw(st.booleans()))
+
+
+# -- XLSX worksheet scanner -------------------------------------------------
+
+import io  # noqa: E402
+import re  # noqa: E402
+
+_NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+
+
+class TrickleStream(io.BytesIO):
+    """A stream whose read() returns at most ``step`` bytes, so chunk
+    boundaries fall inside rows, tags and multi-byte characters."""
+
+    def __init__(self, data, step):
+        super().__init__(data)
+        self.step = step
+
+    def read(self, n=-1):
+        return super().read(min(self.step, n if n >= 0 else self.step))
+
+
+def _sheet_xml(rows_xml, tail="</sheetData><pageMargins/></worksheet>"):
+    return f"<worksheet {_NS}><sheetData>{rows_xml}{tail}".encode()
+
+
+def _scan(module, xml, split, step, shared, flags, date_1904, model=None):
+    head, rest = xml[:split], xml[split:]
+    stream = TrickleStream(rest, step) if step else io.BytesIO(rest)
+    try:
+        rows = module.read_xlsx_worksheet(stream, head, shared, flags, date_1904, model)
+    except Exception as exc:  # noqa: BLE001
+        return ("raises", type(exc))
+    seen, previous = [], 0
+    try:
+        for item in rows:
+            if isinstance(item, bytes):
+                match = re.search(rb' r="(\d+)"', item)
+                previous = int(match.group(1)) if match else previous + 1
+                rows.resume(previous)
+            else:
+                previous = item[0]
+            seen.append(item)
+            if len(seen) > 5000:
+                break
+    except Exception as exc:  # noqa: BLE001
+        return ("rows", seen, type(exc), rows.tail())
+    return ("rows", seen, None, rows.tail(), rows.bounds())
+
+
+XLSX_SHARED = ["zero", "one", "dwa ą"]
+
+
+def same_scan(xml, flags=(False, True, False), date_1904=False):
+    for split in sorted({0, 1, len(xml) // 3, len(xml)}):
+        for step in (None, 1, 7):
+            args = (xml, split, step, list(XLSX_SHARED), list(flags), date_1904)
+            assert _scan(rs_core, *args) == _scan(c_core, *args), (xml, split, step)
+
+
+XLSX_CELL_XML = [
+    '<c r="A1"><v>1</v></c>', '<c r="B1" s="1"><v>45000.5</v></c>', '<c r="C1" t="s"><v>2</v></c>',
+    '<c r="D1" t="s"><v>9</v></c>', '<c r="E1" t="b"><v>1</v></c>', '<c r="F1" t="e"><v>#N/A</v></c>',
+    '<c r="G1" t="str"><v>a_x0041_b</v></c>', '<c r="H1" t="inlineStr"><is><t>inline ż</t></is></c>',
+    '<c r="I1" t="inlineStr"><is><t xml:space="preserve"> sp </t></is></c>',
+    '<c r="J1" t="d"><v>2024-01-02T03:04:05</v></c>',
+    '<c r="K1"><v>1.5e3</v></c>', '<c r="L1"><v>-12</v></c>', '<c r="M1"><v> 7 </v></c>', '<c r="N1"><v>1_000</v></c>',
+    '<c r="O1"><v>nan</v></c>', '<c r="P1"><v>99999999999999999999</v></c>', '<c r="Q1" s="1"><v>abc</v></c>',
+    '<c r="R1" s="1"><v>1e20</v></c>', '<c r="S1"><f>A1+1</f><v>2</v></c>', '<c r="T1"><f/><v>3</v></c>',
+    '<c r="U1" t="str"><v>a &amp; b</v></c>', '<c r="V1"/>', '<c r="W1" s="2"/>', '<c s="1"><v>2</v></c>',
+    '<c r="AA1" t="inlineStr"><is><r><t>rich</t></r></is></c>', '<c r="AB1" t="n"><v></v></c>',
+    '<c r="a1"><v>1</v></c>', '<c r="AAAA1"><v>1</v></c>', '<c r="A"><v>1</v></c>', '<x:c r="A1"><v>1</v></x:c>',
+    '<c r="AC1" t="s"><v>x</v></c>', '<c r="AD1" s="-1"><v>1</v></c>', '<c r="AE1" s="-9"><v>1</v></c>',
+    '<c r="AF1" s=""><v>1</v></c>', '<c r="AG1" t="d"><v>not a date</v></c>', '<c r="AH1" t="e"/>',
+    '<c r="AI1" t="inlineStr"/>', '<c r="AJ1" ><v>4</v></c>', '<c r="AK1" t="str"><v>tab\r</v></c>',
+    '<c r="AL1" t="str"><v>_xD800_ lone</v></c>', '<c r="AM1"><v>0x10</v></c>',
+]
+
+
+@ported("read_xlsx_worksheet")
+@pytest.mark.parametrize("cell", XLSX_CELL_XML)
+def test_scan_single_cell(cell):
+    same_scan(_sheet_xml(f'<row r="1">{cell}</row><row r="3"><c r="A3"><v>5</v></c></row>'))
+
+
+@ported("read_xlsx_worksheet")
+@pytest.mark.parametrize("rows", [
+    "", '<row r="1"/>', '<row/><row><c><v>1</v></c></row>',
+    '<row r="2" ht="20" customHeight="1"><c r="A2"><v>1</v></c></row>',
+    '<row r="5 "><c r="A5"><v>1</v></c></row><row><c><v>2</v></c></row>', '<row r="x"><c><v>1</v></c></row>',
+    '<row r="99999999999999999999"><c><v>1</v></c></row>', '<rows/><row r="1"><c r="A1"><v>1</v></c></row>',
+    '<row r="1" spans="1:2"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c></row>' * 3,
+    '<row r="1"><c r="B1"><v>1</v></c><c><v>2</v></c><c r="A1"><v>3</v></c></row>',
+    '<row r="1"><c r="A1"><v>1</v></c>', '<row r="1"><c r="A1"><v>ż</v></c></row>',
+])
+@pytest.mark.parametrize("date_1904", [False, True])
+def test_scan_rows(rows, date_1904):
+    same_scan(_sheet_xml(rows), date_1904=date_1904)
+    same_scan(_sheet_xml(rows, tail=""))
+
+
+@ported("read_xlsx_worksheet")
+def test_scan_large_part():
+    rows = "".join(f'<row r="{i}"><c r="A{i}" t="s"><v>{i % 3}</v></c><c r="B{i}"><v>{i * 1.5}</v></c>'
+                   f'<c r="C{i}" t="inlineStr"><is><t>żółw {i}</t></is></c></row>' for i in range(1, 6000))
+    xml = _sheet_xml(rows)
+    assert len(xml) > 300_000
+    for split in (0, 100, 70000):
+        args = (xml, split, None, list(XLSX_SHARED), [False, True], False)
+        assert _scan(rs_core, *args) == _scan(c_core, *args)
+
+
+@ported("read_xlsx_worksheet")
+def test_scan_invalid_utf8():
+    good = _sheet_xml('<row r="1"><c r="A1"><v>1</v></c></row>')
+    for xml in (good[:-3] + b"\xc5", good + b"\xff",
+                b'<worksheet><sheetData><row r="1"><c><v>\xff</v></c></row></sheetData></worksheet>',
+                b'<worksheet><sheetData><row r="1"><c><v>\xed\xa0\x80</v></c></row></sheetData></worksheet>'):
+        same_scan(xml)
+
+
+@ported("read_xlsx_worksheet")
+def test_scan_bad_arguments():
+    for make in [lambda: (object(), b"", [], []), lambda: (io.BytesIO(b""), "head", [], []),
+                 lambda: (io.BytesIO(b""), b"", (), []), lambda: (io.BytesIO(b""), b"", [], ()),
+                 lambda: (io.BytesIO(b""), b"", [], [], BadBool()), lambda: (io.BytesIO(b""), b"", [], [], False, (1, 2)),
+                 lambda: (io.BytesIO(b""), b"", [], [], False, (int, (), None, {}, False, False)),
+                 lambda: (io.BytesIO(b""), b"", [], [BadBool()]), lambda: (io.BytesIO(b""), b"", [], [2**70])]:
+        c_result = outcome(c_core.read_xlsx_worksheet, *make())
+        rs_result = outcome(rs_core.read_xlsx_worksheet, *make())
+        assert rs_result[0] == c_result[0] == "raises" and rs_result[1] is c_result[1]
+
+
+def _model_scan(module, xml, step, data_only, rich_text, kinds):
+    from xlspy.workbook._model import CELL_SLOTS, Cell
+    sheet, cells = object(), {}
+    model = (Cell, CELL_SLOTS, sheet, cells, data_only, rich_text)
+    result = _scan(module, xml, len(xml) // 2, step, list(XLSX_SHARED), list(kinds), False, model)
+    dump = {row: {col: (cell._row, cell._column, repr(cell._value), type(cell._value), cell._data_type, cell._style_id,
+                        cell._sheet is sheet, cell._formula, cell._comment, cell._hyperlink, cell._named_style,
+                        cell._dirty)
+                  for col, cell in row_cells.items()}
+            for row, row_cells in cells.items()}
+    return result, dump
+
+
+@ported("read_xlsx_worksheet")
+@pytest.mark.parametrize("cell", XLSX_CELL_XML + [
+    '<c r="A1" s="3"><v>0.75</v></c>', '<c r="A1" s="4"><v>1.5</v></c>', '<c r="A1" s="4"><v>1e10</v></c>',
+    '<c r="A1" s="3"><v>inf</v></c>', '<c r="A1" s="1234567890"><v>1</v></c>', '<c r="A1" s="9"><v>1</v></c>',
+    '<c r="A2"><v>1</v></c>', '<c r="XFE1"><v>1</v></c>', '<c r="A12345678"><v>1</v></c>',
+])
+@pytest.mark.parametrize("data_only,rich_text", [(False, False), (True, True)])
+def test_scan_model_cells(cell, data_only, rich_text):
+    xml = _sheet_xml(f'<row r="1">{cell}<c r="Z1"><v>2</v></c></row>'
+                     f'<row r="4" hidden="1"><c r="A4"><v>1</v></c></row>'
+                     f'<row r="6"><c r="B6" s="1"><v>3</v></c></row>')
+    kinds = (0, 1, 0, 2, 3)
+    for step in (None, 5):
+        assert _model_scan(rs_core, xml, step, data_only, rich_text, kinds) == \
+            _model_scan(c_core, xml, step, data_only, rich_text, kinds)
+
+
+@ported("read_xlsx_worksheet")
+@settings(max_examples=300, deadline=None)
+@given(st.lists(st.lists(st.sampled_from(XLSX_CELL_XML), max_size=5), max_size=5), st.booleans())
+def test_scan_random(rows, model):
+    xml = _sheet_xml("".join(f'<row r="{i + 1}">{"".join(cells)}</row>' for i, cells in enumerate(rows)))
+    if model:
+        kinds = (0, 1, 2)
+        assert _model_scan(rs_core, xml, 3, False, False, kinds) == _model_scan(c_core, xml, 3, False, False, kinds)
+    else:
+        same_scan(xml)

@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   proceeds. `XLSPY_ACCEL=auto|rust|c|python` picks the backend per function (`auto`: C first); functions not
   ported yet come from C. Ported so far: shared-strings encoder and reader, column widths, the formatted-cell
   pre-scan, the XLSB row encoders (shared and inline strings), the XLSX row encoder and the XLSB worksheet
-  reader. `tests/test_accel_parity.py` checks the two
+  reader and the XLSX worksheet scanner (plain and workbook-model mode). `tests/test_accel_parity.py` checks the two
   backends give the same results. Building from source now needs a Rust toolchain.
 
 ### Changed

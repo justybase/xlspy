@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 mod bytes;
 mod cells;
 mod dates;
+mod model;
 mod numfmt;
 mod sst;
 mod text;
@@ -15,6 +16,7 @@ mod types;
 mod widths;
 mod xlsb_read;
 mod xlsb_write;
+mod xlsx_read;
 mod xlsx_write;
 
 #[pymodule(gil_used = true)]
@@ -31,5 +33,7 @@ fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(xlsx_write::encode_xlsx_row, m)?)?;
     m.add_function(wrap_pyfunction!(xlsb_read::read_xlsb_worksheet, m)?)?;
     m.add_class::<xlsb_read::XlsbReader>()?;
+    m.add_function(wrap_pyfunction!(xlsx_read::read_xlsx_worksheet, m)?)?;
+    m.add_class::<xlsx_read::XlsxReader>()?;
     Ok(())
 }
