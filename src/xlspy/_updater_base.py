@@ -14,7 +14,13 @@ import os
 from typing import Any, Iterable, Literal, Sequence
 
 from .excel_dates import datetime_to_serial
-from .updater_utils import DiskStringIndex, ZipPackage
+from .updater_utils import (
+    DiskStringIndex,
+    TableHeader,
+    TableHeaderGuard,
+    ZipPackage,
+    sheet_table_headers,
+)
 
 StyleFallback = Literal["inherit", "general"]
 
@@ -72,6 +78,18 @@ class _UpdaterBase:
         """Return worksheet names in workbook order."""
 
         return list(self._sheets)
+
+    def _read_table_header(self, table_part: bytes) -> TableHeader | None:
+        """Parse one table part of this format into its header row (subclass hook)."""
+        raise NotImplementedError
+
+    def _table_header_guard(self, sheet_name: str, sheet_path: str) -> TableHeaderGuard:
+        """Guard the header rows of the tables on one sheet during a data replacement."""
+
+        return TableHeaderGuard(
+            sheet_name,
+            sheet_table_headers(self._package, sheet_path, self._read_table_header),
+        )
 
     def replace_sheet_data_stream(
         self,

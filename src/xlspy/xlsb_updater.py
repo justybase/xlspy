@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as _datetime
 import math
+import numbers
 import os
 import re
 import struct
@@ -13,6 +14,8 @@ from typing import Any, Iterable, Sequence
 from ._updater_base import StyleFallback, _UpdaterBase
 from ._xlsb_edit import XlsbEditMixin
 from ._xlsb_sheets import XlsbSheetsMixin
+from .exceptions import UnsupportedFeatureError
+from .formulas import Formula
 
 from .biff_utils import (
     build_record,
@@ -23,11 +26,14 @@ from .biff_utils import (
 )
 from .updater_utils import (
     DiskStringIndex,
+    TableHeader,
     ZipPackage,
     copy_file_range,
     copy_stream,
     date_like_format,
+    header_row_texts,
     materialize_rows,
+    table_header,
     parse_relationships_xml,
     resolve_zip_target,
     trim_trailing_empty_rows,
@@ -37,6 +43,8 @@ from ._text import check_cell_text
 
 
 _CELL_RECORDS = set(range(0x01, 0x0C))
+# BrtWsDim (sheet dimension). Not BrtSel (0x98), which is the selection record.
+_WS_DIM_RECORD = 0x94
 _RK_INT_LOWER = -536870912
 _RK_INT_UPPER = 536870911
 
@@ -73,6 +81,20 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
     def get_chartsheet_names(self) -> list[str]:
         return [name for name in self._sheets if name in self._chartsheets]
 
+    def _read_table_header(self, table_part: bytes) -> TableHeader | None:
+        # Imported here: the workbook package imports the writers, which import this module's peers.
+        from .workbook._xlsb_sheet_meta import read_table_part
+
+        table = read_table_part(table_part)
+        if table is None:
+            return None
+        return table_header(
+            table.displayName or "",
+            table.ref or "",
+            table.headerRowCount != 0,
+            [column.name or "" for column in table.tableColumns],
+        )
+
     def replace_sheet_data(
         self,
         sheet_name: str,
@@ -101,6 +123,14 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
 
         materialized = trim_trailing_empty_rows(materialize_rows(rows))
         header_values = list(headers) if headers is not None else None
+        guard = self._table_header_guard(sheet_name, sheet_path)
+        first_data_row = 0
+        if header_values is not None:
+            guard.check_row(0, header_row_texts(header_values))
+            first_data_row = 1
+        for index, row in enumerate(materialized, start=first_data_row):
+            guard.check_row(index, row)
+        guard.finish()
         sheet_data = self._package.get(sheet_path)
         self._ensure_shared_strings_loaded()
         if self._shared_strings_data is not None:
@@ -172,6 +202,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             raise KeyError(f"Worksheet not found: {sheet_name}") from exc
 
         header_values = list(headers) if headers is not None else None
+        guard = self._table_header_guard(sheet_name, sheet_path)
         original_sheet = self._package.temporary_path(suffix=".bin")
         with self._package.open_entry(sheet_path) as source, original_sheet.open("wb") as target:
             copy_stream(source, target)
@@ -214,10 +245,8 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                         output.write(cell)
 
                 if header_values is not None:
-                    header_texts = [
-                        "" if unwrap_cell(value) is None else str(unwrap_cell(value))
-                        for value in header_values
-                    ]
+                    header_texts = header_row_texts(header_values)
+                    guard.check_row(0, header_texts)
                     write_row(
                         next_row,
                         [
@@ -240,6 +269,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                     except TypeError as exc:
                         raise TypeError("Each row must be an iterable of cells") from exc
 
+                    guard.check_row(next_row, row)
                     cells = [
                         self._value_cell_bytes(
                             raw,
@@ -263,6 +293,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                         kept_data_rows = data_rows_seen
                         last_kept_end = output.tell()
 
+                guard.finish()
                 output.truncate(last_kept_end)
 
             last_col = max(0, width - 1)
@@ -668,6 +699,17 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
     ) -> bytes:
         value = unwrap_cell(raw)
         style = 0 if style_fallback == "general" else data_styles.get(column, 0)
+        if isinstance(value, Formula):
+            raise UnsupportedFeatureError(
+                "replace_sheet_data cannot write formulas to XLSB; use update_cells() for formula cells"
+            )
+        if value is None:
+            return self._string_cell_bytes(column, style, "")
+        # numpy and other numeric types register with numbers; write them as Python numbers.
+        if isinstance(value, numbers.Integral) and not isinstance(value, bool):
+            value = int(value)
+        elif isinstance(value, numbers.Real) and not isinstance(value, float):
+            value = float(value)
         if isinstance(value, bool):
             payload = struct.pack("<IIB", column, style, 1 if value else 0)
             return build_record(0x04, payload)
@@ -689,7 +731,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                 date_style = style if style > 0 else (date_xf or 0)
                 payload = struct.pack("<IId", column, date_style, serial)
                 return build_record(0x05, payload)
-        return self._string_cell_bytes(column, style, "" if value is None else str(value))
+        return self._string_cell_bytes(column, style, str(value))
 
     def _string_cell_bytes(self, column: int, style: int, text: str) -> bytes:
         # XLSB stores text as UTF-16 records, not XML: control characters are kept,
@@ -745,13 +787,14 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         with open(sheet_path, "r+b") as stream:
             for record, _ in iter_records_stream(stream):
                 if (
-                    record.record_id == 0x98
-                    and record.length >= 36
+                    record.record_id == _WS_DIM_RECORD
+                    and record.length >= 16
                     and not dimension_patched
                 ):
-                    stream.seek(record.data_start + 24)
+                    # BrtWsDim: rwFirst, rwLast, colFirst, colLast (int32 each).
+                    stream.seek(record.data_start + 4)
                     stream.write(struct.pack("<i", last_row))
-                    stream.seek(record.data_start + 32)
+                    stream.seek(record.data_start + 12)
                     stream.write(struct.pack("<i", last_col))
                     stream.seek(record.data_end)
                     dimension_patched = True
@@ -791,9 +834,10 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
     @staticmethod
     def _patch_dimension(sheet_data: bytearray, last_row: int, last_col: int) -> None:
         for record in iter_records(bytes(sheet_data)):
-            if record.record_id == 0x98 and record.length >= 36:
-                struct.pack_into("<i", sheet_data, record.data_start + 24, last_row)
-                struct.pack_into("<i", sheet_data, record.data_start + 32, last_col)
+            if record.record_id == _WS_DIM_RECORD and record.length >= 16:
+                # BrtWsDim: rwFirst, rwLast, colFirst, colLast (int32 each).
+                struct.pack_into("<i", sheet_data, record.data_start + 4, last_row)
+                struct.pack_into("<i", sheet_data, record.data_start + 12, last_col)
                 return
 
     def _patch_pivot_caches(self, sheet_name: str, last_row: int, last_col: int) -> None:

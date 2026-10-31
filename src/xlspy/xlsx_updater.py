@@ -23,6 +23,8 @@ from .updater_utils import (
     date_like_format,
     escape_xml_text,
     local_xml_name,
+    TableHeader,
+    header_row_texts,
     materialize_rows,
     parse_relationships_xml,
     parse_shared_strings_xml,
@@ -34,12 +36,19 @@ from .updater_utils import (
     unwrap_cell,
     xml_attribute,
     xml_space_attribute,
+    xml_table_header,
 )
 from ._text import check_cell_text
 from ._updater_base import StyleFallback, _UpdaterBase
 from ._xlsx_edit import XlsxEditMixin
+from .formulas import Formula
 
-
+# A formula element (<f>, <f t="shared">, or a prefixed <x:f>); not <formula>.
+_FORMULA_TAG = re.compile(r"<(?:[\w.-]+:)?f[\s>/]")
+_FORMULA_TAG_BYTES = re.compile(rb"<(?:[\w.-]+:)?f[\s>/]")
+# The first worksheet child that comes after <dimension> in CT_Worksheet.
+_AFTER_DIMENSION_STR = re.compile(r"<(?:[A-Za-z_][\w.-]*:)?(?:sheetViews|sheetFormatPr|cols|sheetData)\b")
+_AFTER_DIMENSION_BYTES = re.compile(rb"<(?:[A-Za-z_][\w.-]*:)?(?:sheetViews|sheetFormatPr|cols|sheetData)\b")
 
 
 def _tag_attribute(opening_tag: str, wanted: str) -> str | None:
@@ -86,6 +95,9 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         self._use_shared_strings = False
         self._stream_shared_strings: DiskStringIndex | None = None
 
+    def _read_table_header(self, table_part: bytes) -> TableHeader | None:
+        return xml_table_header(table_part)
+
     def replace_sheet_data(
         self,
         sheet_name: str,
@@ -120,6 +132,14 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
 
         materialized = trim_trailing_empty_rows(materialize_rows(rows))
         header_values = list(headers) if headers is not None else None
+        guard = self._table_header_guard(sheet_name, sheet_path)
+        first_data_row = 0
+        if header_values is not None:
+            guard.check_row(0, header_row_texts(header_values))
+            first_data_row = 1
+        for index, row in enumerate(materialized, start=first_data_row):
+            guard.check_row(index, row)
+        guard.finish()
         old_sheet_xml = self._package.get(sheet_path).decode("utf-8")
         self._ensure_shared_strings_loaded()
         if self._use_shared_strings:
@@ -185,6 +205,14 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         updated_sheet_xml = self._patch_sheet_xml(
             old_sheet_xml, "".join(rows_xml), dimension_ref
         )
+        self._drop_stale_calc_chain(
+            had_formulas=_FORMULA_TAG.search(old_sheet_xml) is not None,
+            has_formulas=any(
+                isinstance(unwrap_cell(value), Formula)
+                for row in materialized
+                for value in row
+            ),
+        )
         self._package.set(sheet_path, updated_sheet_xml.encode("utf-8"))
         self._commit_shared_strings()
         self._patch_pivot_metadata(sheet_name, len(materialized), dimension_ref)
@@ -212,6 +240,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             raise KeyError(f"Worksheet not found: {sheet_name}") from exc
 
         header_values = list(headers) if headers is not None else None
+        guard = self._table_header_guard(sheet_name, sheet_path)
         original_sheet = self._package.temporary_path(suffix=".xml")
         with self._package.open_entry(sheet_path) as source, original_sheet.open("wb") as target:
             copy_stream(source, target)
@@ -231,6 +260,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                 )
                 self._stream_shared_strings.dirty = True
             date_style = self._find_date_style_index() if style_fallback == "inherit" else None
+            old_had_formulas = _FORMULA_TAG_BYTES.search(mapped) is not None
             sheet_data_match = re.search(
                 rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?sheetData\b", mapped
             )
@@ -248,10 +278,12 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         pending_empty_width = 0
 
         updated_sheet = None
+        new_has_formulas = False
         try:
             with rows_file.open("wb") as output:
                 next_row = 1
                 if header_values is not None:
+                    guard.check_row(0, header_row_texts(header_values))
                     cells = [
                         self._value_cell(
                             value,
@@ -278,6 +310,11 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                         row = list(source_row)
                     except TypeError as exc:
                         raise TypeError("Each row must be an iterable of cells") from exc
+                    guard.check_row(next_row - 1, row)
+                    if not new_has_formulas and any(
+                        isinstance(unwrap_cell(value), Formula) for value in row
+                    ):
+                        new_has_formulas = True
 
                     cells = [
                         self._value_cell(
@@ -306,6 +343,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                         kept_data_rows = data_rows_seen
                         last_kept_end = output.tell()
 
+                guard.finish()
                 output.truncate(last_kept_end)
 
             total_rows = kept_data_rows + (1 if header_values is not None else 0)
@@ -317,6 +355,10 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                 rows_file,
                 updated_sheet,
                 dimension_ref,
+            )
+            self._drop_stale_calc_chain(
+                had_formulas=old_had_formulas,
+                has_formulas=new_has_formulas,
             )
             self._package.set_file(sheet_path, updated_sheet)
             self._commit_stream_shared_strings()
@@ -746,6 +788,29 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             return date_style or 0
         return style
 
+    @staticmethod
+    def _formula_cell(formula: Formula, cell_prefix: str, prefix: str) -> str:
+        """A formula cell, written the way the XLSX writer writes one."""
+        type_attribute = ""
+        cached_xml = ""
+        cached = formula.value
+        if isinstance(cached, str):
+            check_cell_text(cached)
+            type_attribute = ' t="str"'
+            cached_xml = f"<{prefix}v>{escape_xml_text(cached)}</{prefix}v>"
+        elif cached is not None:
+            cached_xml = f"<{prefix}v>{repr(float(cached))}</{prefix}v>"
+        array_attribute = (
+            f' t="array" ref="{escape_xml_text(formula.array_ref)}"'
+            if formula.array_ref is not None
+            else ""
+        )
+        return (
+            f"{cell_prefix}{type_attribute}>"
+            f"<{prefix}f{array_attribute}>{escape_xml_text(formula.text)}</{prefix}f>"
+            f"{cached_xml}</{prefix}c>"
+        )
+
     def _value_cell(
         self,
         value: Any,
@@ -775,6 +840,8 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         style_attribute = f' s="{style}"' if style > 0 else ""
         cell_prefix = f'<{prefix}c r="{cell_reference}"{style_attribute}'
 
+        if isinstance(value, Formula):
+            return self._formula_cell(value, cell_prefix, prefix)
         if isinstance(value, bool):
             return f'{cell_prefix} t="b"><{prefix}v>{1 if value else 0}</{prefix}v></{prefix}c>'
         if isinstance(value, (_datetime.datetime, _datetime.date)):
@@ -866,11 +933,11 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                 raise ValueError("Worksheet root element was not found")
             prefix = XlsxUpdater._tag_prefix(sheet_xml, "worksheet")
             dimension = f'<{prefix}dimension ref="{escape_xml_text(dimension_ref)}"/>'
-            sheet_xml = (
-                sheet_xml[: worksheet_match.end()]
-                + dimension
-                + sheet_xml[worksheet_match.end() :]
-            )
+            # CT_Worksheet order: sheetPr, dimension, sheetViews, sheetFormatPr, cols, sheetData.
+            # Insert before the first element that follows dimension, after any sheetPr.
+            following = _AFTER_DIMENSION_STR.search(sheet_xml)
+            position = following.start() if following else worksheet_match.end()
+            sheet_xml = sheet_xml[:position] + dimension + sheet_xml[position:]
 
         auto_filter_match = re.search(
             r"<(?P<prefix>[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>", sheet_xml
@@ -960,7 +1027,10 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                     dimension = (
                         b"<" + prefix + b"dimension ref=\"" + escape_xml_text(dimension_ref).encode("utf-8") + b"\"/>"
                     )
-                    replacements.append((worksheet_match.end(), worksheet_match.end(), dimension))
+                    # Same position rule as the in-memory path (see _patch_sheet_xml).
+                    following = _AFTER_DIMENSION_BYTES.search(source)
+                    position = following.start() if following else worksheet_match.end()
+                    replacements.append((position, position, dimension))
 
                 auto_filter_match = re.search(
                     rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>", source

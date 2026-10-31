@@ -23,13 +23,17 @@ import zipfile
 
 from ._untrusted import SafeZipFile
 from contextlib import contextmanager
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
+from xml.etree import ElementTree as ET
 from xml.parsers import expat
 from xml.sax import saxutils
 
 from ._text import check_cell_text, xstring_escape
+from .exceptions import UnsupportedFeatureError
+from .refs import parse_cell_range
 
 
 STREAM_BUFFER_SIZE = 1024 * 1024
@@ -563,6 +567,142 @@ def resolve_zip_target(target: str, base_directory: str = "xl") -> str:
     else:
         resolved = posixpath.normpath(posixpath.join(base_directory, target))
     return resolved.replace("\\", "/")
+
+
+@dataclass(frozen=True)
+class TableHeader:
+    """The header row of one table on a sheet (zero-based row and column)."""
+
+    display_name: str
+    row: int
+    first_col: int
+    columns: tuple[str, ...]
+
+
+def table_header(
+    display_name: str, ref: str, has_header_row: bool, column_names: Sequence[str]
+) -> TableHeader | None:
+    """Build a :class:`TableHeader`, or ``None`` for a table with no usable header."""
+
+    if not has_header_row or not column_names:
+        return None
+    try:
+        first_col, first_row, _, _ = parse_cell_range(ref)
+    except ValueError:
+        return None
+    return TableHeader(
+        display_name=display_name,
+        row=first_row,
+        first_col=first_col,
+        columns=tuple(column_names),
+    )
+
+
+def sheet_table_headers(
+    package: "ZipPackage",
+    sheet_path: str,
+    read_table: Callable[[bytes], TableHeader | None],
+) -> list[TableHeader]:
+    """Header rows of the tables that belong to ``sheet_path``.
+
+    ``read_table`` parses one table part for the format (XML for XLSX, BIFF12
+    for XLSB).  A table that cannot be read contributes nothing.
+    """
+
+    sheet_dir = posixpath.dirname(sheet_path)
+    rels_path = posixpath.join(sheet_dir, "_rels", posixpath.basename(sheet_path) + ".rels")
+    if not package.has(rels_path):
+        return []
+    headers: list[TableHeader] = []
+    try:
+        relationships = list(ET.fromstring(package.get(rels_path)))
+    except ET.ParseError:
+        return []
+    for node in relationships:
+        target = node.get("Target")
+        if not (node.get("Type") or "").endswith("/table") or not target:
+            continue
+        table_path = resolve_zip_target(target, sheet_dir or "xl")
+        if not package.has(table_path):
+            continue
+        try:
+            header = read_table(package.get(table_path))
+        except (ET.ParseError, ValueError, IndexError, TypeError, struct.error):
+            continue
+        if header is not None:
+            headers.append(header)
+    return headers
+
+
+def xml_table_header(table_xml: bytes) -> TableHeader | None:
+    """The header row of an XLSX table part (``xl/tables/tableN.xml``)."""
+
+    root = ET.fromstring(table_xml)
+    has_header = (root.get("headerRowCount") or "1").strip() != "0"
+    columns = [
+        node.get("name") or ""
+        for node in root.iter()
+        if node.tag.rsplit("}", 1)[-1] == "tableColumn"
+    ]
+    return table_header(
+        root.get("displayName") or root.get("name") or "",
+        root.get("ref") or "",
+        has_header,
+        columns,
+    )
+
+
+def header_row_texts(headers: Sequence[Any]) -> list[str]:
+    """The text the updaters write for a header row (``None`` becomes empty)."""
+
+    return ["" if unwrap_cell(value) is None else str(unwrap_cell(value)) for value in headers]
+
+
+class TableHeaderGuard:
+    """Refuse a rewrite that would change a table's header cells.
+
+    Excel repairs a table whose header cells do not hold its column names, so a
+    replacement must keep those cells equal (ignoring case, as the writers do).
+    Call :meth:`check_row` for each new row, zero-based, before it is written,
+    and :meth:`finish` once all rows are seen: a header row the new data never
+    reaches is empty, which is a mismatch too.  Nothing is written before the
+    check, so a failure leaves the package unchanged.
+    """
+
+    def __init__(self, sheet_name: str, tables: Sequence[TableHeader]):
+        self._sheet_name = sheet_name
+        self._pending: dict[int, list[TableHeader]] = {}
+        for table in tables:
+            self._pending.setdefault(table.row, []).append(table)
+
+    def check_row(self, row: int, values: Sequence[Any]) -> None:
+        tables = self._pending.pop(row, None)
+        if tables is None:
+            return
+        for table in tables:
+            self._check(table, values)
+
+    def finish(self) -> None:
+        if self._pending:
+            table = min(
+                (table for tables in self._pending.values() for table in tables),
+                key=lambda table: table.row,
+            )
+            self._check(table, ())
+
+    def _check(self, table: TableHeader, values: Sequence[Any]) -> None:
+        for offset, name in enumerate(table.columns):
+            col = table.first_col + offset
+            cell = unwrap_cell(values[col]) if col < len(values) else None
+            if isinstance(cell, str) and cell.casefold() == name.casefold():
+                continue
+            ref = f"{column_index_to_letter(col)}{table.row + 1}"
+            raise UnsupportedFeatureError(
+                f"sheet {self._sheet_name!r}: table {table.display_name!r} has column "
+                f"{name!r} but the new data puts {cell!r} in header cell {ref}; Excel "
+                "requires each header cell to equal its column name, and "
+                "replace_sheet_data cannot rename table columns"
+            )
 
 
 class ZipPackage:

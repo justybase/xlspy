@@ -414,6 +414,25 @@ class XlsxEditMixin:
         if self._stream_shared_strings is not None:
             self._stream_shared_strings.total_count = max(0, self._stream_shared_strings.total_count - removed_shared_refs)
 
+    def _drop_stale_calc_chain(self, *, had_formulas: bool, has_formulas: bool) -> None:
+        """Drop calcChain when a sheet's formula cells are being replaced.
+
+        calcChain lists every formula cell. An entry that names a cell without a
+        formula makes Excel repair the workbook. Dropping the part is safe because
+        Excel rebuilds it, and fullCalcOnLoad makes the formulas recalculate.
+        """
+        if not (had_formulas or has_formulas):
+            return
+        updates: dict = {}
+        removed: list = []
+        self._recalculate(updates, removed)
+        # Written straight to the package: the streaming path already runs inside
+        # a package transaction, and _apply_parts cannot nest one.
+        for path, data in updates.items():
+            self._package.set(path, data.encode("utf-8") if isinstance(data, str) else data)
+        for path in removed:
+            self._package.remove(path)
+
     def _recalculate(self, updates, removed):
         xml = self._package.get("xl/workbook.xml").decode("utf-8")
         existing = element_pattern("calcPr").search(xml)
