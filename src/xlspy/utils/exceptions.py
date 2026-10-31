@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..exceptions import InvalidFileError
+
 
 class CellCoordinatesException(Exception):
     """Raised when a cell coordinate cannot be parsed."""
@@ -11,7 +13,7 @@ class IllegalCharacterError(Exception):
     """Raised when text contains a character a cell cannot store."""
 
 
-class InvalidFileException(Exception):
+class InvalidFileException(InvalidFileError):
     """Raised when a workbook file is not a supported format."""
 
 

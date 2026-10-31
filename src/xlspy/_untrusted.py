@@ -2,13 +2,15 @@
 
 Workbooks come from outside the process, so a crafted file can claim a huge
 decompressed size or a row far wider than Excel allows. This module holds the
-limits and the ZIP wrapper that enforces the size one. It has no xlspy imports,
-so any reader can depend on it.
+limits and the ZIP wrapper that enforces the size one. It imports only the
+exception module, which has no imports of its own, so any reader can depend on it.
 """
 
 from __future__ import annotations
 
 import zipfile
+
+from .exceptions import InvalidFileError
 
 #: Widest row Excel can hold (columns A..XFD). Wider spans are refused.
 MAX_COLUMNS = 16384
@@ -34,6 +36,13 @@ class SafeZipFile(zipfile.ZipFile):
     path is covered. The reader stops at the declared size, so a member that lies
     about its size is cut off there and fails its CRC check.
     """
+
+    def __init__(self, file, mode="r", *args, **kwargs):
+        # Report a non-ZIP input as InvalidFileError, which is also a BadZipFile.
+        try:
+            super().__init__(file, mode, *args, **kwargs)
+        except zipfile.BadZipFile as exc:
+            raise InvalidFileError(f"not a valid Excel package: {exc}") from exc
 
     def open(self, name, mode="r", pwd=None, *, force_zip64=False):
         if mode == "r":

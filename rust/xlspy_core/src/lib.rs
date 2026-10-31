@@ -25,6 +25,7 @@ fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__doc__", "Rust-optimized functions for xlspy")?;
     m.add_function(wrap_pyfunction!(types::set_error_type, m)?)?;
     m.add_function(wrap_pyfunction!(types::set_style_type, m)?)?;
+    m.add_function(wrap_pyfunction!(types::set_invalid_file_type, m)?)?;
     m.add_function(wrap_pyfunction!(sst::encode_xlsb_sst, m)?)?;
     m.add_function(wrap_pyfunction!(sst::read_xlsb_shared_strings, m)?)?;
     m.add_function(wrap_pyfunction!(widths::calc_column_widths, m)?)?;

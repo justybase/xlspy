@@ -1,7 +1,6 @@
 """The C loader of XLSB sheet data builds the same cells as the Python one."""
 
 import datetime
-import os
 
 import pytest
 
@@ -71,7 +70,7 @@ def test_loaded_cells_have_openpyxl_data_types(tmp_path):
 
 
 @pytest.mark.com
-@pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1")
+@pytest.mark.com
 def test_native_loader_on_excel_written_formulas(tmp_path, monkeypatch):
     client = pytest.importorskip("win32com.client")
     excel = client.DispatchEx("Excel.Application")

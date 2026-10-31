@@ -6,7 +6,7 @@
 //! as empty rows, cells before any Row record form a phantom row, and
 //! undersized or overrunning records are ignored.
 
-use pyo3::exceptions::{PyMemoryError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyMemoryError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySet, PyString, PyTuple};
 
@@ -14,7 +14,7 @@ use crate::bytes::{ByteView, le_f64, le_u32, read_rk, read_varint};
 use crate::dates::xlsb_date_value;
 use crate::model::{self, CellClass};
 use crate::text::decode_utf16le;
-use crate::types::error_type;
+use crate::types::{error_type, invalid_file_error};
 
 const XLSB_MAX_ROW_INDEX: u32 = 1_048_575;
 /// Bound of the dense per-row cell array: the format maximum of 16384 columns
@@ -45,7 +45,7 @@ pub fn next_record(data: &[u8], pos: &mut usize) -> Option<Record> {
 pub fn row_index(data: &[u8], pos: usize) -> PyResult<i64> {
     match le_u32(data, pos) {
         None | Some(u32::MAX) => Ok(-1),
-        Some(raw) if raw > XLSB_MAX_ROW_INDEX => Err(PyValueError::new_err(format!(
+        Some(raw) if raw > XLSB_MAX_ROW_INDEX => Err(invalid_file_error(format!(
             "XLSB row record has row index {raw}, past the last row ({XLSB_MAX_ROW_INDEX})"
         ))),
         Some(raw) => Ok(i64::from(raw)),
@@ -581,7 +581,7 @@ pub fn xlsb_load_cells<'py>(
         };
         let rec_len = match read_varint(data, &mut pos) {
             Some(len) if len as usize <= data.len() - pos => len as usize,
-            _ => return Err(PyValueError::new_err("truncated XLSB record")),
+            _ => return Err(invalid_file_error("truncated XLSB record".to_string())),
         };
         let body = pos;
         pos += rec_len;
@@ -645,7 +645,7 @@ pub fn xlsb_load_cells<'py>(
         };
         let xf = le_u32(data, cell_body + 4).unwrap_or(0) & 0xFF_FFFF;
         if !(0..16384).contains(&column) {
-            return Err(PyValueError::new_err("XLSB column exceeds Excel limits"));
+            return Err(invalid_file_error("XLSB column exceeds Excel limits".to_string()));
         }
         previous_column = column;
 

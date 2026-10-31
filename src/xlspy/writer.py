@@ -1,3 +1,4 @@
+from .exceptions import UnsupportedFeatureError
 import datetime
 import math
 from decimal import Decimal
@@ -311,7 +312,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         """Reject the few style properties XLSB cannot express."""
         alignment = style.alignment
         if alignment is not None and alignment.relative_indent is not None:
-            raise NotImplementedError(
+            raise UnsupportedFeatureError(
                 "relative_indent is not supported for XLSB output"
             )
         border = style.border
@@ -324,7 +325,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             if border.outline is False:
                 unsupported.append("outline=False")
             if unsupported:
-                raise NotImplementedError(
+                raise UnsupportedFeatureError(
                     "XLSB output does not support border " + ", ".join(unsupported)
                 )
         font = style.font

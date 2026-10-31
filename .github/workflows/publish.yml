@@ -1,19 +1,66 @@
 name: Publish to PyPI
 
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
 
+# Read-only by default; the publish job alone requests an OIDC token.
 permissions:
-  id-token: write
   contents: read
 
 jobs:
+  check-version:
+    name: Tag matches the package version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Compare the tag with pyproject.toml
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          import tomllib
+
+          with open("pyproject.toml", "rb") as handle:
+              version = tomllib.load(handle)["project"]["version"]
+          print("pyproject.toml version:", version)
+          if os.environ["REF_TYPE"] == "tag":
+              tag = os.environ["REF_NAME"].removeprefix("v")
+              if tag != version:
+                  sys.exit(f"tag v{tag} does not match pyproject.toml version {version}")
+          PY
+
   build-wheels:
-    name: Build wheels on ${{ matrix.os }}
+    name: Build wheels on ${{ matrix.os }} (${{ matrix.archs }})
+    needs: check-version
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            archs: auto64
+          - os: ubuntu-24.04-arm
+            archs: aarch64
+          - os: windows-latest
+            archs: AMD64
+          - os: windows-11-arm
+            archs: ARM64
+          - os: macos-latest
+            archs: arm64
+          - os: macos-15-intel
+            archs: x86_64
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -36,7 +83,7 @@ jobs:
         run: python -m cibuildwheel --output-dir wheelhouse
         env:
           CIBW_BUILD: "cp311-* cp312-* cp313-* cp314-* cp315-*"
-          CIBW_ARCHS: "auto64"
+          CIBW_ARCHS: ${{ matrix.archs }}
           # The manylinux/musllinux containers have no Rust toolchain.
           CIBW_BEFORE_ALL_LINUX: "curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal"
           CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH"'
@@ -44,11 +91,12 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: wheels-${{ matrix.os }}
+          name: wheels-${{ matrix.os }}-${{ matrix.archs }}
           path: ./wheelhouse/*.whl
 
   build-sdist:
     name: Build sdist
+    needs: check-version
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -71,10 +119,46 @@ jobs:
           name: wheels-sdist
           path: ./wheelhouse/*.tar.gz
 
+  test-sdist:
+    name: Install the sdist into a clean venv
+    needs: build-sdist
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: wheels-sdist
+          path: ./dist
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build and install the sdist in a clean venv
+        run: |
+          python -m venv "$RUNNER_TEMP/sdist-venv"
+          "$RUNNER_TEMP/sdist-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/sdist-venv/bin/python" -m pip install dist/*.tar.gz
+
+      - name: Smoke-test the installed sdist
+        run: |
+          "$RUNNER_TEMP/sdist-venv/bin/python" tools/wheel_smoke.py
+
   publish:
-    needs: [build-wheels, build-sdist]
+    name: Upload to PyPI
+    needs: [build-wheels, test-sdist]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: pypi
+    permissions:
+      id-token: write
 
     steps:
       - uses: actions/download-artifact@v7

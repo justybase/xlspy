@@ -1,3 +1,4 @@
+from .exceptions import InvalidFileError, UnsupportedFeatureError, XlspyError
 from .writer import XlsbWriter
 from .xlsx_writer import XlsxWriter
 from .xlsb_updater import XlsbUpdater
@@ -108,6 +109,9 @@ def __getattr__(name):
 
 
 __all__ = [
+    'XlspyError',
+    'InvalidFileError',
+    'UnsupportedFeatureError',
     'XlsbWriter',
     'XlsxWriter',
     'XlsbUpdater',

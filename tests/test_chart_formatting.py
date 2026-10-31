@@ -1,6 +1,5 @@
 """Chart formatting: gap width, doughnut hole, chart and plot area fills, and default text."""
 
-import os
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -113,8 +112,7 @@ def test_invalid_formatting_is_rejected(build, message):
         build()
 
 
-@pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-                    reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation")
+@pytest.mark.com
 def test_excel_reads_gap_width_hole_size_and_chart_fill(tmp_path):
     win32 = pytest.importorskip("win32com.client")
     bar_path = _write(tmp_path / "bar_com.xlsx", _bar(gap_width=40, fill="#FFFFFF"))

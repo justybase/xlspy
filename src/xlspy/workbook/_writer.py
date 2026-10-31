@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..exceptions import UnsupportedFeatureError
 import datetime as _datetime
 import os
 import re
@@ -186,7 +187,7 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
             options[name] = items
     if sheet.ignored_errors:
         if xlsb:
-            raise NotImplementedError("ignored errors can be saved to XLSX only")
+            raise UnsupportedFeatureError("ignored errors can be saved to XLSX only")
         options["ignored_errors"] = list(sheet.ignored_errors)
     options["auto_filter"] = bool(sheet.auto_filter.ref)
     options["auto_filter_ref"] = sheet.auto_filter.ref or None
@@ -216,7 +217,7 @@ def _save_new(workbook: Workbook, filename) -> None:
     chartsheets = pending_chartsheets(workbook)
     if chartsheets:
         if extension == "xlsb":
-            raise NotImplementedError("chartsheets can be saved to XLSX only")
+            raise UnsupportedFeatureError("chartsheets can be saved to XLSX only")
         check_chartsheets(workbook)
     if chartsheets or extension in {"xlsm", "xltx", "xltm"}:
         # Written as XLSX, then the package is finished: chartsheets, the
@@ -281,7 +282,7 @@ def save_workbook(workbook: Workbook, filename) -> None:
         if added:
             # The new-file writers build their own styles.xml and do not write
             # these styles; refuse instead of dropping them silently.
-            raise NotImplementedError(
+            raise UnsupportedFeatureError(
                 f"named styles {added!r} can only be written to a loaded workbook: save the "
                 "new workbook first, load it, call add_named_style() and save again"
             )

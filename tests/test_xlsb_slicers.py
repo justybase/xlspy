@@ -5,7 +5,6 @@ The expected bytes come from workbooks Excel 16 saved as XLSB
 ``Region``, then one option changed at a time.
 """
 
-import os
 import struct
 import zipfile
 
@@ -203,8 +202,7 @@ def test_removing_a_sheet_with_slicers_is_refused(tmp_path):
     assert not (tmp_path / "removed.xlsb").exists()
 
 
-@pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-                    reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation")
+@pytest.mark.com
 def test_excel_filters_the_table_with_an_xlsb_slicer(tmp_path):
     win32 = pytest.importorskip("win32com.client")
     path = _write(tmp_path / "com.xlsb", [

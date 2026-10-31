@@ -3,7 +3,7 @@
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
@@ -14,6 +14,7 @@ use pyo3::types::{PyString, PyType};
 /// class replaced while a call is using it stays alive.
 static ERROR_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
 static STYLE_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
+static INVALID_FILE_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
 static DECIMAL: PyOnceLock<Py<PyType>> = PyOnceLock::new();
 
 fn registered<'py>(py: Python<'py>, slot: &AtomicPtr<ffi::PyObject>) -> Option<Bound<'py, PyType>> {
@@ -43,6 +44,21 @@ pub fn set_error_type(type_: &Bound<'_, PyAny>) -> PyResult<()> {
 #[pyfunction]
 pub fn set_style_type(type_: &Bound<'_, PyAny>) -> PyResult<()> {
     register(type_, &STYLE_TYPE, "set_style_type")
+}
+
+/// Register xlspy.InvalidFileError, the exception raised for package data the readers cannot decode.
+#[pyfunction]
+pub fn set_invalid_file_type(type_: &Bound<'_, PyAny>) -> PyResult<()> {
+    register(type_, &INVALID_FILE_TYPE, "set_invalid_file_type")
+}
+
+/// The error for a file the readers cannot decode: xlspy's InvalidFileError
+/// once it is registered, otherwise a ValueError with the same message.
+pub fn invalid_file_error(message: String) -> PyErr {
+    Python::attach(|py| match registered(py, &INVALID_FILE_TYPE) {
+        Some(class) => PyErr::from_type(class, message),
+        None => PyValueError::new_err(message),
+    })
 }
 
 pub fn error_type(py: Python<'_>) -> Option<Bound<'_, PyType>> {

@@ -9,6 +9,7 @@ their blocks of the original part, which otherwise stays byte for byte.
 
 from __future__ import annotations
 
+from .exceptions import UnsupportedFeatureError
 import struct
 
 from ._xlsb_metadata import read_wide
@@ -361,7 +362,7 @@ class XlsbStyleTable(XlsxStyleTable):
         return bytes(data)
 
     def to_bytes(self) -> bytes:
-        raise NotImplementedError("an XLSB style sheet is saved with to_bin()")
+        raise UnsupportedFeatureError("an XLSB style sheet is saved with to_bin()")
 
     def dxf_id(self, dxf) -> int:
         """The index of a conditional format's differential style; a style
@@ -458,7 +459,7 @@ class XlsbStyleTable(XlsxStyleTable):
                 missing.discard(kind)
             chunks.append(whole)
         if missing:
-            raise NotImplementedError(
+            raise UnsupportedFeatureError(
                 "the XLSB style sheet has no block for the new styles "
                 f"(record ids {sorted(missing)})"
             )
@@ -478,7 +479,7 @@ class XlsbStyleTable(XlsxStyleTable):
             after_styles = after_styles or record.record_id == _END_STYLES
             chunks.append(data[record.header_start:record.data_end])
         if not inserted:
-            raise NotImplementedError("the XLSB style sheet has no place for conditional format styles")
+            raise UnsupportedFeatureError("the XLSB style sheet has no place for conditional format styles")
         return b"".join(chunks)
 
     def _xf_record(self, xf: _Xf) -> bytes:

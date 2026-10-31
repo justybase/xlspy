@@ -1,6 +1,5 @@
 """Sparklines and table slicers in XLSX output."""
 
-import os
 import re
 import xml.etree.ElementTree as ET
 import zipfile
@@ -242,8 +241,7 @@ def test_plain_sheet_has_no_slicer_or_sparkline_parts(tmp_path):
 
 # --- Excel COM -----------------------------------------------------------------
 
-@pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-                    reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation")
+@pytest.mark.com
 def test_excel_reads_sparklines_and_slicer(tmp_path):
     win32 = pytest.importorskip("win32com.client")
     path = _write_sample(

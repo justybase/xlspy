@@ -1,6 +1,5 @@
 """Shapes and text boxes (KPI cards) in the drawing of XLSX and XLSB output."""
 
-import os
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -116,8 +115,7 @@ def test_shapes_on_one_sheet_get_unique_ids(tmp_path):
 
 # --- Excel COM -----------------------------------------------------------------
 
-@pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-                    reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation")
+@pytest.mark.com
 def test_excel_reads_kpi_shape_text_and_link(tmp_path):
     win32 = pytest.importorskip("win32com.client")
     path = tmp_path / "kpi_com.xlsx"

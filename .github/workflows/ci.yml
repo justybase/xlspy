@@ -95,11 +95,53 @@ jobs:
         run: |
           rustup component add rustfmt clippy
           cargo fmt --check
-          cargo clippy --release --all-targets -- -D warnings
-          cargo test --release
+          cargo clippy --release --locked --all-targets -- -D warnings
+          cargo test --release --locked
+
+  msrv:
+    name: Rust 1.88 (rust-version in Cargo.toml)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Rust 1.88
+        uses: dtolnay/rust-toolchain@1.88
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
+
+      - name: Check the crate builds on the minimum supported Rust
+        working-directory: rust/xlspy_core
+        run: cargo check --release --locked
+
+  audit:
+    name: Cargo audit (RustSec advisories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Audit the Rust dependencies
+        working-directory: rust/xlspy_core
+        run: cargo audit
 
   test-fallback:
-    runs-on: ubuntu-latest
+    name: Pure-Python fallback (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
 
     steps:
@@ -122,14 +164,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[test]"
 
-      - name: Run tests with the native extension disabled
-        run: |
-          XLSPY_ACCEL=python python -m pytest tests/ -v --tb=short
+      - name: Check the native extension is disabled
+        env:
+          XLSPY_ACCEL: python
+        run: python -c "from xlspy._accel import HAVE_NATIVE; print('native:', HAVE_NATIVE); assert not HAVE_NATIVE, 'native extension should be disabled!'"
 
-      - name: Verify the native extension is disabled
-        run: |
-          XLSPY_ACCEL=python python -c "from xlspy._accel import HAVE_NATIVE; print('native:', HAVE_NATIVE); assert not HAVE_NATIVE, 'native extension should be disabled!'"
-          XLSPY_DISABLE_C_EXT=1 python -c "from xlspy._accel import HAVE_NATIVE; assert not HAVE_NATIVE, 'XLSPY_DISABLE_C_EXT=1 should still disable it'"
+      - name: Check the legacy switch also disables it
+        env:
+          XLSPY_DISABLE_C_EXT: "1"
+        run: python -c "from xlspy._accel import HAVE_NATIVE; assert not HAVE_NATIVE, 'XLSPY_DISABLE_C_EXT=1 should still disable it'"
+
+      - name: Run tests with the native extension disabled
+        env:
+          XLSPY_ACCEL: python
+        run: python -m pytest tests/ -v --tb=short
 
   compat:
     name: openpyxl compatibility
@@ -269,6 +317,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[test]"
 
+      # The floor is fail_under in [tool.coverage.report]; this run fails below it.
       - name: Run tests with coverage
         run: python -m pytest tests/ -q --cov --cov-report=term --cov-report=xml
 

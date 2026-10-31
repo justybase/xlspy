@@ -1,6 +1,5 @@
 """Opt-in integration validation through the installed Microsoft Excel COM server."""
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,10 +9,7 @@ import pytest
 from xlspy import XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWriter
 
 
-@pytest.mark.skipif(
-    os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-    reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation",
-)
+@pytest.mark.com
 def test_updated_files_open_in_excel_com(tmp_path):
     powershell = shutil.which("powershell.exe") or shutil.which("powershell")
     if powershell is None:

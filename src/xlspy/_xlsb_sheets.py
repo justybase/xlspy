@@ -11,6 +11,7 @@ are dropped.
 
 from __future__ import annotations
 
+from .exceptions import UnsupportedFeatureError
 import posixpath
 import struct
 from xml.etree import ElementTree as ET
@@ -150,10 +151,10 @@ class XlsbSheetsMixin:
 
         # As for XLSX: the slicer caches would be left pointing at a removed table.
         if sheet_has_slicers(self._package, path):
-            raise NotImplementedError(f"sheet {name!r} holds table slicers; removing it is not supported yet")
+            raise UnsupportedFeatureError(f"sheet {name!r} holds table slicers; removing it is not supported yet")
         # And a pivot table, its cache and the workbook's cache list would be left dangling.
         if sheet_has_pivots(self._package, path):
-            raise NotImplementedError(f"sheet {name!r} holds pivot tables; removing it is not supported yet")
+            raise UnsupportedFeatureError(f"sheet {name!r} holds pivot tables; removing it is not supported yet")
         workbook = self._package.get("xl/workbook.bin")
         entries = _bundles(workbook)
         removed = next(entry for entry in entries if entry.name == name)

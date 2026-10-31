@@ -5,7 +5,6 @@ data validation and conditional format and loses its chart; the save must keep
 the slicer, the sparklines and the shape, in XLSX and XLSB.
 """
 
-import os
 import re
 import zipfile
 
@@ -84,8 +83,7 @@ def test_xlsb_edits_keep_the_extension_objects(tmp_path):
     assert not [name for name in parts if name.startswith("xl/charts/")]
 
 
-@pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-                    reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation")
+@pytest.mark.com
 @pytest.mark.parametrize("suffix", ["xlsx", "xlsb"])
 def test_excel_opens_the_edited_file(tmp_path, suffix):
     win32 = pytest.importorskip("win32com.client")

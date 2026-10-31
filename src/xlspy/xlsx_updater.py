@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .exceptions import UnsupportedFeatureError
 import datetime as _datetime
 import math
 import mmap
@@ -83,7 +84,7 @@ class XlsxUpdater(XlsxEditMixin):
         if b"http://purl.oclc.org/ooxml/spreadsheetml/main" in self._package.get("xl/workbook.xml")[:4096]:
             # Edits write Transitional markup, which a Strict package must not mix.
             self._package.close()
-            raise NotImplementedError(
+            raise UnsupportedFeatureError(
                 "Strict Open XML workbooks are supported for reading only "
                 "(ExcelReader, load_workbook(read_only=True)); save as a regular .xlsx to edit"
             )

@@ -12,6 +12,8 @@ the caller then uses the pure-Python implementation.
 import importlib as _importlib
 import os as _os
 
+from .exceptions import InvalidFileError
+
 _NATIVE_NAMES = (
     "encode_xlsb_row", "encode_xlsb_row_inline", "calc_column_widths",
     "read_xlsb_worksheet", "read_xlsx_worksheet", "xlsb_row_has_formatted",
@@ -71,6 +73,9 @@ for _module in _loaded.values():
     if hasattr(_module, "set_error_type"):
         from xlspy._errors import CellError as _CellError
         _module.set_error_type(_CellError)
+    if hasattr(_module, "set_invalid_file_type"):
+        # Data errors the native readers raise are InvalidFileError (a ValueError).
+        _module.set_invalid_file_type(InvalidFileError)
     if hasattr(_module, "set_style_type"):
         # (value, Style) cells: the native encoders and width scan recognise them.
         from xlspy.styles import Style as _Style

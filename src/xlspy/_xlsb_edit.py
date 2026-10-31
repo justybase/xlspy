@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .exceptions import UnsupportedFeatureError
 from collections.abc import Mapping
 import datetime
 from decimal import Decimal
@@ -531,7 +532,7 @@ def patch_row(data, values, context, sheet, row, date_1904):
             row_header = bytearray(payload)
             continue
         if kind in (0x31, 0x32):
-            raise NotImplementedError("point edits in rows with cell metadata are unsupported")
+            raise UnsupportedFeatureError("point edits in rows with cell metadata are unsupported")
         if 1 <= kind <= 0x12:
             if kind >= 0xC:
                 column = previous_column + 1

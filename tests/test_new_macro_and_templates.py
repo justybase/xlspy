@@ -1,7 +1,6 @@
 """New .xlsm/.xltx/.xltm workbooks and keep_vba, as in openpyxl."""
 
 import io
-import os
 import zipfile
 
 import pytest
@@ -75,7 +74,7 @@ def test_loaded_workbook_has_no_vba_archive_by_default(tmp_path):
 
 
 @pytest.mark.com
-@pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1")
+@pytest.mark.com
 def test_excel_runs_the_moved_macro(tmp_path):
     import pywintypes
     import win32com.client
@@ -115,7 +114,7 @@ def test_excel_runs_the_moved_macro(tmp_path):
 
 
 @pytest.mark.com
-@pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1")
+@pytest.mark.com
 def test_excel_opens_new_templates_and_macro_books(tmp_path):
     import win32com.client
 

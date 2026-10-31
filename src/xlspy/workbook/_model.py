@@ -6,6 +6,7 @@ fast path (``XlsxWriter``/``XlsbWriter``/``ExcelReader``) does not import it.
 
 from __future__ import annotations
 
+from ..exceptions import UnsupportedFeatureError
 import copy
 
 from collections.abc import Iterable, Mapping
@@ -1241,7 +1242,7 @@ class Cell:
                     named = entry
                     break
             if named is None:
-                raise NotImplementedError(
+                raise UnsupportedFeatureError(
                     "named styles are not implemented yet; "
                     f"{value!r} is not defined, add it with add_named_style()"
                 )
@@ -2067,7 +2068,7 @@ class Chartsheet:
         if value == self._title:
             return
         if self._part is not None:
-            raise NotImplementedError("renaming a loaded chartsheet is not supported")
+            raise UnsupportedFeatureError("renaming a loaded chartsheet is not supported")
         self._workbook._check_title(value, self)
         self._title = value
 
@@ -2213,7 +2214,7 @@ class Workbook:
         self._check_title(title)
         count = len(self._sheets) + len(self._chartsheets)
         if index is not None and index < count:
-            raise NotImplementedError("new chartsheets are added after the other sheets")
+            raise UnsupportedFeatureError("new chartsheets are added after the other sheets")
         sheet = Chartsheet(self, title, index=count)
         self._chartsheets.append(sheet)
         return sheet

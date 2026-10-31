@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   XLSX or XLSB from the same code. Its figures are `SUMIFS` over the rows the slicer leaves visible.
 - `tools/capture_xlsb.py`: builds sparkline and slicer variants in Excel (COM) and prints the XLSB record bytes
   that differ from a base file.
+- Exception classes: `XlspyError` is the base of the errors xlspy raises. `InvalidFileError` (also a `ValueError`
+  and a `zipfile.BadZipFile`) is raised for a file that is not a valid Excel package or whose data cannot be read,
+  and `UnsupportedFeatureError` (also a `NotImplementedError`) for a feature xlspy cannot write. Code that caught
+  the built-in types keeps working. openpyxl's `InvalidFileException` is a subclass of `InvalidFileError`.
+- Wheels for Linux aarch64, Windows ARM64 and macOS Intel (x86_64), in addition to the x86_64 and arm64 builds.
+  The publish workflow runs on `v*` tags, refuses a tag that does not match the version in `pyproject.toml`, and
+  installs and smoke-tests the source distribution in a clean virtual environment before it uploads.
 
 ### Fixed
 
@@ -87,6 +94,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the extension, and `HAVE_C_EXT` stays as an alias.
 - Native style and xf ids above 2**32 - 1 raise `OverflowError` on every platform (the C extension raised on
   Windows and silently truncated them on Linux and macOS).
+- Errors from the native readers for data they cannot parse (a truncated XLSB record, a row index past the last row,
+  a column past Excel's limit, an XLSX worksheet with no row closed) raise `InvalidFileError` instead of a plain
+  `ValueError`. The message is unchanged.
+- `NotImplementedError` raised for unsupported features is now `UnsupportedFeatureError`, which is still a
+  `NotImplementedError`.
+- The minimum supported Rust toolchain is 1.88 (`rust-version` in `rust/xlspy_core/Cargo.toml`), and CI builds the
+  crate on it.
 
 ### Security
 

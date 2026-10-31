@@ -2,6 +2,8 @@
 name = "xlspy_core"
 version = "0.1.0"
 edition = "2024"
+# Lowest toolchain that builds the crate (let-chains, as_chunks_mut); checked in CI.
+rust-version = "1.88"
 publish = false
 description = "Native accelerator for xlspy (PyO3 port of the former C extension)"
 

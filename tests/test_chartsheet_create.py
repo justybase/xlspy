@@ -1,6 +1,5 @@
 """Workbook.create_chartsheet() for XLSX files."""
 
-import os
 
 import pytest
 
@@ -81,7 +80,7 @@ def test_chartsheet_checks(tmp_path):
 
 
 @pytest.mark.com
-@pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1")
+@pytest.mark.com
 def test_excel_opens_the_chartsheet(tmp_path):
     import win32com.client
 

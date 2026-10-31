@@ -1,6 +1,5 @@
 """Sheet view switches: row and column headers, zero values and right-to-left."""
 
-import os
 import re
 import zipfile
 from typing import Any
@@ -73,8 +72,7 @@ def test_loaded_model_reads_and_keeps_the_view(tmp_path, writer_class, suffix):
         workbook.close()
 
 
-@pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-                    reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation")
+@pytest.mark.com
 @pytest.mark.parametrize(("writer_class", "suffix"), [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
 def test_excel_shows_the_view(tmp_path, writer_class, suffix):
     win32 = pytest.importorskip("win32com.client")

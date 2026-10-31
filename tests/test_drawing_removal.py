@@ -107,8 +107,7 @@ def test_images_saved_earlier_in_the_session_cannot_be_removed(tmp_path):
 
 
 @pytest.mark.com
-@pytest.mark.skipif(
-    __import__("os").environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1")
+@pytest.mark.com
 @pytest.mark.parametrize("file_format", [51, 50])  # xlOpenXMLWorkbook, xlExcel12
 def test_removal_from_excel_files(tmp_path, file_format):
     import win32com.client

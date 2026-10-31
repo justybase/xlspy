@@ -10,6 +10,7 @@ is patched rather than rebuilt.
 
 from __future__ import annotations
 
+from ..exceptions import UnsupportedFeatureError
 import re
 import struct
 
@@ -266,7 +267,7 @@ def _selection_records(view) -> bytes:
 def _views_block(sheet, data: bytes) -> bytes:
     views = [payload for record, payload in records(data) if record.record_id == BEGIN_VIEW]
     if len(views) > 1:
-        raise NotImplementedError("editing a sheet with several window views is not supported")
+        raise UnsupportedFeatureError("editing a sheet with several window views is not supported")
     return b"".join((
         build_record(BEGIN_VIEWS),
         _view_record(sheet, views[0] if views else None),
@@ -320,7 +321,7 @@ def _protection_record(sheet) -> bytes:
     if not protection.sheet:
         return b""
     if protection.hashValue or protection.algorithmName:
-        raise NotImplementedError("sheet protection with a hashed password cannot be edited in XLSB yet")
+        raise UnsupportedFeatureError("sheet protection with a hashed password cannot be edited in XLSB yet")
     password = protection.password
     if not password:
         value = 0
@@ -337,7 +338,7 @@ def _filter_block(sheet) -> bytes:
     if not auto_filter.ref:
         return b""
     if auto_filter.sortState is not None:
-        raise NotImplementedError("auto-filter sort state cannot be saved into a loaded XLSB workbook yet")
+        raise UnsupportedFeatureError("auto-filter sort state cannot be saved into a loaded XLSB workbook yet")
     c1, r1, c2, r2 = parse_cell_range(auto_filter.ref)
     output = [build_record(BEGIN_FILTER, struct.pack("<IIII", r1, r2, c1, c2))]
     for column in auto_filter.filterColumn:
@@ -611,7 +612,7 @@ def patch_layout(data: bytes, sheet, groups) -> bytes:
     if "filter" in groups:
         loaded = getattr(sheet, "_saved_filter_records", None) or ()
         if sheet.auto_filter.ref and any(record_id not in _VALUE_FILTER_RECORDS for record_id, _ in loaded):
-            raise NotImplementedError(
+            raise UnsupportedFeatureError(
                 "custom auto-filter criteria cannot be changed in a loaded XLSB workbook yet; "
                 "keep the filter as it is or remove it"
             )

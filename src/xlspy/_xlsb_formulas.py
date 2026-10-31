@@ -6,6 +6,7 @@ module. No Excel installation or third-party parser is needed at runtime.
 
 from __future__ import annotations
 
+from .exceptions import UnsupportedFeatureError
 from dataclasses import dataclass
 import datetime
 from decimal import Decimal
@@ -64,13 +65,13 @@ class _Parser:
         end = 0
         for match in _LEX.finditer(text):
             if match.start() != end:
-                raise NotImplementedError(f"unsupported XLSB formula syntax near {text[end:end + 24]!r}")
+                raise UnsupportedFeatureError(f"unsupported XLSB formula syntax near {text[end:end + 24]!r}")
             token = match[0]
             end = match.end()
             if not token.isspace():
                 self.tokens.append(token)
         if end != len(text):
-            raise NotImplementedError(f"unsupported XLSB formula syntax near {text[end:end + 24]!r}")
+            raise UnsupportedFeatureError(f"unsupported XLSB formula syntax near {text[end:end + 24]!r}")
         self.tokens.append(None)
         self.index = 0
 
@@ -141,7 +142,7 @@ def parse_expression(text):
     parser = _Parser(text.removeprefix('='))
     tree = parser.expression()
     if parser.peek() is not None:
-        raise NotImplementedError(f"unsupported XLSB formula token {parser.peek()!r}")
+        raise UnsupportedFeatureError(f"unsupported XLSB formula token {parser.peek()!r}")
     return tree
 
 
@@ -253,7 +254,7 @@ def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=Fa
             result_class = 0x20 if operand == 'R' else 0x60 if operand == 'A' else 0x40
             if info is None:
                 if base not in _XLFN_FUNCTIONS:
-                    raise NotImplementedError(f"unsupported XLSB function {function!r}")
+                    raise UnsupportedFeatureError(f"unsupported XLSB function {function!r}")
                 index = context.future_function(function)
                 if len(args) > 254:
                     raise ValueError("too many XLSB function arguments")
@@ -293,7 +294,7 @@ def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=Fa
                     chunks.append(branch + b'\x19\x08' + struct.pack('<H', remaining))
                 return b''.join(chunks) + ending
             return b''.join(encoded) + ending
-        raise NotImplementedError(f"unsupported XLSB formula node {kind}")
+        raise UnsupportedFeatureError(f"unsupported XLSB formula node {kind}")
 
     top = operand or ('R' if name_formula else 'V')
     tokens = emit(parse_expression(text), top)
@@ -399,7 +400,7 @@ def decode_formula(data, context, *, sheet=None, origin=(0, 0), name_formula=Fal
             count = take(1)[0] & 0x7F if base == 0x22 else None
             identifier = struct.unpack('<H', take(2))[0]
             if identifier not in BY_ID and identifier != 255:
-                raise NotImplementedError(f"unsupported XLSB function ID {identifier}")
+                raise UnsupportedFeatureError(f"unsupported XLSB function ID {identifier}")
             if identifier == 255:
                 if count is None or count < 1:
                     raise ValueError("invalid XLSB future function")
@@ -420,7 +421,7 @@ def decode_formula(data, context, *, sheet=None, origin=(0, 0), name_formula=Fal
         elif base == 0x29:
             take(2)
         else:
-            raise NotImplementedError(f"unsupported XLSB formula token 0x{token:02x}")
+            raise UnsupportedFeatureError(f"unsupported XLSB formula token 0x{token:02x}")
     if len(stack) != 1:
         raise ValueError("invalid XLSB formula stack result")
     return stack[0][0]
@@ -522,7 +523,7 @@ class FormulaContext:
         if link < len(self.links) and self.links[link] == SUP_BOOK_SRC:
             return self._external_label(link, first, last)
         if link >= len(self.links) or self.links[link] != SUP_SELF:
-            raise NotImplementedError("this kind of external reference is not supported")
+            raise UnsupportedFeatureError("this kind of external reference is not supported")
         if first < 0 or last < 0:
             return '#REF!'
         title = self.sheets[first] if first == last else self.sheets[first] + ':' + self.sheets[last]

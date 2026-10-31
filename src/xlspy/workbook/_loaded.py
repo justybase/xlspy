@@ -7,6 +7,7 @@ byte-for-byte by ``ZipPackage``.
 
 from __future__ import annotations
 
+from ..exceptions import UnsupportedFeatureError
 import datetime as _datetime
 import re
 from xml.etree import ElementTree as ET
@@ -943,13 +944,13 @@ def remove_sheet(updater, workbook: Workbook, name: str) -> None:
     # A slicer's cache lives in the workbook, outside the sheet: removing the sheet would
     # leave the cache pointing at a table that no longer exists, which Excel repairs away.
     if sheet_has_slicers(package, path):
-        raise NotImplementedError(
+        raise UnsupportedFeatureError(
             f"sheet {name!r} holds table slicers; removing it is not supported yet"
         )
     # A pivot table, its cache and the workbook's pivotCaches entry would be left
     # dangling too, so removing a pivot-bearing sheet is not supported yet.
     if sheet_has_pivots(package, path):
-        raise NotImplementedError(
+        raise UnsupportedFeatureError(
             f"sheet {name!r} holds pivot tables; removing it is not supported yet"
         )
     workbook_path = "xl/workbook.xml"

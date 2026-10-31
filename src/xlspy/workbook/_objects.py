@@ -10,6 +10,7 @@ own objects stay: the new ones are added next to them.
 
 from __future__ import annotations
 
+from ..exceptions import UnsupportedFeatureError
 import io
 import posixpath
 import re
@@ -749,7 +750,7 @@ def check_unread(sheet, names) -> None:
     for name in names:
         if unread.get(name):
             label = _UNREAD_LABELS[name]
-            raise NotImplementedError(
+            raise UnsupportedFeatureError(
                 f"sheet {sheet.title!r} holds {unread[name]} {label} that xlspy cannot read; "
                 f"saving changed {label} would drop them"
             )

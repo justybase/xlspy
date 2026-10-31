@@ -16,6 +16,7 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
     reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation",
 )
+pytestmark = [pytest.mark.com, pytestmark]
 
 from xlspy import (  # noqa: E402
     Alignment, Border, Font, PatternFill, Side, Style, Workbook, XlsbWriter, XlsxWriter,

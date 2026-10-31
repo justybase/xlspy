@@ -10,6 +10,7 @@ the file stay as they are.
 
 from __future__ import annotations
 
+from ..exceptions import UnsupportedFeatureError
 import re
 from xml.etree import ElementTree as ET
 
@@ -66,7 +67,7 @@ def check_removals(sheet) -> None:
     for item in saved:
         # Objects added and saved in this session have no recorded place in the file.
         if not _contains(current, item) and not _contains(known, item):
-            raise NotImplementedError(
+            raise UnsupportedFeatureError(
                 "a chart or image added by an earlier save cannot be removed in the same "
                 "session; load the saved workbook again to remove it"
             )
@@ -74,7 +75,7 @@ def check_removals(sheet) -> None:
     removed = {(part, position) for part, position, _item in removed_drawing_objects(sheet)}
     for part, position, item in sources:
         if (part, position) in removed and _contains(current, item):
-            raise NotImplementedError(
+            raise UnsupportedFeatureError(
                 "a chart or image that is grouped with other objects can only be removed "
                 "together with the rest of its group"
             )

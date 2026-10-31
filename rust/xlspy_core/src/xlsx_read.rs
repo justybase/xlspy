@@ -20,7 +20,7 @@ use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyList, PyString, PyTime, Py
 use crate::bytes::ByteView;
 use crate::dates::serial_datetime;
 use crate::model::{self, CellClass};
-use crate::types::error_type;
+use crate::types::{error_type, invalid_file_error};
 
 const CHUNK: usize = 1 << 18;
 /// 26 + 26^2 + 26^3 column keys, plus slot 0 meaning "not cached".
@@ -1081,7 +1081,7 @@ impl XlsxReader {
         }
         self.buf.extend_from_slice(data);
         if self.buf.len() > MAX_PENDING_BYTES {
-            return Err(PyValueError::new_err(format!(
+            return Err(invalid_file_error(format!(
                 "worksheet XML holds more than {MAX_PENDING_BYTES} bytes without closing a row"
             )));
         }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..exceptions import UnsupportedFeatureError
 import os
 import shutil
 import tempfile
@@ -39,7 +40,7 @@ def remember_workbook_state(workbook) -> None:
 
 
 def _unsupported(what: str):
-    return NotImplementedError(
+    return UnsupportedFeatureError(
         f"{what} cannot be saved into a loaded XLSB workbook yet; "
         "build the workbook with Workbook() and save it as .xlsb instead"
     )
@@ -69,7 +70,7 @@ def _reject_unsupported_edits(workbook) -> None:
     """Fail loudly, before anything is written, on edits that cannot be saved yet."""
     styles = workbook._styles
     if workbook._styles_dirty and not hasattr(styles, "to_bin"):
-        raise NotImplementedError(
+        raise UnsupportedFeatureError(
             "style changes are not supported when saving a loaded XLSB workbook"
         )
     if styles.is_modified() and not getattr(workbook, "_xlsb_styles_path", None):
