@@ -1,0 +1,19 @@
+Final A/B: base (e8500f9, the start of the branch) against the current branch, same session.
+bench_io.py --repeat 7 (median of 7 per run). Two interleaved rounds for the plain cases, seconds.
+
+case                  base r1   base r2   current r1  current r2
+write_xlsx             0.446     0.452     0.455       0.450
+write_xlsb             0.322     0.329     0.320       0.341
+read_xlsx              0.288     0.287     0.280       0.277
+read_xlsb              0.059     0.060     0.057       0.056
+load_xlsx              0.487     0.448     0.497       0.423
+load_xlsx_styled       1.110     0.985     1.112       0.969
+read_xlsx_entities     2.966     2.959     0.295       0.295
+load_xlsx_entities     4.616     4.488     0.602       0.563
+
+Plain cases: within the noise of this machine (+/- 3%). The unchanged zlib control
+rows in the full run moved by -4% to +0.2%, which is the size of that noise.
+Entity files: read about 10x faster, load about 8x faster.
+
+Full single runs: windows-2026-10-31-final-base-io.json and -final-current-io.json.
+Read gate (50,000 x 50, ExcelReader, median of 7): read-windows-2026-10-31-final-*-gate.json.

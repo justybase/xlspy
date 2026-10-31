@@ -70,9 +70,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ReadOnlyCell` is exported from `xlspy`.
 - An unclosed workbook opened by an updater no longer emits a `ResourceWarning` for its temporary directory when it
   is garbage collected; the directory is removed by `close()` or when the updater is collected.
+- The native XLSX reader decodes character references (`&amp;`, `&#65;`) and carriage returns in cell values itself.
+  Sheets that have them are no longer read by the slower ElementTree path, and typed values with references
+  (`t="e"`, `t="d"`, `t="b"`, numbers) read the same as ElementTree does; they used to differ.
 
 ### Changed
 
+- Plain rows given to `write_sheet` (XLSX and XLSB) write numpy integer, `bool_`, float16 and float32 scalars as the
+  Python value they hold, as the DataFrame path already did. They used to be written as text (`"1"`, `"True"`,
+  `"0.1"`). A float32 `0.1` is now written as `0.10000000149011612`, and a float32 `NaN` raises `ValueError`, as a
+  float `NaN` does. Auto column widths measure the value that is written.
 - `XlsxUpdater` and `XlsbUpdater` raise `ValueError` for NaN and infinite numbers, as `update_cells` already did.
   They used to write them into the file.
 - `XlsxWriter` and `XlsbWriter` raise `ValueError` for NaN and infinite numbers. XLSX used to write them as text
@@ -101,6 +108,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NotImplementedError`.
 - The minimum supported Rust toolchain is 1.88 (`rust-version` in `rust/xlspy_core/Cargo.toml`), and CI builds the
   crate on it.
+- XLSX writing is faster for formula and hyperlink cells, which the native row encoder now writes. The sheets are the
+  same: the native and Python writers are compared package by package. A 50,000 × 20 sheet of formulas went from 0.86 s
+  to 0.29 s; a sheet of hyperlinks from 2.1 s to 1.3 s (its relationships are still written by Python).
+- XLSX shared strings are parsed natively: about 6× faster than the regular-expression parser on a million short
+  strings, and `ExcelReader` opens such a file in 0.16 s instead of 0.86 s.
+- Sheets whose text has character references or line breaks no longer fall back to ElementTree. `ExcelReader` reads
+  a 50,000 × 50 sheet of that kind in 0.69 s instead of 6.5 s, and `load_workbook` loads it about 8× faster.
 
 ### Security
 
