@@ -295,6 +295,11 @@ def _patch_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
     if match is None:
         return xml
     body = match[0]
+    if body.endswith("/>"):
+        # An empty <sheetData/> has no closing tag to insert rows before; expand
+        # it so the rows go inside the element.
+        tag_name = re.match(r"<([\w.:-]+)", body)[1]
+        body = f"{body[:-2].rstrip()}></{tag_name}>"
     seen = set()
     next_row = 1
 

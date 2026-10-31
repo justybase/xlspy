@@ -65,7 +65,31 @@ _XLFN_FUNCTIONS = frozenset({
     "WEBSERVICE",
     "WORKDAY.INTL",
     "Z.TEST",
+    # Missing before: Excel stores these with the prefix too, and without it the
+    # cell shows #NAME?. Names checked against the list XlsxWriter writes (MS-XLSX).
+    "ACOT", "ACOTH", "ARABIC", "BASE", "BINOM.DIST.RANGE", "COMBINA",
+    "CONFIDENCE.NORM", "CONFIDENCE.T", "COT", "COTH", "CSC", "CSCH", "DECIMAL",
+    "FORECAST.ETS", "FORECAST.ETS.CONFINT", "FORECAST.ETS.SEASONALITY",
+    "FORECAST.ETS.STAT", "IMAGE", "IMCOSH", "IMCOT", "IMCSC", "IMCSCH", "IMSEC",
+    "IMSECH", "IMSINH", "IMTAN", "ISOMITTED", "MUNIT", "PERMUTATIONA",
+    "QUERYSTRING", "SEC", "SECH",
 })
+
+# Functions stored in the _xlws namespace: "_xlfn._xlws.SORT", not "_xlfn.SORT".
+_XLWS_FUNCTIONS = frozenset({"FILTER", "SORT"})
+
+
+def future_function_name(name: str) -> str:
+    """The stored name of a post-2007 function: ``_xlfn.CONCAT``, ``_xlfn._xlws.SORT``.
+
+    Accepts the name with or without a prefix already in place.
+    """
+    bare = name.removeprefix("_XLFN.").removeprefix("_xlfn.")
+    bare = bare.removeprefix("_xlws.").removeprefix("_XLWS.")
+    if bare.upper() in _XLWS_FUNCTIONS:
+        return "_xlfn._xlws." + bare
+    return "_xlfn." + bare
+
 
 # Functions whose arguments need ``_xlpm.`` parameter names or cell-level
 # lambda metadata. They are refused rather than written as #NAME? formulas.
@@ -131,7 +155,7 @@ def _prefix_future_functions(text: str) -> str:
         if following is None or following[1] != "(":
             continue
         pieces.append(text[cursor:start])
-        pieces.append("_xlfn." + value)
+        pieces.append(future_function_name(value))
         cursor = end
     pieces.append(text[cursor:])
     return "".join(pieces)

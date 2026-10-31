@@ -20,7 +20,7 @@ from ._xlsb_functions import FUNCTIONS, BY_ID
 from ._xlsb_metadata import wide_string, read_wide, records, replace_records
 from .biff_utils import build_record
 from .excel_dates import datetime_to_serial
-from .formulas import _XLFN_FUNCTIONS
+from .formulas import _XLFN_FUNCTIONS, future_function_name
 from .refs import parse_cell_range, column_label, quote_sheet_name
 
 NAME, BEGIN_EXTERNALS, END_EXTERNALS, SUP_SELF, EXTERN_SHEET = 0x27, 0x161, 0x162, 0x165, 0x16A
@@ -565,7 +565,7 @@ class FormulaContext:
         return (quote_sheet_name(scope) + '!' if scope is not None and scope != sheet else '') + entry.name
 
     def future_function(self, title):
-        title = '_xlfn.' + title.removeprefix('_XLFN.').removeprefix('_xlfn.')
+        title = future_function_name(title)
         index = self.name_reference(title)
         entry = self.names[index]
         if entry.raw is None:

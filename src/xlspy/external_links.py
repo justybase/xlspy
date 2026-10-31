@@ -77,15 +77,17 @@ def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
             for node in root.iter(f"{{{_MAIN}}}externalReference")
         ]
     links: list[ExternalLink] = []
-    for rid in order:
+    for position, rid in enumerate(order, start=1):
         target = relationships.get(rid)
         if target is None or not package.has(_resolve(book, target[0])):
+            # Keep a placeholder: formulas number links by their position, so
+            # dropping this one moved every later [n] onto the wrong workbook.
+            links.append(ExternalLink(position, None))
             continue
         part = _resolve(book, target[0])
-        links.append(ExternalLink(
-            len(links) + 1, None, _sheet_names(package, part, binary), part,
-        ))
-        links[-1].target = _path_target(package, part, _target_rid(package, part, binary))
+        link = ExternalLink(position, None, _sheet_names(package, part, binary), part)
+        link.target = _path_target(package, part, _target_rid(package, part, binary))
+        links.append(link)
     return links
 
 
