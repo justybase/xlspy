@@ -7,11 +7,13 @@ use pyo3::prelude::*;
 
 mod bytes;
 mod cells;
+mod numfmt;
 mod sst;
 mod text;
 mod types;
 mod widths;
 mod xlsb_write;
+mod xlsx_write;
 
 #[pymodule(gil_used = true)]
 fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -24,5 +26,6 @@ fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(widths::xlsb_row_has_formatted, m)?)?;
     m.add_function(wrap_pyfunction!(xlsb_write::encode_xlsb_row, m)?)?;
     m.add_function(wrap_pyfunction!(xlsb_write::encode_xlsb_row_inline, m)?)?;
+    m.add_function(wrap_pyfunction!(xlsx_write::encode_xlsx_row, m)?)?;
     Ok(())
 }

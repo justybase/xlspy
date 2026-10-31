@@ -8,8 +8,8 @@ use pyo3::types::{
 
 use crate::bytes::write_varint;
 use crate::cells::{
-    Cell, Serial, Sst, as_unsigned_long, date_style_xf, excel_serial, fmt_tuple_kind, fmt_xf_value,
-    rollback, text_fits,
+    Cell, Serial, Sst, Styles, date_style_xf, excel_serial, fmt_tuple_kind, fmt_xf_value, rollback,
+    text_fits,
 };
 use crate::sst::u32_mask;
 use crate::text::{CELL_TEXT_LIMIT, CodePoints};
@@ -101,74 +101,6 @@ fn str_cell(
     }
 }
 
-fn style_ids_kind(style_ids: &Bound<'_, PyAny>) -> PyResult<()> {
-    if style_ids.is_none()
-        || style_ids.is_instance_of::<PyList>()
-        || style_ids.is_instance_of::<PyTuple>()
-        || style_ids.is_instance_of::<PyInt>()
-    {
-        return Ok(());
-    }
-    Err(PyTypeError::new_err(
-        "style_ids must be an integer, list, tuple, or None",
-    ))
-}
-
-/// Per-cell style source: one style for the row, a dense list, or sparse
-/// (column, style_id) pairs in column order.
-struct Styles<'a, 'py> {
-    ids: &'a Bound<'py, PyAny>,
-    row_style: u32,
-    len: usize,
-    pair_index: usize,
-}
-
-impl Styles<'_, '_> {
-    fn for_column(&mut self, col: usize) -> PyResult<u32> {
-        if self.ids.is_none() {
-            return Ok(0);
-        }
-        if self.row_style != 0 {
-            return Ok(self.row_style);
-        }
-        if let Ok(list) = self.ids.cast::<PyList>() {
-            if col < self.len
-                && let Ok(item) = list.get_item(col)
-                && !item.is_none()
-            {
-                return Ok(as_unsigned_long(&item).unwrap_or(0));
-            }
-            return Ok(0);
-        }
-        let Ok(pairs) = self.ids.cast::<PyTuple>() else {
-            return Ok(0);
-        };
-        while self.pair_index < self.len {
-            let pair = pairs.get_item(self.pair_index)?;
-            let pair = match pair.cast::<PyTuple>() {
-                Ok(p) if p.len() == 2 => p.clone(),
-                _ => {
-                    return Err(PyTypeError::new_err(
-                        "sparse style entries must be (column, style_id) pairs",
-                    ));
-                }
-            };
-            let style_col: i64 = pair.get_item(0)?.extract()?;
-            if style_col < col as i64 {
-                self.pair_index += 1;
-                continue;
-            }
-            if style_col == col as i64 {
-                let v = as_unsigned_long(&pair.get_item(1)?)?;
-                self.pair_index += 1;
-                return Ok(v);
-            }
-            break;
-        }
-        Ok(0)
-    }
-}
-
 /// Encode one row: the bytes, or None when the Python encoder must write it.
 #[allow(clippy::too_many_arguments)]
 fn encode_row<'py>(
@@ -183,7 +115,6 @@ fn encode_row<'py>(
     let row = row
         .cast::<PyList>()
         .map_err(|_| PyTypeError::new_err("row must be a list"))?;
-    style_ids_kind(style_ids)?;
     let fmt_xf = if fmt_xf.is_none() {
         None
     } else {
@@ -205,23 +136,8 @@ fn encode_row<'py>(
             }
         }
     };
-    let row_style = if style_ids.is_instance_of::<PyInt>() {
-        as_unsigned_long(style_ids)?
-    } else {
-        0
-    };
-    let mut styles = Styles {
-        ids: style_ids,
-        row_style,
-        // Only lists and tuples have a length here; len(None) would raise, and
-        // an exception per row is expensive.
-        len: match (style_ids.cast::<PyList>(), style_ids.cast::<PyTuple>()) {
-            (Ok(list), _) => list.len(),
-            (_, Ok(tuple)) => tuple.len(),
-            _ => 0,
-        },
-        pair_index: 0,
-    };
+    // Bad dense-list entries count as no style here (the XLSX encoder raises).
+    let mut styles = Styles::new(style_ids, false)?;
     let style_type = style_type(py);
     let decimal = decimal_type(py);
 

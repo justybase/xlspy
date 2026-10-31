@@ -315,3 +315,88 @@ def test_xlsb_row_failure_rolls_back_the_table():
        st.sampled_from([(), (None, FMT_XF), (5, FMT_XF), ([0, 5, 7, None, 5], FMT_XF), (((1, 5), (3, 7)), FMT_XF)]))
 def test_xlsb_row_random(row, row_idx, extra):
     assert_same_xlsb(row, row_idx, *extra)
+
+
+# -- XLSX row encoder -------------------------------------------------------
+
+class NanFloat(float):
+    pass
+
+
+XLSX_CELLS = ROW_CELLS + [
+    "a & b <c> d", "_x0041_ literal", "_x00G1_", "\ufffe", "\uffff end", " leading", "\tlead tab", "x\x01y",
+    "tab\tnew\nline", "\r carriage", 1e16, 1e-7, 123456789.125, -5e300, 2.0**53, NanFloat("nan"), NanFloat("inf"),
+    datetime.datetime(9999, 12, 31, 23, 59, 59), datetime.date(1900, 2, 28), datetime.date(1900, 3, 1),
+]
+
+
+def _xlsx_outcomes(row, row_idx, use_sst, *extra, make_row=list):
+    results = []
+    for module in (c_core, rs_core):
+        ss_dict, ss_list = _table()
+        res = outcome(module.encode_xlsx_row, make_row(row), ss_dict, ss_list, 3, 9, row_idx, use_sst, *extra)
+        results.append((res, ss_dict, ss_list))
+    return results
+
+
+def assert_same_xlsx(row, row_idx=1, *extra, make_row=list):
+    for use_sst in (True, False):
+        c_result, rs_result = _xlsx_outcomes(row, row_idx, use_sst, *extra, make_row=make_row)
+        assert rs_result == c_result, f"use_sst={use_sst} row={row!r} extra={extra!r}"
+
+
+@ported("encode_xlsx_row")
+@pytest.mark.parametrize("cell", XLSX_CELLS, ids=lambda c: type(c).__name__)
+@pytest.mark.parametrize("extra", [(), (None, FMT_XF), (5, FMT_XF), ([0, 5, None, 7], FMT_XF), (((1, 5),), FMT_XF),
+                                   (5, None), (None, FMT_XF, ' ht="20" customHeight="1"')])
+def test_xlsx_row_single_cell(cell, extra):
+    assert_same_xlsx(["first", cell, "text"], 1, *extra)
+    assert_same_xlsx([cell], 0, *extra)
+
+
+@ported("encode_xlsx_row")
+@pytest.mark.parametrize("extra", [
+    ("bad",), (-1,), ([1, "x", None],), ([2**40],), (((0, 1), (2, 3), (2, 4)),), (((0, 1), "bad"),),
+    (None, ["not", "dict"]), (None, None, 5), (None, None, "\ud800"), (True,), (2**32 - 1,),
+])
+def test_xlsx_row_style_arguments(extra):
+    assert_same_xlsx([None, 1, "a", None, 2.5], 7, *extra)
+
+
+@ported("encode_xlsx_row")
+@pytest.mark.parametrize("make_row", [list, tuple, iter, lambda r: (x for x in r)])
+def test_xlsx_row_sequences(make_row):
+    assert_same_xlsx(["a", 1, None, (5, "0.00")], 2, None, FMT_XF, make_row=make_row)
+
+
+@ported("encode_xlsx_row")
+def test_xlsx_row_bad_arguments():
+    same("encode_xlsx_row", 5, {}, [], 0, 0, 1, True)
+    same("encode_xlsx_row", [1], [], [], 0, 0, 1, True)
+    same("encode_xlsx_row", [1], {}, (), 0, 0, 1, False)
+    same("encode_xlsx_row", [1], {}, [], "0", 0, 1, True)
+    same("encode_xlsx_row", [1], {}, [], 0, 0, 1, BadStr())
+    same("encode_xlsx_row", [1], {}, [], 0, 0, 2**32 - 1, True)
+
+
+@ported("encode_xlsx_row")
+def test_xlsx_row_failure_rolls_back_the_table():
+    for row in (["new one", "new two", BadHash("x")], ["new one", float("nan")], ["new", object()]):
+        c_result, rs_result = _xlsx_outcomes(row, 1, True)
+        assert rs_result == c_result
+        assert rs_result[1:] == _table()
+
+
+@ported("encode_xlsx_row")
+@settings(max_examples=500, deadline=None)
+@given(st.lists(st.sampled_from(XLSX_CELLS), max_size=12), st.integers(0, 3),
+       st.sampled_from([(), (None, FMT_XF), (5, FMT_XF), ([0, 5, 7, None, 5], FMT_XF), (((1, 5), (3, 7)), FMT_XF)]))
+def test_xlsx_row_random(row, row_idx, extra):
+    assert_same_xlsx(row, row_idx, *extra)
+
+
+@ported("encode_xlsx_row")
+@settings(max_examples=300, deadline=None)
+@given(st.lists(st.text(max_size=12), max_size=6))
+def test_xlsx_row_random_text(row):
+    assert_same_xlsx(row, 1)
