@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import importlib.metadata
 import json
 import os
@@ -46,6 +47,8 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
+
+from bench_io import _iqr, accel_info  # noqa: E402  (after the path setup above)
 
 SHEET = "S"
 SHEET_PART = "xl/worksheets/sheet1.bin"
@@ -69,6 +72,11 @@ CASES = [
     ("openpyxl read_only, xlsxwriter file", "xlsxwriter_xlsx", "openpyxl_readonly"),
     ("openpyxl load_workbook, XLSX", "xlspy_xlsx", "openpyxl_load"),
     ("openpyxl load_workbook, xlsxwriter file", "xlsxwriter_xlsx", "openpyxl_load"),
+    # Cells whose text needs XML decoding: entities, CR/LF, character references.
+    ("xlspy ExcelReader, entities XLSX", "xlspy_entities", "xlspy_reader"),
+    ("xlspy load_workbook, entities XLSX", "xlspy_entities", "xlspy_load"),
+    ("python-calamine, entities XLSX", "xlspy_entities", "calamine"),
+    ("openpyxl read_only, entities XLSX", "xlspy_entities", "openpyxl_readonly"),
 ]
 
 FILES = {
@@ -76,7 +84,10 @@ FILES = {
     "xlspy_xlsb": "xlspy.xlsb",
     "xlspy_xlsb_fixed": "xlspy-dimension.xlsb",
     "xlsxwriter_xlsx": "xlsxwriter.xlsx",
+    "xlspy_entities": "xlspy-entities.xlsx",
 }
+
+XLSPY_READERS = ("xlspy_reader", "xlspy_load")
 
 
 def _rss_mb():
@@ -85,19 +96,26 @@ def _rss_mb():
 
 
 def _walk(rows, count_cells=True):
-    """Consume every row; return (row count, non-empty cell count).
+    """Consume every row; return (row count, non-empty cell count, digest).
 
-    With ``count_cells=False`` the cells are not inspected and the count is None,
-    so the timed pass does not include the cost of counting.
+    With ``count_cells=False`` the cells are not inspected and the count and the
+    digest are None, so the timed pass does not include the cost of counting.
+    The digest is a SHA-256 over the repr of every row: it compares the values
+    the reader returns, not only their number. It is only comparable between
+    readers that return the same types.
     python-calamine reports empty cells as '', the other readers as None.
     """
     row_count = 0
     filled = 0
+    digest = hashlib.sha256() if count_cells else None
     for row in rows:
         row_count += 1
         if count_cells:
             filled += sum(1 for value in row if value is not None and value != "")
-    return row_count, (filled if count_cells else None)
+            digest.update(repr(tuple(row)).encode("utf-8", "surrogatepass"))
+    if not count_cells:
+        return row_count, None, None
+    return row_count, filled, digest.hexdigest()
 
 
 def make_reader(name):
@@ -139,9 +157,9 @@ def make_reader(name):
             sheet = fastexcel.read_excel(path).load_sheet_by_name(SHEET, header_row=None)
             batch = sheet.to_arrow()
             if not count_cells:
-                return batch.num_rows, None
+                return batch.num_rows, None, None
             filled = sum(len(column) - column.null_count for column in batch.columns)
-            return batch.num_rows, filled
+            return batch.num_rows, filled, None  # Arrow values are not digested.
         return read
     if name == "pyxlsb":
         from pyxlsb import open_workbook
@@ -174,11 +192,40 @@ def make_reader(name):
     raise SystemExit(f"unknown reader {name}")
 
 
+def _count_fallbacks():
+    """Count the rows handed to ElementTree by the ExcelReader and the model loader.
+
+    Both hand-off points are module globals, looked up at call time, so patching
+    the module attributes is enough. Returns ``(calls, restore)``.
+    """
+    from xlspy import _xlsx_read
+    from xlspy.workbook import _fast_sheet
+
+    calls = {"n": 0}
+    originals = []
+    for module, name in ((_xlsx_read, "_row_from_element"), (_fast_sheet, "_load_row")):
+        original = getattr(module, name)
+        originals.append((module, name, original))
+
+        def counting(*args, _original=original, **kwargs):
+            calls["n"] += 1
+            return _original(*args, **kwargs)
+
+        setattr(module, name, counting)
+
+    def restore():
+        for module, name, original in originals:
+            setattr(module, name, original)
+
+    return calls, restore
+
+
 def child(args):
     """Executed in the child process; prints one JSON line with the metrics.
 
-    The timed pass only consumes the rows. The row and cell counts come from a
-    second pass over the same file, which is not timed.
+    The timed pass only consumes the rows. The row and cell counts, the value
+    digest and the fallback count come from a second pass over the same file,
+    which is not timed.
     """
     read = make_reader(args.reader)
     before = _rss_mb()
@@ -186,13 +233,25 @@ def child(args):
     read(args.path, count_cells=False)
     seconds = time.perf_counter() - start
     peak_rss_delta = max(_rss_mb() - before, 0.0)
-    row_count, filled = read(args.path, count_cells=True)
-    print(json.dumps({
+    calls = restore = None
+    if args.reader in XLSPY_READERS and args.path.endswith(".xlsx"):
+        calls, restore = _count_fallbacks()
+    try:
+        row_count, filled, digest = read(args.path, count_cells=True)
+    finally:
+        if restore is not None:
+            restore()
+    out = {
         "seconds": seconds,
         "rows": row_count,
         "non_empty_cells": filled,
+        "digest": digest,
         "peak_rss_delta_mb": peak_rss_delta,
-    }))
+    }
+    if calls is not None:
+        out["fallback_rows"] = calls["n"]
+        out["fallback_pct"] = 100.0 * calls["n"] / max(row_count, 1)
+    print(json.dumps(out))
 
 
 def _with_dimension(source, target, rows, cols):
@@ -212,8 +271,9 @@ def _with_dimension(source, target, rows, cols):
 
 
 def make_files(directory, rows, cols):
-    """Write the input files once; all of them hold the same values."""
-    from bench_io import rows as generate
+    """Write the input files once; all of them hold the same values, except the
+    entity file, which has the same shape but cells that need XML decoding."""
+    from bench_io import rows as generate, write_entity_xlsx
 
     import xlspy
     import xlsxwriter
@@ -221,6 +281,8 @@ def make_files(directory, rows, cols):
     xlspy_xlsb = os.path.join(directory, FILES["xlspy_xlsb"])
     xlspy_xlsb_fixed = os.path.join(directory, FILES["xlspy_xlsb_fixed"])
     xlsxwriter_path = os.path.join(directory, FILES["xlsxwriter_xlsx"])
+    entities_path = os.path.join(directory, FILES["xlspy_entities"])
+    write_entity_xlsx(entities_path, rows, cols)
 
     with xlspy.XlsxWriter(xlspy_xlsx) as writer:
         writer.add_sheet(SHEET)
@@ -241,7 +303,8 @@ def make_files(directory, rows, cols):
                 sheet.write(index, column, value)
     book.close()
     return {"xlspy_xlsx": xlspy_xlsx, "xlspy_xlsb": xlspy_xlsb,
-            "xlspy_xlsb_fixed": xlspy_xlsb_fixed, "xlsxwriter_xlsx": xlsxwriter_path}
+            "xlspy_xlsb_fixed": xlspy_xlsb_fixed, "xlsxwriter_xlsx": xlsxwriter_path,
+            "xlspy_entities": entities_path}
 
 
 def _versions():
@@ -260,10 +323,13 @@ def parent(args):
     for module in ("xlsxwriter", "openpyxl", "python_calamine", "fastexcel", "pyarrow", "pyxlsb", "psutil"):
         __import__(module)
 
+    wanted = [part.strip() for part in (args.only or "").split("|") if part.strip()]
+    cases = [case for case in CASES if not wanted or any(part in case[0] for part in wanted)]
+
     results = {}
     with tempfile.TemporaryDirectory(prefix="xlspy-read-bench-") as directory:
         paths = make_files(directory, args.rows, args.cols)
-        for label, file_key, reader in CASES:
+        for label, file_key, reader in cases:
             runs = []
             for _ in range(args.repeat):
                 completed = subprocess.run(
@@ -281,22 +347,38 @@ def parent(args):
                 print(f"{label:42s} {results[label]}", flush=True)
                 continue
             merged = dict(good[0])
-            merged["seconds"] = statistics.median(r["seconds"] for r in good)
+            seconds = [r["seconds"] for r in good]
+            merged["seconds"] = statistics.median(seconds)
+            merged["iqr"] = _iqr(seconds)
             merged["peak_rss_delta_mb"] = statistics.median(r["peak_rss_delta_mb"] for r in good)
-            merged["runs"] = [round(r["seconds"], 3) for r in good]
+            merged["runs"] = [round(s, 3) for s in seconds]
+            digests = {r.get("digest") for r in good}
+            if len(digests) > 1:
+                print(f"WARNING: {label}: value digest differs between runs", file=sys.stderr)
             results[label] = merged
-            print(f"{label:42s} {merged['seconds']:7.2f} s  {merged['rows']} rows  "
-                  f"{merged['non_empty_cells']} cells", flush=True)
+            fallback = (f"  fallback {merged['fallback_rows']} rows"
+                        if "fallback_rows" in merged else "")
+            print(f"{label:42s} {merged['seconds']:7.2f} s (iqr {merged['iqr']:.2f})  "
+                  f"{merged['rows']} rows  {merged['non_empty_cells']} cells{fallback}", flush=True)
 
     counts = {(r["rows"], r["non_empty_cells"]) for r in results.values() if "error" not in r}
     if len(counts) > 1:
         print(f"WARNING: readers disagree on (rows, non-empty cells): {sorted(counts)}", file=sys.stderr)
+    # The two xlspy readers must return the same values for the same file.
+    for file_key in FILES:
+        digests = {results[label]["digest"] for label, key, reader in CASES
+                   if key == file_key and reader in XLSPY_READERS and label in results
+                   and "error" not in results[label] and results[label].get("digest")}
+        if len(digests) > 1:
+            print(f"WARNING: xlspy readers disagree on the values of {file_key}", file=sys.stderr)
 
     document = {
         "python": sys.version.split()[0],
         "rows": args.rows,
         "cols": args.cols,
+        "repeat": args.repeat,
         "c_ext": not os.environ.get("XLSPY_DISABLE_C_EXT"),
+        "accel": accel_info(),
         "versions": _versions(),
         "results": results,
     }
@@ -311,6 +393,7 @@ def main():
     parser.add_argument("--rows", type=int, default=50000)
     parser.add_argument("--cols", type=int, default=50)
     parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument("--only", help="'|'-separated substrings of the case labels to run")
     parser.add_argument("--out")
     parser.add_argument("--child", dest="reader")
     parser.add_argument("--path")
