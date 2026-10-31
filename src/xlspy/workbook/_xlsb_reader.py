@@ -9,18 +9,21 @@ from xml.etree import ElementTree as ET
 
 from .._xlsb_formulas import FormulaContext
 from .._xlsb_metadata import read_wide
-from .._xlsb_read import iter_indexed_rows
+from itertools import chain as _chain
+
+from .._accel import xlsb_load_cells
+from .._xlsb_read import cached_cell, formula_groups, formula_text, iter_indexed_rows
 from .._xlsb_styles import XlsbStyleTable
 from .._xlsb_validation import dval_rule
 from ..biff_utils import iter_record_payloads
 from ..comments import rels_path
 from ..hyperlinks import Hyperlink
-from ..reader import ExcelReader
+from ..reader import ExcelReader, _get_date_num_fmt_ids
 from ..refs import column_label, parse_cell_range
 from ..xlsb_updater import XlsbUpdater
 from ..chart_reader import read_drawing
 from ..updater_utils import resolve_zip_target
-from ._model import AutoFilter, DefinedNameList, Workbook, Worksheet
+from ._model import CELL_SLOTS, AutoFilter, Cell, DefinedNameList, Workbook, Worksheet
 from ._reader import _read_custom_properties, _read_print_names, _read_properties, _read_sheet_relationships
 from ._xlsb_layout import builtin_names
 from ._xlsb_loaded import remember_saved_state, remember_workbook_state
@@ -41,6 +44,65 @@ def _external_links(package, sheet_path: str) -> dict[str, str]:
         for rel in ET.fromstring(package.get(path))
         if rel.get("TargetMode") == "External" and rel.get("Id") and rel.get("Target")
     }
+
+
+def _load_cells(sheet, reader, name, sheet_data, data_only):
+    """Read the cells into ``sheet``. Return the ``(start, end)`` offsets of the
+    sheet data when the C loader read it, else None (the records were read in
+    Python, row headers excluded)."""
+    if xlsb_load_cells is None:
+        _load_cells_python(sheet, reader, name, sheet_data, data_only)
+        return None
+    max_row, max_column, formulas, headers, groups, start, end = xlsb_load_cells(
+        sheet_data, reader._shared_string_array, reader._styles_cell_xfs_array,
+        _get_date_num_fmt_ids(reader._number_formats_type_dict), reader._date_1904,
+        Cell, CELL_SLOTS, sheet, sheet._cells,
+    )
+    sheet._max_row = max(sheet._max_row, max_row)
+    sheet._max_column = max(sheet._max_column, max_column)
+    for _row, payload in headers:
+        row_header(sheet, payload)
+    if formulas:
+        context = None if data_only else FormulaContext(
+            reader.get_sheet_names(), reader._archive.read("xl/workbook.bin"),
+        )
+        shared = formula_groups(groups)
+        for row, kind, payload in formulas:
+            value, formula, style = cached_cell(kind, payload, reader)
+            column = struct.unpack_from("<I", payload)[0]
+            text = None
+            if not data_only and formula is not None:
+                text = formula_text(formula, shared, context, name, row - 1, column)
+            _set_loaded_cell(sheet, row, column + 1, value, style, text)
+    if start < 0:
+        return 0, 0
+    return start, end
+
+
+def _set_loaded_cell(sheet, row, column, value, style_id, formula_text=None):
+    if formula_text is not None:
+        sheet._set_cell_raw(row, column, None, style_id=style_id, data_type="f",
+                            formula_text=formula_text)
+    elif value is None:
+        if style_id:
+            sheet._set_cell_raw(row, column, None, style_id=style_id)
+    elif isinstance(value, str) and value.startswith("error:"):
+        sheet._set_cell_raw(row, column, value[6:], style_id=style_id, data_type="e")
+    else:
+        kind = "s" if isinstance(value, str) else "b" if isinstance(value, bool) else "n"
+        sheet._set_cell_raw(row, column, value, style_id=style_id, data_type=kind)
+
+
+def _load_cells_python(sheet, reader, name, sheet_data, data_only):
+    for row_number, cells in iter_indexed_rows(
+        reader, name, data_only=data_only, data=sheet_data, with_styles=True,
+    ):
+        for column, value, style_id in cells:
+            if type(value) is str and value.startswith("="):
+                # iter_indexed_rows marks decoded formulas with "=".
+                _set_loaded_cell(sheet, row_number, column + 1, None, style_id, value[1:])
+            else:
+                _set_loaded_cell(sheet, row_number, column + 1, value, style_id)
 
 
 def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False) -> Workbook:
@@ -72,30 +134,20 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
             sheet._original_title = name
             with updater._package.open_entry(sheet._path) as stream:
                 sheet_data = stream.read()
-            set_cell = sheet._set_cell_raw
-            for row_number, cells in iter_indexed_rows(
-                reader, name, data_only=data_only, data=sheet_data, with_styles=True,
-            ):
-                for column, value, style_id in cells:
-                    if value is None:
-                        if style_id:
-                            set_cell(row_number, column + 1, None, style_id=style_id)
-                    elif type(value) is str and value[:1] in ("=", "e"):
-                        if value.startswith("="):
-                            set_cell(row_number, column + 1, None, style_id=style_id,
-                                     formula_text=value[1:])
-                        else:
-                            if value.startswith("error:"):
-                                value = value[6:]
-                            set_cell(row_number, column + 1, value, style_id=style_id)
-                    else:
-                        set_cell(row_number, column + 1, value, style_id=style_id)
+            span = _load_cells(sheet, reader, name, sheet_data, data_only)
             links = None
             validations = []
             metadata = []
             conditional = []
             list_parts = []
-            for record_id, payload in iter_record_payloads(sheet_data):
+            # The C loader has read the sheet data (with its row headers):
+            # only the records around it are left.
+            outside = (
+                iter_record_payloads(sheet_data) if span is None
+                else _chain(iter_record_payloads(sheet_data[:span[0]]),
+                            iter_record_payloads(sheet_data[span[1]:]))
+            )
+            for record_id, payload in outside:
                 if record_id == ROW_HEADER:
                     if len(payload) > ROW_FLAGS and payload[ROW_FLAGS] & 0x7F:
                         row_header(sheet, payload)

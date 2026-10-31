@@ -44,6 +44,32 @@ def cached_cell(kind, payload, reader):
     return value, payload[formula_offset:] if formula_offset is not None else None, style
 
 
+def formula_groups(records):
+    """Shared (0x1AB) and array (0x1AA) formula definitions by their master cell."""
+    groups = {}
+    for kind, payload in records:
+        r1, r2, c1, c2 = struct.unpack_from('<IIII', payload)
+        groups[(r1, c1)] = (kind, payload[17 if kind == 0x1AA else 16:])
+    return groups
+
+
+def formula_text(formula, groups, context, sheet_name, row, column):
+    """The text (without ``=``) of a cell formula, or None for a member of an
+    array formula other than its master cell, which keeps its cached value."""
+    tokens, extra, _ = read_parsed(formula)
+    if tokens[:1] == bytes((0x01,)):  # PtgExp: the cell belongs to a formula group
+        if len(tokens) != 5 or len(extra) < 4:
+            raise ValueError("invalid XLSB shared/array formula reference")
+        source = (struct.unpack('<I', tokens[1:])[0], struct.unpack_from('<I', extra)[0])
+        if source not in groups:
+            raise NotImplementedError("XLSB formula group definition was not found")
+        group_kind, group_formula = groups[source]
+        if group_kind == 0x1AA and (row, column) != source:
+            return None
+        formula = group_formula
+    return decode_formula(formula, context, sheet=sheet_name, origin=(column, row))
+
+
 def iter_indexed_rows(reader, sheet_name, *, data_only=True, data=None, with_styles=False):
     """Yield ``(row_number, [(column, value), ...])`` for every BrtRowHdr, with
     1-based rows and 0-based columns; formulas are decoded when not data_only.
@@ -61,18 +87,8 @@ def iter_indexed_rows(reader, sheet_name, *, data_only=True, data=None, with_sty
     def cell_value(column, value, formula):
         if formula is None or data_only:
             return value
-        tokens, extra, _ = read_parsed(formula)
-        if tokens[:1] == b'':
-            if len(tokens) != 5 or len(extra) < 4:
-                raise ValueError("invalid XLSB shared/array formula reference")
-            source = (struct.unpack('<I', tokens[1:])[0], struct.unpack_from('<I', extra)[0])
-            if source not in groups:
-                raise NotImplementedError("XLSB formula group definition was not found")
-            group_kind, group_formula = groups[source]
-            if group_kind == 0x1AA and (current_row, column) != source:
-                return value
-            formula = group_formula
-        return '=' + decode_formula(formula, context, sheet=sheet_name, origin=(column, current_row))
+        text = formula_text(formula, groups, context, sheet_name, current_row, column)
+        return value if text is None else '=' + text
 
     def finish():
         # Formula groups follow their master cell, so decode at row end.
@@ -112,8 +128,7 @@ def iter_indexed_rows(reader, sheet_name, *, data_only=True, data=None, with_sty
                 value, formula, style = cached_cell(kind, payload, reader)
                 cells.append((column, value, formula, style))
             elif in_data and kind in (0x1AA, 0x1AB) and not data_only:
-                r1, r2, c1, c2 = struct.unpack_from('<IIII', payload)
-                groups[(r1, c1)] = (kind, payload[17 if kind == 0x1AA else 16:])
+                groups.update(formula_groups([(kind, payload)]))
         if current_row is not None:
             yield finish()
 

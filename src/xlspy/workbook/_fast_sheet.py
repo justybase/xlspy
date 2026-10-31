@@ -13,9 +13,10 @@ from __future__ import annotations
 import datetime as _datetime
 from xml.etree import ElementTree as ET
 
-from .. import _xlsx_read
+from .. import _accel, _xlsx_read
 from .._metadata import MAIN
 from .._text import xstring_unescape
+from ._model import CELL_SLOTS, Cell
 from ._reader import _apply_row_attributes, _date_kind, _load_row, _number_value
 
 _ROW_ATTRIBUTES = (" ht=", " hidden=", " outlineLevel=", " collapsed=")
@@ -35,11 +36,54 @@ def read_sheet_data(sheet, package, sheet_path, style_table, *, data_only, date_
         probe = _xlsx_read._probe_fast(stream, with_head=True)
         if probe is None or probe[3] != MAIN:
             return None
-        text, decoder, root_tag, _ns, _raw, head = probe
+        text, decoder, root_tag, _ns, raw, head = probe
+        if _accel._c_read_xlsx_worksheet is not None:
+            return _load_rows_c(
+                sheet, stream, raw, root_tag, head, style_table,
+                data_only, date_1904, shared_strings, rich_text,
+            )
         return _load_rows(
             sheet, stream, text, decoder, root_tag, head, style_table,
             data_only, date_1904, shared_strings, rich_text,
         )
+
+
+_DATE_KINDS = {None: 0, "date": 1, "time": 2, "duration": 3}
+
+
+def _load_rows_c(sheet, stream, raw, root_tag, head, style_table,
+                 data_only, date_1904, shared_strings, rich_text):
+    """The C scanner creates the cells of plain rows; the rows it leaves (formulas,
+    row attributes, unusual markup) go through ElementTree as in ``_load_rows``."""
+    kinds = [_DATE_KINDS[_date_kind(style.number_format)] for style in style_table.styles]
+    rows = _accel._c_read_xlsx_worksheet(
+        stream, raw, shared_strings, kinds, date_1904,
+        (Cell, CELL_SLOTS, sheet, sheet._cells, data_only, rich_text),
+    )
+    next_row = 1
+    max_row = max_column = 0
+    shared: dict = {}
+    for item in rows:
+        root = ET.fromstring((root_tag + item.decode("utf-8") + "</worksheet>").encode("utf-8"))
+        row_number, row_max, column_max = _load_row(
+            sheet, root[0], next_row, style_table, data_only=data_only,
+            date_1904=date_1904, shared=shared, shared_strings=shared_strings,
+            rich_text=rich_text,
+        )
+        rows.resume(row_number)
+        next_row = row_number + 1
+        max_row = max(max_row, row_max)
+        max_column = max(max_column, column_max)
+    loaded_rows, loaded_columns = rows.bounds()
+    tail = rows.tail()
+    end = tail.find(b"</sheetData>")
+    tail = tail[end + len(b"</sheetData>"):] if end >= 0 else b""
+    tail += stream.read()
+    prefix = head[:head.rfind(b"<sheetData")]
+    return (
+        max(max_row, loaded_rows), max(max_column, loaded_columns),
+        prefix + b"<sheetData/>" + tail,
+    )
 
 
 def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,

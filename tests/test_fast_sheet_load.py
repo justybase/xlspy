@@ -178,3 +178,59 @@ def test_append_keeps_cells_already_in_the_row():
     sheet.append(["b", 2])
     assert sheet._existing_cell(2, 1) is existing and existing.value == "b"
     assert sheet["B2"].value == 2
+
+
+def _model_snapshot(workbook):
+    return {
+        sheet.title: sorted(
+            (cell.row, cell.column, repr(cell.value), cell.data_type, cell._style_id)
+            for row in sheet._cells.values() for cell in row.values()
+        ) + [("max", sheet.max_row, sheet.max_column)]
+        + sorted((row, dim.height, dim.hidden) for row, dim in sheet.row_dimensions.items())
+        for sheet in workbook.worksheets
+    }
+
+
+@pytest.mark.parametrize("data_only", [False, True])
+def test_c_model_rows_match_python_rows(tmp_path, monkeypatch, data_only):
+    import datetime
+
+    import openpyxl
+
+    from xlspy import _accel
+    from xlspy.workbook import load_workbook as xlspy_load
+
+    if _accel._c_read_xlsx_worksheet is None:
+        pytest.skip("C extension not built")
+    source = openpyxl.Workbook()
+    sheet = source.active
+    sheet.append(["text", 1, 2.5, True, datetime.datetime(2024, 5, 6, 7, 8), None, "=A1&\"x\""])
+    sheet.append(["a & b", -3, 1e300, False, datetime.date(1900, 1, 1), " lead", "#N/A"])
+    sheet["A3"] = datetime.time(13, 45, 30)
+    sheet["A3"].number_format = "hh:mm:ss"
+    sheet["B3"] = datetime.timedelta(hours=30)
+    sheet["B3"].number_format = "[h]:mm"
+    sheet["C3"] = 45000.5
+    sheet["C3"].number_format = "yyyy-mm-dd hh:mm"
+    sheet["D4"].font = openpyxl.styles.Font(bold=True)  # a styled blank cell
+    sheet["Z10"] = "far"
+    sheet.row_dimensions[5].height = 30
+    sheet["A5"] = "tall"
+    sheet["A6"] = "=SUM(B1:B2)"
+    other = source.create_sheet("Other")
+    other["B2"] = "=Sheet!B1*2"
+    other["C3"] = "x\ny"
+    path = tmp_path / "kinds.xlsx"
+    source.save(path)
+
+    with_c = xlspy_load(path, data_only=data_only)
+    try:
+        expected = _model_snapshot(with_c)
+    finally:
+        with_c.close()
+    monkeypatch.setattr(_accel, "_c_read_xlsx_worksheet", None)
+    python = xlspy_load(path, data_only=data_only)
+    try:
+        assert _model_snapshot(python) == expected
+    finally:
+        python.close()

@@ -10,6 +10,8 @@ _c_encode_xlsb_sst = None
 _c_read_sst = None
 _c_encode_xlsx_row = None
 _c_encode_xlsb_row_inline = None
+# Workbook model loader for XLSB sheet data (see workbook/_xlsb_reader.py).
+xlsb_load_cells = None
 
 if _os.environ.get('XLSPY_DISABLE_C_EXT', '0') != '1':
     try:
@@ -38,6 +40,10 @@ if _os.environ.get('XLSPY_DISABLE_C_EXT', '0') != '1':
         from xlspy._c_core import set_style_type as _c_set_style_type
     except ImportError:
         _c_set_style_type = None
+    try:
+        from xlspy._c_core import xlsb_load_cells
+    except ImportError:
+        xlsb_load_cells = None
     try:
         from xlspy._c_core import read_xlsx_worksheet as _c_read_xlsx_worksheet
     except ImportError:

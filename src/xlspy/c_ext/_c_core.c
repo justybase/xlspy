@@ -2600,6 +2600,44 @@ static PyObject *C_read_xlsb_worksheet(PyObject *self_mod, PyObject *args)
    such as r="12 ".  Rows are (row_number, [(column, value), ...]) with
    1-based rows and 0-based columns, like the Python fast path. */
 
+/* Cell.__slots__ written by the workbook model loaders, in the order of the
+   member descriptors the caller passes (see workbook/_xlsb_reader.py). */
+enum {
+    _CS_SHEET, _CS_ROW, _CS_COLUMN, _CS_VALUE, _CS_FORMULA, _CS_DATA_TYPE,
+    _CS_STYLE_ID, _CS_COMMENT, _CS_HYPERLINK, _CS_NAMED_STYLE, _CS_DIRTY, _CS_COUNT
+};
+
+static inline void _set_slot(PyObject *obj, Py_ssize_t offset, PyObject *value)
+{
+    PyObject **slot = (PyObject **)((char *)obj + offset);
+    PyObject *old = *slot;
+    Py_INCREF(value);
+    *slot = value;
+    Py_XDECREF(old);
+}
+
+/* Read the slot offsets from a tuple of __slots__ member descriptors. */
+static int _slot_offsets(PyObject *descriptors, Py_ssize_t *offsets)
+{
+    if (!PyTuple_Check(descriptors) || PyTuple_GET_SIZE(descriptors) != _CS_COUNT)
+    {
+        PyErr_SetString(PyExc_TypeError, "expected a tuple of the Cell slot descriptors");
+        return 0;
+    }
+    for (int i = 0; i < _CS_COUNT; i++)
+    {
+        PyObject *d = PyTuple_GET_ITEM(descriptors, i);
+        if (!PyObject_TypeCheck(d, &PyMemberDescr_Type) ||
+            ((PyMemberDescrObject *)d)->d_member->type != T_OBJECT_EX)
+        {
+            PyErr_SetString(PyExc_TypeError, "Cell slot descriptors must be __slots__ members");
+            return 0;
+        }
+        offsets[i] = ((PyMemberDescrObject *)d)->d_member->offset;
+    }
+    return 1;
+}
+
 #define _XLSX_CHUNK (1 << 18)
 
 typedef struct {
@@ -2623,6 +2661,22 @@ typedef struct {
     int done;
     long next_row;
     int next_row_valid;
+
+    /* Workbook model mode (workbook/_fast_sheet.py): rows become Cell objects
+       in `cells_dict` and only the rows left to the XML parser are yielded.
+       `is_date_style` then holds the date kind of each style: 1 date,
+       2 time of day, 3 duration. */
+    int model;
+    int data_only;
+    int rich_text;
+    PyTypeObject *cell_type;
+    PyObject *sheet;
+    PyObject *cells_dict;
+    PyObject **column_numbers;  /* 16384 lazily created 1-based ints */
+    PyObject *row_cells;        /* Cells of the row being parsed */
+    PyObject *type_n, *type_s, *type_b, *type_e, *type_d;
+    Py_ssize_t offsets[_CS_COUNT];
+    long max_row, max_column, row_max_column, current_row;
 } XlsxReader;
 
 static Py_ssize_t _xr_find(const char *hay, Py_ssize_t hlen, const char *needle,
@@ -2845,7 +2899,7 @@ static int _xr_date_style(XlsxReader *self, int has_s, const char *sattr, Py_ssi
         return -1;
     }
     if (style >= self->style_len) return 0;
-    return self->is_date_style[style] ? 1 : 0;
+    return self->is_date_style[style];
 }
 
 /* Howard Hinnant's civil_from_days (inverse of _days_from_civil). */
@@ -3082,6 +3136,240 @@ static int _xr_value(XlsxReader *self,
     return 1;
 }
 
+/* A float with Python's semantics for a model cell: NULL with *fallback set
+   when the text is not a number (the XML parser then decides). */
+static PyObject *_xr_model_float(const char *v, Py_ssize_t v_len, int *fallback)
+{
+    PyObject *number = _xr_float(v, v_len);
+    if (!number && PyErr_ExceptionMatches(PyExc_ValueError))
+    {
+        PyErr_Clear();
+        *fallback = 1;
+    }
+    return number;
+}
+
+/* A numeric value under a date format, as workbook/_reader._number_value:
+   kind 1 a datetime, 2 a time of day, 3 a timedelta. NULL with *fallback set
+   when Python would keep the number (out-of-range dates). */
+static PyObject *_xr_model_date(double serial, int kind, int date_1904, int *fallback)
+{
+    if (kind == 1)
+    {
+        PyObject *moment = _xr_serial_datetime(serial, date_1904);
+        if (!moment && (PyErr_ExceptionMatches(PyExc_ValueError) ||
+                        PyErr_ExceptionMatches(PyExc_OverflowError)))
+        {
+            PyErr_Clear();
+            *fallback = 1;
+        }
+        return moment;
+    }
+    if (kind == 2)
+    {
+        double seconds = (serial - floor(serial)) * 86400.0;
+        long whole = (long)seconds;
+        long micros = (long)nearbyint((seconds - (double)whole) * 1000000.0);
+        if (!isfinite(serial) || micros >= 1000000 || micros < 0)
+        {
+            *fallback = 1;
+            return NULL;
+        }
+        return PyTime_FromTime((int)((whole / 3600) % 24), (int)((whole % 3600) / 60),
+                               (int)(whole % 60), (int)micros);
+    }
+    if (!isfinite(serial) || fabs(serial) > 999999999.0)
+    {
+        *fallback = 1;
+        return NULL;
+    }
+    PyObject *kw = Py_BuildValue("{s:d}", "days", serial);
+    if (!kw) return NULL;
+    PyObject *noargs = PyTuple_New(0);
+    PyObject *delta = noargs ? PyObject_Call(timedelta_type, noargs, kw) : NULL;
+    Py_XDECREF(noargs);
+    Py_DECREF(kw);
+    if (!delta && PyErr_ExceptionMatches(PyExc_OverflowError))
+    {
+        PyErr_Clear();
+        *fallback = 1;
+    }
+    return delta;
+}
+
+/* One cell in model mode, mirroring workbook/_fast_sheet.fast_row: 1 added
+   to the row's cells (or skipped as empty), 0 fall back, -1 Python error. */
+static int _xr_model_cell(XlsxReader *self, long col,
+                          int has_s, const char *sattr, Py_ssize_t s_len,
+                          int has_t, const char *tattr, Py_ssize_t t_len,
+                          int has_v, const char *v, Py_ssize_t v_len,
+                          int has_inl, const char *inl, Py_ssize_t inl_len)
+{
+    long style = 0;
+    if (has_s && s_len > 0)
+    {
+        if (s_len > 9) return 0;
+        for (Py_ssize_t k = 0; k < s_len; k++)
+        {
+            if (sattr[k] < '0' || sattr[k] > '9') return 0;
+            style = style * 10 + (sattr[k] - '0');
+        }
+    }
+    PyObject *value = NULL, *data_type;
+    int fallback = 0;
+    int typed = has_t && (
+        (t_len == 1 && (tattr[0] == 's' || tattr[0] == 'b' || tattr[0] == 'e' || tattr[0] == 'd')) ||
+        (t_len == 3 && memcmp(tattr, "str", 3) == 0) ||
+        (t_len == 9 && memcmp(tattr, "inlineStr", 9) == 0));
+
+    if (!typed)
+    {
+        data_type = self->type_n;
+        if (!has_v || v_len == 0)
+        {
+            value = Py_None;
+            Py_INCREF(value);
+        }
+        else
+        {
+            PyObject *number = _xr_model_float(v, v_len, &fallback);
+            if (!number) return fallback ? 0 : -1;
+            double serial = PyFloat_AS_DOUBLE(number);
+            int kind = (style < self->style_len) ? self->is_date_style[style] :
+                       (self->style_len > 0 ? self->is_date_style[0] : 0);
+            if (kind)
+            {
+                Py_DECREF(number);
+                value = _xr_model_date(serial, kind, self->date_1904, &fallback);
+                if (!value) return fallback ? 0 : -1;
+            }
+            else if (isfinite(serial) && serial == floor(serial))
+            {
+                value = PyLong_FromDouble(serial);
+                Py_DECREF(number);
+                if (!value) return -1;
+            }
+            else value = number;
+        }
+    }
+    else if (t_len == 9)  /* inlineStr */
+    {
+        data_type = self->type_s;
+        if (self->rich_text) return 0;
+        if (!has_inl)
+        {
+            value = Py_None;
+            Py_INCREF(value);
+        }
+        else
+        {
+            int ok = _xr_value(self, has_s, sattr, s_len, has_t, tattr, t_len,
+                               has_v, v, v_len, has_inl, inl, inl_len, &value);
+            if (ok <= 0) return ok;
+        }
+    }
+    else if (t_len == 3 || tattr[0] == 'b')  /* str, b */
+    {
+        data_type = t_len == 3 ? self->type_s : self->type_b;
+        int ok = _xr_value(self, has_s, sattr, s_len, has_t, tattr, t_len,
+                           has_v, v, v_len, has_inl, inl, inl_len, &value);
+        if (ok <= 0) return ok;
+    }
+    else if (tattr[0] == 's')
+    {
+        data_type = self->type_s;
+        if (has_v && v_len > 0)
+        {
+            long index = 0;
+            if (v_len > 9) return 0;
+            for (Py_ssize_t k = 0; k < v_len; k++)
+            {
+                if (v[k] < '0' || v[k] > '9') return 0;
+                index = index * 10 + (v[k] - '0');
+            }
+            if (index < self->ss_len)
+            {
+                value = PyList_GET_ITEM(self->shared_strings, (Py_ssize_t)index);
+                Py_INCREF(value);
+            }
+        }
+        if (!value)
+        {
+            value = _xr_str(v, has_v ? v_len : 0);
+            if (!value) return -1;
+        }
+    }
+    else  /* e, d: the text itself */
+    {
+        data_type = tattr[0] == 'e' ? self->type_e : self->type_d;
+        if (has_v && v_len > 0 && memchr(v, '&', (size_t)v_len)) return 0;
+        if (tattr[0] == 'd' && has_v && v_len > 0)
+        {
+            if (!datetime_type) return 0;
+            PyObject *text = _xr_str(v, v_len);
+            if (!text) return -1;
+            value = PyObject_CallMethod(datetime_type, "fromisoformat", "O", text);
+            Py_DECREF(text);
+            if (!value)
+            {
+                if (!PyErr_ExceptionMatches(PyExc_ValueError)) return -1;
+                PyErr_Clear();
+                return 0;
+            }
+        }
+        else if (tattr[0] == 'd')
+        {
+            value = Py_None;
+            Py_INCREF(value);
+        }
+        else
+        {
+            value = _xr_str(v, has_v ? v_len : 0);
+            if (!value) return -1;
+        }
+    }
+
+    if (value == Py_None && style == 0)
+    {
+        Py_DECREF(value);
+        return 1;
+    }
+    if (!self->column_numbers[col])
+    {
+        self->column_numbers[col] = PyLong_FromLong(col + 1);
+        if (!self->column_numbers[col])
+        {
+            Py_DECREF(value);
+            return -1;
+        }
+    }
+    PyObject *style_obj = PyLong_FromLong(style);
+    PyObject *cell = style_obj ? self->cell_type->tp_alloc(self->cell_type, 0) : NULL;
+    if (!cell)
+    {
+        Py_XDECREF(style_obj);
+        Py_DECREF(value);
+        return -1;
+    }
+    _set_slot(cell, self->offsets[_CS_SHEET], self->sheet);
+    _set_slot(cell, self->offsets[_CS_COLUMN], self->column_numbers[col]);
+    _set_slot(cell, self->offsets[_CS_VALUE], value);
+    _set_slot(cell, self->offsets[_CS_FORMULA], Py_None);
+    _set_slot(cell, self->offsets[_CS_DATA_TYPE], data_type);
+    _set_slot(cell, self->offsets[_CS_STYLE_ID], style_obj);
+    _set_slot(cell, self->offsets[_CS_COMMENT], Py_None);
+    _set_slot(cell, self->offsets[_CS_HYPERLINK], Py_None);
+    _set_slot(cell, self->offsets[_CS_NAMED_STYLE], Py_None);
+    _set_slot(cell, self->offsets[_CS_DIRTY], Py_False);
+    Py_DECREF(style_obj);
+    Py_DECREF(value);
+    int failed = PyList_Append(self->row_cells, cell) < 0;
+    Py_DECREF(cell);
+    if (failed) return -1;
+    if (col + 1 > self->row_max_column) self->row_max_column = col + 1;
+    return 1;
+}
+
 /* Mirrors _PREFIXED: `</?[A-Za-z_][\w.-]*:`. */
 static int _xr_has_prefix(const char *p, Py_ssize_t n)
 {
@@ -3218,8 +3506,25 @@ static int _xr_parse_cell(XlsxReader *self, const char *body, Py_ssize_t body_le
             col = key - 1;
             self->columns[key] = col + 1;
         }
+        if (self->model)
+        {
+            /* The model keeps the row of the reference: leave a cell whose
+               reference names another row to the XML parser. */
+            if (digits == 0 || digits > 7 || col >= 16384) return 0;
+            long ref_row = 0;
+            for (Py_ssize_t k = letters; k < ref_len; k++) ref_row = ref_row * 10 + (ref[k] - '0');
+            if (ref_row != self->current_row) return 0;
+        }
     }
     *next_col = col + 1;
+    if (self->model)
+    {
+        if (col >= 16384) return 0;
+        int ok = _xr_model_cell(self, col, has_s, sattr, s_len, has_t, tattr, t_len,
+                                has_v, v, v_len, has_inl, inl, inl_len);
+        if (ok > 0) *pos = i;
+        return ok;
+    }
 
     PyObject *value = NULL;
     int ok = _xr_value(self, has_s, sattr, s_len, has_t, tattr, t_len,
@@ -3248,6 +3553,78 @@ static int _xr_parse_cell(XlsxReader *self, const char *body, Py_ssize_t body_le
     }
     Py_DECREF(cell);
     *pos = i;
+    return 1;
+}
+
+/* A row in model mode: its cells go into the sheet's cells dict only once
+   the whole row parsed, so a fallback row leaves nothing behind. Rows with
+   formulas (unless data_only) or with height/visibility/outline attributes
+   are left to the XML parser, as in workbook/_fast_sheet.py. */
+static int _xr_model_row(XlsxReader *self, long row_number, const char *attrs, Py_ssize_t attrs_len,
+                         const char *body, Py_ssize_t body_len, PyObject **out)
+{
+    static const char *row_attributes[] = {" ht=", " hidden=", " outlineLevel=", " collapsed="};
+    if (row_number < 1 || row_number > 1048576) return 0;
+    for (int k = 0; k < 4; k++)
+        if (_xr_find(attrs, attrs_len, row_attributes[k], (Py_ssize_t)strlen(row_attributes[k]), 0) >= 0)
+            return 0;
+    if (body && !self->data_only && _xr_find(body, body_len, "<f", 2, 0) >= 0) return 0;
+
+    self->current_row = row_number;
+    self->row_max_column = 0;
+    long next_col = 0;
+    Py_ssize_t i = 0;
+    int ok = 1;
+    while (body && i < body_len)
+    {
+        const char *lt = (const char *)memchr(body + i, '<', (size_t)(body_len - i));
+        if (!lt) break;
+        i = lt - body;
+        if (i + 1 < body_len && body[i + 1] == 'c')
+        {
+            ok = _xr_parse_cell(self, body, body_len, &i, &next_col, NULL);
+            if (ok <= 0) break;
+        }
+        else i++;
+    }
+    Py_ssize_t count = PyList_GET_SIZE(self->row_cells);
+    if (ok > 0 && count > 0)
+    {
+        PyObject *key = PyLong_FromLong(row_number);
+        PyObject *row_dict = key ? PyDict_GetItemWithError(self->cells_dict, key) : NULL;
+        if (key && !row_dict && !PyErr_Occurred())
+        {
+            row_dict = PyDict_New();
+            if (row_dict && PyDict_SetItem(self->cells_dict, key, row_dict) < 0)
+                Py_CLEAR(row_dict);
+            Py_XDECREF(row_dict);  /* the cells dict holds it */
+        }
+        if (!row_dict) ok = -1;
+        for (Py_ssize_t k = 0; ok > 0 && k < count; k++)
+        {
+            PyObject *cell = PyList_GET_ITEM(self->row_cells, k);
+            _set_slot(cell, self->offsets[_CS_ROW], key);
+            PyObject *column = *(PyObject **)((char *)cell + self->offsets[_CS_COLUMN]);
+            if (PyDict_SetItem(row_dict, column, cell) < 0) ok = -1;
+        }
+        Py_XDECREF(key);
+    }
+    if (PyList_SetSlice(self->row_cells, 0, count, NULL) < 0) return -1;
+    if (ok <= 0)
+    {
+        if (ok == 0)
+        {
+            self->next_row = row_number + 1;
+            self->next_row_valid = 1;
+        }
+        return ok;
+    }
+    if (row_number > self->max_row) self->max_row = row_number;
+    if (self->row_max_column > self->max_column) self->max_column = self->row_max_column;
+    self->next_row = row_number + 1;
+    self->next_row_valid = 1;
+    Py_INCREF(Py_None);
+    *out = Py_None;
     return 1;
 }
 
@@ -3285,6 +3662,8 @@ static int _xr_parse_row(XlsxReader *self, const char *attrs, Py_ssize_t attrs_l
         if (space_r || !self->next_row_valid) return 0;
         row_number = self->next_row;
     }
+    if (self->model)
+        return _xr_model_row(self, row_number, attrs, attrs_len, body, body_len, out);
 
     PyObject *cells = PyList_New(0);
     if (!cells) return -1;
@@ -3498,6 +3877,20 @@ static void XlsxReader_dealloc(XlsxReader *self)
     PyMem_Free(self->columns);
     Py_XDECREF(self->stream);
     Py_XDECREF(self->shared_strings);
+    if (self->column_numbers)
+    {
+        for (int i = 0; i < 16384; i++) Py_XDECREF(self->column_numbers[i]);
+        PyMem_Free(self->column_numbers);
+    }
+    Py_XDECREF(self->row_cells);
+    Py_XDECREF(self->cell_type);
+    Py_XDECREF(self->sheet);
+    Py_XDECREF(self->cells_dict);
+    Py_XDECREF(self->type_n);
+    Py_XDECREF(self->type_s);
+    Py_XDECREF(self->type_b);
+    Py_XDECREF(self->type_e);
+    Py_XDECREF(self->type_d);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -3539,6 +3932,12 @@ static PyObject *XlsxReader_iternext(PyObject *self_ptr)
                     return NULL;
                 }
                 return raw;
+            }
+            if (self->model)
+            {
+                /* Loaded into the cells dict: only fallback rows are yielded. */
+                Py_DECREF(row);
+                continue;
             }
             return row;
         }
@@ -3583,9 +3982,26 @@ static PyObject *XlsxReader_resume(XlsxReader *self, PyObject *arg)
     Py_RETURN_NONE;
 }
 
+/* bounds(): (max_row, max_column) of the rows loaded in model mode. */
+static PyObject *XlsxReader_bounds(XlsxReader *self, PyObject *Py_UNUSED(ignored))
+{
+    return Py_BuildValue("(ll)", self->max_row, self->max_column);
+}
+
+/* tail(): the bytes read past the last row, from "</sheetData>" on. */
+static PyObject *XlsxReader_tail(XlsxReader *self, PyObject *Py_UNUSED(ignored))
+{
+    Py_ssize_t start = self->pos < self->len ? self->pos : self->len;
+    return PyBytes_FromStringAndSize(self->buf ? self->buf + start : "", self->len - start);
+}
+
 static PyMethodDef XlsxReader_methods[] = {
     {"resume", (PyCFunction)XlsxReader_resume, METH_O,
      "resume(row_number): continue after a fallback row handled by the caller."},
+    {"bounds", (PyCFunction)XlsxReader_bounds, METH_NOARGS,
+     "bounds(): (max_row, max_column) of the rows loaded in model mode."},
+    {"tail", (PyCFunction)XlsxReader_tail, METH_NOARGS,
+     "tail(): the bytes read after the last row, once iteration stopped."},
     {NULL, NULL, 0, NULL}
 };
 
@@ -3604,11 +4020,26 @@ static PyTypeObject XlsxReader_Type = {
 static PyObject *C_read_xlsx_worksheet(PyObject *self_mod, PyObject *args)
 {
     PyObject *stream, *head, *shared_strings, *styles;
+    PyObject *model = Py_None;
     int date_1904 = 0;
 
-    if (!PyArg_ParseTuple(args, "OOOO|p", &stream, &head, &shared_strings,
-                          &styles, &date_1904))
+    if (!PyArg_ParseTuple(args, "OOOO|pO", &stream, &head, &shared_strings,
+                          &styles, &date_1904, &model))
         return NULL;
+    /* model: (Cell, slot descriptors, sheet, cells dict, data_only, rich_text) */
+    PyObject *cell_type = NULL, *descriptors = NULL, *sheet = NULL, *cells_dict = NULL;
+    int data_only = 0, rich_text = 0;
+    if (model != Py_None)
+    {
+        if (!PyArg_ParseTuple(model, "OOOOpp;model must be (Cell, slots, sheet, cells, data_only, rich_text)",
+                              &cell_type, &descriptors, &sheet, &cells_dict, &data_only, &rich_text))
+            return NULL;
+        if (!PyType_Check(cell_type) || !PyDict_Check(cells_dict))
+        {
+            PyErr_SetString(PyExc_TypeError, "model needs the Cell type and a cells dict");
+            return NULL;
+        }
+    }
     if (!PyBytes_Check(head))
     {
         PyErr_SetString(PyExc_TypeError, "head must be bytes");
@@ -3650,6 +4081,45 @@ static PyObject *C_read_xlsx_worksheet(PyObject *self_mod, PyObject *args)
     reader->done = 0;
     reader->next_row = 1;
     reader->next_row_valid = 1;
+    reader->model = 0;
+    reader->data_only = data_only;
+    reader->rich_text = rich_text;
+    reader->cell_type = NULL;
+    reader->sheet = NULL;
+    reader->cells_dict = NULL;
+    reader->column_numbers = NULL;
+    reader->row_cells = NULL;
+    reader->type_n = reader->type_s = reader->type_b = reader->type_e = reader->type_d = NULL;
+    reader->max_row = reader->max_column = reader->row_max_column = reader->current_row = 0;
+    if (cell_type)
+    {
+        if (!_slot_offsets(descriptors, reader->offsets))
+        {
+            Py_DECREF(reader);
+            return NULL;
+        }
+        reader->model = 1;
+        Py_INCREF(cell_type);
+        reader->cell_type = (PyTypeObject *)cell_type;
+        Py_INCREF(sheet);
+        reader->sheet = sheet;
+        Py_INCREF(cells_dict);
+        reader->cells_dict = cells_dict;
+        reader->column_numbers = (PyObject **)PyMem_Calloc(16384, sizeof(PyObject *));
+        reader->row_cells = PyList_New(0);
+        reader->type_n = PyUnicode_InternFromString("n");
+        reader->type_s = PyUnicode_InternFromString("s");
+        reader->type_b = PyUnicode_InternFromString("b");
+        reader->type_e = PyUnicode_InternFromString("e");
+        reader->type_d = PyUnicode_InternFromString("d");
+        if (!reader->column_numbers || !reader->row_cells || !reader->type_n ||
+            !reader->type_s || !reader->type_b || !reader->type_e || !reader->type_d)
+        {
+            Py_DECREF(reader);
+            if (!PyErr_Occurred()) PyErr_NoMemory();
+            return NULL;
+        }
+    }
 
     Py_ssize_t style_len = PyList_Size(styles);
     if (style_len > 0)
@@ -3662,13 +4132,29 @@ static PyObject *C_read_xlsx_worksheet(PyObject *self_mod, PyObject *args)
         }
         for (Py_ssize_t i = 0; i < style_len; i++)
         {
-            int is_date = PyObject_IsTrue(PyList_GET_ITEM(styles, i));
-            if (is_date < 0)
+            /* Flags (bool) for ExcelReader, date kinds (int 0..3) for the model. */
+            PyObject *item = PyList_GET_ITEM(styles, i);
+            long kind;
+            if (PyLong_Check(item) && !PyBool_Check(item))
             {
-                Py_DECREF(reader);
-                return NULL;
+                kind = PyLong_AsLong(item);
+                if (kind == -1 && PyErr_Occurred())
+                {
+                    Py_DECREF(reader);
+                    return NULL;
+                }
+                if (kind < 0 || kind > 3) kind = 0;
             }
-            reader->is_date_style[i] = (unsigned char)(is_date != 0);
+            else
+            {
+                kind = PyObject_IsTrue(item);
+                if (kind < 0)
+                {
+                    Py_DECREF(reader);
+                    return NULL;
+                }
+            }
+            reader->is_date_style[i] = (unsigned char)kind;
         }
     }
     reader->style_len = style_len;
@@ -3712,6 +4198,267 @@ static PyObject *C_read_xlsx_worksheet(PyObject *self_mod, PyObject *args)
     return (PyObject *)reader;
 }
 
+/* ===== Workbook model loader: XLSB sheet data straight into Cell objects ===== */
+
+
+static const char *_xlsb_error_text(unsigned char code)
+{
+    switch (code)
+    {
+    case 0x00: return "#NULL!";
+    case 0x07: return "#DIV/0!";
+    case 0x0F: return "#VALUE!";
+    case 0x17: return "#REF!";
+    case 0x1D: return "#NAME?";
+    case 0x24: return "#NUM!";
+    case 0x2A: return "#N/A";
+    case 0x2B: return "#GETTING_DATA";
+    default: return "#VALUE!";
+    }
+}
+
+
+static PyObject *C_xlsb_load_cells(PyObject *self, PyObject *args)
+{
+    Py_buffer view;
+    PyObject *shared_strings, *styles_list, *date_num_fmts;
+    int date_1904 = 0;
+    PyObject *cell_type_obj, *descriptors, *sheet, *cells_dict;
+
+    if (!PyArg_ParseTuple(args, "y*OOOpOOOO", &view, &shared_strings, &styles_list,
+                          &date_num_fmts, &date_1904, &cell_type_obj, &descriptors,
+                          &sheet, &cells_dict))
+        return NULL;
+
+    PyObject *result = NULL, *formulas = NULL, *headers = NULL, *groups = NULL;
+    PyObject *type_n = NULL, *type_s = NULL, *type_b = NULL, *type_e = NULL;
+    PyObject **columns = NULL;
+    PyObject *row_key = NULL, *row_dict = NULL;
+    Py_ssize_t offsets[_CS_COUNT];
+
+    if (!PyType_Check(cell_type_obj) || !PyDict_Check(cells_dict) ||
+        !PyList_Check(shared_strings) || !PyList_Check(styles_list))
+    {
+        PyErr_SetString(PyExc_TypeError, "xlsb_load_cells: unexpected arguments");
+        goto done;
+    }
+    if (!_slot_offsets(descriptors, offsets)) goto done;
+    PyTypeObject *cell_type = (PyTypeObject *)cell_type_obj;
+
+    formulas = PyList_New(0);
+    headers = PyList_New(0);
+    groups = PyList_New(0);
+    type_n = PyUnicode_InternFromString("n");
+    type_s = PyUnicode_InternFromString("s");
+    type_b = PyUnicode_InternFromString("b");
+    type_e = PyUnicode_InternFromString("e");
+    columns = (PyObject **)calloc(16384, sizeof(PyObject *));
+    if (!formulas || !headers || !groups || !type_n || !type_s || !type_b || !type_e)
+        goto done;
+    if (!columns) { PyErr_NoMemory(); goto done; }
+
+    const unsigned char *data = (const unsigned char *)view.buf;
+    Py_ssize_t data_len = view.len;
+    Py_ssize_t ss_len = PyList_GET_SIZE(shared_strings);
+    Py_ssize_t styles_len = PyList_GET_SIZE(styles_list);
+    Py_ssize_t pos = 0, data_start = -1, data_end = -1;
+    long current_row = -1, previous_column = -1, max_row = 0, max_column = 0;
+
+    while (pos < data_len)
+    {
+        Py_ssize_t header_start = pos;
+        long rec_id = _read_varint(data, data_len, &pos);
+        if (rec_id < 0) break;
+        long rec_len = _read_varint(data, data_len, &pos);
+        if (rec_len < 0 || pos + rec_len > data_len)
+        {
+            PyErr_SetString(PyExc_ValueError, "truncated XLSB record");
+            goto done;
+        }
+        Py_ssize_t body = pos;
+        pos += rec_len;
+        if (data_start < 0)
+        {
+            if (rec_id == 0x91)
+                data_start = pos;
+            continue;
+        }
+        if (rec_id == 0x92)
+        {
+            data_end = header_start;
+            break;
+        }
+        if (rec_id == 0x00)
+        {
+            if (rec_len < 4) continue;
+            current_row = (long)_read_uint32(data, data_len, body);
+            previous_column = -1;
+            Py_CLEAR(row_key);
+            row_dict = NULL;
+            if (current_row >= 1048576) { current_row = -1; continue; }
+            if (rec_len > 11 && (data[body + 11] & 0x7F))
+            {
+                PyObject *item = Py_BuildValue("(ly#)", current_row + 1,
+                                               (const char *)(data + body), (Py_ssize_t)rec_len);
+                if (!item || PyList_Append(headers, item) < 0) { Py_XDECREF(item); goto done; }
+                Py_DECREF(item);
+            }
+            continue;
+        }
+        if (rec_id == 0x1AA || rec_id == 0x1AB)
+        {
+            PyObject *item = Py_BuildValue("(ly#)", rec_id, (const char *)(data + body), (Py_ssize_t)rec_len);
+            if (!item || PyList_Append(groups, item) < 0) { Py_XDECREF(item); goto done; }
+            Py_DECREF(item);
+            continue;
+        }
+        if (rec_id < 0x01 || rec_id > 0x12 || current_row < 0) continue;
+
+        /* Compact records (0x0C..0x12) omit the column: they follow the
+           previous cell. Viewed 4 bytes earlier they parse like full ones. */
+        long kind = rec_id, column, xf;
+        Py_ssize_t cell_body = body;
+        long cell_len = rec_len;
+        if (rec_id >= 0x0C)
+        {
+            if (rec_len < 4 || body < 4) continue;
+            kind = rec_id - 0x0B;
+            column = previous_column + 1;
+            cell_body = body - 4;
+            cell_len = rec_len + 4;
+        }
+        else
+        {
+            if (rec_len < 8) continue;
+            column = (long)_read_uint32(data, data_len, body);
+        }
+        xf = (long)(_read_uint32(data, data_len, cell_body + 4) & 0xFFFFFF);
+        if (column < 0 || column >= 16384)
+        {
+            PyErr_SetString(PyExc_ValueError, "XLSB column exceeds Excel limits");
+            goto done;
+        }
+        previous_column = column;
+
+        if (kind >= 0x08)
+        {
+            /* Formulas are rare: the caller decodes them, from the full
+               record so that compact cells get their column back. */
+            PyObject *payload = PyBytes_FromStringAndSize(NULL, cell_len);
+            if (!payload) goto done;
+            char *out = PyBytes_AS_STRING(payload);
+            memcpy(out + 4, data + cell_body + 4, (size_t)cell_len - 4);
+            out[0] = (char)(column & 0xFF);
+            out[1] = (char)((column >> 8) & 0xFF);
+            out[2] = 0;
+            out[3] = 0;
+            PyObject *item = Py_BuildValue("(llN)", current_row + 1, kind, payload);
+            if (!item || PyList_Append(formulas, item) < 0) { Py_XDECREF(item); goto done; }
+            Py_DECREF(item);
+            continue;
+        }
+
+        PyObject *value;
+        PyObject *data_type;
+        int owned = 0;
+        if (kind == 0x03)
+        {
+            if (cell_len < 9) continue;
+            value = PyUnicode_FromString(_xlsb_error_text(data[cell_body + 8]));
+            if (!value) goto done;
+            data_type = type_e;
+        }
+        else
+        {
+            int fatal = 0, skip = 0;
+            value = _parse_cell_value(data, data_len, cell_body, kind, cell_len,
+                                      shared_strings, ss_len, styles_list, styles_len,
+                                      date_num_fmts, xf, &owned, date_1904, &fatal, &skip);
+            if (fatal) goto done;
+            if (skip || !value) continue;
+            if (value == Py_None)
+            {
+                if (!xf) continue;  /* only a styled blank is a cell */
+                data_type = type_n;
+            }
+            else if (PyUnicode_Check(value))
+                data_type = type_s;
+            else if (PyBool_Check(value))
+                data_type = type_b;
+            else
+                data_type = type_n;
+            /* Own one reference whatever the parser returned. */
+            if (!owned) Py_INCREF(value);
+        }
+
+        if (!row_key)
+        {
+            row_key = PyLong_FromLong(current_row + 1);
+            if (!row_key) { Py_DECREF(value); goto done; }
+            row_dict = PyDict_GetItemWithError(cells_dict, row_key);
+            if (!row_dict)
+            {
+                if (PyErr_Occurred()) { Py_DECREF(value); goto done; }
+                row_dict = PyDict_New();
+                if (!row_dict || PyDict_SetItem(cells_dict, row_key, row_dict) < 0)
+                { Py_XDECREF(row_dict); Py_DECREF(value); goto done; }
+                Py_DECREF(row_dict);  /* cells_dict holds it */
+            }
+        }
+        if (!columns[column])
+        {
+            columns[column] = PyLong_FromLong(column + 1);
+            if (!columns[column]) { Py_DECREF(value); goto done; }
+        }
+        PyObject *style = PyLong_FromLong(xf);
+        PyObject *cell = style ? cell_type->tp_alloc(cell_type, 0) : NULL;
+        if (!cell) { Py_XDECREF(style); Py_DECREF(value); goto done; }
+        _set_slot(cell, offsets[_CS_SHEET], sheet);
+        _set_slot(cell, offsets[_CS_ROW], row_key);
+        _set_slot(cell, offsets[_CS_COLUMN], columns[column]);
+        _set_slot(cell, offsets[_CS_VALUE], value);
+        _set_slot(cell, offsets[_CS_FORMULA], Py_None);
+        _set_slot(cell, offsets[_CS_DATA_TYPE], data_type);
+        _set_slot(cell, offsets[_CS_STYLE_ID], style);
+        _set_slot(cell, offsets[_CS_COMMENT], Py_None);
+        _set_slot(cell, offsets[_CS_HYPERLINK], Py_None);
+        _set_slot(cell, offsets[_CS_NAMED_STYLE], Py_None);
+        _set_slot(cell, offsets[_CS_DIRTY], Py_False);
+        Py_DECREF(style);
+        int failed = PyDict_SetItem(row_dict, columns[column], cell) < 0;
+        Py_DECREF(cell);
+        if (value != Py_None || xf || data_type != type_n)
+        {
+            if (current_row + 1 > max_row) max_row = current_row + 1;
+            if (column + 1 > max_column) max_column = column + 1;
+        }
+        Py_DECREF(value);
+        if (failed) goto done;
+    }
+    if (data_start >= 0 && data_end < 0)
+        data_end = data_len;
+
+    result = Py_BuildValue("(llOOOnn)", max_row, max_column, formulas, headers, groups,
+                           data_start, data_end);
+
+done:
+    PyBuffer_Release(&view);
+    Py_XDECREF(row_key);
+    if (columns)
+    {
+        for (int i = 0; i < 16384; i++) Py_XDECREF(columns[i]);
+        free(columns);
+    }
+    Py_XDECREF(formulas);
+    Py_XDECREF(headers);
+    Py_XDECREF(groups);
+    Py_XDECREF(type_n);
+    Py_XDECREF(type_s);
+    Py_XDECREF(type_b);
+    Py_XDECREF(type_e);
+    return result;
+}
+
 /* ===== Module definition ===== */
 static PyMethodDef CMethods[] = {
     {"read_xlsb_worksheet", C_read_xlsb_worksheet, METH_VARARGS,
@@ -3737,6 +4484,12 @@ static PyMethodDef CMethods[] = {
      "Encode the sharedStrings.bin part. Returns bytes."},
     {"read_xlsb_shared_strings", C_read_xlsb_shared_strings, METH_VARARGS,
      "Parse a sharedStrings.bin part. Returns a list of strings."},
+    {"xlsb_load_cells", C_xlsb_load_cells, METH_VARARGS,
+     "Load an XLSB sheet's data into Cell objects of the workbook model.\n\n"
+     "Args: (data, shared_strings, styles_list, date_num_fmts, date_1904,\n"
+     "       Cell, slot descriptors, sheet, cells dict)\n"
+     "Returns: (max_row, max_column, formulas, row_headers, formula_groups,\n"
+     "          sheet_data_start, sheet_data_end)"},
     {"encode_xlsx_row", C_encode_xlsx_row, METH_VARARGS,
      "Encode one XLSX sheet row. Returns (row_xml, sst_uniq, sst_all)."},
     {NULL, NULL, 0, NULL}
