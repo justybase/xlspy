@@ -76,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pivot tables no longer resize the columns of their sheet when Excel refreshes them on open, unless the
+  new `PivotTable(autofit_columns=True)` asks for it (Excel's "Autofit column widths on update", written for
+  XLSX and XLSB). Before, a pivot placed on its data sheet could narrow the columns the sheet had been given.
 - Plain rows given to `write_sheet` (XLSX and XLSB) write numpy integer, `bool_`, float16 and float32 scalars as the
   Python value they hold, as the DataFrame path already did. They used to be written as text (`"1"`, `"True"`,
   `"0.1"`). A float32 `0.1` is now written as `0.10000000149011612`, and a float32 `NaN` raises `ValueError`, as a

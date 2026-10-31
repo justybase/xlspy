@@ -263,6 +263,10 @@ class PivotTable:
     name: str | None = None
     style: str = "PivotStyleLight16"
     data_caption: str = "Values"
+    # Excel's "Autofit column widths on update". Off by default: a pivot on the
+    # same sheet as its data would otherwise set the columns' widths on every
+    # refresh (when the file opens), overriding the widths the sheet was given.
+    autofit_columns: bool = False
 
     def __post_init__(self):
         rows = _axis(self.rows, "rows")
@@ -310,6 +314,8 @@ class PivotTable:
         for attr, value in (("style", self.style), ("data_caption", self.data_caption)):
             if not isinstance(value, str) or not value:
                 raise ValueError(f"pivot {attr} must be a non-empty string")
+        if not isinstance(self.autofit_columns, bool):
+            raise TypeError("pivot autofit_columns must be a bool")
 
     @property
     def value_specs(self) -> tuple[PivotValue, ...]:
@@ -1026,7 +1032,8 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
         'applyNumberFormats="0" applyBorderFormats="0" applyFontFormats="0" '
         'applyPatternFormats="0" applyAlignmentFormats="0" applyWidthHeightFormats="1" '
         f'dataCaption="{_attr(render.pivot.data_caption)}" updatedVersion="8" '
-        'minRefreshableVersion="3" useAutoFormatting="1" itemPrintTitles="1" '
+        'minRefreshableVersion="3" '
+        f'useAutoFormatting="{1 if render.pivot.autofit_columns else 0}" itemPrintTitles="1" '
         'createdVersion="8" indent="0" outline="1" outlineData="1" '
         'multipleFieldFilters="0">'
         f"{location}"

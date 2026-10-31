@@ -70,6 +70,19 @@ _AC_HEADER = bytes.fromhex("010000100080")
 # BrtBeginSXView up to idCache: the flags Excel writes for a new pivot (grand
 # totals on, compact and outline layout, headers shown) and the version bytes.
 _VIEW_PREFIX = bytes.fromhex("08414000f2650b20df02000002000803ffffffff0100000000000000")
+# Excel's "Autofit column widths on update" (PivotTable.HasAutoFormat, the XLSX
+# useAutoFormatting attribute). Found by saving the same pivot from Excel with the
+# setting on and off: only this bit of BrtBeginSXView differs (byte 5, mask 0x01).
+_AUTOFORMAT_BYTE, _AUTOFORMAT_MASK = 5, 0x01
+
+
+def _view_prefix(autofit_columns: bool) -> bytes:
+    prefix = bytearray(_VIEW_PREFIX)
+    if autofit_columns:
+        prefix[_AUTOFORMAT_BYTE] |= _AUTOFORMAT_MASK
+    else:
+        prefix[_AUTOFORMAT_BYTE] &= ~_AUTOFORMAT_MASK & 0xFF
+    return bytes(prefix)
 # BrtBeginSXVD after its axis byte, and BrtBeginPCDField before the name.
 _VD_TAIL = bytes.fromhex("01001000000000" "5fa104000a000000ffffffff")
 _FIELD_PREFIX = bytes.fromhex("04000000") + bytes(16)
@@ -266,7 +279,7 @@ def pivot_table_bin(render: PivotRender, data_field_format_ids: list[int | None]
         _header("table", render.pivot_id, render.plan.name),
         build_record(
             _VIEW,
-            _VIEW_PREFIX + struct.pack("<I", render.cache_id)
+            _view_prefix(pivot.autofit_columns) + struct.pack("<I", render.cache_id)
             + wide_string(render.plan.name) + wide_string(pivot.data_caption),
         ),
         build_record(_LOCATION, location),

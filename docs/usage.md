@@ -1064,6 +1064,10 @@ written with `write_sheet` (an empty list is enough).
 - **Output:** the report cells are written by the writer, from the rows as they
   stream past. The cache holds no records and refreshes when the file opens, so
   Excel rebuilds the layout and shows its own (localised) labels.
+- **Column widths:** when Excel refreshes a pivot on open it can resize the columns the pivot
+  covers. By default xlspy turns Excel's "Autofit column widths on update" off, so a pivot on the
+  same sheet as its data keeps the widths the sheet was given. `PivotTable(..., autofit_columns=True)`
+  turns it on, as Excel does for new pivots. The option is written for XLSX and XLSB alike.
 - **XLSB:** the same pivots as binary parts (the records were mapped from files
   Excel saved). The fields a pivot reads cannot hold dates, booleans or NaN: a
   `ValueError` names the field, and XLSX takes those.
