@@ -11,6 +11,8 @@ are dropped.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from .exceptions import UnsupportedFeatureError
 import posixpath
 import struct
@@ -67,7 +69,7 @@ class _Entry:
 
 
 def _bundles(workbook: bytes) -> list[_Entry]:
-    entries = []
+    entries: list[Any] = []
     for record, payload in records(workbook):
         if record.record_id == BUNDLE_SH:
             state, tab_id = struct.unpack_from("<II", payload)
@@ -89,6 +91,14 @@ class XlsbSheetsMixin:
 
     # Sheet name -> part path; set by the updater's loader.
     _sheets: dict[str, str]
+
+    if TYPE_CHECKING:
+        # Provided by XlsbUpdater.
+        _package: Any
+        _chartsheets: Any
+
+        def _apply_parts(self, parts: dict[str, Any], removed: Any = ()) -> None: ...
+        def _invalidate_calculation(self, *args: Any, **kwargs: Any) -> Any: ...
 
     def get_sheet_states(self) -> dict[str, str]:
         """Sheet visibility (``visible``, ``hidden`` or ``veryHidden``) by name."""
@@ -179,7 +189,7 @@ class XlsbSheetsMixin:
         sheet_rels = posixpath.join(posixpath.dirname(path), "_rels", posixpath.basename(path) + ".rels")
         if self._package.has(sheet_rels):
             dropped.append(sheet_rels)
-        removed_parts = []
+        removed_parts: list[str] = []
         self._invalidate_calculation(parts, removed_parts)
         self._apply_parts(parts, dropped + removed_parts)
         del self._sheets[name]
@@ -214,7 +224,7 @@ class XlsbSheetsMixin:
         entries = [by_name[name] for name in order]
         if [entry.old_index for entry in entries] == sorted(entry.old_index for entry in entries):
             return
-        parts = {}
+        parts: dict[str, Any] = {}
         parts["xl/workbook.bin"] = self._rewrite_sheet_list(workbook, entries, parts)
         self._apply_parts(parts)
         self._sheets = {name: self._sheets[name] for name in order}
@@ -255,7 +265,7 @@ class XlsbSheetsMixin:
             _remap_context(context, mapping)
             context._sheets = [entry.name for entry in entries]
             workbook = context.write_workbook(workbook)
-        output = []
+        output: list[Any] = []
         wrote = False
         for record, payload in records(workbook):
             if record.record_id == BUNDLE_SH:
@@ -317,7 +327,7 @@ def _remap_context(context: FormulaContext, mapping: dict[int, int]) -> None:
 
 
 def _patch_book_views(workbook: bytes, change) -> bytes:
-    output = []
+    output: list[Any] = []
     for record, payload in records(workbook):
         if record.record_id == BOOK_VIEW and len(payload) >= 28:
             first, current = struct.unpack_from("<II", payload, 20)

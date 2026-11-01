@@ -1361,6 +1361,10 @@ class Worksheet:
     PAPERSIZE_A3 = 8
     PAPERSIZE_A4 = 9
 
+    # Set by the XLSB loader (workbook/_xlsb_reader.py) on loaded sheets only.
+    _cf_extensions: Any
+    _saved_filter_records: Any
+
     def __init__(self, workbook, title: str, *, index: int | None = None):
         self._workbook = workbook
         self._title = title
@@ -2136,6 +2140,11 @@ class Chartsheet:
 
 
 class Workbook:
+    # Set by the loaders and the XLSB saver; a workbook built in memory has none of them.
+    _updater: Any
+    _xlsb_styles_path: Any
+    _loaded_defined_names: Any
+
     def __init__(self, write_only: bool = False, iso_dates: bool = False):
         self.write_only = bool(write_only)
         self.iso_dates = bool(iso_dates)

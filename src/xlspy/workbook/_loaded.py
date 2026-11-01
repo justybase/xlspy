@@ -1265,7 +1265,8 @@ def save_loaded(workbook: Workbook, filename) -> None:
             removed_any = True
     if removed_any:
         # calcChain entries of a removed sheet make Excel repair the file.
-        updates, removed_parts = {}, []
+        updates: dict[str, str | bytes] = {}
+        removed_parts: list[str] = []
         updater._recalculate(updates, removed_parts)
         updater._apply_parts(updates, removed_parts)
     workbook._loaded_worksheet_names -= {

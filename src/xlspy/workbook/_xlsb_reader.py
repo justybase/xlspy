@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import os
 import posixpath
 import struct
@@ -135,7 +137,7 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         )
         workbook._styles = XlsbStyleTable.from_bin(styles_bin)
         workbook._xlsb_styles_path = styles_path if styles_bin is not None else None
-        named_styles = list(workbook._styles.named_style_defs.values())
+        named_styles: list[Any] = list(workbook._styles.named_style_defs.values())
         workbook.named_styles = NamedStyleList(named_styles or list(workbook._styles.named_styles) or ["Normal"])
         formula_context = None
         for name in updater.get_worksheet_names():

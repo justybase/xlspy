@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from .exceptions import UnsupportedFeatureError
 from collections.abc import Mapping
 import datetime
@@ -58,6 +60,13 @@ def request_recalculation(data):
 class XlsbEditMixin(XlsxEditMixin):
     # Set by XlsbUpdater; None until the shared strings part is read.
     _shared_strings_data: bytes | None
+
+    if TYPE_CHECKING:
+        # Provided by XlsbUpdater; the attributes it shares with XlsxEditMixin are
+        # declared there.
+        _shared_strings_loaded: Any
+
+        def _part_or_none(self, *args: Any, **kwargs: Any) -> Any: ...
 
     def _sheet_bin(self, sheet_name):
         try:
@@ -172,7 +181,7 @@ class XlsbEditMixin(XlsxEditMixin):
         context = FormulaContext(self._sheets, original)
         context.set_name(definition)
         updates = {'xl/workbook.bin': context.write_workbook(original)}
-        removed = []
+        removed: list[str] = []
         self._invalidate_calculation(updates, removed)
         self._apply_parts(updates, removed)
 
@@ -183,7 +192,7 @@ class XlsbEditMixin(XlsxEditMixin):
         context = FormulaContext(self._sheets, original)
         context.remove_name(name, scope)
         updates = {'xl/workbook.bin': context.write_workbook(original)}
-        removed = []
+        removed: list[str] = []
         self._invalidate_calculation(updates, removed)
         self._apply_parts(updates, removed)
 
@@ -382,7 +391,7 @@ class XlsbEditMixin(XlsxEditMixin):
         begin = next(r for r, _ in all_records if r.record_id == 0x91)
         end = next(r for r, _ in all_records if r.record_id == 0x92)
         row_starts = [(r, payload) for r, payload in all_records if r.record_id == 0 and begin.data_end <= r.header_start < end.header_start]
-        by_row = {}
+        by_row: dict[Any, Any] = {}
         for ref, value in targets.items():
             col, row, _, _ = parse_cell_range(ref)
             by_row.setdefault(row, {})[col] = (value, style_ids.get(ref))
@@ -436,7 +445,8 @@ class XlsbEditMixin(XlsxEditMixin):
             patched = patched[:record.header_start] + build_record(0x94, bounds) + patched[record.data_end:]
         else:
             patched = replace_records(patched, {0x94}, build_record(0x94, bounds), before=(0x85, 0x91))
-        updates, removed = {path: patched}, []
+        updates: dict[str, Any] = {path: patched}
+        removed: list[str] = []
         if context is not None:
             updates['xl/workbook.bin'] = context.write_workbook(original_workbook)
         if removed_shared_refs and self._package.has('xl/sharedStrings.bin'):

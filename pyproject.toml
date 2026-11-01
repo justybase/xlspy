@@ -124,15 +124,11 @@ warn_unused_configs = true
 # checked; remove a module from this list once mypy passes for it.
 [[tool.mypy.overrides]]
 module = [
-    "xlspy._xlsb_edit",
-    "xlspy._xlsb_sheets",
-    "xlspy._xlsx_edit",
     "xlspy.styles.core",
     "xlspy.workbook._model",
     "xlspy.workbook._objects",
     "xlspy.workbook._reader",
     "xlspy.workbook._styles",
-    "xlspy.workbook._xlsb_reader",
     "xlspy.xlsx_writer",
 ]
 ignore_errors = true

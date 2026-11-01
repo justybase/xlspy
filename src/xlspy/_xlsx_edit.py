@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from collections.abc import Mapping
 import datetime
 from decimal import Decimal
@@ -44,6 +46,17 @@ _AFTER_HYPERLINKS = (
 
 
 class XlsxEditMixin:
+    if TYPE_CHECKING:
+        # Provided by the host updater (XlsxUpdater or XlsbUpdater). Annotations
+        # only, plus stubs that the host's own methods replace at runtime.
+        _package: Any
+        _sheets: Any
+        _date_1904: Any
+        _tag_prefix: Any
+        _shared_strings_loaded: Any
+        _shared_strings_total: Any
+        _stream_shared_strings: Any
+
     def _apply_parts(self, parts, removed=()):
         package = self._package
         package.begin_transaction()
@@ -192,7 +205,8 @@ class XlsxEditMixin:
         )
         prefix = self._tag_prefix(sheet, "worksheet")
         container = element_pattern("hyperlinks").search(sheet)
-        kept, dropped = [], set()
+        kept: list[Any] = []
+        dropped: set[Any] = set()
         if container:
             for match in element_pattern("hyperlink").finditer(container[0]):
                 attrs = _attributes(match[0])
@@ -365,7 +379,7 @@ class XlsxEditMixin:
 
         body = element_pattern("row").sub(patch_row, body)
         # Insert new rows at their numeric position without changing old rows.
-        by_row = {}
+        by_row: dict[Any, Any] = {}
         for ref in pending:
             by_row.setdefault(parse_cell_range(ref)[1] + 1, []).append(ref)
         new_rows = {}
@@ -388,12 +402,12 @@ class XlsxEditMixin:
         dimension = root.find(f"{{{MAIN}}}dimension")
         if dimension is not None and dimension.get("ref"):
             refs.extend(dimension.attrib["ref"].split(":"))
-        bounds = [parse_cell_range(ref) for ref in refs]
-        first = f"{column_label(min(b[0] for b in bounds))}{min(b[1] for b in bounds) + 1}"
-        last = f"{column_label(max(b[2] for b in bounds))}{max(b[3] for b in bounds) + 1}"
+        spans = [parse_cell_range(ref) for ref in refs]
+        first = f"{column_label(min(b[0] for b in spans))}{min(b[1] for b in spans) + 1}"
+        last = f"{column_label(max(b[2] for b in spans))}{max(b[3] for b in spans) + 1}"
         xml = replace_element(xml, "dimension", f'<dimension xmlns="{MAIN}" ref="{first}:{last}"/>', before=("sheetViews", "sheetFormatPr", "cols", "sheetData"))
         updates = {path: xml}
-        removed = []
+        removed: list[str] = []
         removed_shared_refs = sum(ref in values and c.get("t") == "s" for ref, c in cell_nodes)
         if removed_shared_refs:
             rels = safe_fromstring(self._package.get("xl/_rels/workbook.xml.rels"))
@@ -402,6 +416,8 @@ class XlsxEditMixin:
                     part = resolve_part("xl/workbook.xml", relationship.attrib["Target"])
                     strings = self._package.get(part).decode("utf-8")
                     opening = re.search(r"<(?:[\w.-]+:)?sst\b[^>]*>", strings)
+                    if opening is None:
+                        raise ValueError("sharedStrings element was not found")
                     attrs = _attributes(opening[0])
                     if "count" in attrs:
                         updated_tag = replace_or_add_xml_attribute(opening[0], "count", max(0, int(attrs["count"]) - removed_shared_refs))
