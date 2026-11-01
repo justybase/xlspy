@@ -1,9 +1,15 @@
 """Optional metadata methods for XlsbWriter, outside its numeric row path."""
 
+from typing import TYPE_CHECKING
+
 from ._metadata import DefinedName
 
 
 class XlsbWriterMetadata:
+    if TYPE_CHECKING:
+        # Provided by WriterFrontEnd / StagedWriter, which the writer mixes in first.
+        def _require_writable(self) -> None: ...
+
     def _formula_context(self):
         if self._xlsb_formula_context is None:
             from ._xlsb_formulas import FormulaContext

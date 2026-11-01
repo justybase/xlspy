@@ -1579,7 +1579,7 @@ def merge_styles(base: Style | None, overlay: Style | None) -> Style | None:
 @lru_cache(maxsize=128)
 def _uniform_row_styles(row_length: int, style: Style):
     # These cached dictionaries are only read by the writers.
-    return {column: style for column in range(row_length)}
+    return dict.fromkeys(range(row_length), style)
 
 
 @lru_cache(maxsize=128)
@@ -1741,6 +1741,6 @@ _RULE_TYPES = (
     (BlanksRule, _blanks_rule_type),
 )
 for _rule_class, _rule_type in _RULE_TYPES:
-    setattr(_rule_class, "rule_type", property(_rule_type))
-    setattr(_rule_class, "type", property(_rule_type))
+    _rule_class.rule_type = property(_rule_type)
+    _rule_class.type = property(_rule_type)
 del _rule_class, _rule_type

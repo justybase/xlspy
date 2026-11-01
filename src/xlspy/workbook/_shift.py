@@ -11,6 +11,7 @@ their rows and columns (``insert_*``/``delete_*``), as they do in Excel.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from ..formulas import Formula
 from ..refs import column_label, parse_cell_range
@@ -103,7 +104,9 @@ def shift_rows(sheet, idx: int, amount: int, *, delete: bool) -> None:
         raise ValueError("the insert pushes cells past Excel's last row")
     # Whole rows move: their cell dictionaries are reused, and moved rows
     # never land on rows that stay.
-    cells_by_row, vacated, moved = {}, [], []
+    cells_by_row: dict[int, Any] = {}
+    vacated: list[Any] = []
+    moved: list[Any] = []
     loaded = sheet._loaded
     for row, cells in sheet._cells.items():
         new_row = _shifted(row, idx, amount, delete)
@@ -130,7 +133,9 @@ def shift_cols(sheet, idx: int, amount: int, *, delete: bool) -> None:
     if not delete and any(cells and max(cells) >= idx and max(cells) + amount > _MAX_COL
                           for cells in sheet._cells.values()):
         raise ValueError("the insert pushes cells past Excel's last column")
-    cells_by_row, vacated, moved = {}, [], []
+    cells_by_row: dict[int, Any] = {}
+    vacated: list[Any] = []
+    moved: list[Any] = []
     loaded = sheet._loaded
     for row, cells in sheet._cells.items():
         if not cells or max(cells) < idx:
@@ -174,7 +179,7 @@ def move_range(sheet, cell_range, rows: int = 0, cols: int = 0, translate: bool 
             return row + rows, col + cols
         return row, col
 
-    translated_formulas = {}
+    translated_formulas: dict[int, Any] = {}
     if translate:
         for row, cells in sheet._cells.items():
             if not first_row <= row <= last_row:
@@ -205,7 +210,9 @@ def _relocate(sheet, target) -> list:
     """Move every cell to ``target(row, col)`` (None deletes it) and return
     the cells that moved. Moved cells replace cells already at their
     destination, as in openpyxl."""
-    staying, moving, vacated = {}, [], []
+    staying: dict[int, dict[int, Any]] = {}
+    moving: list[Any] = []
+    vacated: list[Any] = []
     for row, cells in sheet._cells.items():
         for col, cell in cells.items():
             destination = target(row, col)

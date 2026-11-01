@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime as _datetime
 import math
 import re
+from typing import TYPE_CHECKING, Any
 from xml.sax.saxutils import escape
 
 # Characters XML 1.0 cannot carry at all.
@@ -82,6 +83,12 @@ def _custom_value(name: str, value) -> str:
 class DocumentPropertiesMixin:
     """``set_properties`` and the docProps parts for a workbook writer."""
 
+    if TYPE_CHECKING:
+        # Provided by the writer that mixes this in.
+        _zf: Any
+
+        def _require_writable(self) -> None: ...
+
     _doc_props: dict | None = None
 
     def set_properties(
@@ -113,7 +120,7 @@ class DocumentPropertiesMixin:
             "manager": manager, "company": company, "category": category,
             "keywords": keywords, "comments": comments, "status": status,
         }
-        props = {key: _check_text(key, value) for key, value in values.items() if value is not None}
+        props: dict[str, Any] = {key: _check_text(key, value) for key, value in values.items() if value is not None}
         if created is None:
             created = _datetime.datetime.now(_datetime.timezone.utc)
         props["created"] = _utc(created, "created")

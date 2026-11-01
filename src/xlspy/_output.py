@@ -169,7 +169,6 @@ class StagedWriter:
 
     def _staging_bytes(self):
         """In-memory size of the staging spool for file-object targets."""
-        return None
 
     def __enter__(self):
         if self._zf is None:

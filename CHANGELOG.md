@@ -141,6 +141,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Ragged rows: the first row present in an XLSX sheet sets the width the other rows are padded to (as documented
+  for `iter_rows`). A blank first row used to count as width 0, so the padding did not happen; now it is the same
+  whether or not the sheet starts with a blank row.
+- The native accelerator selects one backend, the Rust module. Its private switches were renamed (`_c_*` to
+  `_native_*` in `xlspy._accel`). The public names (`HAVE_NATIVE`, `HAVE_C_EXT`, `ACCEL_MODE`, `ACCEL_BACKEND`,
+  `XLSPY_ACCEL`, `XLSPY_DISABLE_C_EXT`) are unchanged.
+- Mypy checks more modules strictly: they were removed from the `ignore_errors` list in `pyproject.toml`. Nineteen
+  modules are still excluded.
+- Ruff also enforces `PLE`, `PIE`, `TRY203`, `C4`, `RET`, `B010` and `B023`, which report nothing after this change.
 - Pivot tables no longer resize the columns of their sheet when Excel refreshes them on open, unless the
   new `PivotTable(autofit_columns=True)` asks for it (Excel's "Autofit column widths on update", written for
   XLSX and XLSB). Before, a pivot placed on its data sheet could narrow the columns the sheet had been given.
@@ -250,6 +259,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   object of a grouped drawing; both would lose data.
 
 ### Fixed
+
+- `ws.protection` and `ws.page_margins` accept the public `SheetProtection` and `PageMargins` objects and store
+  them as the model's own types, so a sheet protected with `xlspy.SheetProtection(password=...)` saves and loads.
+- Writing a sheet whose data is far from the origin (for example `A1` and `XFD1048576`) no longer builds every
+  empty row between them. A row ends at its last cell, and empty rows with no height, flag or style are not written
+  (XLSX and XLSB). The file for `A1` and `XFD1048576` is 2.7 KB instead of 2.7 MB, and it takes under a second.
+- A row past the last cell that has a height, a hidden flag or an outline level is written. Before, its height was
+  lost on save.
+- XLSX rows carry no `r` attribute when they follow the previous row, so dense data is not made larger. The row
+  number is written only after a gap. Excel, openpyxl and xlspy read both forms the same way.
+- Empty rows at the end of the data are still written, so an empty frame keeps its one row.
 
 - Files Excel would repair, or that held wrong data:
   - XLSB `replace_sheet_data` wrote the sheet dimension into the selection record (0x98) and left the real
@@ -368,6 +388,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Package parts declared above 2 GiB uncompressed are refused before they are read, on every archive open path.
 - The Rust module is built with `panic = "unwind"`: a panic inside a reader raises `PanicException` in Python
   instead of ending the interpreter.
+- Every XML parse goes through one helper (`xlspy._safe_xml`). A document type declaration or entity declaration in
+  the prolog is refused with `InvalidFileError`, which blocks entity-expansion ("billion laughs") payloads.
+- A package whose parts add up to more than 4 GiB uncompressed is refused, not only a part above 2 GiB.
 
 ## [0.10.1] - 2026-10-24
 

@@ -276,7 +276,7 @@ def read_table_part(data: bytes):
 
 def apply_sheet_records(sheet, items) -> None:
     """Read the collected ``(record_id, payload)`` pairs into the sheet."""
-    breaks = None
+    breaks: list[Break] | None = None
     for record_id, payload in items:
         try:
             if record_id == COL_INFO:

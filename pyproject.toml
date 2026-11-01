@@ -101,9 +101,14 @@ target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
-# Correctness checks only: syntax errors, undefined names, unused imports
-# and variables. Style is left to review.
-select = ["E9", "F63", "F7", "F82", "F401", "F811", "F841"]
+# Correctness checks: syntax errors, undefined names, unused imports and
+# variables, plus rules that report nothing (or were fixed to report nothing).
+# Not enabled yet: B905 (zip strict=, changes behavior for unequal lengths),
+# B007 (unused loop variables; some are read after the loop), E/S/ARG/DTZ.
+select = [
+    "E9", "F63", "F7", "F82", "F401", "F811", "F841",
+    "PLE", "PIE", "TRY203", "C4", "RET", "B010", "B023",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "src/xlspy/__init__.py" = ["F401"]
@@ -119,30 +124,22 @@ warn_unused_configs = true
 # checked; remove a module from this list once mypy passes for it.
 [[tool.mypy.overrides]]
 module = [
-    "xlspy._metadata",
     "xlspy._xlsb_cf",
     "xlspy._xlsb_edit",
     "xlspy._xlsb_sheets",
     "xlspy._xlsb_style_records",
     "xlspy._xlsb_styles",
-    "xlspy._xlsb_writer",
     "xlspy._xlsx_edit",
-    "xlspy.chart_reader",
-    "xlspy.doc_properties",
     "xlspy.reader",
     "xlspy.rich_text",
     "xlspy.styles.core",
-    "xlspy.updater_utils",
     "xlspy.utils.cell",
     "xlspy.workbook._fast_sheet",
-    "xlspy.workbook._loaded",
     "xlspy.workbook._model",
     "xlspy.workbook._objects",
     "xlspy.workbook._reader",
-    "xlspy.workbook._shift",
     "xlspy.workbook._styles",
     "xlspy.workbook._xlsb_reader",
-    "xlspy.workbook._xlsb_sheet_meta",
     "xlspy.writer",
     "xlspy.xlsx_updater",
     "xlspy.xlsx_writer",
