@@ -1,0 +1,100 @@
+"""Row and column dimension objects and their holder."""
+
+from __future__ import annotations
+from ..refs import column_label
+from ._coords import _coerce_column, _coerce_row
+
+
+class Dimension:
+    def __init__(self, index: str | int):
+        self.index = index
+        self.min: int | None = None
+        self.max: int | None = None
+        self.width: float | None = None
+        self.height: float | None = None
+        self.hidden: bool = False
+        self.bestFit: bool | None = None
+        self.autoSize: bool | None = None
+        self.outlineLevel: int = 0
+        self.collapsed: bool = False
+        self.style: int | None = None
+
+    @property
+    def customWidth(self) -> bool:
+        return self.width is not None
+
+    @property
+    def customHeight(self) -> bool:
+        return self.height is not None
+
+    @property
+    def outline_level(self) -> int:
+        return self.outlineLevel
+
+    @outline_level.setter
+    def outline_level(self, value: int):
+        self.outlineLevel = value
+
+
+class ColumnDimension(Dimension):
+    pass
+
+
+class RowDimension(Dimension):
+    pass
+
+
+class DimensionHolder(dict):
+    def __init__(self, factory, transform):
+        super().__init__()
+        self._factory = factory
+        self._transform = transform
+
+    def __getitem__(self, key):
+        key = self._transform(key)
+        if key not in self:
+            super().__setitem__(key, self._factory(key))
+        return super().__getitem__(key)
+
+    def __setitem__(self, key, value):
+        super().__setitem__(self._transform(key), value)
+
+    def get(self, key, default=None):
+        return super().get(self._transform(key), default)
+
+    def __contains__(self, key):
+        return super().__contains__(self._transform(key))
+
+    def group(self, start, end=None, outline_level: int = 1, hidden: bool = False):
+        """Group consecutive rows or columns, as openpyxl does."""
+        if end is None:
+            end = start
+        if self._factory is ColumnDimension:
+            first = _coerce_column(start)
+            last = _coerce_column(end)
+            for index in range(first, last + 1):
+                dimension = self[column_label(index - 1)]
+                dimension.outlineLevel = outline_level
+                dimension.hidden = hidden
+                dimension.min = first
+                dimension.max = last
+        else:
+            for index in range(int(start), int(end) + 1):
+                dimension = self[index]
+                dimension.outlineLevel = outline_level
+                dimension.hidden = hidden
+
+
+def _column_key(key: str | int) -> str:
+    if isinstance(key, int) and not isinstance(key, bool):
+        if not 1 <= key <= 16384:
+            raise ValueError("column index must be 1..16384")
+        return column_label(key - 1)
+    if not isinstance(key, str):
+        raise TypeError("column key must be a letter or 1-based int")
+    column = _coerce_column(key)
+    return column_label(column - 1) if column else ""
+
+
+def _row_key(key: int) -> int:
+    return _coerce_row(key)
