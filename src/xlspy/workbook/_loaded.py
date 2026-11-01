@@ -38,8 +38,6 @@ _CONTENT_VML = "application/vnd.openxmlformats-officedocument.vmlDrawing"
 
 
 
-def _local(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
 
 
 def _remove_attr(opening: str, name: str) -> str:
@@ -537,7 +535,7 @@ def _breaks_xml(container, tag: str, prefix: str, default_max: int) -> str:
     )
 
 
-def _protection_xml(sheet: Worksheet, prefix: str) -> str:
+def _sheet_protection_xml(sheet: Worksheet, prefix: str) -> str:
     protection = sheet.protection
     if not protection.sheet and protection.password is None:
         return ""
@@ -630,7 +628,7 @@ def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
         before=("sheetViews", "sheetFormatPr", "cols", "sheetData"),
     )
     xml = replace_element(
-        xml, "sheetProtection", _protection_xml(sheet, prefix),
+        xml, "sheetProtection", _sheet_protection_xml(sheet, prefix),
         before=("protectedRanges", "scenarios", "autoFilter", "sortState",
                 "mergeCells", "conditionalFormatting", "dataValidations",
                 "hyperlinks", "printOptions", "pageMargins", "pageSetup",
@@ -816,7 +814,7 @@ def _sheet_xml(sheet: Worksheet, date_1904: bool, *, prefix: str = "") -> str:
     cols = _cols_xml(sheet, prefix)
     merges = _merge_xml(sheet, prefix)
     auto = _auto_filter_xml(sheet, prefix)
-    protection = _protection_xml(sheet, prefix)
+    protection = _sheet_protection_xml(sheet, prefix)
     sheet_format = _sheet_format_xml(sheet, prefix) or f'<{prefix}sheetFormatPr defaultRowHeight="15"/>'
     row_breaks = _breaks_xml(sheet.row_breaks, "rowBreaks", prefix, 16383)
     col_breaks = _breaks_xml(sheet.col_breaks, "colBreaks", prefix, 1048575)

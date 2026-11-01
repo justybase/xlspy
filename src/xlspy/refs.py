@@ -52,6 +52,70 @@ def parse_cell_range(reference: str) -> tuple[int, int, int, int]:
     return bounds
 
 
+_MAX_COLUMN = 16384  # zero-based column indexes run 0 .. 16383
+_MAX_ROW = 1048576
+
+# One pass over a formula. String literals, quoted sheet names and structured
+# references match first, so nothing inside them is shifted.
+_FORMULA_TOKEN = re.compile(
+    r'"(?:[^"]|"")*"'
+    r"|'(?:[^']|'')*'"
+    r"|\[[^\]]*\]"
+    r"|(?<![\w.])(?P<cell>(?P<cabs>\$?)(?P<col>[A-Za-z]{1,3})(?P<rabs>\$?)(?P<row>[1-9][0-9]*))(?![\w.!(])"
+    r"|(?<![\w.])(?P<cols>\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3})(?![\w.])"
+    r"|(?<![\w.])(?P<rows>\$?[1-9][0-9]*:\$?[1-9][0-9]*)(?![\w.])"
+)
+
+
+def shift_references(text: str, rows: int, cols: int) -> str:
+    """Shift the relative references of formula ``text`` by ``rows`` and ``cols``.
+
+    ``$``-anchored parts stay put, as when a formula is copied or filled. Whole
+    column (``A:A``) and whole row (``1:2``) references shift as well. A reference
+    pushed off the sheet becomes ``#REF!``. Names such as ``XFE1`` are left alone.
+    The result matches openpyxl's ``Translator`` for the same input.
+    """
+
+    def replace(match: re.Match) -> str:
+        if match["cell"] is not None:
+            return _shift_cell(match, rows, cols)
+        if match["cols"] is not None:
+            return ":".join(_shift_column(part, cols) for part in match["cols"].split(":"))
+        if match["rows"] is not None:
+            return ":".join(_shift_row(part, rows) for part in match["rows"].split(":"))
+        return match[0]
+
+    return _FORMULA_TOKEN.sub(replace, text)
+
+
+def _shift_cell(match: re.Match, rows: int, cols: int) -> str:
+    column = _column_index(match["col"])
+    row = int(match["row"]) - 1
+    if column >= _MAX_COLUMN or row >= _MAX_ROW:
+        return match[0]  # a name such as XFE1, not a cell
+    if not match["cabs"]:
+        column += cols
+    if not match["rabs"]:
+        row += rows
+    if not (0 <= column < _MAX_COLUMN and 0 <= row < _MAX_ROW):
+        return "#REF!"
+    return f"{match['cabs']}{column_label(column)}{match['rabs']}{row + 1}"
+
+
+def _shift_column(part: str, cols: int) -> str:
+    if part.startswith("$"):
+        return part
+    column = _column_index(part) + cols
+    return column_label(column) if 0 <= column < _MAX_COLUMN else "#REF!"
+
+
+def _shift_row(part: str, rows: int) -> str:
+    if part.startswith("$"):
+        return part
+    row = int(part) + rows
+    return str(row) if 1 <= row <= _MAX_ROW else "#REF!"
+
+
 _COLUMN_CACHE: dict[str, int] = {}
 
 

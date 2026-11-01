@@ -10,14 +10,7 @@ from ._metadata import MAIN, namespace_of
 from ._text import xstring_unescape
 from . import _accel
 from .excel_dates import serial_to_datetime
-from .refs import cell_position, parse_cell_range, column_label
-
-_TOKEN = re.compile(
-    r'"(?:[^"]|"")*"|\x27(?:[^\x27]|\x27\x27)*\x27|\[[^\]]*\]'
-    r'|(?<![\w.])(?P<cell>\$?[A-Za-z]{1,3}\$?[1-9]\d*)(?![\w.!(])'
-    r'|(?<![\w.])(?P<cols>\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3})(?![\w.])'
-    r'|(?<![\w.])(?P<rows>\$?[1-9]\d*:\$?[1-9]\d*)(?![\w.])'
-)
+from .refs import cell_position, column_label, parse_cell_range, shift_references
 
 # Fast path for data_only reads: regular expressions over the raw sheet XML.
 # Anything they cannot handle exactly is handed to the ElementTree path, row by row.
@@ -47,36 +40,7 @@ def translate_formula(text, origin, target):
     """Translate relative A1 references in a shared formula (without evaluating)."""
     c1, r1, _, _ = parse_cell_range(origin)
     c2, r2, _, _ = parse_cell_range(target)
-    dc, dr = c2 - c1, r2 - r1
-
-    def shift_col(label):
-        if label.startswith("$"):
-            return label
-        col, _, _, _ = parse_cell_range(label + "1")
-        return column_label(col + dc) if 0 <= col + dc < 16384 else "#REF!"
-
-    def shift_row(label):
-        if label.startswith("$"):
-            return label
-        value = int(label) + dr
-        return str(value) if 1 <= value <= 1048576 else "#REF!"
-
-    def shift(match):
-        if match["cell"]:
-            col, row = re.fullmatch(r"(\$?[A-Za-z]+)(\$?\d+)", match[0]).groups()
-            try:
-                col = shift_col(col)
-            except ValueError:
-                return match[0]  # A name such as XFE1, rather than a cell.
-            row = shift_row(row)
-            return "#REF!" if "#REF!" in (col, row) else col + row
-        if match["cols"]:
-            return ":".join(shift_col(part) for part in match[0].split(":"))
-        if match["rows"]:
-            return ":".join(shift_row(part) for part in match[0].split(":"))
-        return match[0]
-
-    return _TOKEN.sub(shift, text)
+    return shift_references(text, r2 - r1, c2 - c1)
 
 
 def iter_indexed_rows(reader, sheet_name, data_only=True):

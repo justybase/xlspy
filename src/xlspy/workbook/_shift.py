@@ -14,44 +14,13 @@ import re
 from typing import Any
 
 from ..formulas import Formula
-from ..refs import column_label, parse_cell_range
+from ..refs import column_label, parse_cell_range, shift_references as translate_formula
 
 _MAX_ROW = 1048576
 _MAX_COL = 16384
-# String literals and quoted sheet names, which are never translated.
-_QUOTED = re.compile(r'"(?:[^"]|"")*"|\'(?:[^\']|\'\')*\'')
 _CELL_REF = re.compile(
     r"(?<![A-Za-z0-9_.])(\$?)([A-Za-z]{1,3})(\$?)([0-9]+)(?![A-Za-z0-9_(.])"
 )
-
-
-def translate_formula(text: str, rows: int, cols: int) -> str:
-    """Shift the relative A1 references of ``text`` by ``rows`` and ``cols``.
-
-    ``$``-anchored parts stay; a reference pushed off the sheet becomes
-    ``#REF!``, as in openpyxl's Translator.
-    """
-    def cell(match: re.Match) -> str:
-        col_abs, letters, row_abs, digits = match.groups()
-        col = _column_number(letters)
-        row = int(digits)
-        if col is None or not 1 <= row <= _MAX_ROW:
-            return match.group(0)  # not a cell reference (e.g. a name)
-        if not col_abs:
-            col += cols
-        if not row_abs:
-            row += rows
-        if not (1 <= col <= _MAX_COL and 1 <= row <= _MAX_ROW):
-            return "#REF!"
-        return f"{col_abs}{column_label(col - 1)}{row_abs}{row}"
-
-    parts, last = [], 0
-    for quoted in _QUOTED.finditer(text):
-        parts.append(_CELL_REF.sub(cell, text[last:quoted.start()]))
-        parts.append(quoted.group(0))
-        last = quoted.end()
-    parts.append(_CELL_REF.sub(cell, text[last:]))
-    return "".join(parts)
 
 
 def _column_number(letters: str) -> int | None:

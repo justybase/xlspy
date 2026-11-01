@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import posixpath
+from ._metadata import local_name as _local
 from ._safe_xml import fromstring as safe_fromstring
 
 from .charts import LoadedChart
@@ -34,8 +35,6 @@ _CHART_TAGS = {
 }
 
 
-def _local(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
 
 
 def _relationships(package, part: str) -> dict[str, tuple[str, str]]:

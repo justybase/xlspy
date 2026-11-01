@@ -13,6 +13,8 @@ XLSX updater write it as ``<r>`` runs; XlsbWriter as a rich shared string
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
+from ._metadata import local_name as _local
 from ._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape
 
@@ -163,12 +165,10 @@ def _color_attrs(key) -> str:
     return f'theme="{key[1]}"{tint}'
 
 
-def _local(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
 
 
 def _font_from_rpr(rpr) -> InlineFont:
-    values = {}
+    values: dict[str, Any] = {}
     for child in rpr:
         name = _local(child.tag)
         val = child.get("val")

@@ -15,7 +15,7 @@ from .._untrusted import SafeZipFile
 from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring, iterparse as safe_iterparse
 
-from .._metadata import MAIN, REL, qname, read_defined_names
+from .._metadata import MAIN, REL, local_name as _local, qname, read_defined_names
 from .._text import xstring_unescape
 from ..comments import find_comment_parts, read_comments, rels_path
 from ..data_validation import DataValidation, OPERATORS, VALIDATION_TYPES
@@ -86,8 +86,6 @@ def _element_xml(element) -> str:
         element.tail = tail
 
 
-def _local(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
 
 
 def _text(node, path: str) -> str | None:

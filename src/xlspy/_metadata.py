@@ -24,6 +24,11 @@ def namespace_of(tag: str) -> str:
     return tag[1:].split("}", 1)[0] if tag.startswith("{") else ""
 
 
+def local_name(tag: str) -> str:
+    """Local name of an ElementTree tag such as ``{uri}local`` (``local``)."""
+    return tag.rsplit("}", 1)[-1]
+
+
 def relationship_namespace(main: str) -> str:
     """The r:id namespace matching a Transitional or Strict main namespace."""
     return STRICT_REL if main == STRICT_MAIN else REL

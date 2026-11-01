@@ -13,7 +13,7 @@ from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
-from .._metadata import MAIN, qname
+from .._metadata import MAIN, local_name as _local, qname
 from ..styles.numbers import BUILTIN_FORMATS as _BUILTIN_FORMATS
 from ..styles import (
     Alignment,
@@ -48,8 +48,6 @@ BUILTIN_NUM_FORMATS: dict[int, str] = dict(_BUILTIN_FORMATS)
 
 
 
-def _local(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
 
 
 def _flag(node: ET.Element | None, name: str = "val") -> bool | None:
