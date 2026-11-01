@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as _datetime
 from xml.etree import ElementTree as ET
+from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape
 
 from .._metadata import CT, PKG_REL
@@ -79,8 +80,8 @@ def save_properties(updater, workbook) -> None:
     if getattr(workbook, "_saved_properties", None) == signature(workbook):
         return
     package = updater._package
-    types = ET.fromstring(package.get("[Content_Types].xml"))
-    rels = ET.fromstring(package.get("_rels/.rels"))
+    types = safe_fromstring(package.get("[Content_Types].xml"))
+    rels = safe_fromstring(package.get("_rels/.rels"))
     parts = {_CORE_PATH: core_xml(workbook.properties)}
     removed = []
 

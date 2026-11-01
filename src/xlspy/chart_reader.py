@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import posixpath
-from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring
 
 from .charts import LoadedChart
 from .images import Image
@@ -42,7 +42,7 @@ def _relationships(package, part: str) -> dict[str, tuple[str, str]]:
     path = posixpath.join(posixpath.dirname(part), "_rels", posixpath.basename(part) + ".rels")
     if not package.has(path):
         return {}
-    root = ET.fromstring(package.get(path))
+    root = safe_fromstring(package.get(path))
     result = {}
     for node in root:
         rid = node.get("Id")
@@ -72,7 +72,7 @@ def _anchor_cell(anchor) -> str:
 
 
 def _chart_facts(xml: bytes) -> tuple[str | None, str | None, int]:
-    root = ET.fromstring(xml)
+    root = safe_fromstring(xml)
     chart = next((node for node in root.iter() if _local(node.tag) == "chart"), None)
     if chart is None:
         return None, None, 0
@@ -97,7 +97,7 @@ def read_drawing(package, sheet, drawing_part: str) -> None:
     if not package.has(drawing_part):
         return
     relationships = _relationships(package, drawing_part)
-    root = ET.fromstring(package.get(drawing_part))
+    root = safe_fromstring(package.get(drawing_part))
     # Where each object is in the file, so that a save can remove it.
     sources = sheet.__dict__.setdefault("_drawing_sources", [])
     position = -1
@@ -124,7 +124,7 @@ def read_drawing(package, sheet, drawing_part: str) -> None:
                     (item for item in node.iter() if _local(item.tag) == "blip"), None
                 )
                 rid = blip.get(f"{{{_REL}}}embed") if blip is not None else None
-                part = relationships.get(rid, (None, ""))[0]
+                part = relationships.get(rid, ("", ""))[0] if rid is not None else ""
                 if not part or not package.has(part):
                     continue
                 description = None

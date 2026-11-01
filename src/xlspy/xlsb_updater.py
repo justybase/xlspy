@@ -8,7 +8,7 @@ import numbers
 import os
 import re
 import struct
-from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring
 from decimal import Decimal
 from typing import Any, Iterable, Sequence
 from ._updater_base import StyleFallback, _UpdaterBase
@@ -330,7 +330,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             raise ValueError("XLSB workbook relationships were not found")
         relationships = parse_relationships_xml(self._package.get(rels_path))
         chart_ids = {
-            node.get("Id") for node in ET.fromstring(self._package.get(rels_path))
+            node.get("Id") for node in safe_fromstring(self._package.get(rels_path))
             if (node.get("Type") or "").endswith("/chartsheet")
         }
         self._chartsheets: set[str] = set()

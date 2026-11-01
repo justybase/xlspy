@@ -11,6 +11,7 @@ from ..exceptions import UnsupportedFeatureError
 import datetime as _datetime
 import re
 from xml.etree import ElementTree as ET
+from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
 from ..utils.datetime import time_to_days, timedelta_to_days
@@ -298,8 +299,10 @@ def _patch_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
     if body.endswith("/>"):
         # An empty <sheetData/> has no closing tag to insert rows before; expand
         # it so the rows go inside the element.
-        tag_name = re.match(r"<([\w.:-]+)", body)[1]
-        body = f"{body[:-2].rstrip()}></{tag_name}>"
+        tag_match = re.match(r"<([\w.:-]+)", body)
+        if tag_match is None:
+            return xml
+        body = f"{body[:-2].rstrip()}></{tag_match[1]}>"
     seen = set()
     next_row = 1
 
@@ -338,8 +341,10 @@ def _patch_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
         rows = list(element_pattern("row").finditer(body))
         position = None
         for candidate in rows:
-            opening = re.match(r"<[^>]+>", candidate[0])[0]
-            number = int(_attributes(opening).get("r", "0") or 0)
+            opening_match = re.match(r"<[^>]+>", candidate[0])
+            if opening_match is None:
+                continue
+            number = int(_attributes(opening_match[0]).get("r", "0") or 0)
             if number > row:
                 position = candidate.start()
                 break
@@ -722,11 +727,16 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
     if not styles:
         return
     path, xml = updater._sheet_xml(name)
-    existing = set()
-    _patch_cells(xml, lambda ref, cell_xml: existing.add(ref) or cell_xml)
+    existing: set[str] = set()
+
+    def collect_ref(ref, cell_xml):
+        existing.add(ref)
+        return cell_xml
+
+    _patch_cells(xml, collect_ref)
     missing = [ref for ref in styles if ref not in existing]
     if missing:
-        updater.update_cells(name, {ref: None for ref in missing})
+        updater.update_cells(name, dict.fromkeys(missing))
         path, xml = updater._sheet_xml(name)
 
     def patch_cell(ref, cell_xml):
@@ -862,7 +872,7 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
     xml = _sheet_xml(sheet, updater._date_1904)
     package.set(path, xml.encode("utf-8"))
 
-    content_types = ET.fromstring(package.get("[Content_Types].xml"))
+    content_types = safe_fromstring(package.get("[Content_Types].xml"))
     ET.SubElement(
         content_types, f"{{{CT}}}Override",
         {"PartName": "/" + path, "ContentType": _CONTENT_WORKSHEET},
@@ -870,7 +880,7 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
     package.set("[Content_Types].xml", _bytes(content_types))
 
     rels_path = "xl/_rels/workbook.xml.rels"
-    rels = ET.fromstring(package.get(rels_path))
+    rels = safe_fromstring(package.get(rels_path))
     rid = _next_rel_id(rels)
     ET.SubElement(
         rels, f"{{{PKG_REL}}}Relationship",
@@ -884,7 +894,7 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
 
     workbook_path = "xl/workbook.xml"
     workbook_xml = package.get(workbook_path).decode("utf-8")
-    root = ET.fromstring(workbook_xml)
+    root = safe_fromstring(workbook_xml)
     existing_ids = [
         int(node.get("sheetId", "0") or 0)
         for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
@@ -900,8 +910,9 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
     package.set(workbook_path, workbook_xml.encode("utf-8"))
     updater._sheets[sheet.title] = path
     sheet._path = path
-    sheet._rel_id = rid
-    sheet._sheet_id = sheet_id
+    # Read back with getattr in _reorder_and_state; they are optional on Worksheet.
+    sheet._rel_id = rid  # type: ignore[attr-defined]
+    sheet._sheet_id = sheet_id  # type: ignore[attr-defined]
 
 
 def _remove_sheet_node(workbook_xml: str, name: str) -> tuple[str, str | None]:
@@ -956,13 +967,13 @@ def remove_sheet(updater, workbook: Workbook, name: str) -> None:
     package.set(workbook_path, workbook_xml.encode("utf-8"))
 
     rels_path = "xl/_rels/workbook.xml.rels"
-    rels = ET.fromstring(package.get(rels_path))
+    rels = safe_fromstring(package.get(rels_path))
     for node in list(rels):
         if rid and node.get("Id") == rid:
             rels.remove(node)
     package.set(rels_path, _bytes(rels))
 
-    types = ET.fromstring(package.get("[Content_Types].xml"))
+    types = safe_fromstring(package.get("[Content_Types].xml"))
     for node in list(types):
         if node.get("PartName") == "/" + path:
             types.remove(node)
@@ -1017,7 +1028,7 @@ def rename_sheet(updater, old: str, new: str) -> None:
 def _reorder_and_state(workbook: Workbook, updater) -> None:
     path = "xl/workbook.xml"
     original = updater._package.get(path)
-    root = ET.fromstring(original)
+    root = safe_fromstring(original)
     sheets_parent = root.find(f"{{{MAIN}}}sheets")
     if sheets_parent is None:
         return
@@ -1063,12 +1074,12 @@ def _reorder_and_state(workbook: Workbook, updater) -> None:
 
 
 def _sheet_order(updater) -> list[str]:
-    root = ET.fromstring(updater._package.get("xl/workbook.xml"))
+    root = safe_fromstring(updater._package.get("xl/workbook.xml"))
     return [node.get("name", "") for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")]
 
 
 def _sheet_states(updater) -> dict[str, str]:
-    root = ET.fromstring(updater._package.get("xl/workbook.xml"))
+    root = safe_fromstring(updater._package.get("xl/workbook.xml"))
     return {
         node.get("name", ""): node.get("state", "visible")
         for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
@@ -1076,7 +1087,7 @@ def _sheet_states(updater) -> dict[str, str]:
 
 
 def _active_tab(updater) -> int:
-    root = ET.fromstring(updater._package.get("xl/workbook.xml"))
+    root = safe_fromstring(updater._package.get("xl/workbook.xml"))
     view = root.find(f"{{{MAIN}}}bookViews/{{{MAIN}}}workbookView")
     if view is None:
         return 0

@@ -10,6 +10,7 @@ import numbers
 import posixpath
 import re
 from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
 from ._metadata import (
@@ -63,7 +64,7 @@ class XlsxEditMixin:
         except KeyError as exc:
             raise KeyError(f"Worksheet not found: {sheet_name}") from exc
         xml = self._package.get(path).decode("utf-8")
-        if ET.fromstring(xml).tag != f"{{{MAIN}}}worksheet":
+        if safe_fromstring(xml).tag != f"{{{MAIN}}}worksheet":
             raise ValueError(f"{sheet_name!r} is not a worksheet")
         return path, xml
 
@@ -76,17 +77,17 @@ class XlsxEditMixin:
     def set_comments(self, sheet_name: str, comments: Mapping[str, Comment | None]) -> None:
         """Set selected classic notes; None removes a note, other notes are kept."""
         path, sheet = self._sheet_xml(sheet_name)
-        merges = [n.attrib["ref"] for n in ET.fromstring(sheet).findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell")]
+        merges = [n.attrib["ref"] for n in safe_fromstring(sheet).findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell")]
         changes = normalize_comments(comments, allow_none=True, merges=merges)
         if not changes:
             return
         names = self._package.names()
-        legacy = ET.fromstring(sheet).find(f"{{{MAIN}}}legacyDrawing")
+        legacy = safe_fromstring(sheet).find(f"{{{MAIN}}}legacyDrawing")
         legacy_rid = None if legacy is None else legacy.get(f"{{{REL}}}id")
         rp, relationships, parts = find_comment_parts(self._package.get, names, path, legacy_rid)
         for relationship in relationships:
             if relationship.get("Type", "").rsplit("/", 1)[-1] in {"threadedComment", "threadedComments"}:
-                threaded = ET.fromstring(self._package.get(resolve_part(path, relationship.attrib["Target"])))
+                threaded = safe_fromstring(self._package.get(resolve_part(path, relationship.attrib["Target"])))
                 occupied = {cell_ref(node.attrib["ref"]) for node in threaded if "ref" in node.attrib}
                 if any(ref in occupied and value is not None for ref, value in changes.items()):
                     raise ValueError("a classic note cannot replace a threaded comment")
@@ -133,7 +134,7 @@ class XlsxEditMixin:
         remaining = read_comments(comment_data)
         removed = []
         updates = {cp: comment_data, vp: vml_data}
-        types = ET.fromstring(self._package.get("[Content_Types].xml"))
+        types = safe_fromstring(self._package.get("[Content_Types].xml"))
 
         def drop(part, kind):
             updates.pop(part, None)
@@ -150,7 +151,7 @@ class XlsxEditMixin:
             drop(cp, "comments")
         elif not any(n.get("PartName") == "/" + cp for n in types):
             ET.SubElement(types, f"{{{CT}}}Override", {"PartName": "/" + cp, "ContentType": COMMENTS_TYPE})
-        has_shapes = any(n.tag == f"{{{V}}}shape" for n in ET.fromstring(vml_data).iter())
+        has_shapes = any(n.tag == f"{{{V}}}shape" for n in safe_fromstring(vml_data).iter())
         if not has_shapes:
             drop(vp, "vmlDrawing")
             sheet = replace_element(sheet, "legacyDrawing", "")
@@ -186,7 +187,7 @@ class XlsxEditMixin:
         rp = rels_path(path)
         names = self._package.names()
         relationships = (
-            ET.fromstring(self._package.get(rp)) if rp in names
+            safe_fromstring(self._package.get(rp)) if rp in names
             else ET.Element(f"{{{PKG_REL}}}Relationships")
         )
         prefix = self._tag_prefix(sheet, "worksheet")
@@ -308,7 +309,7 @@ class XlsxEditMixin:
             values[ref] = unwrap_cell(value)
         if not values:
             return
-        root = ET.fromstring(xml)
+        root = safe_fromstring(xml)
         cell_nodes = []
         next_row = 1
         for row_node in root.findall(f"{{{MAIN}}}sheetData/{{{MAIN}}}row"):
@@ -374,7 +375,7 @@ class XlsxEditMixin:
         number_iterator = iter(row_numbers)
         def insert_rows(match):
             row_num = next(number_iterator)
-            before = "".join(new_rows.pop(n) for n in sorted(list(new_rows)) if n < row_num)
+            before = "".join(new_rows.pop(n) for n in sorted(new_rows) if n < row_num)
             return before + match[0]
         body = element_pattern("row").sub(insert_rows, body)
         if new_rows:
@@ -395,7 +396,7 @@ class XlsxEditMixin:
         removed = []
         removed_shared_refs = sum(ref in values and c.get("t") == "s" for ref, c in cell_nodes)
         if removed_shared_refs:
-            rels = ET.fromstring(self._package.get("xl/_rels/workbook.xml.rels"))
+            rels = safe_fromstring(self._package.get("xl/_rels/workbook.xml.rels"))
             for relationship in rels:
                 if relationship.get("Type") == REL + "/sharedStrings":
                     part = resolve_part("xl/workbook.xml", relationship.attrib["Target"])
@@ -441,8 +442,8 @@ class XlsxEditMixin:
         fragment = f'<calcPr xmlns="{MAIN}" ' + " ".join(f"{key}={quoteattr(value)}" for key, value in attrs.items() if not key.startswith("xmlns")) + "/>"
         updates["xl/workbook.xml"] = replace_element(xml, "calcPr", fragment, before=("oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"))
         rp = "xl/_rels/workbook.xml.rels"
-        rels = ET.fromstring(self._package.get(rp))
-        types = ET.fromstring(self._package.get("[Content_Types].xml"))
+        rels = safe_fromstring(self._package.get(rp))
+        types = safe_fromstring(self._package.get("[Content_Types].xml"))
         for node in list(rels):
             if node.get("Type") == REL + "/calcChain":
                 part = resolve_part("xl/workbook.xml", node.attrib["Target"])
@@ -534,7 +535,7 @@ def _patch_row(row_xml, targets, pending, prefix, row_num):
         next_col = parse_cell_range(ref)[0] + 1
         result = []
         col = parse_cell_range(ref)[0]
-        for new_ref in sorted(list(additions), key=lambda r: parse_cell_range(r)[0]):
+        for new_ref in sorted(additions, key=lambda r: parse_cell_range(r)[0]):
             if parse_cell_range(new_ref)[0] < col:
                 result.append(_cell_xml(new_ref, additions.pop(new_ref), prefix))
                 pending.pop(new_ref)

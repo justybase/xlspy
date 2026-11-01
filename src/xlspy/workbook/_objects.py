@@ -18,6 +18,7 @@ import re
 from .._untrusted import SafeZipFile
 from dataclasses import fields
 from xml.etree import ElementTree as ET
+from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import quoteattr
 
 from .._metadata import CT, MAIN, PKG_REL, REL, append_child, element_pattern, replace_element
@@ -138,7 +139,7 @@ class _Package:
         self.parts: dict[str, bytes] = {}
         self.names = set(self.package.names())
         self.removed: set[str] = set()
-        self.types = ET.fromstring(self.package.get("[Content_Types].xml"))
+        self.types = safe_fromstring(self.package.get("[Content_Types].xml"))
 
     def get(self, path: str) -> bytes | None:
         if path in self.parts:
@@ -167,7 +168,7 @@ class _Package:
 
     def rels(self, part: str) -> ET.Element:
         data = self.get(_rels_path(part))
-        return ET.fromstring(data) if data else ET.Element(f"{{{PKG_REL}}}Relationships")
+        return safe_fromstring(data) if data else ET.Element(f"{{{PKG_REL}}}Relationships")
 
     def add_rel(self, rels: ET.Element, part: str, kind: str, target: str) -> str:
         used = {node.get("Id") for node in rels}
@@ -316,7 +317,7 @@ def _sheet_rels(scratch: dict[str, bytes]) -> dict[str, tuple[str, str]]:
         return {}
     return {
         node.get("Id"): (node.get("Type").rsplit("/", 1)[-1], _resolve("xl/worksheets/sheet1.xml", node.get("Target")))
-        for node in ET.fromstring(data)
+        for node in safe_fromstring(data)
     }
 
 
@@ -545,7 +546,7 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
     if drawing is None:
         return
     donor_xml = scratch[drawing].decode("utf-8")
-    donor_drawing_rels = ET.fromstring(scratch[_rels_path(drawing)])
+    donor_drawing_rels = safe_fromstring(scratch[_rels_path(drawing)])
 
     host_drawing = next(
         (_resolve(sheet_path, node.get("Target")) for node in sheet_rels
@@ -572,7 +573,7 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
         else:
             extension = source.rsplit(".", 1)[-1]
             target = package.free_part("xl/media", "image", extension)
-            donor_types = ET.fromstring(scratch["[Content_Types].xml"])
+            donor_types = safe_fromstring(scratch["[Content_Types].xml"])
             content_type = next(
                 item.get("ContentType") for item in donor_types
                 if (item.get("Extension") or "").lower() == extension.lower()
@@ -646,7 +647,8 @@ def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: E
                     f"table {attributes['displayName']!r} ({attributes['ref']}) overlaps the "
                     f"sheet's table {other.get('displayName')!r} ({other.get('ref')})"
                 )
-        xml = re.sub(r'(<table\b[^>]*?\bid=")\d+"', lambda m: f'{m[1]}{next_id}"', xml, count=1)
+        table_id = next_id
+        xml = re.sub(r'(<table\b[^>]*?\bid=")\d+"', lambda m, tid=table_id: f'{m[1]}{tid}"', xml, count=1)
         next_id += 1
         target = package.free_part("xl/tables", "table", "xml")
         package.set(target, xml)

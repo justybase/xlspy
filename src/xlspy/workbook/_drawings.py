@@ -13,6 +13,7 @@ from __future__ import annotations
 from ..exceptions import UnsupportedFeatureError
 import re
 from xml.etree import ElementTree as ET
+from .._safe_xml import fromstring as safe_fromstring
 
 from .._metadata import CT, PKG_REL
 from ._objects import _bytes, _Package, _rels_path, _resolve
@@ -116,7 +117,7 @@ def _referenced(package: _Package, part: str, skip: set[str]) -> bool:
             continue
         source = name.replace("_rels/", "")[:-len(".rels")]
         try:
-            root = ET.fromstring(data)
+            root = safe_fromstring(data)
         except ET.ParseError:
             return True
         for node in root:

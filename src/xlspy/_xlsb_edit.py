@@ -11,6 +11,7 @@ import numbers
 import posixpath
 import struct
 from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring
 
 from ._metadata import CT, REL, PKG_REL, DefinedName, SheetProtection, WorkbookProtection, cell_ref
 from ._text import check_cell_text
@@ -84,7 +85,7 @@ class XlsbEditMixin(XlsxEditMixin):
         rp, relationships, parts = find_comment_parts(self._package.get, names, path, legacy[0] if legacy else None)
         for node in relationships:
             if node.get('Type', '').rsplit('/', 1)[-1] in {'threadedComment', 'threadedComments'}:
-                root = ET.fromstring(self._package.get(resolve_part(path, node.attrib['Target'])))
+                root = safe_fromstring(self._package.get(resolve_part(path, node.attrib['Target'])))
                 occupied = {cell_ref(n.attrib['ref']) for n in root if 'ref' in n.attrib}
                 if occupied & changes.keys():
                     raise ValueError("threaded comment editing is unsupported")
@@ -126,7 +127,7 @@ class XlsbEditMixin(XlsxEditMixin):
         note_data = comments_bin(changes, self._package.get(cp) if cp in names else None)
         drawing = vml_xml(changes, self._package.get(vp) if vp in names else None)
         remaining = parse_comments(note_data)[0]
-        types = ET.fromstring(self._package.get('[Content_Types].xml'))
+        types = safe_fromstring(self._package.get('[Content_Types].xml'))
         updates, removed = {cp: note_data, vp: drawing}, []
         def drop(part, kind):
             updates.pop(part, None)
@@ -143,7 +144,7 @@ class XlsbEditMixin(XlsxEditMixin):
                 ET.SubElement(types, f'{{{CT}}}Override', {'PartName': '/' + cp, 'ContentType': COMMENTS_TYPE})
         else:
             drop(cp, 'comments')
-        if any(node.tag == f'{{{V}}}shape' for node in ET.fromstring(drawing).iter()):
+        if any(node.tag == f'{{{V}}}shape' for node in safe_fromstring(drawing).iter()):
             if not any(node.get('PartName') == '/' + vp or node.get('Extension') == 'vml' for node in types):
                 ET.SubElement(types, f'{{{CT}}}Override', {'PartName': '/' + vp, 'ContentType': VML_TYPE})
             if not legacy:
@@ -230,7 +231,7 @@ class XlsbEditMixin(XlsxEditMixin):
 
         rels_name = rels_path(path)
         has_rels = self._package.has(rels_name)
-        root = ET.fromstring(self._package.get(rels_name)) if has_rels else ET.Element(f"{{{PKG_REL}}}Relationships")
+        root = safe_fromstring(self._package.get(rels_name)) if has_rels else ET.Element(f"{{{PKG_REL}}}Relationships")
         by_target = {
             rel.get('Target'): rel.get('Id') for rel in root
             if rel.get('Type') == _HYPERLINK_TYPE and rel.get('TargetMode') == 'External'
@@ -322,8 +323,8 @@ class XlsbEditMixin(XlsxEditMixin):
     def _invalidate_calculation(self, updates, removed):
         updates['xl/workbook.bin'] = request_recalculation(updates.get('xl/workbook.bin', self._package.get('xl/workbook.bin')))
         rp = 'xl/_rels/workbook.bin.rels'
-        rels = ET.fromstring(updates.get(rp, self._package.get(rp)))
-        types = ET.fromstring(updates.get('[Content_Types].xml', self._package.get('[Content_Types].xml')))
+        rels = safe_fromstring(updates.get(rp, self._package.get(rp)))
+        types = safe_fromstring(updates.get('[Content_Types].xml', self._package.get('[Content_Types].xml')))
         for node in list(rels):
             if node.get('Type') == REL + '/calcChain':
                 part = resolve_part('xl/workbook.bin', node.attrib['Target'])
@@ -452,7 +453,7 @@ class XlsbEditMixin(XlsxEditMixin):
         # Binary indexes contain offsets into row data. Discard the affected
         # cache rather than leave stale offsets; Excel can regenerate it.
         rp, rels, _ = find_comment_parts(self._package.get, self._package.names(), path)
-        types = ET.fromstring(updates['[Content_Types].xml'])
+        types = safe_fromstring(updates['[Content_Types].xml'])
         index_removed = False
         for node in list(rels):
             if node.get('Type', '').endswith('/xlBinaryIndex'):

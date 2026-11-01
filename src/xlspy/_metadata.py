@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 import re
 from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
 from .refs import parse_cell_range, column_label
@@ -65,7 +66,10 @@ def serialize_like(root, original) -> bytes:
     original prefixes are reused and every root declaration is kept.
     """
     text = original.decode("utf-8") if isinstance(original, bytes) else original
-    opening = re.search(r"<(?![?!])[^>]+>", text)[0]
+    opening_match = re.search(r"<(?![?!])[^>]+>", text)
+    if opening_match is None:
+        raise ValueError("XML root element was not found")
+    opening = opening_match[0]
     declarations = [(m[1] or "", m[2] if m[2] is not None else m[3]) for m in _DECLARATION.finditer(opening)]
     default = next((uri for prefix, uri in declarations if not prefix), None)
     # Nested elements (extLst, AlternateContent) declare prefixes of their own.
@@ -80,8 +84,11 @@ def serialize_like(root, original) -> bytes:
     finally:
         if default is not None:
             # The empty prefix is global; do not leak it into later calls.
-            ET._namespace_map.pop(default, None)
-    start = re.match(r"<[^>]+?(?=/?>)", output)[0]
+            ET._namespace_map.pop(default, None)  # type: ignore[attr-defined]  # private stdlib table
+    start_match = re.match(r"<[^>]+?(?=/?>)", output)
+    if start_match is None:
+        raise ValueError("serialized XML has no root element")
+    start = start_match[0]
     present = {m[1] or "" for m in _DECLARATION.finditer(start)}
     missing = "".join(
         f' xmlns{":" + prefix if prefix else ""}="{uri}"'
@@ -127,7 +134,10 @@ def append_child(xml: str, container: str, fragment: str) -> str:
         raise ValueError(f"{container} element was not found")
     body = match[0]
     if body.endswith("/>"):
-        name = re.match(r"<([\w:.-]+)", body)[1]
+        name_match = re.match(r"<([\w:.-]+)", body)
+        if name_match is None:
+            raise ValueError(f"{container} element has no name")
+        name = name_match[1]
         body = body[:-2] + ">" + fragment + f"</{name}>"
     else:
         pos = body.rfind("</")
@@ -205,7 +215,7 @@ class DefinedName:
 
 def read_defined_names(xml: str, sheets) -> list[DefinedName]:
     result = []
-    root = ET.fromstring(xml)
+    root = safe_fromstring(xml)
     ns = namespace_of(root.tag) or MAIN
     sheet_titles = list(sheets)
     for node in root.findall(f"{{{ns}}}definedNames/{{{ns}}}definedName"):

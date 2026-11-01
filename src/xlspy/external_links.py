@@ -5,6 +5,7 @@ from __future__ import annotations
 import posixpath
 from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring
 
 _REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
@@ -32,7 +33,7 @@ def _relationships(package, part: str) -> dict[str, tuple[str, str]]:
     if not package.has(path):
         return {}
     try:
-        root = ET.fromstring(package.get(path))
+        root = safe_fromstring(package.get(path))
     except ET.ParseError:
         return {}
     return {
@@ -69,7 +70,7 @@ def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
                 order.append(read_wide(payload, 0)[0])
     else:
         try:
-            root = ET.fromstring(package.get(book))
+            root = safe_fromstring(package.get(book))
         except ET.ParseError:
             return []
         order = [
@@ -101,7 +102,7 @@ def _target_rid(package, part: str, binary: bool) -> str | None:
                 return read_wide(payload, 2)[0] or None
         return None
     try:
-        root = ET.fromstring(data)
+        root = safe_fromstring(data)
     except ET.ParseError:
         return None
     node = next(root.iter(f"{{{_MAIN}}}externalBook"), None)
@@ -115,7 +116,7 @@ def _sheet_names(package, part: str, binary: bool) -> list[str]:
 
         return external_sheet_names(data)
     try:
-        root = ET.fromstring(data)
+        root = safe_fromstring(data)
     except ET.ParseError:
         return []
     return [node.get("val") or "" for node in root.iter(f"{{{_MAIN}}}sheetName")]

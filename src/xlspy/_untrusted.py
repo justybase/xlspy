@@ -19,6 +19,11 @@ MAX_COLUMNS = 16384
 #: read into memory whole, so this bounds the memory one member can take.
 MAX_PART_BYTES = 2 << 30
 
+#: Largest sum of the uncompressed sizes of all parts in one package (4 GiB).
+#: Each part is capped by MAX_PART_BYTES, but a package with many large parts
+#: could still exhaust memory once they are read one after another.
+MAX_PACKAGE_BYTES = 4 << 30
+
 
 def check_column_span(first_column: int, last_column: int) -> None:
     """Raise ValueError when columns ``first_column``..``last_column`` span more than Excel's width."""
@@ -43,6 +48,14 @@ class SafeZipFile(zipfile.ZipFile):
             super().__init__(file, mode, *args, **kwargs)
         except zipfile.BadZipFile as exc:
             raise InvalidFileError(f"not a valid Excel package: {exc}") from exc
+        if mode == "r":
+            total = sum(info.file_size for info in self.infolist())
+            if total > MAX_PACKAGE_BYTES:
+                self.close()
+                raise ValueError(
+                    f"package declares {total} bytes uncompressed, over the "
+                    f"{MAX_PACKAGE_BYTES}-byte limit"
+                )
 
     def open(self, name, mode="r", pwd=None, *, force_zip64=False):
         if mode == "r":

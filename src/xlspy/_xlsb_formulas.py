@@ -490,9 +490,9 @@ class FormulaContext:
         rels = parts('xl/_rels/workbook.bin.rels')
         targets = {}
         if rels:
-            from xml.etree import ElementTree as ET
+            from ._safe_xml import fromstring as safe_fromstring
 
-            targets = {node.get('Id'): node.get('Target') for node in ET.fromstring(rels)}
+            targets = {node.get('Id'): node.get('Target') for node in safe_fromstring(rels)}
         for rid in self.external_rids:
             target = targets.get(rid)
             path = None if not target else ('xl/' + target if not target.startswith('/') else target[1:])

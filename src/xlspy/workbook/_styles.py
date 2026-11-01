@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from xml.etree import ElementTree as ET
+from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
 from .._metadata import MAIN, qname
@@ -397,7 +398,7 @@ class XlsxStyleTable:
         if not xml:
             return cls.empty()
         table = cls()
-        root = ET.fromstring(xml)
+        root = safe_fromstring(xml)
         table._root = root
         table._source = xml
         table._parse(root)
@@ -600,7 +601,7 @@ class XlsxStyleTable:
             protection=style.protection,
         )
         xf_index = len(self.cell_style_xfs)
-        style_xfs.append(ET.fromstring(self._named_xf_xml(base)))
+        style_xfs.append(safe_fromstring(self._named_xf_xml(base)))
         style_xfs.set("count", str(len(style_xfs)))
         self.cell_style_xfs.append(base)
 
@@ -612,7 +613,7 @@ class XlsxStyleTable:
             attrs += f' builtinId="{style.builtinId}"'
         if style.hidden:
             attrs += ' hidden="1"'
-        cell_styles.append(ET.fromstring(f"<cellStyle {attrs}/>"))
+        cell_styles.append(safe_fromstring(f"<cellStyle {attrs}/>"))
         cell_styles.set("count", str(len(cell_styles)))
 
         if style.name not in self.named_styles:
@@ -928,7 +929,7 @@ class XlsxStyleTable:
             container.set("count", str(count))
         for fragment in fragments:
             try:
-                container.append(ET.fromstring(fragment))
+                container.append(safe_fromstring(fragment))
             except ET.ParseError:
                 continue
 
@@ -992,7 +993,7 @@ class XlsxStyleTable:
             container.clear()
         indexes = []
         for fragment in fragments:
-            node = ET.fromstring(fragment)
+            node = safe_fromstring(fragment)
             try:
                 style = _read_differential(node)
             except (TypeError, ValueError):

@@ -28,7 +28,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring
 from xml.parsers import expat
+from ._safe_xml import harden_expat
 from xml.sax import saxutils
 
 from ._text import check_cell_text, xstring_escape
@@ -297,7 +299,10 @@ def rewrite_shared_strings_xml(
             opening = opening_match.group(0).decode("utf-8")
             opening = replace_or_add_xml_attribute(opening, "count", total_count)
             opening = replace_or_add_xml_attribute(opening, "uniqueCount", unique_count)
-            prefix = re.match(r"<(?P<prefix>[A-Za-z_][\w.-]*:)?sst\b", opening).group("prefix") or ""
+            prefix_match = re.match(r"<(?P<prefix>[A-Za-z_][\w.-]*:)?sst\b", opening)
+            if prefix_match is None:
+                raise ValueError("Malformed XLSX sharedStrings.xml")
+            prefix = prefix_match.group("prefix") or ""
 
             with open(output_path, "wb") as target:
                 copy_file_range(source_path, target, 0, opening_match.start())
@@ -490,7 +495,7 @@ def parse_shared_strings_xml(xml_data: bytes | str) -> list[str]:
     in_text = False
     text_parts: list[str] = []
 
-    parser = expat.ParserCreate()
+    parser = harden_expat(expat.ParserCreate())
 
     def start_element(name: str, attrs: dict[str, str]) -> None:
         nonlocal in_shared_item, in_text, text_parts
@@ -544,7 +549,7 @@ def parse_relationships_xml(xml_data: bytes) -> dict[str, str]:
     """Read relationship IDs and targets from an OOXML relationships part."""
 
     relationships: dict[str, str] = {}
-    parser = expat.ParserCreate()
+    parser = harden_expat(expat.ParserCreate())
 
     def start_element(name: str, attrs: dict[str, str]) -> None:
         if local_xml_name(name) != "Relationship":
@@ -615,7 +620,7 @@ def sheet_table_headers(
         return []
     headers: list[TableHeader] = []
     try:
-        relationships = list(ET.fromstring(package.get(rels_path)))
+        relationships = list(safe_fromstring(package.get(rels_path)))
     except ET.ParseError:
         return []
     for node in relationships:
@@ -637,7 +642,7 @@ def sheet_table_headers(
 def xml_table_header(table_xml: bytes) -> TableHeader | None:
     """The header row of an XLSX table part (``xl/tables/tableN.xml``)."""
 
-    root = ET.fromstring(table_xml)
+    root = safe_fromstring(table_xml)
     has_header = (root.get("headerRowCount") or "1").strip() != "0"
     columns = [
         node.get("name") or ""
@@ -786,8 +791,8 @@ class ZipPackage:
                 stream.close()
             return
         if isinstance(override, Path):
-            with override.open("rb") as stream:
-                yield stream
+            with override.open("rb") as file_stream:
+                yield file_stream
             return
 
         with SafeZipFile(self.path, "r") as archive:

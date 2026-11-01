@@ -12,6 +12,7 @@ import re
 from decimal import Decimal
 from typing import Any, Iterable, Sequence
 from xml.parsers import expat
+from ._safe_xml import harden_expat
 
 from .updater_utils import (
     DiskStringIndex,
@@ -377,7 +378,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         relationships = parse_relationships_xml(self._package.get(workbook_rels_path))
 
         sheets: dict[str, str] = {}
-        parser = expat.ParserCreate()
+        parser = harden_expat(expat.ParserCreate())
 
         def start_element(name: str, attrs: dict[str, str]) -> None:
             if local_xml_name(name) != "sheet":
@@ -402,7 +403,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
 
     def _load_date_system(self) -> bool:
         date_1904 = False
-        parser = expat.ParserCreate()
+        parser = harden_expat(expat.ParserCreate())
 
         def start_element(name: str, attrs: dict[str, str]) -> None:
             nonlocal date_1904
@@ -429,7 +430,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         current_row: int | None = None
         current_column = 0
         row_sequence = 0
-        parser = expat.ParserCreate()
+        parser = harden_expat(expat.ParserCreate())
 
         def start_element(name: str, attrs: dict[str, str]) -> None:
             nonlocal current_row, current_column, row_sequence
@@ -484,7 +485,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
     @staticmethod
     def _shared_string_ref_count_stream(sheet_data) -> int:
         count = 0
-        parser = expat.ParserCreate()
+        parser = harden_expat(expat.ParserCreate())
 
         def start_element(name: str, attrs: dict[str, str]) -> None:
             nonlocal count
@@ -511,7 +512,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         in_text = False
         text_parts: list[str] = []
         values_count = 0
-        parser = expat.ParserCreate()
+        parser = harden_expat(expat.ParserCreate())
 
         def start_element(name: str, attrs: dict[str, str]) -> None:
             nonlocal total_count, in_shared_item, in_text, text_parts
@@ -649,7 +650,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
     @staticmethod
     def _shared_string_ref_count(sheet_xml: str) -> int:
         count = 0
-        parser = expat.ParserCreate()
+        parser = harden_expat(expat.ParserCreate())
 
         def start_element(name: str, attrs: dict[str, str]) -> None:
             nonlocal count
@@ -674,7 +675,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         current_row: int | None = None
         current_column = 0
         row_sequence = 0
-        parser = expat.ParserCreate()
+        parser = harden_expat(expat.ParserCreate())
 
         def start_element(name: str, attrs: dict[str, str]) -> None:
             nonlocal current_row, current_column, row_sequence
@@ -732,7 +733,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         in_cell_xfs = False
         cell_xfs_depth = 0
         depth = 0
-        parser = expat.ParserCreate()
+        parser = harden_expat(expat.ParserCreate())
 
         def start_element(name: str, attrs: dict[str, str]) -> None:
             nonlocal in_cell_xfs, cell_xfs_depth, depth

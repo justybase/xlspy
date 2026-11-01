@@ -15,6 +15,7 @@ from .exceptions import UnsupportedFeatureError
 import posixpath
 import struct
 from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring
 
 from ._metadata import CT, PKG_REL, REL
 from ._xlsx_edit import _bytes as _xml
@@ -86,6 +87,9 @@ def _next_id(taken, prefix: str) -> str:
 class XlsbSheetsMixin:
     """Sheet management for ``XlsbUpdater``."""
 
+    # Sheet name -> part path; set by the updater's loader.
+    _sheets: dict[str, str]
+
     def get_sheet_states(self) -> dict[str, str]:
         """Sheet visibility (``visible``, ``hidden`` or ``veryHidden``) by name."""
         return {
@@ -114,13 +118,13 @@ class XlsbSheetsMixin:
         path = f"xl/worksheets/sheet{number}.bin"
 
         rels_path = "xl/_rels/workbook.bin.rels"
-        rels = ET.fromstring(self._package.get(rels_path))
+        rels = safe_fromstring(self._package.get(rels_path))
         rid = _next_id({node.get("Id") for node in rels}, "rId")
         ET.SubElement(rels, f"{{{PKG_REL}}}Relationship", {
             "Id": rid, "Type": REL + "/worksheet",
             "Target": posixpath.relpath(path, "xl"),
         })
-        types = ET.fromstring(self._package.get("[Content_Types].xml"))
+        types = safe_fromstring(self._package.get("[Content_Types].xml"))
         ET.SubElement(types, f"{{{CT}}}Override", {"PartName": "/" + path, "ContentType": WORKSHEET_TYPE})
 
         tab_id = max((entry.tab_id for entry in entries), default=0) + 1
@@ -161,11 +165,11 @@ class XlsbSheetsMixin:
         entries.remove(removed)
 
         rels_path = "xl/_rels/workbook.bin.rels"
-        rels = ET.fromstring(self._package.get(rels_path))
+        rels = safe_fromstring(self._package.get(rels_path))
         for node in list(rels):
             if node.get("Id") == removed.rid:
                 rels.remove(node)
-        types = ET.fromstring(self._package.get("[Content_Types].xml"))
+        types = safe_fromstring(self._package.get("[Content_Types].xml"))
         for node in list(types):
             if node.get("PartName") == "/" + path:
                 types.remove(node)

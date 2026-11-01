@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import posixpath
 import struct
-from xml.etree import ElementTree as ET
+from .._safe_xml import fromstring as safe_fromstring
 
 from .._xlsb_formulas import FormulaContext
 from .._xlsb_metadata import read_wide
@@ -50,7 +50,7 @@ def _external_links(package, sheet_path: str) -> dict[str, str]:
         return {}
     return {
         rel.get("Id"): rel.get("Target")
-        for rel in ET.fromstring(package.get(path))
+        for rel in safe_fromstring(package.get(path))
         if rel.get("TargetMode") == "External" and rel.get("Id") and rel.get("Target")
     }
 

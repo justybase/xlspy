@@ -8,6 +8,7 @@ import math
 import posixpath
 import re
 from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape
 
 from ._metadata import MAIN, PKG_REL, cell_ref, xml_text, append_child, element_pattern, namespace_of
@@ -70,7 +71,7 @@ def comments_xml(comments, existing=None):
         xml = f'<comments xmlns="{MAIN}"><authors/><commentList/></comments>'
     else:
         xml = existing.decode("utf-8") if isinstance(existing, bytes) else existing
-    root = ET.fromstring(xml)
+    root = safe_fromstring(xml)
     authors = [n.text or "" for n in root.findall(f"{{{MAIN}}}authors/{{{MAIN}}}author")]
     for comment in comments.values():
         if comment is not None and xstring_escape(comment.author) not in authors:
@@ -104,7 +105,7 @@ def _comment_xml(ref, comment, authors):
 
 
 def read_comments(data):
-    root = ET.fromstring(data)
+    root = safe_fromstring(data)
     ns = namespace_of(root.tag) or MAIN  # Transitional or Strict
     authors = [xstring_unescape(n.text or "") for n in root.findall(f"{{{ns}}}authors/{{{ns}}}author")]
     result = {}
@@ -117,13 +118,13 @@ def read_comments(data):
 def _fragment_node(xml, fragment):
     root = re.search(r"<(?![?!])[^>]+>", xml)[0]
     declarations = " ".join(re.findall(r'xmlns(?::[\w.-]+)?\s*=\s*(?:"[^"]*"|\x27[^\x27]*\x27)', root))
-    return ET.fromstring(f"<wrapper {declarations}>{fragment}</wrapper>")[0]
+    return safe_fromstring(f"<wrapper {declarations}>{fragment}</wrapper>")[0]
 
 
 def vml_xml(comments, existing=None):
     xml = (f'<xml xmlns:v="{V}" xmlns:o="{O}" xmlns:x="{X}"></xml>'
            if existing is None else existing.decode("utf-8"))
-    root = ET.fromstring(xml)  # Validate before editing any package members.
+    root = safe_fromstring(xml)  # Validate before editing any package members.
     shape_ids = {n.get("id") for n in root.iter() if n.get("id")}
     type_id = "_xlspy_t202"
     while type_id in shape_ids:
@@ -196,7 +197,7 @@ def find_comment_parts(get, names, sheet_part, legacy_rid=_ANY_VML):
     Without it, a sole vmlDrawing relationship is reported.
     """
     path = rels_path(sheet_part)
-    root = ET.fromstring(get(path)) if path in names else ET.Element(f"{{{PKG_REL}}}Relationships")
+    root = safe_fromstring(get(path)) if path in names else ET.Element(f"{{{PKG_REL}}}Relationships")
     parts = {}
     drawings = []
     for rel in root:
@@ -221,7 +222,7 @@ def comment_part_targets(get, names, sheet_part):
     if path not in names:
         return set()
     return {
-        resolve_part(sheet_part, rel.attrib["Target"]) for rel in ET.fromstring(get(path))
+        resolve_part(sheet_part, rel.attrib["Target"]) for rel in safe_fromstring(get(path))
         if rel.get("Type", "").rsplit("/", 1)[-1] in {"comments", "vmlDrawing"}
         and rel.get("TargetMode") != "External"
     }

@@ -13,7 +13,7 @@ XLSX updater write it as ``<r>`` runs; XlsbWriter as a rich shared string
 from __future__ import annotations
 
 from dataclasses import dataclass
-from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape
 
 from ._text import check_cell_text, xstring_escape, xstring_unescape
@@ -220,5 +220,5 @@ def rich_text_from_si(element) -> str | CellRichText:
 
 
 def parse_rich_shared_strings(xml: bytes) -> list[str | CellRichText]:
-    root = ET.fromstring(xml)
+    root = safe_fromstring(xml)
     return [rich_text_from_si(si) for si in root if _local(si.tag) == "si"]

@@ -13,6 +13,7 @@ import zipfile
 
 from .._untrusted import SafeZipFile
 from xml.etree import ElementTree as ET
+from .._safe_xml import fromstring as safe_fromstring, iterparse as safe_iterparse
 
 from .._metadata import MAIN, REL, qname, read_defined_names
 from .._text import xstring_unescape
@@ -245,7 +246,7 @@ def _read_properties(package) -> DocumentProperties:
     if not package.has("docProps/core.xml"):
         return props
     try:
-        root = ET.fromstring(package.get("docProps/core.xml"))
+        root = safe_fromstring(package.get("docProps/core.xml"))
     except ET.ParseError:
         return props
     mapping = {
@@ -295,7 +296,7 @@ def _read_custom_properties(package):
     if not package.has("docProps/custom.xml"):
         return result
     try:
-        root = ET.fromstring(package.get("docProps/custom.xml"))
+        root = safe_fromstring(package.get("docProps/custom.xml"))
     except ET.ParseError:
         return result
     for node in root.findall(f"{{{_NS_CUSTOM}}}property"):
@@ -386,7 +387,7 @@ def _read_sheet_relationships(package, sheet_path: str) -> dict[str, tuple[str, 
     path = rels_path(sheet_path)
     if not package.has(path):
         return {}
-    root = ET.fromstring(package.get(path))
+    root = safe_fromstring(package.get(path))
     result = {}
     for node in root:
         rid = node.get("Id")
@@ -480,7 +481,7 @@ def _read_data_validations(sheet: Worksheet, node) -> None:
 
 
 def _parse_table(xml: bytes) -> Table:
-    root = ET.fromstring(xml)
+    root = safe_fromstring(xml)
     attrs = root.attrib
     table = Table(
         id=int(attrs.get("id", "1") or 1),
@@ -798,7 +799,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
         source = contextlib.nullcontext(io.BytesIO(remainder))
     with source as stream:
         stack = []
-        for event, node in ET.iterparse(stream, events=("start", "end")):
+        for event, node in safe_iterparse(stream, events=("start", "end")):
             if event == "start":
                 stack.append(node)
                 continue
@@ -1130,7 +1131,7 @@ def _read_only_bounds(path: str, sheet_path: str) -> tuple[int, int, int, int] |
     try:
         with SafeZipFile(path) as archive:
             with archive.open(sheet_path) as stream:
-                for _event, node in ET.iterparse(stream, events=("start",)):
+                for _event, node in safe_iterparse(stream, events=("start",)):
                     if _local(node.tag) == "dimension" and node.get("ref"):
                         try:
                             c1, r1, c2, r2 = parse_cell_range(node.get("ref"))
@@ -1406,10 +1407,10 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
     workbook._properties = _read_properties(package)
 
     workbook_xml = package.get("xl/workbook.xml").decode("utf-8")
-    workbook_root = ET.fromstring(workbook_xml)
+    workbook_root = safe_fromstring(workbook_xml)
     _read_workbook_metadata(workbook, workbook_root, package)
     workbook._loaded_workbook_meta = _workbook_meta_signature(workbook)
-    rels_root = ET.fromstring(package.get("xl/_rels/workbook.xml.rels"))
+    rels_root = safe_fromstring(package.get("xl/_rels/workbook.xml.rels"))
     relationships = {}
     for node in rels_root:
         rid = node.get("Id")
