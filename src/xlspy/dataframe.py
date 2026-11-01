@@ -17,7 +17,7 @@ from __future__ import annotations
 import datetime
 import importlib
 from decimal import Decimal
-from typing import Any, Iterator
+from typing import Any, Iterator, cast
 
 
 _MISSING = object()
@@ -87,7 +87,7 @@ def _normalize_cell(value, pd, np):
         return _MISSING if value != value else value  # NaN
     if isinstance(value, datetime.datetime):  # includes pd.Timestamp
         try:
-            return value.to_pydatetime()
+            return cast(Any, value).to_pydatetime()  # pd.Timestamp has it; datetime does not
         except AttributeError:
             return value
     if isinstance(value, datetime.date):

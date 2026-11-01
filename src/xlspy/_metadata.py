@@ -218,7 +218,7 @@ class DefinedName:
         )
 
 
-def read_defined_names(xml: str, sheets) -> list[DefinedName]:
+def read_defined_names(xml: str | bytes, sheets) -> list[DefinedName]:
     result = []
     root = safe_fromstring(xml)
     ns = namespace_of(root.tag) or MAIN

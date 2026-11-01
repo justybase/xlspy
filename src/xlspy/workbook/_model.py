@@ -1013,7 +1013,7 @@ class Cell:
         self._sheet = sheet
         self._row = _coerce_row(row)
         self._column = _coerce_column(column)
-        self._value = None
+        self._value: Any = None
         self._formula: Formula | str | None = None
         self._data_type = "n"
         self._style_id = int(style_id)
@@ -1365,6 +1365,7 @@ class Worksheet:
     # Set by the XLSB loader (workbook/_xlsb_reader.py) on loaded sheets only.
     _cf_extensions: Any
     _saved_filter_records: Any
+    _reader: Any
     _saved_print_settings: Any
 
     def __init__(self, workbook, title: str, *, index: int | None = None):

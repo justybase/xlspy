@@ -116,7 +116,10 @@ def read_comments(data):
 
 
 def _fragment_node(xml, fragment):
-    root = re.search(r"<(?![?!])[^>]+>", xml)[0]
+    match = re.search(r"<(?![?!])[^>]+>", xml)
+    if match is None:
+        raise ValueError("XML element was not found")
+    root = match[0]
     declarations = " ".join(re.findall(r'xmlns(?::[\w.-]+)?\s*=\s*(?:"[^"]*"|\x27[^\x27]*\x27)', root))
     return safe_fromstring(f"<wrapper {declarations}>{fragment}</wrapper>")[0]
 

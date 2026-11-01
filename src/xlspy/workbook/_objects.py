@@ -22,7 +22,7 @@ from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import quoteattr
 
 from .._metadata import CT, MAIN, PKG_REL, REL, append_child, element_pattern, replace_element
-from .._xlsx_edit import _attributes, _bytes
+from .._xlsx_edit import _attributes, _bytes, _required_match
 from ..refs import parse_cell_range
 from ._print import PageMargins, print_settings_for
 
@@ -121,13 +121,6 @@ def _resolve(part: str, target: str) -> str:
     return posixpath.normpath(posixpath.join(posixpath.dirname(part), target))
 
 
-def _must_match(match: re.Match[str] | None, what: str) -> re.Match[str]:
-    """A match the package structure guarantees; a corrupt part fails clearly."""
-    if match is None:
-        raise ValueError(f"{what} was not found")
-    return match
-
-
 def _target(node: ET.Element) -> str:
     target = node.get("Target")
     if target is None:
@@ -220,13 +213,13 @@ class _Sheet:
 
     def __init__(self, xml: str):
         self.xml = xml
-        self.prefix = _must_match(re.search(r"<([\w.-]+:)?worksheet\b", xml), "worksheet element")[1] or ""
+        self.prefix = _required_match(re.search(r"<([\w.-]+:)?worksheet\b", xml), "worksheet element")[1] or ""
 
     def _limit(self) -> int:
         """Where the worksheet's own extLst (or the end tag) starts: the
         x14 elements inside it share local names with main elements."""
         p = re.escape(self.prefix)
-        end = _must_match(re.search(rf"</{p}worksheet\s*>\s*$", self.xml), "worksheet end tag").start()
+        end = _required_match(re.search(rf"</{p}worksheet\s*>\s*$", self.xml), "worksheet end tag").start()
         start = self.xml.rfind(f"<{self.prefix}extLst")
         if start >= 0 and re.fullmatch(rf"(?s).*</{p}extLst\s*>\s*", self.xml[start:end]):
             return start
@@ -448,7 +441,7 @@ def _drop_attributes(sheet: _Sheet, tag: str, names) -> None:
     match = sheet.find(tag)
     if match is None:
         return
-    opening = _must_match(re.match(r"<[^>]*?(?=/?>)", match[0]), "opening tag")[0]
+    opening = _required_match(re.match(r"<[^>]*?(?=/?>)", match[0]), "opening tag")[0]
     sheet.replace(match, _without_attributes(opening, names) + match[0][len(opening):])
 
 
@@ -544,7 +537,7 @@ def _set_print_names(package: _Package, scratch: dict[str, bytes], sheet_index: 
     for item in _donor_elements(donor, "definedName"):
         name = _attributes(item).get("name")
         if name in wanted:
-            formula = _must_match(re.search(r">(.*)</definedName>", item, re.S), "definedName text")[1]
+            formula = _required_match(re.search(r">(.*)</definedName>", item, re.S), "definedName text")[1]
             fragments.append(
                 f'<definedName xmlns="{MAIN}" name="{name}" localSheetId="{sheet_index}">{formula}</definedName>'
             )
@@ -613,7 +606,7 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
         anchors.append(_with_namespaces(anchor, _XDR, a=_A, c=_C, r=REL))
     end = re.search(r"</(?:[\w.-]+:)?wsDr\s*>\s*$", host_xml)
     if end is None:  # an empty <xdr:wsDr .../>
-        root = _must_match(re.search(r"<((?:[\w.-]+:)?wsDr)\b([^>]*)/>", host_xml), "wsDr element")
+        root = _required_match(re.search(r"<((?:[\w.-]+:)?wsDr)\b([^>]*)/>", host_xml), "wsDr element")
         host_xml = host_xml[:root.start()] + f"<{root[1]}{root[2]}>" + "".join(anchors) + f"</{root[1]}>" + host_xml[root.end():]
     else:
         host_xml = host_xml[:end.start()] + "".join(anchors) + host_xml[end.start():]
@@ -658,7 +651,7 @@ def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: E
     rids = []
     for source in sources:
         xml = scratch[source].decode("utf-8")
-        attributes = _attributes(_must_match(re.search(r"<table\b[^>]*>", xml), "table element")[0])
+        attributes = _attributes(_required_match(re.search(r"<table\b[^>]*>", xml), "table element")[0])
         if attributes["displayName"].casefold() in names:
             raise ValueError(f"a table named {attributes['displayName']!r} already exists in the workbook")
         for name, other in existing:

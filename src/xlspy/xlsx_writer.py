@@ -377,9 +377,8 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 raise TypeError(
                     f"unsupported conditional formatting rule {type(rule).__name__}"
                 )
-            if getattr(rule, "dxf", None) is not None and not isinstance(
-                rule.dxf, DifferentialStyle
-            ):
+            rule_dxf = getattr(rule, "dxf", None)
+            if rule_dxf is not None and not isinstance(rule_dxf, DifferentialStyle):
                 raise TypeError("dxf must be a DifferentialStyle or None")
         return list(conditional_formats)
 
@@ -1738,7 +1737,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         max_cols = 0
         buf = io.BytesIO()  # encoded rows waiting for the spool
         text = io.StringIO()  # one Python-written row at a time, encoded once
-        row_style_ids_cache = {}
+        row_style_ids_cache: dict[Any, Any] = {}
         ss_dict, ss_list = self._shared_strings_dict, self._shared_strings
         use_sst, fmt_xf = self._useSharedStrings, self._fmt_xf
         # Style id of the built-in link style, 0 until a link registers it. Only the

@@ -33,7 +33,7 @@ def _parse_shared_strings_fast(content):
         # XML end-of-line handling, as the parser applies it (&#13; and
         # _x000D_ keep a carriage return; the first goes to the parser above).
         content = content.replace("\r\n", "\n").replace("\r", "\n")
-    strings = []
+    strings: list[str] = []
     append = strings.append
     for item in _SST_ITEM.finditer(content):
         parts = _SST_TEXT.findall(item.group(1))

@@ -21,6 +21,7 @@ import secrets
 import shutil
 import tempfile
 import zipfile
+from typing import TYPE_CHECKING, Any
 
 from . import _zip_threads
 from ._metadata import WorkbookProtection
@@ -43,7 +44,7 @@ class PackageZip(zipfile.ZipFile):
         if hasattr(info, "compress_level"):  # Python 3.13+
             info.compress_level = self.compresslevel
         else:
-            info._compresslevel = self.compresslevel
+            info._compresslevel = self.compresslevel  # type: ignore[attr-defined]  # ZipInfo private field before 3.13
         return info
 
     def writestr(self, zinfo_or_arcname, data, *args, **kwargs):
@@ -161,6 +162,16 @@ class StagedWriter:
     ``_aborted`` when a sheet write fails part-way.
     """
 
+    if TYPE_CHECKING:
+        # Set by the subclass __init__ (see the class docstring).
+        _file: Any
+        _compressionLevel: int
+        _zf: PackageZip | None
+        _output: StagedOutput | None
+        _aborted: bool
+        _saved: bool
+        def _write_workbook_parts(self) -> None: ...
+
     # Set by set_workbook_protection; None while the workbook has no protection.
     _workbook_protection: WorkbookProtection | None
 
@@ -233,7 +244,7 @@ class StagedWriter:
     def _finish(self, publish: bool):
         zf, output = self._zf, self._output
         self._zf = self._output = None
-        if output is None:
+        if zf is None or output is None:  # both are set together in __enter__
             return
         if publish and self._saved and not self._aborted:
             try:

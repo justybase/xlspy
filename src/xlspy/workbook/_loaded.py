@@ -16,7 +16,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from ..utils.datetime import time_to_days, timedelta_to_days
 from .._metadata import MAIN, REL, PKG_REL, CT, qname, element_pattern, replace_element, serialize_like
-from .._xlsx_edit import _attributes, _bytes, _cell_value
+from .._xlsx_edit import _attributes, _bytes, _cell_value, _required_match
 from ..formula.sheets import rename_sheet_references
 from ..formulas import Formula
 from ..ignored_errors import ignored_errors_xml, snapshot as ignored_errors_snapshot
@@ -692,7 +692,7 @@ def _patch_cells(xml: str, patch) -> str:
     def patch_row(row_match):
         nonlocal next_row
         row_xml = row_match[0]
-        opening = re.match(r"<[^>]+>", row_xml)[0]
+        opening = _required_match(re.match(r"<[^>]+>", row_xml), "row element")[0]
         row_number = int(_attributes(opening).get("r", next_row))
         next_row = row_number + 1
         next_column = 0
@@ -740,7 +740,7 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
     def patch_cell(ref, cell_xml):
         if ref not in styles:
             return cell_xml
-        opening = re.match(r"<[^>]+>", cell_xml)[0]
+        opening = _required_match(re.match(r"<[^>]+>", cell_xml), "cell element")[0]
         return _set_attr(opening, "s", styles[ref]) + cell_xml[len(opening):]
 
     xml = _patch_cells(xml, patch_cell)
@@ -1008,7 +1008,7 @@ def rename_sheet(updater, old: str, new: str) -> None:
 
     def rename_references(match):
         fragment = match[0]
-        opening = re.match(r"<[^>]+>", fragment)[0]
+        opening = _required_match(re.match(r"<[^>]+>", fragment), "fragment element")[0]
         body = fragment[len(opening):]
         return opening + rename_sheet_references(body, old, new)
 
@@ -1106,13 +1106,13 @@ def _remap_local_names(updater, before: list[str], renamed: dict[str, str]) -> N
 
     def remap(match):
         fragment = match[0]
-        opening = re.match(r"<[^>]+>", fragment)[0]
+        opening = _required_match(re.match(r"<[^>]+>", fragment), "fragment element")[0]
         scope = _attributes(opening).get("localSheetId")
         if scope is None:
             return fragment
         index = int(scope)
         title = before[index] if 0 <= index < len(before) else None
-        title = renamed.get(title, title)
+        title = renamed.get(title, title) if title is not None else None
         if title not in after:
             return ""
         return _set_attr(opening, "localSheetId", after.index(title)) + fragment[len(opening):]

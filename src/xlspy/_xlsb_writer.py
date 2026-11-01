@@ -1,14 +1,25 @@
 """Optional metadata methods for XlsbWriter, outside its numeric row path."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ._metadata import DefinedName
+
+if TYPE_CHECKING:
+    from ._metadata import WorkbookProtection
+    from ._xlsb_formulas import FormulaContext
 
 
 class XlsbWriterMetadata:
     if TYPE_CHECKING:
         # Provided by WriterFrontEnd / StagedWriter, which the writer mixes in first.
         def _require_writable(self) -> None: ...
+        # Attributes of XlsbWriter (writer.py) that these methods read and write.
+        _xlsb_formula_context: FormulaContext | None
+        _worksheet_data: list[tuple[str, Any, bool]]
+        _workbook_protection: WorkbookProtection | None
+        _filtered_data_list: list[Any]
+        _slicer_cache_names: Any
+        _sheet_print: dict[int, Any]
 
     def _formula_context(self):
         if self._xlsb_formula_context is None:
@@ -44,7 +55,7 @@ class XlsbWriterMetadata:
         # Append filter names after user/future names and use the same XTI table.
         from ._xlsb_formulas import _Name
         from .refs import quote_sheet_name, column_label
-        context = self._xlsb_formula_context
+        context = self._formula_context()  # created by _write_workbook_parts before these run
         for item in self._filtered_data_list:
             title = self._worksheet_data[item.sheet_index][0]
             first = f'${column_label(item.start_column)}${item.start_row + 1}'
@@ -56,7 +67,7 @@ class XlsbWriterMetadata:
         # Excel links each slicer cache to a workbook name holding #N/A; the
         # name record carries flag 0x10 as Excel writes it.
         from ._xlsb_formulas import _Name
-        context = self._xlsb_formula_context
+        context = self._formula_context()  # created by _write_workbook_parts before these run
         for cache_name in self._slicer_cache_names:
             context.names.append(_Name(cache_name, None, 0x10, definition=DefinedName(cache_name, '#N/A')))
 
@@ -65,7 +76,7 @@ class XlsbWriterMetadata:
         # and _xlnm.Print_Titles in XLSB.
         from ._xlsb_formulas import _Name
         from .printing import print_area_name, print_titles_name
-        context = self._xlsb_formula_context
+        context = self._formula_context()  # created by _write_workbook_parts before these run
         for sheet_index in sorted(self._sheet_print):
             settings = self._sheet_print[sheet_index]
             title = self._worksheet_data[sheet_index][0]

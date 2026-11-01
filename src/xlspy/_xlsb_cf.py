@@ -391,7 +391,7 @@ def read_conditional_formats(items, context, style_table, links=None):
     BrtBeginCFRule and color scale / data bar / icon set records of a sheet,
     in file order. A ``BrtCFRuleExt`` ties the rule before it to its Excel 2010
     extension; with ``links`` (a dict) ``id(rule)`` is mapped to its payload."""
-    found = []
+    found: list[Any] = []
     sqref = None
     open_rule = False  # the last rule record was read into ``found``
     pending = None  # (sqref, rule payload, sub-records) of a scale rule
@@ -595,7 +595,8 @@ def _scale_rule(sqref, kind, priority, stop, parts, context):
     first_col, first_row, _, _ = parse_cell_range(sqref.split()[0])
     origin = (first_col, first_row)
     head = None
-    cfvos, colors = [], []
+    cfvos: list[Any] = []
+    colors: list[Any] = []
     for record_id, payload in parts:
         if record_id == BRT_CFVO:
             cfvos.append(_read_cfvo(payload, context, origin))
@@ -608,7 +609,7 @@ def _scale_rule(sqref, kind, priority, stop, parts, context):
     if kind == _COLOR_SCALE and head[0] == BRT_BEGIN_COLOR_SCALE and len(cfvos) in (2, 3):
         if len(cfvos) == 2:
             return ColorScaleRule(sqref, cfvos[0], None, cfvos[1], colors, priority)
-        return ColorScaleRule(sqref, *cfvos, colors, priority)
+        return ColorScaleRule(sqref, cfvos[0], cfvos[1], cfvos[2], colors, priority)
     if kind == _DATA_BAR and head[0] == BRT_BEGIN_DATA_BAR and len(cfvos) == 2 and colors:
         low, high, flags = head[1][:3]
         return DataBarRule(sqref, cfvos[0], cfvos[1], colors[0],

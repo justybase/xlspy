@@ -10,7 +10,7 @@ import hashlib
 import os
 import struct
 from dataclasses import dataclass, field
-from typing import BinaryIO
+from typing import BinaryIO, cast
 
 from ._text import check_xml_text
 from .refs import parse_cell_range
@@ -85,16 +85,17 @@ class Image:
         if (first_col, first_row) != (last_col, last_row):
             raise ValueError(f"image anchor must be a single cell, got {self.anchor!r}")
         if data is None:
-            with open(source, "rb") as handle:
+            # Only a path reaches here: the other kinds of source set ``data``.
+            with open(cast("str | os.PathLike[str]", source), "rb") as handle:
                 data = handle.read()
         extension, natural_width, natural_height = _identify(data, label)
         width = _pixels(self.width, "width")
         height = _pixels(self.height, "height")
         if width is None and height is None:
             width, height = natural_width, natural_height
-        elif width is None:
+        elif width is None and height is not None:
             width = max(1, round(natural_width * height / natural_height))
-        elif height is None:
+        elif height is None and width is not None:
             height = max(1, round(natural_height * width / natural_width))
         if self.description is not None and not isinstance(self.description, str):
             raise TypeError("image description must be a string or None")

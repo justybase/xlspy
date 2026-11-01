@@ -2,6 +2,7 @@
 
 import datetime
 import struct
+from typing import Any
 
 from ._errors import CellError
 from ._untrusted import check_column_span
@@ -81,9 +82,9 @@ def iter_indexed_rows(reader, sheet_name, *, data_only=True, data=None, with_sty
         rid = reader._worksheet_name_to_id[sheet_name]
         path = reader._resolve_path(reader._worksheet_id_to_location[rid])
     context = FormulaContext(reader.get_sheet_names(), reader._archive.read('xl/workbook.bin'), reader.read_part) if not data_only else None
-    groups = {}
-    current_row = None
-    cells = []
+    groups: dict[Any, Any] = {}
+    current_row: int | None = None
+    cells: list[Any] = []
     previous_column = -1
 
     def cell_value(column, value, formula):
@@ -93,6 +94,8 @@ def iter_indexed_rows(reader, sheet_name, *, data_only=True, data=None, with_sty
         return value if text is None else '=' + text
 
     def finish():
+        if current_row is None:
+            raise ValueError("XLSB row end without a row")
         # Formula groups follow their master cell, so decode at row end.
         if with_styles:
             return current_row + 1, [

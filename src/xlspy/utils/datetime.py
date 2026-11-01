@@ -102,8 +102,8 @@ def from_ISO8601(formatted_string):
             return value.replace(tzinfo=None) if value.tzinfo is not None else value
         if len(text) == 10:
             return datetime.date.fromisoformat(text)
-        value = datetime.time.fromisoformat(text)
-        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+        parsed_time = datetime.time.fromisoformat(text)
+        return parsed_time.replace(tzinfo=None) if parsed_time.tzinfo is not None else parsed_time
     except ValueError as exc:
         raise ValueError(f"Invalid datetime value {formatted_string}") from exc
 

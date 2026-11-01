@@ -315,7 +315,7 @@ def _read_custom_properties(package):
         text = value_node.text or ""
         try:
             if kind in {"i1", "i2", "i4", "i8", "int", "uint"}:
-                value = int(text)
+                value: Any = int(text)
             elif kind in {"r4", "r8", "decimal"}:
                 value = float(text)
             elif kind == "bool":
@@ -1265,14 +1265,14 @@ class ReadOnlyWorksheet(Worksheet):
 
     def reset_dimensions(self):
         """Ignore a wrong stored dimension, as openpyxl's reset_dimensions()."""
-        self._max_row = self._max_column = None
+        self._max_row = self._max_column = None  # type: ignore[assignment]  # unknown until the bounds are read
 
     def _indexed_rows(self):
         if self._reader._is_xlsb:
-            from .._xlsb_read import iter_indexed_rows
-            return iter_indexed_rows(self._reader, self.title, data_only=self._data_only)
-        from .._xlsx_read import iter_indexed_rows
-        return iter_indexed_rows(self._reader, self.title, self._data_only)
+            from .._xlsb_read import iter_indexed_rows as iter_xlsb_rows
+            return iter_xlsb_rows(self._reader, self.title, data_only=self._data_only)
+        from .._xlsx_read import iter_indexed_rows as iter_xlsx_rows
+        return iter_xlsx_rows(self._reader, self.title, self._data_only)
 
     def _cells_by_row(self, min_col, min_row, max_col, max_row, values_only):
         filler = None if values_only else EMPTY_CELL
@@ -1301,7 +1301,7 @@ class ReadOnlyWorksheet(Worksheet):
         last = max_col or cells[-1][0] + 1
         if last < min_col:
             return ()
-        row = [None if values_only else EMPTY_CELL] * (last + 1 - min_col)
+        row: list[Any] = [None if values_only else EMPTY_CELL] * (last + 1 - min_col)
         for column, value in cells:
             column += 1
             if min_col <= column <= last:

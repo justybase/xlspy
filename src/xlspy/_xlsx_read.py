@@ -3,6 +3,7 @@
 import codecs
 import datetime
 import re
+from typing import Any
 from ._safe_xml import fromstring as safe_fromstring, iterparse as safe_iterparse
 
 from ._errors import CellError
@@ -81,11 +82,11 @@ def iter_rows(reader, sheet_name, data_only=True):
 
 
 def _iter_etree(reader, path, data_only):
-    shared = {}
+    shared: dict[Any, Any] = {}
     next_row = 1
     ns = MAIN
     with reader._archive.open(path) as stream:
-        stack = []
+        stack: list[Any] = []
         for event, node in safe_iterparse(stream, events=("start", "end")):
             if event == "start":
                 if not stack:

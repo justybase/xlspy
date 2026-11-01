@@ -377,9 +377,8 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                 raise TypeError(
                     f"unsupported conditional formatting rule {type(rule).__name__}"
                 )
-            if getattr(rule, "dxf", None) is not None and not isinstance(
-                rule.dxf, DifferentialStyle
-            ):
+            rule_dxf = getattr(rule, "dxf", None)
+            if rule_dxf is not None and not isinstance(rule_dxf, DifferentialStyle):
                 raise TypeError("dxf must be a DifferentialStyle or None")
             if isinstance(rule, FORMULA_RULES) and rule.dxf is not None:
                 # Reject styles XLSB cannot hold before anything is recorded.

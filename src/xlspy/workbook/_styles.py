@@ -9,7 +9,7 @@ appended to that table; existing component XML is left untouched.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, cast
 from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
@@ -319,7 +319,8 @@ def _fill_from_key(key):
             right=right,
             top=top,
             bottom=bottom,
-            stop=tuple(Stop(_color_from_key(color), position) for color, position in stops),
+            # Gradient stops always carry a colour: the reader skips stops without one.
+            stop=tuple(Stop(cast(Color, _color_from_key(color)), position) for color, position in stops),
         )
     _, pattern, fg, bg = key
     return PatternFill(

@@ -107,10 +107,9 @@ class CellRichText(list):
     """A cell value made of plain strings and ``TextBlock`` runs."""
 
     def __init__(self, *args):
-        if len(args) == 1 and isinstance(args[0], (list, tuple)):
-            args = args[0]
+        parts = args[0] if len(args) == 1 and isinstance(args[0], (list, tuple)) else args
         super().__init__()
-        for part in args:
+        for part in parts:
             self.append(part)
 
     def append(self, part) -> None:

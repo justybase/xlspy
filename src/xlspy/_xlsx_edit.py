@@ -35,6 +35,13 @@ def _bytes(root):
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
+def _required_match(match: re.Match[str] | None, what: str) -> re.Match[str]:
+    """A regex match the file structure guarantees; a corrupt part fails clearly."""
+    if match is None:
+        raise ValueError(f"{what} was not found")
+    return match
+
+
 _HYPERLINK_TYPE = REL + "/hyperlink"
 # The <worksheet> children that follow <hyperlinks> (CT_Worksheet).
 _AFTER_HYPERLINKS = (

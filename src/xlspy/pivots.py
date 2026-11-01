@@ -15,7 +15,7 @@ parts, as before.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Any, cast
 from datetime import date, datetime
 from decimal import Decimal
 import math
@@ -417,7 +417,7 @@ class _Metric:
         if not self.count_num:
             return None
         if function == "sum":
-            value = self.total
+            value: Any = self.total
             return int(value) if value.is_integer() else value
         if function == "average":
             return self.total / self.count_num

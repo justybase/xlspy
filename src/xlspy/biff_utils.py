@@ -167,7 +167,7 @@ def iter_records_stream(stream: BinaryIO):
         offset = data_end
 
 
-def build_record(record_id: int, payload: bytes = b"") -> bytes:
+def build_record(record_id: int, payload: bytes | bytearray = b"") -> bytes:
     """Build one BIFF12 record from its ID and payload."""
 
     return vlq_bytes(record_id) + vlq_bytes(len(payload)) + payload

@@ -14,6 +14,7 @@ import math
 import posixpath
 import re
 import struct
+from typing import Any
 
 from ._metadata import DefinedName
 from ._xlsb_functions import FUNCTIONS, BY_ID
@@ -61,7 +62,7 @@ def read_parsed(data, offset=0):
 
 class _Parser:
     def __init__(self, text):
-        self.tokens = []
+        self.tokens: list[str | None] = []
         end = 0
         for match in _LEX.finditer(text):
             if match.start() != end:
@@ -88,7 +89,7 @@ class _Parser:
     def expression(self, minimum=0):
         token = self.pop()
         if token in ('+', '-'):
-            left = ('unary', token, self.expression(7))
+            left: tuple[Any, ...] = ('unary', token, self.expression(7))
         elif token == '(':
             left = ('paren', self.expression())
             if self.pop() != ')':
@@ -170,6 +171,8 @@ def _is_relative(ref):
     """True when a column or row of an A1 reference lacks its ``$``."""
     for part in ref.split(':'):
         match = re.fullmatch(r'(\$?)([A-Za-z]*)(\$?)(\d*)', part)
+        if match is None:
+            raise ValueError(f"not an A1 reference: {ref!r}")
         if (match[2] and not match[1]) or (match[4] and not match[3]):
             return True
     return False

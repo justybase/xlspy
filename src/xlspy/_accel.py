@@ -13,6 +13,7 @@ implementation.
 
 import importlib as _importlib
 import os as _os
+from typing import Any
 
 from .exceptions import InvalidFileError
 
@@ -87,18 +88,18 @@ HAVE_NATIVE = all(n in _impl for n in ("encode_xlsb_row", "calc_column_widths", 
 HAVE_C_EXT = HAVE_NATIVE
 
 # Raw functions of the native module (None when it does not provide them).
-_native_encode_xlsb_row = _impl.get("encode_xlsb_row")
-_native_encode_xlsb_row_inline = _impl.get("encode_xlsb_row_inline")
-_native_calc_column_widths = _impl.get("calc_column_widths")
-_native_read_xlsb_worksheet = _impl.get("read_xlsb_worksheet")
-_native_read_xlsx_worksheet = _impl.get("read_xlsx_worksheet")
-_native_row_has_formatted = _impl.get("xlsb_row_has_formatted")
-_native_encode_xlsb_sst = _impl.get("encode_xlsb_sst")
-_native_read_xlsb_sst = _impl.get("read_xlsb_shared_strings")
-_native_read_xlsx_sst = _impl.get("read_xlsx_shared_strings")
-_native_encode_xlsx_row = _impl.get("encode_xlsx_row")
+_native_encode_xlsb_row: Any = _impl.get("encode_xlsb_row")
+_native_encode_xlsb_row_inline: Any = _impl.get("encode_xlsb_row_inline")
+_native_calc_column_widths: Any = _impl.get("calc_column_widths")
+_native_read_xlsb_worksheet: Any = _impl.get("read_xlsb_worksheet")
+_native_read_xlsx_worksheet: Any = _impl.get("read_xlsx_worksheet")
+_native_row_has_formatted: Any = _impl.get("xlsb_row_has_formatted")
+_native_encode_xlsb_sst: Any = _impl.get("encode_xlsb_sst")
+_native_read_xlsb_sst: Any = _impl.get("read_xlsb_shared_strings")
+_native_read_xlsx_sst: Any = _impl.get("read_xlsx_shared_strings")
+_native_encode_xlsx_row: Any = _impl.get("encode_xlsx_row")
 # Workbook model loader for XLSB sheet data (see workbook/_xlsb_reader.py).
-xlsb_load_cells = _impl.get("xlsb_load_cells")
+xlsb_load_cells: Any = _impl.get("xlsb_load_cells")
 
 
 def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header=None):

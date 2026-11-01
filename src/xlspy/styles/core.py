@@ -1454,7 +1454,7 @@ class StyleRanges(tuple):
         self._row = -1
         self._open = []
         self._expires = None
-        self._active = ()
+        self._active: tuple[Any, ...] = ()
 
     def active(self, row_index: int):
         """``(first_col, last_col, style)`` of the ranges covering ``row_index``,
