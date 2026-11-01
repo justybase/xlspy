@@ -74,7 +74,6 @@ class _XlsbBinMixin:
         _write_str: Any
         _xf_styles: Any
 
-
     def _write_worksheet_bin(
         self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[Any]],
         worksheet_index: int, *, style_ranges=(), header_style: Style | None = None,

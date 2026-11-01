@@ -69,7 +69,6 @@ class _XlsxPartsMixin:
         _write_empty_sheet: Any
         _zf: Any
 
-
     def _write_workbook_parts(self):
         # Excel compares sheet names without regard to case.
         sheet_names = {name.casefold() for name, _data, _hidden in self._worksheet_data}

@@ -42,7 +42,6 @@ class _XlsxSheetXmlMixin:
         _tables_xml: Any
         _useSharedStrings: Any
 
-
     def _table_xml(self, table: ExcelTable, table_id: int, names: list[str]) -> str:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
         ref = (

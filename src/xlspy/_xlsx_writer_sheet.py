@@ -139,7 +139,6 @@ class _XlsxSheetMixin:
         _zf: Any
         add_sheet: Any
 
-
     def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None, **kwargs):
         """Write rows to the current sheet.
 

@@ -26,7 +26,6 @@ class _XlsbStringsMixin:
         _sst_unique_count: Any
         _useSharedStrings: Any
 
-
     @staticmethod
     def _write_inline_str(buffer, text: str, col_idx: int, style_ref: int):
         """BrtCellSt: the text is stored in the cell, so no shared-string table grows.

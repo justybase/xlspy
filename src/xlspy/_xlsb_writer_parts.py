@@ -84,7 +84,6 @@ class _XlsbPartsMixin:
         _xlsb_formula_context: Any
         _zf: Any
 
-
     def _normalize_cf_rules(self, conditional_formats):
         from .styles import ColorScaleRule, DataBarRule, DifferentialStyle, IconSetRule
         if not conditional_formats:

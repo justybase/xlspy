@@ -53,7 +53,6 @@ class _XlsxStylesMixin:
         _style_xf_map: Any
         _xf_styles: Any
 
-
     def _intern_font(self, font_key) -> int:
         if _font_is_empty(font_key):
             return 0

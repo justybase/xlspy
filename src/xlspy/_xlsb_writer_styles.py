@@ -37,7 +37,6 @@ class _XlsbStylesMixin:
         _stylesBin: Any
         _xf_styles: Any
 
-
     def _register_numfmt(self, fmt_string: str) -> int:
         numfmt_id = self._format_registry.get(fmt_string)
         if numfmt_id is None:

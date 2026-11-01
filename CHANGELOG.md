@@ -141,6 +141,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal: the four largest modules are split. `styles/core.py` and `workbook/_model.py` are now facades
+  over focused modules; `xlsx_writer.py` and `writer.py` keep `XlsxWriter` and `XlsbWriter` and take their
+  methods from mixins. Every name the old modules exported still imports from the same path, and the
+  object is the one its defining module holds. Stdlib names no longer leak through `xlspy.styles` and
+  `xlspy.workbook._model`. The accelerator call sites moved with their methods, so code that patches
+  `xlspy.xlsx_writer.accel_encode_xlsx_row` or `xlspy.writer.encode_xlsb_row` must patch the new module.
 - Ragged rows: the first row present in an XLSX sheet sets the width the other rows are padded to in
   `ExcelReader.get_rows()` / `read_all()` (as documented in `docs/usage.md`). `Worksheet.iter_rows()` pads to the
   sheet width, as openpyxl does. A blank first row used to count as width 0, so the padding did not happen; now it is the same

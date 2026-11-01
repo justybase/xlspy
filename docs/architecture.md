@@ -21,6 +21,25 @@ Stage 3 is not independent of the earlier stages:
   the save path `workbook/_writer.py` still constructs `XlsxUpdater`.
 - `dataframe.py` and the sheet writers use `XlsxWriter` and `XlsbWriter` directly.
 
+## Module layout after the split
+
+Four large modules are facades. Each one keeps its public names and re-exports
+everything it moved, so `from xlspy.<facade> import X` still works and gives the
+same object as the module that defines it. `tests/test_module_split_identity.py`
+pins the names.
+
+| Facade | Defined in |
+|---|---|
+| `styles/core.py` | `styles/_attrs.py` (colour, font, fill, border, alignment, protection), `_style.py` (`Style`, `DifferentialStyle`), `_cf_rules.py`, `_tables.py`, `_sheet_checks.py`, `_keys.py` (style keys), `_ranges.py`, `_cell_xf.py` |
+| `workbook/_model.py` | `workbook/_coords.py`, `_properties.py`, `_tables.py`, `_dimensions.py`, `_cell.py`, `_worksheet.py` (`Worksheet`, `WriteOnlyWorksheet`, `Chartsheet`), `_workbook.py` (`Workbook`) |
+| `xlsx_writer.py` (`XlsxWriter`) | the constructor and state methods stay here; the rest is in mixins: `_xlsx_writer_sheet.py`, `_xlsx_writer_styles.py`, `_xlsx_writer_parts.py`, `_xlsx_writer_sheet_xml.py`; module helpers in `_xlsx_writer_xml.py` |
+| `writer.py` (`XlsbWriter`) | the constructor and state methods stay here; the rest is in mixins: `_xlsb_writer_sheet.py`, `_xlsb_writer_bin.py`, `_xlsb_writer_views.py`, `_xlsb_writer_strings.py`, `_xlsb_writer_styles.py`, `_xlsb_writer_parts.py`; constants in `_xlsb_writer_consts.py` |
+
+The writer mixins read attributes that the writer class sets. Each mixin
+declares them under `if TYPE_CHECKING:` as `Any`, so mypy checks the bodies
+without creating attributes at runtime. A method that reads a new attribute
+needs a declaration in its mixin.
+
 ## What has been consolidated
 
 - **Formula reference shifting.** One function, `refs.shift_references(text, rows, cols)`,
@@ -32,7 +51,7 @@ Stage 3 is not independent of the earlier stages:
 - **XML tag helper.** `_metadata.local_name` replaces five identical private copies.
 - **Name clash.** The sheet-level `<sheetProtection>` serializer in
   `workbook/_loaded.py` is now `_sheet_protection_xml`. The cell-style
-  `<protection locked hidden/>` serializer in `xlsx_writer.py` keeps `_protection_xml`.
+  `<protection locked hidden/>` serializer is `_protection_xml` in `_xlsx_writer_xml.py`.
   They are different functions with the same name before this change.
 - **Hardened XML entry point.** All package parts are parsed through
   `_safe_xml.fromstring` and `_safe_xml.iterparse`.
@@ -63,6 +82,7 @@ so each needs a decision before code.
   `_xlsx_read.py`. Keep the two results equal (`tests/test_fast_sheet_load.py`).
 - A change to a loaded workbook's save: `workbook/_loaded.py`, then check
   `workbook/_writer.py`.
-- A change to a new file: `xlsx_writer.py` or `writer.py`, and the object model
-  only when it is needed (`workbook/_writer.py`).
+- A change to a new file: the writer methods are in the mixins listed above
+  (`xlsx_writer.py` and `writer.py` hold the constructor and state), and the object
+  model only when it is needed (`workbook/_writer.py`).
 - Formula shifting: `refs.shift_references` only.

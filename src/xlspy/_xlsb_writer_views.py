@@ -15,7 +15,6 @@ class _XlsbViewsMixin:
         _split_freeze_cell: Any
         _stickHeaderA1bytes: Any
 
-
     @staticmethod
     def _row_height_twips(points: float) -> int:
         height_twips = int(round(points * 20))
