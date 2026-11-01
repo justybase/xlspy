@@ -9,6 +9,7 @@ appended to that table; existing component XML is left untouched.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Any
 from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
@@ -31,6 +32,7 @@ from ..styles import (
     _border_key,
     _fill_key_from,
     _font_is_empty,
+    fill_key_for,
     _font_key_from,
     _pattern_fill_key,
     _protection_key_from,
@@ -175,7 +177,7 @@ def _read_fill(node: ET.Element) -> PatternFill | GradientFill:
             position = _float(stop.get("position"))
             if color is not None and position is not None:
                 stops.append(Stop(color=color, position=position))
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "fill_type": gradient.get("type", "linear"),
             "degree": _float(gradient.get("degree")),
             "left": _float(gradient.get("left")),
@@ -357,6 +359,9 @@ class _Xf:
 class XlsxStyleTable:
     """A parsed ``xl/styles.xml`` table with append-only style creation."""
 
+    # The raw part as read (from_xml); set only on tables built from a file.
+    _source: bytes | str | None
+
     def __init__(self) -> None:
         self._root: ET.Element | None = None
         self.fonts: list[Font | None] = []
@@ -407,10 +412,12 @@ class XlsxStyleTable:
     def _add_default_components(self) -> None:
         default_font = Font(name="Calibri", size=11, family=2, scheme="minor", color=Color(theme=1))
         self.fonts = [default_font]
-        self.fills = [PatternFill(fill_type="none"), PatternFill(fill_type="gray125")]
+        none_fill = PatternFill(fill_type="none")
+        gray_fill = PatternFill(fill_type="gray125")
+        self.fills = [none_fill, gray_fill]
         self.borders = [Border()]
         self._font_keys = [_font_key_from(default_font)]
-        self._fill_keys = [_pattern_fill_key(self.fills[0]), _pattern_fill_key(self.fills[1])]
+        self._fill_keys = [_pattern_fill_key(none_fill), _pattern_fill_key(gray_fill)]
         self._border_keys = [None]
         self._font_xml = [self._font_xml_for(_font_key_from(default_font))]
         self._fill_xml = [
@@ -446,38 +453,37 @@ class XlsxStyleTable:
         if fonts is not None:
             for node in fonts.findall(qname("font")):
                 font = _read_font(node)
-                key = _font_key_from(font)
-                if _font_is_empty(key):
-                    key = None
+                font_key = _font_key_from(font)
                 self.fonts.append(font)
-                self._font_keys.append(key)
+                self._font_keys.append(None if _font_is_empty(font_key) else font_key)
                 self._font_xml.append(ET.tostring(node, encoding="unicode"))
 
         fills = root.find(qname("fills"))
         if fills is not None:
             for node in fills.findall(qname("fill")):
                 fill = _read_fill(node)
-                key = _fill_key_from(fill)
                 self.fills.append(fill)
-                self._fill_keys.append(key)
+                self._fill_keys.append(_fill_key_from(fill))
                 self._fill_xml.append(ET.tostring(node, encoding="unicode"))
 
         borders = root.find(qname("borders"))
         if borders is not None:
             for node in borders.findall(qname("border")):
                 border = _read_border(node)
-                key = _border_key(border)
                 self.borders.append(border)
-                self._border_keys.append(key)
+                self._border_keys.append(_border_key(border))
                 self._border_xml.append(ET.tostring(node, encoding="unicode"))
 
         if not self.fonts:
-            self.fonts = [Font(name="Calibri", size=11, family=2, scheme="minor", color=Color(theme=1))]
-            self._font_keys = [_font_key_from(self.fonts[0])]
+            default_font = Font(name="Calibri", size=11, family=2, scheme="minor", color=Color(theme=1))
+            self.fonts = [default_font]
+            self._font_keys = [_font_key_from(default_font)]
             self._font_xml = [self._font_xml_for(self._font_keys[0])]
         if not self.fills:
-            self.fills = [PatternFill(fill_type="none"), PatternFill(fill_type="gray125")]
-            self._fill_keys = [_pattern_fill_key(self.fills[0]), _pattern_fill_key(self.fills[1])]
+            none_fill = PatternFill(fill_type="none")
+            gray_fill = PatternFill(fill_type="gray125")
+            self.fills = [none_fill, gray_fill]
+            self._fill_keys = [_pattern_fill_key(none_fill), _pattern_fill_key(gray_fill)]
             self._fill_xml = [
                 '<fill><patternFill patternType="none"/></fill>',
                 '<fill><patternFill patternType="gray125"/></fill>',
@@ -554,7 +560,7 @@ class XlsxStyleTable:
 
     def _named_xf_xml(self, style: Style) -> str:
         font_id = self._intern_font(_font_key_from(style.font)) if style.font else 0
-        fill_id = self._intern_fill(_fill_key_from(style.fill)) if style.fill else 0
+        fill_id = self._intern_fill(fill_key_for(style.fill)) if style.fill else 0
         border_key = _border_key(style.border) if style.border else None
         border_id = self._intern_border(border_key) if border_key is not None else 0
         number_format = style.number_format
@@ -984,6 +990,8 @@ class XlsxStyleTable:
         if self._root is None:
             self.to_bytes()
         root = self._root
+        if root is None:  # to_bytes() sets it; this only narrows the type
+            raise RuntimeError("style table has no XML root")
         container = next((child for child in root if _local(child.tag) == "dxfs"), None)
         if container is None:
             self._replace_container(root, "dxfs", [f'<dxf xmlns="{MAIN}"/>'])

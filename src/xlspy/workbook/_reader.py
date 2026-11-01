@@ -10,6 +10,7 @@ import os
 import posixpath
 import re
 import zipfile
+from typing import Any, overload
 
 from .._untrusted import SafeZipFile
 from xml.etree import ElementTree as ET
@@ -91,6 +92,14 @@ def _element_xml(element) -> str:
 def _text(node, path: str) -> str | None:
     found = node.find(path) if node is not None else None
     return found.text if found is not None else None
+
+
+@overload
+def _bool_attr(node, name: str, default: bool) -> bool: ...
+
+
+@overload
+def _bool_attr(node, name: str, default: None = None) -> bool | None: ...
 
 
 def _bool_attr(node, name: str, default: bool | None = None) -> bool | None:
@@ -570,14 +579,13 @@ def _cf_rule(sqref: str, node, style_table):
         if scale is None:
             return None
         cfvos = [_cfvo(item) for item in scale.findall(qname("cfvo"))]
-        colors = [
-            _read_color(item) for item in scale.findall(qname("color"))
-        ]
-        if len(cfvos) < 2 or any(color is None for color in colors):
+        colors = [_read_color(item) for item in scale.findall(qname("color"))]
+        solid: list[Any] = [color for color in colors if color is not None]
+        if len(cfvos) < 2 or len(solid) != len(colors):
             return None
         if len(cfvos) == 2:
-            return ColorScaleRule(sqref, cfvos[0], None, cfvos[1], colors, priority)
-        return ColorScaleRule(sqref, cfvos[0], cfvos[1], cfvos[2], colors, priority)
+            return ColorScaleRule(sqref, cfvos[0], None, cfvos[1], solid, priority)
+        return ColorScaleRule(sqref, cfvos[0], cfvos[1], cfvos[2], solid, priority)
     if rule_type == "dataBar":
         bar = node.find(qname("dataBar"))
         if bar is None:
@@ -602,12 +610,13 @@ def _cf_rule(sqref: str, node, style_table):
         if icon_set is None:
             return None
         cfvos = [_cfvo(item) for item in icon_set.findall(qname("cfvo"))]
-        values = []
+        values: list[Any] = []
         for item in cfvos:
+            value: Any = item.value  # a number, a formula, or None
             try:
-                values.append(float(item.value))
+                values.append(float(value))
             except (TypeError, ValueError):
-                values.append(item.value)
+                values.append(value)
         if not values:
             return None
         return IconSetRule(
@@ -1075,9 +1084,9 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
     _read_table_parts(sheet, package, sheet_path, rels, table_parts)
     from ..chart_reader import read_drawing
 
-    for target, _mode, kind in rels.values():
+    for rel_target, _mode, kind in rels.values():
         if kind.endswith("/drawing"):
-            drawing_part = resolve_zip_target(target, posixpath.dirname(sheet_path))
+            drawing_part = resolve_zip_target(rel_target, posixpath.dirname(sheet_path))
             read_drawing(package, sheet, drawing_part)
     for attrs in hyperlinks:
         ref = attrs.get("ref")
@@ -1085,7 +1094,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
             continue
         rid = attrs.get(f"{{{REL}}}id")
         location = attrs.get("location")
-        target = None
+        target: str | None = None
         if rid and rid in rels:
             raw_target, mode, _kind = rels[rid]
             if mode == "External":
@@ -1211,7 +1220,8 @@ class ReadOnlyWorksheet(Worksheet):
         self._data_only = data_only
         self._loaded = True
         self._min_row = self._min_column = 1
-        self._max_row = self._max_column = None
+        # Unknown until the bounds are read; the class docstring says so.
+        self._max_row = self._max_column = None  # type: ignore[assignment]
 
     def _set_bounds(self, bounds):
         if bounds is not None:
@@ -1454,7 +1464,7 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
         package.get("xl/styles.xml") if package.has("xl/styles.xml") else None
     )
     workbook._styles = style_table
-    named_styles = list(style_table.named_style_defs.values())
+    named_styles: list[Any] = list(style_table.named_style_defs.values())
     if not named_styles:
         named_styles = list(style_table.named_styles) or ["Normal"]
     workbook.named_styles = NamedStyleList(named_styles)
@@ -1498,11 +1508,11 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
     from ..chart_reader import read_chartsheet
 
     for index, (name, part, state) in enumerate(chartsheet_entries):
-        sheet = Chartsheet(workbook, name, index=index)
-        sheet.sheet_state = state
-        sheet._part = part
-        read_chartsheet(package, part, name, sheet)
-        workbook._chartsheets.append(sheet)
+        chartsheet = Chartsheet(workbook, name, index=index)
+        chartsheet.sheet_state = state
+        chartsheet._part = part
+        read_chartsheet(package, part, name, chartsheet)
+        workbook._chartsheets.append(chartsheet)
     if not workbook._sheets:
         workbook._sheets = []
         workbook._active_index = 0

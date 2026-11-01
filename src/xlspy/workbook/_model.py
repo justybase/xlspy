@@ -990,7 +990,8 @@ def _column_key(key: str | int) -> str:
         return column_label(key - 1)
     if not isinstance(key, str):
         raise TypeError("column key must be a letter or 1-based int")
-    return _coerce_column(key) and column_label(_coerce_column(key) - 1)
+    column = _coerce_column(key)
+    return column_label(column - 1) if column else ""
 
 
 def _row_key(key: int) -> int:
@@ -1013,7 +1014,7 @@ class Cell:
         self._row = _coerce_row(row)
         self._column = _coerce_column(column)
         self._value = None
-        self._formula: Formula | None = None
+        self._formula: Formula | str | None = None
         self._data_type = "n"
         self._style_id = int(style_id)
         self._comment: Comment | None = None
@@ -1329,7 +1330,7 @@ CELL_SLOTS = tuple(Cell.__dict__[name] for name in (
 class MergedCell(Cell):
     """A cell inside a merged range other than its top-left anchor."""
 
-    @Cell.value.setter
+    @Cell.value.setter  # type: ignore[attr-defined]  # mypy does not model a property setter on the class
     def value(self, value):
         raise AttributeError("read-only cell (merged range)")
 
@@ -1364,6 +1365,7 @@ class Worksheet:
     # Set by the XLSB loader (workbook/_xlsb_reader.py) on loaded sheets only.
     _cf_extensions: Any
     _saved_filter_records: Any
+    _saved_print_settings: Any
 
     def __init__(self, workbook, title: str, *, index: int | None = None):
         self._workbook = workbook
@@ -1728,10 +1730,10 @@ class Worksheet:
         row = _coerce_row(row)
         column = _coerce_column(column)
         if self._is_merged_subcell(row, column):
-            cell = MergedCell(self, row, column, style_id=0)
+            merged = MergedCell(self, row, column, style_id=0)
             if value is not None:
                 raise AttributeError("read-only cell (merged range)")
-            return cell
+            return merged
         cell = self._cells.get(row, {}).get(column)
         if cell is None:
             cell = Cell(self, row, column, style_id=0)
@@ -1894,7 +1896,7 @@ class Worksheet:
                 if kind is _datetime.datetime or kind is _datetime.date:
                     if date_styles is None:
                         date_styles = self._default_date_styles()
-                    style_id = date_styles.get(kind)
+                    style_id = date_styles.get(kind) or 0
                 if not style_id:
                     self.cell(row, column, value)
                     continue
@@ -1957,13 +1959,13 @@ class Worksheet:
         max_col = self._max_column if max_col is None else _coerce_column(max_col)
         for row in range(min_row, max_row + 1):
             if values_only:
-                yield tuple(
-                    (self._cells.get(row, {}).get(col).value
-                     if self._cells.get(row, {}).get(col) is not None else None)
-                    for col in range(min_col, max_col + 1)
-                )
+                yield tuple(self._value_at(row, col) for col in range(min_col, max_col + 1))
             else:
                 yield tuple(self.cell(row, col) for col in range(min_col, max_col + 1))
+
+    def _value_at(self, row: int, col: int):
+        cell = self._cells.get(row, {}).get(col)
+        return None if cell is None else cell.value
 
     def iter_cols(self, min_col=None, max_col=None, min_row=None, max_row=None,
                   values_only: bool = False):
@@ -1973,11 +1975,7 @@ class Worksheet:
         max_row = self._max_row if max_row is None else _coerce_row(max_row)
         for col in range(min_col, max_col + 1):
             if values_only:
-                yield tuple(
-                    (self._cells.get(row, {}).get(col).value
-                     if self._cells.get(row, {}).get(col) is not None else None)
-                    for row in range(min_row, max_row + 1)
-                )
+                yield tuple(self._value_at(row, col) for row in range(min_row, max_row + 1))
             else:
                 yield tuple(self.cell(row, col) for row in range(min_row, max_row + 1))
 
@@ -1986,7 +1984,7 @@ class Worksheet:
                     start_column: int | None = None, end_row: int | None = None,
                     end_column: int | None = None):
         if range_string is None:
-            if None in (start_row, start_column, end_row, end_column):
+            if start_row is None or start_column is None or end_row is None or end_column is None:
                 raise TypeError("merge_cells needs a range or all four boundaries")
             range_string = (
                 f"{_coordinate(start_row, _coerce_column(start_column))}:"
@@ -2003,7 +2001,7 @@ class Worksheet:
                       start_column: int | None = None, end_row: int | None = None,
                       end_column: int | None = None):
         if range_string is None:
-            if None in (start_row, start_column, end_row, end_column):
+            if start_row is None or start_column is None or end_row is None or end_column is None:
                 raise TypeError("unmerge_cells needs a range or all four boundaries")
             range_string = (
                 f"{_coordinate(start_row, _coerce_column(start_column))}:"
@@ -2107,7 +2105,7 @@ class Chartsheet:
         self._index = index
         self._charts: list = []
         self._part: str | None = None  # the package part, once in a file
-        self._source = None
+        self._source: Worksheet | str | None = None
 
     def __repr__(self):
         return f"<Chartsheet {self.title!r}>"
@@ -2193,7 +2191,7 @@ class Workbook:
         """
         check_sheet_name(title)
         folded = title.casefold()
-        for other in (*self._sheets, *self._chartsheets):
+        for other in self._all_sheets():
             if other is not sheet and other.title.casefold() == folded:
                 raise ValueError(f"a sheet named {other.title!r} already exists")
 
@@ -2259,12 +2257,16 @@ class Workbook:
         sheet._loaded = self._loaded
         return sheet
 
+    def _all_sheets(self) -> tuple[Worksheet | Chartsheet, ...]:
+        """Worksheets, then chartsheets: every sheet name in the workbook."""
+        return (*self._sheets, *self._chartsheets)
+
     def create_chartsheet(self, title: str | None = None, index: int | None = None) -> Chartsheet:
         """Add a chartsheet after the other sheets (XLSX only), as openpyxl does."""
         if self.write_only:
             raise TypeError("create_chartsheet is not available in write-only mode")
         if title is None:
-            taken = {sheet.title.casefold() for sheet in (*self._sheets, *self._chartsheets)}
+            taken = {sheet.title.casefold() for sheet in self._all_sheets()}
             number = 1
             while f"chart{number}" in taken:
                 number += 1
@@ -2307,7 +2309,7 @@ class Workbook:
         title = from_worksheet.title
         base = title
         counter = 1
-        taken = {sheet.title.casefold() for sheet in (*self._sheets, *self._chartsheets)}
+        taken = {sheet.title.casefold() for sheet in self._all_sheets()}
         while title.casefold() in taken:
             title = f"{base}{counter}"
             counter += 1

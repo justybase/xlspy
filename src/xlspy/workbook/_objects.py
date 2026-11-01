@@ -121,6 +121,20 @@ def _resolve(part: str, target: str) -> str:
     return posixpath.normpath(posixpath.join(posixpath.dirname(part), target))
 
 
+def _must_match(match: re.Match[str] | None, what: str) -> re.Match[str]:
+    """A match the package structure guarantees; a corrupt part fails clearly."""
+    if match is None:
+        raise ValueError(f"{what} was not found")
+    return match
+
+
+def _target(node: ET.Element) -> str:
+    target = node.get("Target")
+    if target is None:
+        raise ValueError("relationship has no Target")
+    return target
+
+
 def _with_namespaces(fragment: str, default: str, **prefixes: str) -> str:
     """Declare the namespaces on a fragment's first element, so it reads the
     same wherever it is inserted (the host may use other prefixes)."""
@@ -147,6 +161,12 @@ class _Package:
         if path in self.removed:
             return None
         return self.package.get(path) if path in self.names else None
+
+    def require(self, path: str) -> bytes:
+        data = self.get(path)
+        if data is None:
+            raise ValueError(f"package part {path} was not found")
+        return data
 
     def set(self, path: str, data: bytes | str) -> None:
         self.parts[path] = data.encode("utf-8") if isinstance(data, str) else data
@@ -200,13 +220,13 @@ class _Sheet:
 
     def __init__(self, xml: str):
         self.xml = xml
-        self.prefix = re.search(r"<([\w.-]+:)?worksheet\b", xml)[1] or ""
+        self.prefix = _must_match(re.search(r"<([\w.-]+:)?worksheet\b", xml), "worksheet element")[1] or ""
 
     def _limit(self) -> int:
         """Where the worksheet's own extLst (or the end tag) starts: the
         x14 elements inside it share local names with main elements."""
         p = re.escape(self.prefix)
-        end = re.search(rf"</{p}worksheet\s*>\s*$", self.xml).start()
+        end = _must_match(re.search(rf"</{p}worksheet\s*>\s*$", self.xml), "worksheet end tag").start()
         start = self.xml.rfind(f"<{self.prefix}extLst")
         if start >= 0 and re.fullmatch(rf"(?s).*</{p}extLst\s*>\s*", self.xml[start:end]):
             return start
@@ -428,7 +448,7 @@ def _drop_attributes(sheet: _Sheet, tag: str, names) -> None:
     match = sheet.find(tag)
     if match is None:
         return
-    opening = re.match(r"<[^>]*?(?=/?>)", match[0])[0]
+    opening = _must_match(re.match(r"<[^>]*?(?=/?>)", match[0]), "opening tag")[0]
     sheet.replace(match, _without_attributes(opening, names) + match[0][len(opening):])
 
 
@@ -445,7 +465,7 @@ def _drop_fit_to_page(sheet: _Sheet) -> None:
 
 
 def _drop_print_names(package: _Package, sheet_index: int, names) -> None:
-    xml = package.get("xl/workbook.xml").decode("utf-8")
+    xml = package.require("xl/workbook.xml").decode("utf-8")
 
     def drop(match):
         attributes = _attributes(match[0])
@@ -512,7 +532,7 @@ def _set_print_names(package: _Package, scratch: dict[str, bytes], sheet_index: 
     if not wanted:
         return
     donor = scratch["xl/workbook.xml"].decode("utf-8")
-    xml = package.get("xl/workbook.xml").decode("utf-8")
+    xml = package.require("xl/workbook.xml").decode("utf-8")
 
     def drop(match):
         attributes = _attributes(match[0])
@@ -524,7 +544,7 @@ def _set_print_names(package: _Package, scratch: dict[str, bytes], sheet_index: 
     for item in _donor_elements(donor, "definedName"):
         name = _attributes(item).get("name")
         if name in wanted:
-            formula = re.search(r">(.*)</definedName>", item, re.S)[1]
+            formula = _must_match(re.search(r">(.*)</definedName>", item, re.S), "definedName text")[1]
             fragments.append(
                 f'<definedName xmlns="{MAIN}" name="{name}" localSheetId="{sheet_index}">{formula}</definedName>'
             )
@@ -549,7 +569,7 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
     donor_drawing_rels = safe_fromstring(scratch[_rels_path(drawing)])
 
     host_drawing = next(
-        (_resolve(sheet_path, node.get("Target")) for node in sheet_rels
+        (_resolve(sheet_path, _target(node)) for node in sheet_rels
          if node.get("Type", "").endswith("/drawing")),
         None,
     )
@@ -560,7 +580,7 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
         sheet.insert("drawing", _with_namespaces(f'<drawing r:id="{rid}"/>', MAIN, r=REL))
         host_xml = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr xmlns:xdr="{_XDR}"></xdr:wsDr>'
     else:
-        host_xml = package.get(host_drawing).decode("utf-8")
+        host_xml = package.require(host_drawing).decode("utf-8")
     drawing_rels = package.rels(host_drawing)
 
     mapping = {}
@@ -593,7 +613,7 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
         anchors.append(_with_namespaces(anchor, _XDR, a=_A, c=_C, r=REL))
     end = re.search(r"</(?:[\w.-]+:)?wsDr\s*>\s*$", host_xml)
     if end is None:  # an empty <xdr:wsDr .../>
-        root = re.search(r"<((?:[\w.-]+:)?wsDr)\b([^>]*)/>", host_xml)
+        root = _must_match(re.search(r"<((?:[\w.-]+:)?wsDr)\b([^>]*)/>", host_xml), "wsDr element")
         host_xml = host_xml[:root.start()] + f"<{root[1]}{root[2]}>" + "".join(anchors) + f"</{root[1]}>" + host_xml[root.end():]
     else:
         host_xml = host_xml[:end.start()] + "".join(anchors) + host_xml[end.start():]
@@ -630,7 +650,7 @@ def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: E
     existing = _existing_tables(package)
     names = {attributes.get("displayName", "").casefold() for _, attributes in existing}
     on_sheet = {
-        _resolve(sheet_path, node.get("Target")) for node in sheet_rels
+        _resolve(sheet_path, _target(node)) for node in sheet_rels
         if node.get("Type", "").endswith("/table")
     }
     next_id = max((int(attributes.get("id", 0)) for _, attributes in existing), default=0) + 1
@@ -638,7 +658,7 @@ def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: E
     rids = []
     for source in sources:
         xml = scratch[source].decode("utf-8")
-        attributes = _attributes(re.search(r"<table\b[^>]*>", xml)[0])
+        attributes = _attributes(_must_match(re.search(r"<table\b[^>]*>", xml), "table element")[0])
         if attributes["displayName"].casefold() in names:
             raise ValueError(f"a table named {attributes['displayName']!r} already exists in the workbook")
         for name, other in existing:
@@ -648,7 +668,7 @@ def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: E
                     f"sheet's table {other.get('displayName')!r} ({other.get('ref')})"
                 )
         table_id = next_id
-        xml = re.sub(r'(<table\b[^>]*?\bid=")\d+"', lambda m, tid=table_id: f'{m[1]}{tid}"', xml, count=1)
+        xml = re.sub(r'(<table\b[^>]*?\bid=")\d+"', rf'\g<1>{table_id}"', xml, count=1)
         next_id += 1
         target = package.free_part("xl/tables", "table", "xml")
         package.set(target, xml)
@@ -811,12 +831,12 @@ def sync_objects(updater, workbook, sheet) -> None:
     scratch = _scratch(sheet, objects, None)
     package = _Package(updater)
     sheet_path = updater._sheets[sheet.title]
-    host = _Sheet(package.get(sheet_path).decode("utf-8"))
+    host = _Sheet(package.require(sheet_path).decode("utf-8"))
     sheet_rels = package.rels(sheet_path)
 
     for node in list(sheet_rels):
         if node.get("Type", "").endswith("/table"):
-            target = _resolve(sheet_path, node.get("Target"))
+            target = _resolve(sheet_path, _target(node))
             package.remove(target)
             sheet_rels.remove(node)
     host.remove_all("tableParts")
@@ -849,7 +869,7 @@ def add_objects(updater, workbook, sheet, sheet_order: list[str]) -> None:
 
     package = _Package(updater)
     sheet_path = updater._sheets[sheet.title]
-    host = _Sheet(package.get(sheet_path).decode("utf-8"))
+    host = _Sheet(package.require(sheet_path).decode("utf-8"))
     sheet_rels = package.rels(sheet_path)
     sheet_index = sheet_order.index(sheet.title)
 

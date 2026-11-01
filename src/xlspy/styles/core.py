@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import re
 import warnings
-from typing import Mapping, NamedTuple
+from typing import Any, Mapping, NamedTuple, cast
 
 # Chart and cell-reference models live in their own modules; they are
 # re-exported here so that ``xlspy.styles`` keeps its historical names.
@@ -22,7 +22,7 @@ from ..charts import Chart, ChartSeries  # noqa: F401
 from ..hyperlinks import Hyperlink
 from ..refs import _column_index, column_label, parse_cell_range  # noqa: F401
 
-_EMPTY_STYLES = {}
+_EMPTY_STYLES: dict[int, Style] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +429,7 @@ class Style:
     ``GradientFill``. On conflict the structured object wins per property; a
     ``None`` sub-property falls back to the corresponding flat shorthand.
     """
-    fill: str | PatternFill | None = None
+    fill: str | PatternFill | GradientFill | None = None
     font_color: str | None = None
     bold: bool | None = None
     italic: bool | None = None
@@ -1222,7 +1222,7 @@ def _font_key_from(font: Font) -> _FontKey:
         font.bold,
         font.italic,
         font.strike,
-        font.underline,
+        _underline_key(font.underline),
         font.vertAlign,
         _color_key(font.color),
         font.charset,
@@ -1291,7 +1291,11 @@ def _fill_key_from(fill: PatternFill | GradientFill):
     """Key for a pattern or gradient fill; ``None`` means “no fill override”."""
     if isinstance(fill, PatternFill):
         return _pattern_fill_key(fill)
-    stops = tuple((_color_key(stop.color), stop.position) for stop in fill.stop)
+    # GradientFill.__post_init__ has already turned every stop into a Stop.
+    stops = tuple(
+        (_color_key(stop.color), stop.position)
+        for stop in cast(tuple[Stop, ...], fill.stop)
+    )
     return (
         "gradient",
         fill.fill_type,
@@ -1347,6 +1351,7 @@ def split_style(style: Style) -> tuple:
     """
     flat_underline = _underline_key(style.underline)
     font = style.font
+    font_key: _FontKey | None
     if font is None:
         font_key = _FontKey(
             None, None, style.bold, style.italic, None, flat_underline, None,
@@ -1362,7 +1367,7 @@ def split_style(style: Style) -> tuple:
             font.bold if font.bold is not None else style.bold,
             font.italic if font.italic is not None else style.italic,
             font.strike,
-            font.underline if font.underline is not None else flat_underline,
+            _underline_key(font.underline) if font.underline is not None else flat_underline,
             font.vertAlign,
             _color_key(
                 font.color if font.color is not None else style.font_color
@@ -1593,13 +1598,15 @@ def _uniform_row_styles(row_length: int, style: Style):
 @lru_cache(maxsize=128)
 def _row_styles_for_pattern(row_length: int, ranges, header_style: Style | None):
     """Reuse the same immutable-in-practice map for rows with the same styles."""
-    styles = {}
+    styles: dict[int, Style] = {}
     if header_style is not None:
         for column in range(row_length):
             styles[column] = header_style
     for first_col, last_col, style in ranges:
         for column in range(first_col, min(last_col, row_length - 1) + 1):
-            styles[column] = merge_styles(styles.get(column), style)
+            merged = merge_styles(styles.get(column), style)
+            if merged is not None:
+                styles[column] = merged
     return styles or _EMPTY_STYLES
 
 
@@ -1634,6 +1641,7 @@ def styles_for_row(row_index: int, row_length: int, ranges, header_style: Style 
 def _xf_for_style_format(style: Style, overlay: str | Style, register_style, cache: dict) -> int:
     """XF of ``style`` with a cell's number format or ``Style`` on top,
     merged once per pair."""
+    key: tuple[object, ...]
     if isinstance(overlay, str):
         key = (id(style), overlay)
         cached = cache.get(key)
@@ -1657,7 +1665,7 @@ def _record_cell_xf(fmt_xf: dict, keep: list, base_xf, overlay, xf_index: int) -
     the native row encoders: keyed by the format or the Style's ``id()``, paired
     with the cell's range-style xf when it has one. ``keep`` holds every
     keyed Style so its id cannot be reused while the writer is open."""
-    key = overlay if isinstance(overlay, str) else id(overlay)
+    key: object = overlay if isinstance(overlay, str) else id(overlay)
     if base_xf is not None:
         key = (base_xf, key)
     if key not in fmt_xf:
@@ -1749,6 +1757,7 @@ _RULE_TYPES = (
     (BlanksRule, _blanks_rule_type),
 )
 for _rule_class, _rule_type in _RULE_TYPES:
-    _rule_class.rule_type = property(_rule_type)
-    _rule_class.type = property(_rule_type)
-del _rule_class, _rule_type
+    _rule_class_any: Any = _rule_class  # the rule classes share no base for these
+    _rule_class_any.rule_type = property(_rule_type)
+    _rule_class_any.type = property(_rule_type)
+del _rule_class, _rule_type, _rule_class_any
