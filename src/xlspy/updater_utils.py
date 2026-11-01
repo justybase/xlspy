@@ -885,6 +885,26 @@ class ZipPackage:
         self._package_transaction = None
         self._superseded_paths = set()
 
+    def apply_parts(self, parts, removed=()) -> None:
+        """Write ``parts`` (str or bytes) and remove ``removed`` as one transaction.
+
+        The package owns this write-back: an updater or the object model that
+        has pending parts hands them here. A failure rolls everything back, so
+        the package is never left half-updated.
+        """
+
+        self.begin_transaction()
+        try:
+            for path, data in parts.items():
+                self.set(path, data.encode("utf-8") if isinstance(data, str) else data)
+            for path in removed:
+                self.remove(path)
+        except BaseException:
+            self.rollback_transaction()
+            raise
+        else:
+            self.commit_transaction()
+
     def set(self, name: str, data: bytes) -> None:
         if name in self._indices:
             index = self._indices[name]

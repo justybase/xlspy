@@ -41,6 +41,7 @@ from .updater_utils import (
 )
 from ._text import check_cell_text
 from ._updater_base import StyleFallback, _UpdaterBase
+from ._sheet_data import replace_sheet_data_body, tag_prefix
 from ._xlsx_edit import XlsxEditMixin
 from .formulas import Formula
 
@@ -870,52 +871,11 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
 
     @staticmethod
     def _tag_prefix(xml_data: str, tag_name: str) -> str:
-        match = re.search(
-            rf"<(?P<prefix>[A-Za-z_][\w.-]*:)?{re.escape(tag_name)}\b",
-            xml_data,
-        )
-        return match.group("prefix") or "" if match else ""
+        return tag_prefix(xml_data, tag_name)
 
     @staticmethod
     def _patch_sheet_xml(sheet_xml: str, rows_xml: str, dimension_ref: str) -> str:
-        sheet_data_pattern = re.compile(
-            r"<(?P<prefix>[A-Za-z_][\w.-]*:)?sheetData\b(?P<attrs>[^>]*)/>", re.DOTALL
-        )
-        empty_match = sheet_data_pattern.search(sheet_xml)
-        if empty_match:
-            opening = (
-                f"<{empty_match.group('prefix') or ''}sheetData"
-                f"{empty_match.group('attrs')}>"
-            )
-            closing = f"</{empty_match.group('prefix') or ''}sheetData>"
-            replacement = opening + rows_xml + closing
-            sheet_xml = (
-                sheet_xml[: empty_match.start()]
-                + replacement
-                + sheet_xml[empty_match.end() :]
-            )
-        else:
-            opening_match = re.search(
-                r"<(?P<prefix>[A-Za-z_][\w.-]*:)?sheetData\b[^>]*>",
-                sheet_xml,
-            )
-            if not opening_match:
-                raise ValueError("Worksheet sheetData element was not found")
-            prefix = opening_match.group("prefix") or ""
-            closing_match = re.search(
-                rf"</{re.escape(prefix)}sheetData\s*>",
-                sheet_xml[opening_match.end() :],
-            )
-            if not closing_match:
-                raise ValueError("Worksheet sheetData closing element was not found")
-            closing_start = opening_match.end() + closing_match.start()
-            closing_end = opening_match.end() + closing_match.end()
-            sheet_xml = (
-                sheet_xml[: opening_match.end()]
-                + rows_xml
-                + sheet_xml[closing_start:closing_end]
-                + sheet_xml[closing_end:]
-            )
+        sheet_xml = replace_sheet_data_body(sheet_xml, rows_xml)
 
         dimension_match = re.search(
             r"<(?P<prefix>[A-Za-z_][\w.-]*:)?dimension\b[^>]*>", sheet_xml

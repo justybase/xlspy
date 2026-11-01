@@ -16,6 +16,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from ..utils.datetime import time_to_days, timedelta_to_days
 from .._metadata import MAIN, REL, PKG_REL, CT, qname, element_pattern, replace_element, serialize_like
+from .._sheet_data import sheet_data_match, tag_prefix
 from .._xlsx_edit import _attributes, _bytes, _cell_xml_value, _required_match
 from ..formula.sheets import rename_sheet_references
 from ..formulas import Formula
@@ -290,7 +291,7 @@ def _patch_xml_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
         for row, dimension in sheet.row_dimensions.items()
         if _row_dimension_attrs(dimension)
     }
-    match = element_pattern("sheetData").search(xml)
+    match = sheet_data_match(xml)
     if match is None:
         return xml
     body = match[0]
@@ -606,7 +607,7 @@ def _auto_filter_xml(sheet: Worksheet, prefix: str) -> str:
 
 def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
     path, xml = updater._sheet_xml(name)
-    prefix = updater._tag_prefix(xml, "sheetData")
+    prefix = tag_prefix(xml, "sheetData")
     xml = replace_element(
         xml, "sheetPr", _sheet_pr_xml(sheet, prefix),
         before=("dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData"),
@@ -684,7 +685,7 @@ def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
 def _patch_cells(xml: str, patch) -> str:
     """Call ``patch(ref, cell_xml)`` for each cell, resolving omitted ``r``
     attributes from the cell's position as Excel does."""
-    match = element_pattern("sheetData").search(xml)
+    match = sheet_data_match(xml)
     if match is None:
         return xml
     next_row = 1

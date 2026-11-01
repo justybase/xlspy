@@ -138,10 +138,9 @@ def _with_namespaces(fragment: str, default: str, **prefixes: str) -> str:
 
 
 class _Package:
-    """Pending part changes over the updater's package."""
+    """Pending part changes over the package of an updater."""
 
     def __init__(self, updater):
-        self.updater = updater
         self.package = updater._package
         self.parts: dict[str, bytes] = {}
         self.names = set(self.package.names())
@@ -205,7 +204,7 @@ class _Package:
     def commit(self) -> None:
         ET.register_namespace("", CT)
         self.set("[Content_Types].xml", _bytes(self.types))
-        self.updater._apply_parts(self.parts, self.removed - self.parts.keys())
+        self.package.apply_parts(self.parts, self.removed - self.parts.keys())
 
 
 class _Sheet:

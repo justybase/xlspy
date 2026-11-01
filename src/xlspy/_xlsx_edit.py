@@ -15,6 +15,7 @@ from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
+from ._sheet_data import sheet_data_match
 from ._metadata import (
     MAIN, REL, PKG_REL, CT, DefinedName, SheetProtection, WorkbookProtection,
     cell_ref, element_pattern, replace_element, append_child, read_defined_names, xml_text,
@@ -65,18 +66,8 @@ class XlsxEditMixin:
         _stream_shared_strings: Any
 
     def _apply_parts(self, parts, removed=()):
-        package = self._package
-        package.begin_transaction()
-        try:
-            for path, data in parts.items():
-                package.set(path, data.encode("utf-8") if isinstance(data, str) else data)
-            for path in removed:
-                package.remove(path)
-        except BaseException:
-            package.rollback_transaction()
-            raise
-        else:
-            package.commit_transaction()
+        # The package owns the write-back transaction (ZipPackage.apply_parts).
+        self._package.apply_parts(parts, removed)
 
     def _sheet_xml(self, sheet_name):
         try:
@@ -361,13 +352,12 @@ class XlsxEditMixin:
         for ref, value in values.items():
             if isinstance(value, Formula) and value.array_ref is not None:
                 raise ValueError("update_cells supports scalar formulas only")
-        prefix_match = re.search(r"<([\w.-]+:)?sheetData\b", xml)
-        if not prefix_match:
+        sheet_data = sheet_data_match(xml)
+        if sheet_data is None:
             raise ValueError("Worksheet sheetData element was not found")
-        prefix = prefix_match[1] or ""
+        prefix = sheet_data["prefix"] or ""
         # Validate and encode all input before staging any mutation.
         encoded = {ref: _cell_xml_value(value, self._date_1904, prefix) for ref, value in values.items()}
-        sheet_data = element_pattern("sheetData").search(xml)
         body = sheet_data[0]
         pending = dict(encoded)
         next_row = 1
