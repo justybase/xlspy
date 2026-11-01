@@ -35,6 +35,7 @@ from ._extlst import (
     ext,
     ext_list,
 )
+from ._sheet_options import XLSX_OPTIONS, SheetOptions, resolve_sheet_options
 from .shapes import Shape, normalize_shapes
 from .slicers import Slicer, normalize_slicers, slicer_cache_xml, slicer_part_xml
 from .sparklines import normalize_sparklines, sparklines_ext
@@ -389,7 +390,20 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
     def _written_sheet_indexes(self) -> set[int]:
         return self._sheet_written
 
-    def write_sheet(
+    def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None, **kwargs):
+        """Write rows to the current sheet.
+
+        ``data`` is consumed once, row by row. Sheet settings come from ``options``
+        (a ``SheetOptions``) or from keyword arguments with the same names; a
+        keyword argument overrides the matching field of ``options``. The rows are
+        encoded into a temporary spool (kept in memory up to ``spool_max_bytes``,
+        then on disk), so memory does not grow with the number of rows. Hyperlinks,
+        formulas and the other options are described in the documentation.
+        """
+        opts = resolve_sheet_options(options, kwargs, XLSX_OPTIONS, "XlsxWriter")
+        return self._write_sheet(data, **opts.as_kwargs(XLSX_OPTIONS))
+
+    def _write_sheet(
         self,
         data: Iterable[list[Any]],
         *,

@@ -16,6 +16,7 @@ from ._accel import xlsb_row_has_formatted as accel_row_has_formatted
 from ._accel import encode_xlsb_sst as accel_encode_xlsb_sst
 from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell, _unwrap_cell
 from .excel_dates import datetime_to_serial
+from ._sheet_options import XLSB_OPTIONS, SheetOptions, resolve_sheet_options
 from ._xlsb_writer import XlsbWriterMetadata
 from . import chart_parts
 from .styles import (
@@ -524,7 +525,17 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
     def _written_sheet_indexes(self) -> set[int]:
         return self._written_sheets
 
-    def write_sheet(
+    def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None, **kwargs):
+        """Write rows to the current sheet.
+
+        Sheet settings come from ``options`` (a ``SheetOptions``) or from keyword
+        arguments with the same names; a keyword argument overrides the matching
+        field of ``options``. ``ignored_errors`` is an XLSX-only option.
+        """
+        opts = resolve_sheet_options(options, kwargs, XLSB_OPTIONS, "XlsbWriter")
+        return self._write_sheet(data, **opts.as_kwargs(XLSB_OPTIONS))
+
+    def _write_sheet(
         self,
         data: Iterable[list[Any]],
         *,

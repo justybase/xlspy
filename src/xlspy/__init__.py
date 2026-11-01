@@ -57,6 +57,7 @@ from .sparklines import SparklineGroup
 from .pivots import PivotTable, PivotValue
 from .outline import Group
 from .printing import PageMargins, PrintSettings
+from ._sheet_options import SheetOptions
 from .dataframe import dataframe_to_rows, to_xlsb, to_xlsx
 
 __version__ = "0.10.1"
@@ -172,6 +173,7 @@ __all__ = [
     'InlineFont',
     'Group',
     'PageMargins',
+    'SheetOptions',
     'PrintSettings',
     'dataframe_to_rows',
     'to_xlsx',

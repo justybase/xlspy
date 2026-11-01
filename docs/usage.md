@@ -71,6 +71,28 @@ with XlsxWriter("output.xlsx", compressionLevel=6) as writer:
     writer.write_sheet([["This sheet is hidden."]])
 ```
 
+## Sheet options
+
+`write_sheet` takes its sheet settings (zoom, freeze panes, tab colour, grid lines,
+tables, and so on) in two equivalent ways. Keyword arguments are the short form:
+
+```python
+writer.write_sheet(rows, zoom=80, freeze_panes="A2")
+```
+
+A `SheetOptions` object is the same settings bundled once and reused:
+
+```python
+from xlspy import SheetOptions
+
+report = SheetOptions(zoom=80, freeze_panes="A2", tab_color="#1F4E78")
+writer.write_sheet(rows, options=report)
+writer.write_sheet(other_rows, options=report, zoom=100)   # a keyword overrides the object
+```
+
+`SheetOptions` is frozen. An unknown name raises `TypeError`. `XlsbWriter` does not
+accept `ignored_errors`; it raises `TypeError` as well.
+
 ## Cell Formatting (Number, Date, DateTime)
 
 `xlspy` supports custom cell formatting for numbers, dates, and datetimes in both XLSB and XLSX output. Pass a `(value, format_string)` tuple to apply a format to a specific cell.
