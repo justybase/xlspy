@@ -5,7 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.1] - 2026-10-24
+## [Unreleased]
+
+### Fixed
+
+- `XlsbWriter` wrote the column-info container with the record ids `0x86` / `0x87`
+  (`BrtEndWsViews` / `BrtBeginBookViews`) instead of `BrtBeginColInfos` / `BrtEndColInfos`
+  (`0x186` / `0x187` in [MS-XLSB]). Excel tolerated it; LibreOffice dropped every cell
+  of such a sheet. Column widths, hidden columns and column groups now read in LibreOffice.
+- `XlsbWriter` wrote an all-zero `BrtWsDim`. Excel ignores the record, but readers that size
+  rows from it (pyxlsb, for one) failed on the first cell past column A, and `load_workbook`
+  reported no `max_row`. The dimension now holds the used range (the first and last row and
+  column with a value, a formula or a styled blank; an empty sheet keeps the zeros). To know it,
+  the sheet part is spooled to a temporary file (in memory up to 1 MiB, then on disk) and copied
+  into the archive, which leaves the streaming writer's peak memory unchanged. Rows read back
+  through `load_workbook(read_only=True)` are padded to that width, as from a file Excel saved.
 
 ### Changed
 

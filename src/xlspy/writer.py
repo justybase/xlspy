@@ -6,6 +6,8 @@ import struct
 from typing import  Tuple, Iterable, Mapping
 import io
 import itertools
+import shutil
+import tempfile
 import uuid
 import xml.sax.saxutils as saxutils
 from ._accel import encode_xlsb_row, encode_xlsb_row_inline
@@ -79,8 +81,16 @@ _BRT_END_CELL_XFS = 0x026A
 # BIFF12 record identifiers used in xl/worksheets/sheetN.bin.
 _BRT_ROW_HDR = 0x0000
 _BRT_COL_INFO = 0x003C
-_BRT_BEGIN_COL_INFOS = 0x0086
-_BRT_END_COL_INFOS = 0x0087
+_BRT_BEGIN_COL_INFOS = 0x0186
+_BRT_END_COL_INFOS = 0x0187
+# BrtWsDim sits at a fixed place in the sheet head: the record header at bytes
+# 29-31 of _sheet1Bytes, its four UInt32 fields (rwFirst, rwLast, colFirst,
+# colLast) at 32-47.
+_WS_DIM_PAYLOAD_OFFSET = 32
+# A sheet part is spooled so the used range can be written into BrtWsDim once
+# the rows are known; the spool moves to disk past this size, which keeps the
+# streaming writer's peak memory where it was.
+_SHEET_SPOOL_MAX_BYTES = 1024 * 1024
 _BRT_PANE = 0x0097
 _BRT_SEL = 0x0098
 _BRT_MERGE_CELL = 0x00B0
@@ -923,9 +933,13 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         link_rids: dict[str, str] = {}
         link_rid_start = 2 + len(table_ids) + int(has_drawing) + (2 if comment_specs else 0)
         try:
-            with self._zf.open(f"xl/worksheets/sheet{sheet_id}.bin", 'w') as sheet_file:
-                self._write_worksheet_bin(
-                    sheet_file, data, self._sheet_count - 1,
+            # The sheet is spooled, not streamed into the archive: BrtWsDim is
+            # at the head of the part and its used range is known only after
+            # the rows. Readers that size rows from it (pyxlsb, among others)
+            # fail on an all-zero dimension; Excel ignores it.
+            with tempfile.SpooledTemporaryFile(max_size=_SHEET_SPOOL_MAX_BYTES) as spool:
+                used_range = self._write_worksheet_bin(
+                    spool, data, self._sheet_count - 1,
                     style_ranges=style_ranges, header_style=header_style,
                     merge_refs=merge_refs, widths=widths, hidden_cols=hidden_cols,
                     heights=heights, hidden_row_set=hidden_row_set,
@@ -943,6 +957,12 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
                     link_rids=link_rids, link_rid_start=link_rid_start,
                     print_spec=print_spec, validations=validations,
                 )
+                if used_range is not None:
+                    spool.seek(_WS_DIM_PAYLOAD_OFFSET)
+                    spool.write(struct.pack('<IIII', *used_range))
+                spool.seek(0)
+                with self._zf.open(f"xl/worksheets/sheet{sheet_id}.bin", 'w') as sheet_file:
+                    shutil.copyfileobj(spool, sheet_file, 1 << 20)
             self._sheet_link_rels[sheet_id] = link_rids
             for table, table_id in zip(table_specs, table_ids):
                 names = table_column_names(table, table_header_cells.get(parse_cell_range(table.ref)[1]))
@@ -1764,6 +1784,12 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         array_ranges = []
         row_style_ids_cache = {}
 
+        # The used range for BrtWsDim: the first and last row and column that
+        # get a cell record (a value, a formula or a styled blank), as Excel
+        # reports it. None until the first such cell.
+        used_rows = None
+        used_cols = None
+
         row_idx = -1
         for row_idx, row in enumerate(data_iterator):
             c_has_formatted = accel_row_has_formatted(row)
@@ -1772,6 +1798,21 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
             else:
                 has_formatted = c_has_formatted
             row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
+
+            first_cell = next((i for i, c in enumerate(row) if c is not None), None)
+            last_cell = next((i for i in range(len(row) - 1, -1, -1) if row[i] is not None), None)
+            if row_styles:
+                styled_first, styled_last = min(row_styles), max(row_styles)
+                first_cell = styled_first if first_cell is None else min(first_cell, styled_first)
+                last_cell = styled_last if last_cell is None else max(last_cell, styled_last)
+            if first_cell is not None:
+                if used_rows is None:
+                    used_rows = [row_idx, row_idx]
+                    used_cols = [first_cell, last_cell]
+                else:
+                    used_rows[1] = row_idx
+                    used_cols[0] = min(used_cols[0], first_cell)
+                    used_cols[1] = max(used_cols[1], last_cell)
 
             if row_outline is None:
                 outline_level, outline_hidden, outline_collapsed = 0, False, False
@@ -2118,6 +2159,13 @@ class XlsbWriter(StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
         buffer.write(self._sheet1Bytes[346:])
         if buffer.tell() > 0:
             sheet_file.write(buffer.getvalue())
+        if used_rows is None:
+            return None
+        if array_ranges:
+            # An array formula writes cells over its whole range.
+            used_rows[1] = max(used_rows[1], max(r2 for _c1, _r1, _c2, r2 in array_ranges))
+            used_cols[1] = max(used_cols[1], max(c2 for _c1, _r1, c2, _r2 in array_ranges))
+        return used_rows[0], used_rows[1], used_cols[0], used_cols[1]
 
     @staticmethod
     def _write_inline_str(buffer, text: str, col_idx: int, style_ref: int):
