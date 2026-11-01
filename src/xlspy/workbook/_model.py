@@ -18,12 +18,14 @@ from typing import Any
 
 from ..charts import Chart
 from ..comments import Comment
+from ..printing import PageMargins as PublicPageMargins
 from ..data_validation import DataValidation
 from ..formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT
 from ..formulas import Formula
 from ..hyperlinks import Hyperlink
 from ..images import Image
 from .._metadata import DefinedName
+from .._metadata import SheetProtection as PublicSheetProtection
 from ..refs import check_sheet_name, column_label, parse_cell_range, quote_sheet_name
 from ..rich_text import CellRichText
 from ..styles import (
@@ -650,6 +652,37 @@ class SheetProtection:
 
     def __bool__(self) -> bool:
         return self.sheet
+
+
+def _as_model_protection(value) -> "SheetProtection":
+    """Return the model SheetProtection for ``ws.protection`` assignments.
+
+    Accepts the model class (openpyxl-style fields) or the public
+    ``xlspy.SheetProtection`` (``enabled``, ``select_*_cells`` meaning "allowed").
+    The public class is converted here so the model always holds one type.
+    """
+    if value is None:
+        return SheetProtection()
+    if isinstance(value, SheetProtection):
+        return value
+    if isinstance(value, PublicSheetProtection):
+        model = SheetProtection(sheet=value.enabled, objects=value.enabled, scenarios=value.enabled,
+                                selectLockedCells=not value.select_locked_cells,
+                                selectUnlockedCells=not value.select_unlocked_cells)
+        if value.password_hash is not None:
+            model.set_password(value.password_hash, already_hashed=True)
+        return model
+    raise TypeError("protection must be a xlspy SheetProtection, a SheetProtection or None")
+
+
+def _as_model_page_margins(value) -> "PageMargins":
+    """Return the model PageMargins for ``ws.page_margins`` (mutable holder)."""
+    if isinstance(value, PageMargins):
+        return value
+    if isinstance(value, PublicPageMargins):
+        return PageMargins(**{name: getattr(value, name) for name in
+                              ("left", "right", "top", "bottom", "header", "footer")})
+    raise TypeError("page_margins must be a xlspy PageMargins or PageMargins")
 
 
 @dataclass
@@ -1503,6 +1536,22 @@ class Worksheet:
     def show_gridlines(self, value: bool | None):
         self._sheet_view.showGridLines = value
         self._mark_dirty("sheet_view")
+
+    @property
+    def protection(self) -> SheetProtection:
+        return self._protection
+
+    @protection.setter
+    def protection(self, value) -> None:
+        self._protection = _as_model_protection(value)
+
+    @property
+    def page_margins(self) -> PageMargins:
+        return self._page_margins
+
+    @page_margins.setter
+    def page_margins(self, value) -> None:
+        self._page_margins = _as_model_page_margins(value)
 
     @property
     def max_row(self) -> int:

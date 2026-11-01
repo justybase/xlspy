@@ -850,11 +850,13 @@ impl State {
             Ok(ok)
         });
         let ok = parsed?;
-        self.next_row = row_number + 1;
-        self.next_row_valid = true;
+        // Only a row this function loads moves the counter; a fallback row keeps the
+        // number it would have had, so the caller can name it (see next_row).
         if ok.is_none() {
             return Ok(None);
         }
+        self.next_row = row_number + 1;
+        self.next_row_valid = true;
         m.max_row = m.max_row.max(row_number);
         m.max_column = m.max_column.max(m.row_max_column);
         Ok(Some(()))
@@ -907,11 +909,11 @@ impl State {
         }
         let cells = PyList::empty(py);
         let parsed = self.parse_cells(py, body.unwrap_or(b""), Some(&cells));
-        self.next_row = row_number + 1;
-        self.next_row_valid = true;
         if parsed?.is_none() {
             return Ok(None);
         }
+        self.next_row = row_number + 1;
+        self.next_row_valid = true;
         Ok(Some(Some(
             PyTuple::new(
                 py,
@@ -1144,6 +1146,12 @@ impl XlsxReader {
             Err(e) => return Err(e),
         }
         Ok(())
+    }
+
+    /// next_row(): the number a row without an r attribute gets next, or None when
+    /// the rows are out of order and that number is not known.
+    fn next_row(&self) -> Option<i64> {
+        self.state.next_row_valid.then_some(self.state.next_row)
     }
 
     /// bounds(): (max_row, max_column) of the rows loaded in model mode.

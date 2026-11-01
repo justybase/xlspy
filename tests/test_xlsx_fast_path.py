@@ -356,7 +356,7 @@ def _model_cells(path, monkeypatch, native, fast):
     from xlspy.workbook import _reader as model_reader, load_workbook
     with monkeypatch.context() as patch:
         if not native:
-            patch.setattr(_accel, "_c_read_xlsx_worksheet", None)
+            patch.setattr(_accel, "_native_read_xlsx_worksheet", None)
         patch.setattr(model_reader, "_FAST_SHEET_DATA", fast)
         try:
             workbook = load_workbook(path, data_only=True)

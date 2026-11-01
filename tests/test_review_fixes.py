@@ -64,9 +64,18 @@ def _zip_text(path, name):
 
 
 def _xlsx_rows(path, part="xl/worksheets/sheet1.xml"):
-    """Map 1-based row number to the attribute string of its ``<row>``."""
+    """Map 1-based row number to the attribute string of its ``<row>``.
+
+    A ``<row>`` without ``r`` is the row after the previous one, as Excel reads it.
+    """
     xml = _zip_text(path, part)
-    return {int(m.group(1)): m.group(2) for m in re.finditer(r'<row r="(\d+)"([^>]*?)/?>', xml)}
+    rows, number = {}, 0
+    for m in re.finditer(r"<row\b([^>]*?)/?>", xml):
+        attrs = m.group(1)
+        found = re.search(r'\br="(\d+)"', attrs)
+        number = int(found.group(1)) if found else number + 1
+        rows[number] = attrs
+    return rows
 
 
 def _xlsb_row_flags(path, part="xl/worksheets/sheet1.bin"):

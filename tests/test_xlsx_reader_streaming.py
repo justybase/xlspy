@@ -16,7 +16,9 @@ def test_ragged_rows_do_not_lose_cells(tmp_path):
     with XlsxWriter(path) as writer:
         writer.write_sheet([[], [1, 2, 3], [4]])
     with ExcelReader(str(path)) as reader:
-        assert reader.read_all("Sheet1") == [[], [1, 2, 3], [4]]
+        # The first row present in the XML (row 2, three cells) sets the width the other
+        # rows are padded to (see iter_rows). The cell of row 3 is kept.
+        assert reader.read_all("Sheet1") == [[], [1, 2, 3], [4, None, None]]
 
 
 def test_absent_rows_keep_their_positions(tmp_path):

@@ -410,8 +410,12 @@ type EncodedRow<'py> = (Bound<'py, PyBytes>, u32, u32, Bound<'py, PyList>);
 /// Encode one XLSX sheet row.  Returns (row_xml, sst_uniq, sst_all, hyperlinks), or None
 /// when the Python row writer must handle the row; then the strings this
 /// call added to the table are removed again.
+///
+/// ``write_r`` False leaves the ``r`` attribute off the ``<row>``. The row then
+/// takes the number after the previous row, which is how the writer keeps dense
+/// rows small; the caller sets it only for a row that follows a gap.
 #[pyfunction]
-#[pyo3(signature = (row, ss_dict, ss_list, sst_uniq, sst_all, row_idx, use_shared_strings, style_ids=None, fmt_xf=None, row_attrs=None, link_xf=None))]
+#[pyo3(signature = (row, ss_dict, ss_list, sst_uniq, sst_all, row_idx, use_shared_strings, style_ids=None, fmt_xf=None, row_attrs=None, link_xf=None, write_r=true))]
 #[allow(clippy::too_many_arguments)]
 pub fn encode_xlsx_row<'py>(
     py: Python<'py>,
@@ -426,6 +430,7 @@ pub fn encode_xlsx_row<'py>(
     fmt_xf: Option<&Bound<'py, PyAny>>,
     row_attrs: Option<&Bound<'py, PyAny>>,
     link_xf: Option<&Bound<'py, PyAny>>,
+    write_r: bool,
 ) -> PyResult<Option<EncodedRow<'py>>> {
     let link_xf = match link_xf {
         Some(x) if !x.is_none() => x
@@ -485,9 +490,12 @@ pub fn encode_xlsx_row<'py>(
         link_xf,
         links: Vec::new(),
     };
-    row.out.extend_from_slice(b"<row r=\"");
-    write_u32(&mut row.out, row_idx.wrapping_add(1));
-    row.out.push(b'"');
+    row.out.extend_from_slice(b"<row");
+    if write_r {
+        row.out.extend_from_slice(b" r=\"");
+        write_u32(&mut row.out, row_idx.wrapping_add(1));
+        row.out.push(b'"');
+    }
     if let Some(attrs) = &attrs {
         row.out.extend_from_slice(attrs.as_bytes());
     }

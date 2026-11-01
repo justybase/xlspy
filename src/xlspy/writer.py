@@ -1536,6 +1536,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         row_style_ids_cache = {}
 
         row_idx = -1
+        last_written = -1  # index of the last row record written
         # Width of the whole sheet, measured as the rows stream past. The column
         # records come before the rows and use the sample, but the autofilter is
         # written after the rows and must span every column that holds a value.
@@ -1559,6 +1560,14 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             else:
                 outline_level, outline_hidden = row_outline.state_at(row_idx)
                 outline_collapsed = row_outline.collapsed_at(row_idx)
+            if (
+                len(row) == 0 and not array_ranges and not row_styles and not outline_level
+                and not outline_collapsed and row_idx not in custom_rows
+            ):
+                # An empty row with no height, flags or style needs no row record;
+                # XLSB rows carry their own index, so the gap is kept.
+                continue
+            last_written = row_idx
             use_c = not array_ranges and (not has_formatted or self._fmt_xf)
             style_ids = None
             if use_c and row_styles:
@@ -1783,6 +1792,10 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
                 buffer.seek(0)
                 buffer.truncate()
 
+        # Empty rows at the end of the data were skipped in the loop; their records are
+        # written now, so the sheet keeps its shape (an empty frame is still one row).
+        for trailing_row in range(last_written + 1, row_idx + 1):
+            buffer.write(self._row_header_record(trailing_row, 0, None, False, 0, False))
         if array_ranges:
             from ._xlsb_formulas import ArrayValue, formula_cell
             final_row = max(bounds[3] for bounds in array_ranges)

@@ -7,12 +7,13 @@ from ._untrusted import SafeZipFile, check_column_span
 from enum import IntEnum
 from typing import Dict, List, Optional, Set, Generator, Any
 from xml.parsers.expat import ParserCreate
+from ._safe_xml import harden_expat
 
 from ._errors import CellError
 from .biff_reader import BiffReader, CellType
 from .biff_utils import iter_records as _iter_biff_records
 from .excel_dates import serial_to_datetime as _serial_to_datetime
-from ._accel import HAVE_NATIVE, read_xlsb_worksheet as _c_read_xlsb_worksheet
+from ._accel import HAVE_NATIVE, read_xlsb_worksheet as _accel_read_xlsb_worksheet
 from ._accel import read_xlsb_shared_strings as _accel_read_sst
 from ._accel import read_xlsx_shared_strings as _accel_read_xlsx_sst
 from ._text import xstring_unescape
@@ -20,7 +21,7 @@ from ._xlsb_formulas import ERRORS as _XLSB_ERRORS
 
 _SST_ITEM = re.compile(r"<si>(.*?)</si>", re.DOTALL)
 _SST_TEXT = re.compile(r"<t(?:\s[^>]*)?>(.*?)</t>", re.DOTALL)
-_SST_UNSAFE = re.compile(r"<!\[CDATA\[|<!--|&#|<\w+:|<si\s|<si/>|<t[^>]*/>")
+_SST_UNSAFE = re.compile(r"<!\[CDATA\[|<!--|&#|<\w+:|<si\s|<si/>|<t\b[^>]*/>")
 
 
 def _parse_shared_strings_fast(content):
@@ -322,9 +323,9 @@ class ExcelReader:
             self._fill_bin_shared_strings()
 
     def _parse_workbook_xml(self, content: str):
-        from xml.etree import ElementTree as ET
+        from ._safe_xml import fromstring as safe_fromstring
         from ._metadata import MAIN, namespace_of, relationship_namespace
-        root = ET.fromstring(content)
+        root = safe_fromstring(content)
         main = namespace_of(root.tag) or MAIN  # Transitional or Strict
         rel = relationship_namespace(main)
         for node in root.findall(f"{{{main}}}sheets/{{{main}}}sheet"):
@@ -343,7 +344,7 @@ class ExcelReader:
         with self._archive.open(rels_path) as f:
             content = f.read().decode('utf-8')
 
-        parser = ParserCreate(namespace_separator='}')
+        parser = harden_expat(ParserCreate(namespace_separator='}'))
         parser.StartElementHandler = lambda tag, attrs: self._rels_start_elem(tag, attrs)
         parser.Parse(content, True)
 
@@ -382,7 +383,7 @@ class ExcelReader:
 
         self._shared_string_array = []
 
-        parser = ParserCreate(namespace_separator='}')
+        parser = harden_expat(ParserCreate(namespace_separator='}'))
         parser.StartElementHandler = lambda tag, attrs: None
         parser.EndElementHandler = lambda tag: None
         parser.CharacterDataHandler = lambda data: None
@@ -500,7 +501,7 @@ class ExcelReader:
                 pass
 
         h = StylesHandler(self._styles_cell_xfs_array)
-        parser = ParserCreate(namespace_separator='}')
+        parser = harden_expat(ParserCreate(namespace_separator='}'))
         parser.StartElementHandler = h.start
         parser.EndElementHandler = h.end
         parser.CharacterDataHandler = h.chars
@@ -563,7 +564,7 @@ class ExcelReader:
             raw = f.read()
 
         if HAVE_NATIVE:
-            rows = _c_read_xlsb_worksheet(
+            rows = _accel_read_xlsb_worksheet(
                 raw,
                 self._shared_string_array,
                 self._styles_cell_xfs_array,

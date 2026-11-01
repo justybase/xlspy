@@ -3,7 +3,7 @@
 import codecs
 import datetime
 import re
-from xml.etree import ElementTree as ET
+from ._safe_xml import fromstring as safe_fromstring, iterparse as safe_iterparse
 
 from ._errors import CellError
 from ._metadata import MAIN, namespace_of
@@ -122,7 +122,7 @@ def _iter_etree(reader, path, data_only):
     ns = MAIN
     with reader._archive.open(path) as stream:
         stack = []
-        for event, node in ET.iterparse(stream, events=("start", "end")):
+        for event, node in safe_iterparse(stream, events=("start", "end")):
             if event == "start":
                 if not stack:
                     ns = namespace_of(node.tag) or MAIN  # Transitional or Strict
@@ -237,7 +237,7 @@ def _c_rows(reader, rows, root_tag, ns):
     next_row = 1
     for item in rows:
         if isinstance(item, bytes):
-            root = ET.fromstring((root_tag + item.decode("utf-8") + "</worksheet>").encode("utf-8"))
+            root = safe_fromstring((root_tag + item.decode("utf-8") + "</worksheet>").encode("utf-8"))
             row_number, cells = _row_from_element(reader, root[0], ns, next_row, True, None)
             rows.resume(row_number)
         else:
@@ -259,7 +259,7 @@ def _iter_fast(reader, stream, probe):
             try:
                 row_number, cells = _fast_row(sheet, match.group(1), match.group(2), next_row)
             except _Fallback:
-                root = ET.fromstring((root_tag + match.group(0) + "</worksheet>").encode("utf-8"))
+                root = safe_fromstring((root_tag + match.group(0) + "</worksheet>").encode("utf-8"))
                 row_number, cells = _row_from_element(reader, root[0], ns, next_row, True, None)
             next_row = row_number + 1
             yield row_number, cells

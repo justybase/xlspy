@@ -725,7 +725,8 @@ def test_open_style_ranges(tmp_path, writer_cls, ext):
         sheet = archive.read(f"xl/worksheets/sheet1.{'xml' if ext == 'xlsx' else 'bin'}")
     # Only the written rows are styled: an open range adds no empty rows.
     if ext == "xlsx":
-        assert sheet.count(b"<row ") == 50
+        # Dense rows have no r attribute, so count the tags, not the attributes.
+        assert len(re.findall(rb"<row[ >]", sheet)) == 50
     if ext == "xlsx":
         loaded = _cell_styles_via_openpyxl(path)
         assert loaded["B50"].font.b and loaded["C1"].font.b and not loaded["D1"].font.b

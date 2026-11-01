@@ -265,8 +265,12 @@ def test_collapsed_summary_row_survives_row_metadata_save(tmp_path, load):
         for name in original.namelist():
             data = original.read(name)
             if name == "xl/worksheets/sheet1.xml":
-                data = data.replace(b'<row r="2">', b'<row r="2" outlineLevel="1" hidden="1">')
-                data = data.replace(b'<row r="3">', b'<row r="3" collapsed="1">')
+                # Dense rows carry no r, so the second and third <row> tags are replaced by position.
+                tags = list(re.finditer(rb"<row\b[^>]*>", data))
+                second, third = tags[1], tags[2]
+                data = (data[:second.start()] + b'<row r="2" outlineLevel="1" hidden="1">'
+                        + data[second.end():third.start()] + b'<row r="3" collapsed="1">'
+                        + data[third.end():])
             archive.writestr(name, data)
 
     workbook = load(source)

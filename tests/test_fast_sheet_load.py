@@ -200,7 +200,7 @@ def test_native_model_rows_match_python_rows(tmp_path, monkeypatch, data_only):
     from xlspy import _accel
     from xlspy.workbook import load_workbook as xlspy_load
 
-    if _accel._c_read_xlsx_worksheet is None:
+    if _accel._native_read_xlsx_worksheet is None:
         pytest.skip("native extension not built")
     source = openpyxl.Workbook()
     sheet = source.active
@@ -228,7 +228,7 @@ def test_native_model_rows_match_python_rows(tmp_path, monkeypatch, data_only):
         expected = _model_snapshot(with_c)
     finally:
         with_c.close()
-    monkeypatch.setattr(_accel, "_c_read_xlsx_worksheet", None)
+    monkeypatch.setattr(_accel, "_native_read_xlsx_worksheet", None)
     python = xlspy_load(path, data_only=data_only)
     try:
         assert _model_snapshot(python) == expected

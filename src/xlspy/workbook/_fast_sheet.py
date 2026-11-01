@@ -11,7 +11,7 @@ element-by-element reader.
 from __future__ import annotations
 
 import datetime as _datetime
-from xml.etree import ElementTree as ET
+from .._safe_xml import fromstring as safe_fromstring
 
 from .. import _accel, _xlsx_read
 from .._metadata import MAIN
@@ -37,8 +37,8 @@ def read_sheet_data(sheet, package, sheet_path, style_table, *, data_only, date_
         if probe is None or probe[3] != MAIN:
             return None
         text, decoder, root_tag, _ns, raw, head = probe
-        if _accel._c_read_xlsx_worksheet is not None:
-            return _load_rows_c(
+        if _accel._native_read_xlsx_worksheet is not None:
+            return _load_rows_native(
                 sheet, stream, raw, root_tag, head, style_table,
                 data_only, date_1904, shared_strings, rich_text,
             )
@@ -51,12 +51,12 @@ def read_sheet_data(sheet, package, sheet_path, style_table, *, data_only, date_
 _DATE_KINDS = {None: 0, "date": 1, "time": 2, "duration": 3}
 
 
-def _load_rows_c(sheet, stream, raw, root_tag, head, style_table,
-                 data_only, date_1904, shared_strings, rich_text):
+def _load_rows_native(sheet, stream, raw, root_tag, head, style_table,
+                      data_only, date_1904, shared_strings, rich_text):
     """The native scanner creates the cells of plain rows; the rows it leaves (formulas,
     row attributes, unusual markup) go through ElementTree as in ``_load_rows``."""
     kinds = [_DATE_KINDS[_date_kind(style.number_format)] for style in style_table.styles]
-    rows = _accel._c_read_xlsx_worksheet(
+    rows = _accel._native_read_xlsx_worksheet(
         stream, raw, shared_strings, kinds, date_1904,
         (Cell, CELL_SLOTS, sheet, sheet._cells, data_only, rich_text),
     )
@@ -64,9 +64,13 @@ def _load_rows_c(sheet, stream, raw, root_tag, head, style_table,
     max_row = max_column = 0
     shared: dict = {}
     for item in rows:
-        root = ET.fromstring((root_tag + item.decode("utf-8") + "</worksheet>").encode("utf-8"))
+        root = safe_fromstring((root_tag + item.decode("utf-8") + "</worksheet>").encode("utf-8"))
+        # Rows the native scanner loaded itself are not yielded, so its own count is the
+        # one that knows which number a row without r gets.
+        expected = rows.next_row()
         row_number, row_max, column_max = _load_row(
-            sheet, root[0], next_row, style_table, data_only=data_only,
+            sheet, root[0], next_row if expected is None else expected, style_table,
+            data_only=data_only,
             date_1904=date_1904, shared=shared, shared_strings=shared_strings,
             rich_text=rich_text,
         )
@@ -239,7 +243,7 @@ def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
         state["max_column"] = max_column
 
     def slow_row(row_text):
-        root = ET.fromstring((root_tag + row_text + "</worksheet>").encode("utf-8"))
+        root = safe_fromstring((root_tag + row_text + "</worksheet>").encode("utf-8"))
         row_number, row_max, column_max = _load_row(
             sheet, root[0], state["next_row"], style_table, data_only=data_only,
             date_1904=date_1904, shared=shared, shared_strings=shared_strings,

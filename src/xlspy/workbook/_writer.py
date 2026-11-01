@@ -56,24 +56,27 @@ def _cell_values(sheet: Worksheet):
             yield list(row)
         return
     max_row = max(sheet.max_row, 1)
-    max_column = max(sheet.max_column, 1)
+    # A row past the last cell still goes out when it has a height, a flag or an outline
+    # level (openpyxl writes such rows too); its <row> carries the attributes.
+    for number, dimension in sheet.row_dimensions.items():
+        if number > max_row and (dimension.height or dimension.hidden or dimension.outlineLevel or dimension.collapsed):
+            max_row = number
     style_at = sheet._workbook._styles.style_at
     styles: dict[int, Style] = {}
     plain_types = _PLAIN_TYPES
-    columns = range(1, max_column + 1)
     cells = sheet._cells
     for row_number in range(1, max_row + 1):
         row_cells = cells.get(row_number)
         if not row_cells:
-            yield [None] * max_column
+            # An empty row: the writers count rows by position, so it is still yielded.
+            yield []
             continue
-        get = row_cells.get
-        row = []
-        for column in columns:
-            cell = get(column)
-            if cell is None:
-                row.append(None)
-                continue
+        # Each row stops at its last cell (styled empty cells are in
+        # ``_cells`` too, so their columns are kept). A missing trailing
+        # value is an empty cell, so the row never builds a list the width of
+        # the whole sheet.
+        row = [None] * max(row_cells)
+        for column, cell in row_cells.items():
             if cell._formula is None and cell._hyperlink is None:
                 value = cell._value
                 if type(value) not in plain_types:
@@ -90,7 +93,7 @@ def _cell_values(sheet: Worksheet):
                 # The writers make first-row text bold by default; a model
                 # cell keeps the look it has, as in openpyxl.
                 value = (value, _PLAIN)
-            row.append(value)
+            row[column - 1] = value
         yield row
 
 

@@ -1732,6 +1732,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         link_xf = self._style_xf_map.get(HYPERLINK_STYLE, 0)
         if table_headers:
             data = capture_table_headers(data, table_headers, header_rows)
+        last_written = -1  # index of the last <row> written
         for row_idx, row in enumerate(data):
             if row_idx < _WIDTH_SAMPLE_ROWS:
                 head.append(row)
@@ -1743,6 +1744,14 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 styles_for_row(row_idx, len(row), style_ranges, header_style)
                 if has_styles else _EMPTY_ROW_STYLES
             )
+            if len(row) == 0 and not row_attrs and not row_styles:
+                # Nothing to show: no <row> at all. The next row written takes its
+                # number from a gap (see write_r below), so the sheet keeps its place.
+                continue
+            # Excel numbers a <row> without r as the row after the previous one. Dense
+            # data therefore has no r attribute, and only a row after a gap carries it.
+            write_r = row_idx != last_written + 1
+            last_written = row_idx
             # The native encoder handles common scalar rows with optional style ids
             # and <row> attributes; it hands back rows it cannot write as None
             # for the Python path.
@@ -1759,14 +1768,15 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 row, ss_dict, ss_list,
                 self._sst_unique_count, self._sst_all_count,
                 row_idx, use_sst, style_ids, fmt_xf or None, row_attrs or None,
-                link_xf,
+                link_xf, write_r,
             )
             if c_row is not None:
                 row_xml, self._sst_unique_count, self._sst_all_count, links = c_row
                 buf.write(row_xml)
                 hyperlinks.extend(links)
             else:
-                text.write(f'<row r="{row_idx + 1}"{row_attrs}>')
+                row_number = f' r="{row_idx + 1}"' if write_r else ''
+                text.write(f'<row{row_number}{row_attrs}>')
                 self._write_row_cells(text, row, row_idx, row_styles, hyperlinks)
                 text.write('</row>')
                 buf.write(text.getvalue().encode('utf-8'))
@@ -1774,6 +1784,17 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 text.truncate()
                 if not link_xf:
                     link_xf = self._style_xf_map.get(HYPERLINK_STYLE, 0)
+            if buf.tell() >= _FLUSH_BYTES:
+                spool.write(buf.getvalue())
+                buf = io.BytesIO()
+        # Empty rows at the end of the data were skipped above; they are written now so
+        # the sheet keeps its shape (an empty frame is still one row). They follow the
+        # last written row directly, so none of them needs r.
+        trailing = num_rows - last_written - 1
+        while trailing > 0:
+            chunk = min(trailing, 4096)
+            buf.write(b"<row></row>" * chunk)
+            trailing -= chunk
             if buf.tell() >= _FLUSH_BYTES:
                 spool.write(buf.getvalue())
                 buf = io.BytesIO()
