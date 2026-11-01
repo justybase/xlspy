@@ -36,7 +36,7 @@ from .charts import (
     ChartMarker,
     DataLabels,
 )
-from .refs import parse_cell_range, quote_sheet_name  # noqa: F401
+from .refs import parse_cell_range, quote_sheet_name
 from .shapes import shape_frame_xml
 from .slicers import slicer_frame_xml
 

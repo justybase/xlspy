@@ -18,9 +18,9 @@ from typing import Any, Mapping, NamedTuple, cast
 
 # Chart and cell-reference models live in their own modules; they are
 # re-exported here so that ``xlspy.styles`` keeps its historical names.
-from ..charts import Chart, ChartSeries  # noqa: F401
+from ..charts import Chart as Chart, ChartSeries as ChartSeries  # re-exported: historical import path
 from ..hyperlinks import Hyperlink
-from ..refs import _column_index, column_label, parse_cell_range  # noqa: F401
+from ..refs import _column_index, column_label, parse_cell_range
 
 _EMPTY_STYLES: dict[int, Style] = {}
 
