@@ -13,11 +13,11 @@ from .. import chart_parts
 from .._metadata import REL
 from ..refs import column_label
 from ._objects import _Package
+from ..external_links import _MAIN as _MAIN
 
 _CHARTSHEET_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.chartsheet+xml"
 _DRAWING_TYPE = "application/vnd.openxmlformats-officedocument.drawing+xml"
 _CHART_TYPE = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml"
-_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
 _CHARTSHEET_XML = (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -66,7 +66,7 @@ def source_title(workbook, sheet) -> str:
     return title
 
 
-def _prefix(xml: str, namespace: str) -> str | None:
+def _namespace_prefix(xml: str, namespace: str) -> str | None:
     match = re.search(rf'xmlns:([\w.-]+)="{re.escape(namespace)}"', xml)
     return match[1] if match else None
 
@@ -84,7 +84,7 @@ def add_chartsheets(updater, workbook) -> None:
     if close is None:
         raise ValueError("workbook.xml has no sheets element")
     tag = f"{close[1] or ''}sheet"
-    rel_prefix = _prefix(workbook_xml, REL)
+    rel_prefix = _namespace_prefix(workbook_xml, REL)
     sheet_id = max((int(value) for value in re.findall(r'\bsheetId="(\d+)"', workbook_xml)), default=0)
     entries = []
     for sheet in sheets:

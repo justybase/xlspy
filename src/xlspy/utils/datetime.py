@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import datetime
 import re
+from ..excel_dates import MAC_EPOCH as MAC_EPOCH
+from ..excel_dates import WINDOWS_EPOCH as WINDOWS_EPOCH
 
-WINDOWS_EPOCH = datetime.datetime(1899, 12, 30)
-MAC_EPOCH = datetime.datetime(1904, 1, 1)
 SECS_PER_DAY = 24 * 60 * 60
 
 _DURATION_RE = re.compile(

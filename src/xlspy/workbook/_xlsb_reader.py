@@ -15,7 +15,7 @@ from itertools import chain as _chain
 
 from .._accel import xlsb_load_cells
 from .._errors import CellError
-from .._xlsb_read import cached_cell, formula_groups, formula_text, iter_indexed_rows
+from .._xlsb_read import cached_cell, formula_groups, formula_text, iter_xlsb_indexed_rows
 from .._xlsb_styles import XlsbStyleTable
 from .._xlsb_validation import dval_rule
 from ..biff_utils import iter_record_payloads
@@ -105,7 +105,7 @@ def _set_loaded_cell(sheet, row, column, value, style_id, formula_text=None):
 
 
 def _load_cells_python(sheet, reader, name, sheet_data, data_only):
-    for row_number, cells in iter_indexed_rows(
+    for row_number, cells in iter_xlsb_indexed_rows(
         reader, name, data_only=data_only, data=sheet_data, with_styles=True,
     ):
         for column, value, style_id in cells:

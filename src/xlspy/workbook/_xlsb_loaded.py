@@ -39,7 +39,7 @@ def remember_workbook_state(workbook) -> None:
     _props.remember(workbook)
 
 
-def _unsupported(what: str):
+def _unsupported_loaded_feature(what: str):
     return UnsupportedFeatureError(
         f"{what} cannot be saved into a loaded XLSB workbook yet; "
         "build the workbook with Workbook() and save it as .xlsb instead"
@@ -59,7 +59,7 @@ def _reject_unsupported_sheet_edits(sheet) -> None:
     before = saved.get("tables", ())
     # Tables can be added; changing or removing a loaded one is not saved yet.
     if current["tables"][:len(before)] != before:
-        raise _unsupported("table changes")
+        raise _unsupported_loaded_feature("table changes")
     check_unread(sheet, [
         name for name in ("data_validations", "conditional_formatting")
         if current[name] != saved.get(name, ())
@@ -74,7 +74,7 @@ def _reject_unsupported_edits(workbook) -> None:
             "style changes are not supported when saving a loaded XLSB workbook"
         )
     if styles.is_modified() and not getattr(workbook, "_xlsb_styles_path", None):
-        raise _unsupported("style changes (the file has no style sheet)")
+        raise _unsupported_loaded_feature("style changes (the file has no style sheet)")
     for sheet in workbook._sheets:
         _reject_unsupported_sheet_edits(sheet)
     check_chartsheets(workbook)

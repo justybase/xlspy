@@ -30,10 +30,10 @@ def _base_file(tmp_path):
 
 def _both_paths(path, monkeypatch):
     with ExcelReader(str(path)) as reader:
-        fast = list(_xlsx_read.iter_indexed_rows(reader, "Sheet1", data_only=True))
+        fast = list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1", data_only=True))
     monkeypatch.setattr(_xlsx_read, "_probe_fast", lambda stream: None)
     with ExcelReader(str(path)) as reader:
-        slow = list(_xlsx_read.iter_indexed_rows(reader, "Sheet1", data_only=True))
+        slow = list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1", data_only=True))
     monkeypatch.undo()
     return fast, slow
 
@@ -47,15 +47,15 @@ def _fast_path_applies(path):
 def _all_paths(path, monkeypatch):
     """The same sheet read by C, by the Python fast path, and by ElementTree."""
     with ExcelReader(str(path)) as reader:
-        from_c = list(_xlsx_read.iter_indexed_rows(reader, "Sheet1", data_only=True))
+        from_c = list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1", data_only=True))
     with monkeypatch.context() as patch:
         patch.setattr(_xlsx_read._accel, "read_xlsx_worksheet", lambda *args: None)
         with ExcelReader(str(path)) as reader:
-            from_python = list(_xlsx_read.iter_indexed_rows(reader, "Sheet1", data_only=True))
+            from_python = list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1", data_only=True))
     with monkeypatch.context() as patch:
         patch.setattr(_xlsx_read, "_probe_fast", lambda stream: None)
         with ExcelReader(str(path)) as reader:
-            from_tree = list(_xlsx_read.iter_indexed_rows(reader, "Sheet1", data_only=True))
+            from_tree = list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1", data_only=True))
     return from_c, from_python, from_tree
 
 
@@ -228,7 +228,7 @@ def test_native_reader_handles_tiny_stream_chunks(tmp_path):
     assert probe is not None
     rest = raw[cut:]
     with ExcelReader(str(path)) as reader:
-        expected = list(_xlsx_read.iter_indexed_rows(reader, "Sheet1"))
+        expected = list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1"))
         for size in (1, 3, 7, 64):
             rows = _accel.read_xlsx_worksheet(
                 _Trickle(rest, size), probe[4], reader._shared_string_array,
@@ -256,12 +256,12 @@ def test_native_reader_honors_the_1904_date_system(tmp_path, monkeypatch):
 
     with ExcelReader(str(path)) as reader:
         reader._date_1904 = True
-        from_c = list(_xlsx_read.iter_indexed_rows(reader, "Sheet1"))
+        from_c = list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1"))
     with monkeypatch.context() as patch:
         patch.setattr(_xlsx_read._accel, "read_xlsx_worksheet", lambda *args: None)
         with ExcelReader(str(path)) as reader:
             reader._date_1904 = True
-            from_python = list(_xlsx_read.iter_indexed_rows(reader, "Sheet1"))
+            from_python = list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1"))
     _same_typed_rows(from_c, from_python)
     assert [cell for _number, cells in from_c for _col, cell in cells] == [
         datetime.datetime(1904, 1, 1),
@@ -287,12 +287,12 @@ def test_native_reader_propagates_number_errors(tmp_path, monkeypatch):
     replace_parts(path, {SHEET: _sheet('<row r="1"><c r="A1"><v>abc</v></c></row>')})
     with pytest.raises(ValueError):
         with ExcelReader(str(path)) as reader:
-            list(_xlsx_read.iter_indexed_rows(reader, "Sheet1"))
+            list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1"))
     with monkeypatch.context() as patch:
         patch.setattr(_xlsx_read._accel, "read_xlsx_worksheet", lambda *args: None)
         with pytest.raises(ValueError):
             with ExcelReader(str(path)) as reader:
-                list(_xlsx_read.iter_indexed_rows(reader, "Sheet1"))
+                list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1"))
 
 
 def test_native_reader_propagates_invalid_utf8(tmp_path):
@@ -303,7 +303,7 @@ def test_native_reader_propagates_invalid_utf8(tmp_path):
     replace_parts(path, {SHEET: xml})
     with pytest.raises(UnicodeDecodeError):
         with ExcelReader(str(path)) as reader:
-            list(_xlsx_read.iter_indexed_rows(reader, "Sheet1"))
+            list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1"))
 
 
 def test_native_reader_propagates_truncated_utf8(tmp_path):
@@ -314,7 +314,7 @@ def test_native_reader_propagates_truncated_utf8(tmp_path):
     replace_parts(path, {SHEET: xml})
     with pytest.raises(UnicodeDecodeError):
         with ExcelReader(str(path)) as reader:
-            list(_xlsx_read.iter_indexed_rows(reader, "Sheet1"))
+            list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1"))
 
 
 def test_values_match_across_chunk_boundaries(tmp_path, monkeypatch):
@@ -385,7 +385,7 @@ def test_cell_references_read_alike_on_every_path(tmp_path, monkeypatch, ref):
                 if mode == "tree":
                     patch.setattr(_xlsx_read, "_probe_fast", lambda stream: None)
                 with ExcelReader(str(path)) as reader, pytest.raises(ValueError):
-                    list(_xlsx_read.iter_indexed_rows(reader, "Sheet1", data_only=True))
+                    list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1", data_only=True))
     else:
         expected = [(1, [(0, 1)]), (2, [(0, 2), (column, 3)])]
         assert list(_all_paths(path, monkeypatch)) == [expected] * 3

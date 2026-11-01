@@ -13,7 +13,7 @@ from xml.sax.saxutils import escape
 
 from .._metadata import CT, PKG_REL
 from ..doc_properties import (
-    _CORE_REL, _CORE_TYPE, _CUSTOM_FMTID, _CUSTOM_REL, _CUSTOM_TYPE, _check_text, _custom_value, _utc,
+    _CORE_REL, _CORE_TYPE, _CUSTOM_FMTID, _CUSTOM_REL, _CUSTOM_TYPE, _check_doc_text, _custom_value, _utc,
 )
 
 _CORE_PATH, _CUSTOM_PATH = "docProps/core.xml", "docProps/custom.xml"
@@ -41,7 +41,7 @@ def core_xml(props) -> bytes:
     for name, tag in _CORE:
         value = getattr(props, name)
         if value is not None:
-            body.append(f"<{tag}>{escape(_check_text(name, str(value)))}</{tag}>")
+            body.append(f"<{tag}>{escape(_check_doc_text(name, str(value)))}</{tag}>")
     for name, tag in _DATES:
         value = getattr(props, name)
         if isinstance(value, _datetime.datetime):

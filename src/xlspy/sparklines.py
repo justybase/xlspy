@@ -38,7 +38,7 @@ def _argb(value: str, name: str) -> str:
     return "FF" + match[1].upper()
 
 
-def _cell(column: int, row: int) -> str:
+def _cell_ref(column: int, row: int) -> str:
     return f"{column_label(column)}{row + 1}"
 
 
@@ -101,7 +101,7 @@ def _expand(group: SparklineGroup, sheet_name: str) -> list[tuple[str, str]]:
     dc1, dr1, dc2, dr2 = parse_cell_range(ref)
     lc1, lr1, lc2, lr2 = parse_cell_range(group.location)
     if (lc1, lr1) == (lc2, lr2):
-        return [(_cell(lc1, lr1), f"{prefix}{ref}")]
+        return [(_cell_ref(lc1, lr1), f"{prefix}{ref}")]
     if lc1 == lc2:
         count = lr2 - lr1 + 1
         if dr2 - dr1 + 1 != count:
@@ -110,8 +110,8 @@ def _expand(group: SparklineGroup, sheet_name: str) -> list[tuple[str, str]]:
                 f"has {dr2 - dr1 + 1} rows; a column of cells needs one data row each"
             )
         return [
-            (_cell(lc1, lr1 + i),
-             f"{prefix}{_cell(dc1, dr1 + i)}:{_cell(dc2, dr1 + i)}")
+            (_cell_ref(lc1, lr1 + i),
+             f"{prefix}{_cell_ref(dc1, dr1 + i)}:{_cell_ref(dc2, dr1 + i)}")
             for i in range(count)
         ]
     if lr1 == lr2:
@@ -122,8 +122,8 @@ def _expand(group: SparklineGroup, sheet_name: str) -> list[tuple[str, str]]:
                 f"has {dc2 - dc1 + 1} columns; a row of cells needs one data column each"
             )
         return [
-            (_cell(lc1 + i, lr1),
-             f"{prefix}{_cell(dc1 + i, dr1)}:{_cell(dc1 + i, dr2)}")
+            (_cell_ref(lc1 + i, lr1),
+             f"{prefix}{_cell_ref(dc1 + i, dr1)}:{_cell_ref(dc1 + i, dr2)}")
             for i in range(count)
         ]
     raise ValueError(
@@ -144,7 +144,7 @@ def normalize_sparklines(sparklines) -> list[SparklineGroup]:
     return groups
 
 
-def _group_xml(group: SparklineGroup, sheet_name: str) -> str:
+def _sparkline_group_xml(group: SparklineGroup, sheet_name: str) -> str:
     attrs = []
     kind_type = _KIND_TYPES[group.kind]
     if kind_type is not None:
@@ -192,7 +192,7 @@ def sparklines_ext(groups: list[SparklineGroup], sheet_name: str) -> str:
     """The sparkline ``<ext>`` for a sheet's ``extLst``, or ``""`` when there are no groups."""
     if not groups:
         return ""
-    body = "".join(_group_xml(group, sheet_name) for group in groups)
+    body = "".join(_sparkline_group_xml(group, sheet_name) for group in groups)
     return ext(
         EXT_SPARKLINES,
         f'<x14:sparklineGroups xmlns:xm="{XM}">{body}</x14:sparklineGroups>',

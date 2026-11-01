@@ -6,8 +6,8 @@ import posixpath
 from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
+from .chart_reader import _REL as _REL
 
-_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
 _MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
@@ -28,7 +28,7 @@ class ExternalLink:
     part: str | None = None
 
 
-def _relationships(package, part: str) -> dict[str, tuple[str, str]]:
+def _read_link_relationships(package, part: str) -> dict[str, tuple[str, str]]:
     path = posixpath.join(posixpath.dirname(part), "_rels", posixpath.basename(part) + ".rels")
     if not package.has(path):
         return {}
@@ -42,7 +42,7 @@ def _relationships(package, part: str) -> dict[str, tuple[str, str]]:
     }
 
 
-def _resolve(part: str, target: str) -> str:
+def _resolve_link_target(part: str, target: str) -> str:
     if target.startswith("/"):
         return target[1:]
     return posixpath.normpath(posixpath.join(posixpath.dirname(part), target))
@@ -51,7 +51,7 @@ def _resolve(part: str, target: str) -> str:
 def _path_target(package, part: str, rid: str | None) -> str | None:
     if rid is None:
         return None
-    target = _relationships(package, part).get(rid)
+    target = _read_link_relationships(package, part).get(rid)
     return target[0] if target else None
 
 
@@ -60,7 +60,7 @@ def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
     book = "xl/workbook.bin" if binary else "xl/workbook.xml"
     if not package.has(book):
         return []
-    relationships = _relationships(package, book)
+    relationships = _read_link_relationships(package, book)
     order: list[str] = []
     if binary:
         from ._xlsb_metadata import read_wide, records
@@ -80,12 +80,12 @@ def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
     links: list[ExternalLink] = []
     for position, rid in enumerate(order, start=1):
         target = relationships.get(rid)
-        if target is None or not package.has(_resolve(book, target[0])):
+        if target is None or not package.has(_resolve_link_target(book, target[0])):
             # Keep a placeholder: formulas number links by their position, so
             # dropping this one moved every later [n] onto the wrong workbook.
             links.append(ExternalLink(position, None))
             continue
-        part = _resolve(book, target[0])
+        part = _resolve_link_target(book, target[0])
         link = ExternalLink(position, None, _sheet_names(package, part, binary), part)
         link.target = _path_target(package, part, _target_rid(package, part, binary))
         links.append(link)

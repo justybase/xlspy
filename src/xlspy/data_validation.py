@@ -8,6 +8,7 @@ from xml.sax.saxutils import escape
 
 from .excel_dates import datetime_to_serial
 from .refs import parse_cell_range
+from ._text import _attr as _attr
 
 # User-facing type names and their OOXML spelling.
 VALIDATION_TYPES = {
@@ -40,7 +41,7 @@ _MAX_ERROR_TITLE = 32
 _MAX_ERROR = 255
 
 
-def _check_text(value, kind: str, limit: int) -> None:
+def _check_validation_text(value, kind: str, limit: int) -> None:
     if value is None:
         return
     if not isinstance(value, str):
@@ -49,7 +50,7 @@ def _check_text(value, kind: str, limit: int) -> None:
         raise ValueError(f"{kind} must be at most {limit} characters")
 
 
-def _number_text(number: float) -> str:
+def _validation_number_text(number: float) -> str:
     return str(int(number)) if float(number).is_integer() else repr(float(number))
 
 
@@ -82,11 +83,11 @@ def _operand_text(value, kind: str) -> str:
         raise TypeError(f"{kind} must be a number, date, time, string or formula")
     if isinstance(value, datetime.time):
         seconds = value.hour * 3600 + value.minute * 60 + value.second
-        return _number_text(seconds / 86400)
+        return _validation_number_text(seconds / 86400)
     if isinstance(value, (datetime.datetime, datetime.date)):
-        return _number_text(datetime_to_serial(value))
+        return _validation_number_text(datetime_to_serial(value))
     if isinstance(value, (int, float)):
-        return _number_text(value)
+        return _validation_number_text(value)
     if isinstance(value, str):
         if not value:
             raise ValueError(f"{kind} must not be empty")
@@ -94,7 +95,7 @@ def _operand_text(value, kind: str) -> str:
     raise TypeError(f"{kind} must be a number, date, time, string or formula")
 
 
-def _normalize_sqref(sqref) -> str:
+def _normalize_validation_sqref(sqref) -> str:
     if isinstance(sqref, str):
         parts = sqref.split()
     elif isinstance(sqref, (list, tuple)) and all(isinstance(part, str) for part in sqref):
@@ -146,7 +147,7 @@ class DataValidation:
                 f"invalid validation type {self.type!r}; "
                 f"expected one of {sorted(VALIDATION_TYPES)}"
             )
-        object.__setattr__(self, "sqref", _normalize_sqref(self.sqref))
+        object.__setattr__(self, "sqref", _normalize_validation_sqref(self.sqref))
         if self.error_style not in ERROR_STYLES:
             raise ValueError(
                 f"invalid error_style {self.error_style!r}; "
@@ -157,10 +158,10 @@ class DataValidation:
         self._check_operands()
 
     def _check_messages(self) -> None:
-        _check_text(self.prompt_title, "prompt_title", _MAX_PROMPT_TITLE)
-        _check_text(self.prompt, "prompt", _MAX_PROMPT)
-        _check_text(self.error_title, "error_title", _MAX_ERROR_TITLE)
-        _check_text(self.error, "error", _MAX_ERROR)
+        _check_validation_text(self.prompt_title, "prompt_title", _MAX_PROMPT_TITLE)
+        _check_validation_text(self.prompt, "prompt", _MAX_PROMPT)
+        _check_validation_text(self.error_title, "error_title", _MAX_ERROR_TITLE)
+        _check_validation_text(self.error, "error", _MAX_ERROR)
         if self.prompt is not None and not self.show_input_message:
             raise ValueError("prompt text is set but show_input_message is False")
         if self.error is not None and not self.show_error_message:
@@ -246,10 +247,6 @@ class DataValidation:
     @property
     def imeMode(self) -> str | None:
         return self.ime_mode
-
-
-def _attr(value: str) -> str:
-    return escape(value, {'"': "&quot;", "\n": "&#10;"})
 
 
 def normalize_validations(validations) -> list[DataValidation]:

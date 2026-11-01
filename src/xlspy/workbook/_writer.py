@@ -43,9 +43,9 @@ def _value_for_new(cell):
 
 
 # An empty style: written as the default look instead of the bold header.
-_PLAIN = Style()
+_PLAIN_STYLE = Style()
 # Values that _value_for_new returns unchanged (no formula or hyperlink).
-_PLAIN_TYPES = frozenset({int, float, bool, str, _datetime.date, _datetime.datetime, type(None)})
+_WRITER_PLAIN_TYPES = frozenset({int, float, bool, str, _datetime.date, _datetime.datetime, type(None)})
 
 
 def _cell_values(sheet: Worksheet):
@@ -63,7 +63,7 @@ def _cell_values(sheet: Worksheet):
             max_row = number
     style_at = sheet._workbook._styles.style_at
     styles: dict[int, Style] = {}
-    plain_types = _PLAIN_TYPES
+    plain_types = _WRITER_PLAIN_TYPES
     cells = sheet._cells
     for row_number in range(1, max_row + 1):
         row_cells = cells.get(row_number)
@@ -92,7 +92,7 @@ def _cell_values(sheet: Worksheet):
             elif row_number == 1 and isinstance(value, (str, CellRichText)):
                 # The writers make first-row text bold by default; a model
                 # cell keeps the look it has, as in openpyxl.
-                value = (value, _PLAIN)
+                value = (value, _PLAIN_STYLE)
             row[column - 1] = value
         yield row
 

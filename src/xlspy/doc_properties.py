@@ -41,7 +41,7 @@ _APP_FIELDS = {"manager": "Manager", "company": "Company"}
 _MAX_CUSTOM_NAME = 255
 
 
-def _check_text(name: str, value) -> str:
+def _check_doc_text(name: str, value) -> str:
     if not isinstance(value, str):
         raise TypeError(f"{name} must be a str")
     if _NOT_XML.search(value):
@@ -74,7 +74,7 @@ def _custom_value(name: str, value) -> str:
     if isinstance(value, _datetime.date):
         return f"<vt:filetime>{value.isoformat()}T00:00:00Z</vt:filetime>"
     if isinstance(value, str):
-        return f"<vt:lpwstr>{escape(_check_text(f'custom property {name!r}', value))}</vt:lpwstr>"
+        return f"<vt:lpwstr>{escape(_check_doc_text(f'custom property {name!r}', value))}</vt:lpwstr>"
     raise TypeError(
         f"custom property {name!r} must be str, int, float, bool, date or datetime"
     )
@@ -120,7 +120,7 @@ class DocumentPropertiesMixin:
             "manager": manager, "company": company, "category": category,
             "keywords": keywords, "comments": comments, "status": status,
         }
-        props: dict[str, Any] = {key: _check_text(key, value) for key, value in values.items() if value is not None}
+        props: dict[str, Any] = {key: _check_doc_text(key, value) for key, value in values.items() if value is not None}
         if created is None:
             created = _datetime.datetime.now(_datetime.timezone.utc)
         props["created"] = _utc(created, "created")
@@ -130,7 +130,7 @@ class DocumentPropertiesMixin:
                 raise TypeError("custom must be a dict of property names to values")
             seen = set()
             for name, value in custom.items():
-                _check_text("custom property name", name)
+                _check_doc_text("custom property name", name)
                 if not name.strip() or len(name) > _MAX_CUSTOM_NAME:
                     raise ValueError(f"custom property names must be 1-{_MAX_CUSTOM_NAME} characters")
                 if name.casefold() in seen:

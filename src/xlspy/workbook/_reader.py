@@ -89,7 +89,7 @@ def _element_xml(element) -> str:
 
 
 
-def _text(node, path: str) -> str | None:
+def _child_text(node, path: str) -> str | None:
     found = node.find(path) if node is not None else None
     return found.text if found is not None else None
 
@@ -167,7 +167,7 @@ def _number_value(number: float, date_kind: str | None, date_1904: bool):
     return int(number) if number.is_integer() else number
 
 
-def _value(cell: ET.Element, style, *, date_1904: bool, shared_strings: list[str],
+def _read_cell_value(cell: ET.Element, style, *, date_1904: bool, shared_strings: list[str],
            rich_text: bool = False):
     kind = cell.get("t", "n")
     if kind == "inlineStr":
@@ -230,7 +230,7 @@ def _cell_data(cell: ET.Element, style_table: XlsxStyleTable, *, data_only: bool
             else:
                 text = ""
         return None, "f", text, style_id
-    value = _value(
+    value = _read_cell_value(
         cell, style, date_1904=date_1904, shared_strings=shared_strings,
         rich_text=rich_text,
     )
@@ -1269,9 +1269,9 @@ class ReadOnlyWorksheet(Worksheet):
 
     def _indexed_rows(self):
         if self._reader._is_xlsb:
-            from .._xlsb_read import iter_indexed_rows as iter_xlsb_rows
+            from .._xlsb_read import iter_xlsb_indexed_rows as iter_xlsb_rows
             return iter_xlsb_rows(self._reader, self.title, data_only=self._data_only)
-        from .._xlsx_read import iter_indexed_rows as iter_xlsx_rows
+        from .._xlsx_read import iter_xlsx_indexed_rows as iter_xlsx_rows
         return iter_xlsx_rows(self._reader, self.title, self._data_only)
 
     def _cells_by_row(self, min_col, min_row, max_col, max_row, values_only):

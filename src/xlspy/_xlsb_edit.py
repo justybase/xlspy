@@ -18,7 +18,7 @@ from ._safe_xml import fromstring as safe_fromstring
 from ._metadata import CT, REL, PKG_REL, DefinedName, SheetProtection, WorkbookProtection, cell_ref
 from ._text import check_cell_text
 from ._xlsb_metadata import (
-    COMMENTS_TYPE, LEGACY_DRAWING, SHEET_PROTECTION, SHEET_PROTECTION_ISO,
+    _XLSB_COMMENTS_TYPE, LEGACY_DRAWING, SHEET_PROTECTION, SHEET_PROTECTION_ISO,
     BOOK_PROTECTION, BOOK_PROTECTION_ISO, records, replace_records, parse_comments,
     comments_bin, wide_string, read_wide, sheet_protection_bin,
     workbook_protection_bin, check_merged_refs,
@@ -31,14 +31,14 @@ from .excel_dates import datetime_to_serial
 from .formulas import Formula
 from .refs import parse_cell_range
 from .updater_utils import unwrap_cell
+from ._xlsx_edit import _HYPERLINK_TYPE as _HYPERLINK_TYPE
 
 
-_HYPERLINK_TYPE = REL + "/hyperlink"
 _MERGE_RECORDS = frozenset({0xB0, 0xB1, 0xB2})
 # Worksheet records that follow the merged cells / the hyperlinks in schema
 # order ([MS-XLSB] 2.1.7.62): a new block is inserted before the first one found.
-_AFTER_HYPERLINKS = (0x1DD, 0x1DC, 0x1DE, 0x1DF, 0x188, 0x18A, 0x226, 0x227, 0x294, 0x82)
-_AFTER_MERGES = (0x1CD, 0x23D, 0x1EE) + _AFTER_HYPERLINKS
+_BRT_AFTER_HYPERLINKS = (0x1DD, 0x1DC, 0x1DE, 0x1DF, 0x188, 0x18A, 0x226, 0x227, 0x294, 0x82)
+_AFTER_MERGES = (0x1CD, 0x23D, 0x1EE) + _BRT_AFTER_HYPERLINKS
 
 
 def request_recalculation(data):
@@ -150,7 +150,7 @@ class XlsbEditMixin(XlsxEditMixin):
                     types.remove(node)
         if remaining:
             if not any(node.get('PartName') == '/' + cp for node in types):
-                ET.SubElement(types, f'{{{CT}}}Override', {'PartName': '/' + cp, 'ContentType': COMMENTS_TYPE})
+                ET.SubElement(types, f'{{{CT}}}Override', {'PartName': '/' + cp, 'ContentType': _XLSB_COMMENTS_TYPE})
         else:
             drop(cp, 'comments')
         if any(node.tag == f'{{{V}}}shape' for node in safe_fromstring(drawing).iter()):
@@ -273,7 +273,7 @@ class XlsbEditMixin(XlsxEditMixin):
                 rels_changed = True
         if not block and not any(r.record_id == 0x1EE for r, _ in records(data)):
             return
-        parts = {path: replace_records(data, {0x1EE}, b''.join(block), before=_AFTER_HYPERLINKS)}
+        parts = {path: replace_records(data, {0x1EE}, b''.join(block), before=_BRT_AFTER_HYPERLINKS)}
         if rels_changed:
             ET.register_namespace("", PKG_REL)
             parts[rels_name] = (
@@ -299,7 +299,7 @@ class XlsbEditMixin(XlsxEditMixin):
         context = FormulaContext(self._sheets, original_workbook)
         block = validations_bin(rules, context)
         self._apply_parts({
-            path: replace_records(data, targets, block, before=(0x1EE,) + _AFTER_HYPERLINKS),
+            path: replace_records(data, targets, block, before=(0x1EE,) + _BRT_AFTER_HYPERLINKS),
             'xl/workbook.bin': context.write_workbook(original_workbook),
         })
 
@@ -317,7 +317,7 @@ class XlsbEditMixin(XlsxEditMixin):
         block = conditional_formats_bin(formats, context, dxf_id, links)
         data, groups = without_conditional_formats(data, frozenset((links or {}).values()))
         if block:
-            data = replace_records(data, (), block, before=(0x23D, 0x1EE) + _AFTER_HYPERLINKS)
+            data = replace_records(data, (), block, before=(0x23D, 0x1EE) + _BRT_AFTER_HYPERLINKS)
         if groups:
             data = insert_extension(data, groups)
         self._apply_parts({path: data, 'xl/workbook.bin': context.write_workbook(original_workbook)})

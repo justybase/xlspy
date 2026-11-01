@@ -15,9 +15,10 @@ from .._xlsb_print import (
     BRT_END_COL_BREAKS, BRT_END_ROW_BREAKS, BRT_MARGINS, BRT_PAGE_SETUP,
     BRT_PRINT_OPTIONS, FIT_TO_PAGE_BIT, FIT_TO_PAGE_BYTE,
 )
-from .._xlsb_styles import _color
+from .._xlsb_styles import _read_brt_color
 from ..refs import column_label
 from ._model import Break, ColBreak, Pane, RowBreak, Selection
+from ._xlsb_layout import FORMAT_INFO as FORMAT_INFO
 
 ROW_HEADER = 0x00
 COL_INFO = 0x3C
@@ -25,7 +26,6 @@ WS_PROP = 0x93
 BEGIN_WS_VIEW = 0x89
 PANE = 0x97
 SELECTION = 0x98
-FORMAT_INFO = 0x1E5
 SHEET_PROTECTION = 0x217
 # Records collected for apply_sheet_records (row headers are filtered first).
 RECORDS = frozenset({
@@ -81,9 +81,9 @@ def _column_info(sheet, payload: bytes) -> None:
             dimension.style = style
 
 
-def _sheet_properties(sheet, payload: bytes) -> None:
+def _read_sheet_properties(sheet, payload: bytes) -> None:
     properties = sheet.sheet_properties
-    color = _color(payload, 3)
+    color = _read_brt_color(payload, 3)
     if color is not None and not color.auto:
         properties.tabColor = color
     if payload[FIT_TO_PAGE_BYTE] & FIT_TO_PAGE_BIT:
@@ -165,7 +165,7 @@ def _protection(sheet, payload: bytes) -> None:
     protection.set_password(f"{password:04X}" if password else None, already_hashed=True)
 
 
-def _page_setup(sheet, payload: bytes) -> None:
+def _read_xlsb_page_setup(sheet, payload: bytes) -> None:
     paper, scale, _hres, _vres, copies, first_page, width, height, flags = (
         struct.unpack_from("<8IH", payload, 0)
     )
@@ -183,7 +183,7 @@ def _page_setup(sheet, payload: bytes) -> None:
         setup.copies = copies
 
 
-def _header_footer(sheet, payload: bytes) -> None:
+def _read_header_footer(sheet, payload: bytes) -> None:
     flags = struct.unpack_from("<H", payload, 0)[0]
     footer = sheet.HeaderFooter
     footer.differentOddEven = True if flags & 0x01 else None
@@ -282,7 +282,7 @@ def apply_sheet_records(sheet, items) -> None:
             if record_id == COL_INFO:
                 _column_info(sheet, payload)
             elif record_id == WS_PROP:
-                _sheet_properties(sheet, payload)
+                _read_sheet_properties(sheet, payload)
             elif record_id == BEGIN_WS_VIEW:
                 _sheet_view(sheet, payload)
             elif record_id == PANE:
@@ -305,9 +305,9 @@ def apply_sheet_records(sheet, items) -> None:
                 (margins.left, margins.right, margins.top, margins.bottom,
                  margins.header, margins.footer) = struct.unpack_from("<6d", payload, 0)
             elif record_id == BRT_PAGE_SETUP:
-                _page_setup(sheet, payload)
+                _read_xlsb_page_setup(sheet, payload)
             elif record_id == BRT_BEGIN_HEADER_FOOTER:
-                _header_footer(sheet, payload)
+                _read_header_footer(sheet, payload)
             elif record_id in (BRT_BEGIN_ROW_BREAKS, BRT_BEGIN_COL_BREAKS):
                 breaks = []
             elif record_id == BRT_BREAK and breaks is not None:

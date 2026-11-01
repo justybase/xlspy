@@ -366,7 +366,7 @@ class XlsxEditMixin:
             raise ValueError("Worksheet sheetData element was not found")
         prefix = prefix_match[1] or ""
         # Validate and encode all input before staging any mutation.
-        encoded = {ref: _cell_value(value, self._date_1904, prefix) for ref, value in values.items()}
+        encoded = {ref: _cell_xml_value(value, self._date_1904, prefix) for ref, value in values.items()}
         sheet_data = element_pattern("sheetData").search(xml)
         body = sheet_data[0]
         pending = dict(encoded)
@@ -491,7 +491,7 @@ def _attributes(fragment):
     return attrs
 
 
-def _cell_value(value, date_1904, prefix):
+def _cell_xml_value(value, date_1904, prefix):
     if value is None:
         return None, ""
     if isinstance(value, Formula):

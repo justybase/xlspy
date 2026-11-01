@@ -56,7 +56,7 @@ def test_a_non_zip_file_raises_invalid_file_error(tmp_path, opener):
 
 
 def test_unsupported_feature_helper_is_both_xlspy_and_not_implemented():
-    error = _xlsb_loaded._unsupported("style changes")
+    error = _xlsb_loaded._unsupported_loaded_feature("style changes")
     assert isinstance(error, UnsupportedFeatureError)
     assert isinstance(error, NotImplementedError)
     assert "style changes" in str(error)

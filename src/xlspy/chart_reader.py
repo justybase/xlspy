@@ -37,7 +37,7 @@ _CHART_TAGS = {
 
 
 
-def _relationships(package, part: str) -> dict[str, tuple[str, str]]:
+def _read_chart_relationships(package, part: str) -> dict[str, tuple[str, str]]:
     path = posixpath.join(posixpath.dirname(part), "_rels", posixpath.basename(part) + ".rels")
     if not package.has(path):
         return {}
@@ -95,7 +95,7 @@ def read_drawing(package, sheet, drawing_part: str) -> None:
     """Append charts and images from one drawing part to ``sheet``."""
     if not package.has(drawing_part):
         return
-    relationships = _relationships(package, drawing_part)
+    relationships = _read_chart_relationships(package, drawing_part)
     root = safe_fromstring(package.get(drawing_part))
     # Where each object is in the file, so that a save can remove it.
     sources = sheet.__dict__.setdefault("_drawing_sources", [])
@@ -143,7 +143,7 @@ def read_drawing(package, sheet, drawing_part: str) -> None:
 
 
 def read_chartsheet(package, part: str, title: str, chartsheet) -> None:
-    relationships = _relationships(package, part)
+    relationships = _read_chart_relationships(package, part)
     drawing = next(
         (
             target for target, kind in relationships.values()

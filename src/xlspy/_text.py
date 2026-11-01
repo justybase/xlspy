@@ -12,6 +12,13 @@ underscore of literal text that already looks like ``_xHHHH_`` is written as
 """
 
 import re
+from xml.sax import saxutils
+
+
+def _attr(value: object) -> str:
+    """A value for a double-quoted XML attribute. Newlines become ``&#10;``, so
+    a parser does not turn them into spaces."""
+    return saxutils.escape(str(value), {'"': "&quot;", "\n": "&#10;"})
 
 MAX_CELL_TEXT_UNITS = 32767
 # Each code point is one or two UTF-16 units, so text this short always fits.

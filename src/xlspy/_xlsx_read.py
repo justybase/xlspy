@@ -12,6 +12,7 @@ from ._text import xstring_unescape
 from . import _accel
 from .excel_dates import serial_to_datetime
 from .refs import cell_position, column_label, parse_cell_range, shift_references
+from .refs import _column_index as _column_index
 
 # Fast path for data_only reads: regular expressions over the raw sheet XML.
 # Anything they cannot handle exactly is handed to the ElementTree path, row by row.
@@ -44,7 +45,7 @@ def translate_formula(text, origin, target):
     return shift_references(text, r2 - r1, c2 - c1)
 
 
-def iter_indexed_rows(reader, sheet_name, data_only=True):
+def iter_xlsx_indexed_rows(reader, sheet_name, data_only=True):
     """Yield ``(row_number, [(column, value), ...])`` with worksheet coordinates
     (1-based rows, 0-based columns). Rows absent from the XML are not yielded."""
     rid = reader._worksheet_name_to_id[sheet_name]
@@ -62,14 +63,14 @@ def iter_indexed_rows(reader, sheet_name, data_only=True):
     yield from _iter_etree(reader, path, data_only)
 
 
-def iter_rows(reader, sheet_name, data_only=True):
+def read_xlsx_rows(reader, sheet_name, data_only=True):
     """Yield one list per worksheet row. Rows absent from the XML between present
     rows are emitted as empty rows, so row positions match the sheet. The first
     row present in the XML fixes the width that other rows are padded to; rows
     before it, when they are absent, are empty lists."""
     first_width = None
     next_row = 1
-    for row_number, cells in iter_indexed_rows(reader, sheet_name, data_only):
+    for row_number, cells in iter_xlsx_indexed_rows(reader, sheet_name, data_only):
         for _ in range(row_number - next_row):
             yield [None] * (first_width or 0)
         next_row = row_number + 1
@@ -128,7 +129,7 @@ def _row_from_element(reader, node, ns, next_row, data_only, shared):
             else:
                 value = "=" + (formula.text or "")
         else:
-            value = _value(reader, cell, ns)
+            value = _xlsx_cell_value(reader, cell, ns)
         cells.append((col, value))
     return row_number, cells
 
@@ -327,14 +328,7 @@ def _fast_value(sheet, attributes, v, inline):
     return float(v) if ("." in v or "e" in v or "E" in v) else int(v)
 
 
-def _column_index(letters):
-    index = 0
-    for char in letters:
-        index = index * 26 + (ord(char) - 64)
-    return index - 1
-
-
-def _value(reader, cell, ns=MAIN):
+def _xlsx_cell_value(reader, cell, ns=MAIN):
     kind = cell.get("t", "n")
     if kind == "inlineStr":
         inline = cell.find(f"{{{ns}}}is")

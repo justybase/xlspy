@@ -250,8 +250,8 @@ class ExcelReader:
             raise TypeError("streaming must be bool")
         if self._is_xlsb:
             if not data_only or streaming:
-                from ._xlsb_read import iter_rows
-                rows = iter_rows(self, sheet_name, data_only=data_only)
+                from ._xlsb_read import read_xlsb_rows
+                rows = read_xlsb_rows(self, sheet_name, data_only=data_only)
             else:
                 rows = self._get_rows_xlsb(sheet_name)
         else:
@@ -558,8 +558,8 @@ class ExcelReader:
         return f'xl/{target}'
 
     def _get_rows_xlsx(self, sheet_name: str, *, data_only: bool = True) -> Generator[List[Any], None, None]:
-        from ._xlsx_read import iter_rows
-        yield from iter_rows(self, sheet_name, data_only=data_only)
+        from ._xlsx_read import read_xlsx_rows
+        yield from read_xlsx_rows(self, sheet_name, data_only=data_only)
 
     def _get_rows_xlsb(self, sheet_name: str) -> Generator[List[Any], None, None]:
         r_id = self._worksheet_name_to_id[sheet_name]

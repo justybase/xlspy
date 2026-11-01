@@ -29,8 +29,8 @@ BRT_END_CF_RULE = 0x1D0
 
 # XFPropType ([MS-XLSB] 2.5.165).
 _FILL_PATTERN, _FOREGROUND, _BACKGROUND, _FONT_COLOR = 0x00, 0x01, 0x02, 0x05
-_BORDERS = {"top": 0x06, "bottom": 0x07, "left": 0x08, "right": 0x09}
-_BORDER_KINDS = {kind: name for name, kind in _BORDERS.items()}
+_CF_BORDER_BYTES = {"top": 0x06, "bottom": 0x07, "left": 0x08, "right": 0x09}
+_BORDER_KINDS = {kind: name for name, kind in _CF_BORDER_BYTES.items()}
 _HORIZONTAL, _WRAP = 0x0F, 0x14
 _FONT_NAME, _BOLD, _UNDERLINE, _ITALIC, _STRIKE, _SIZE = 0x18, 0x19, 0x1A, 0x1C, 0x1D, 0x24
 _NUMBER_FORMAT, _NUMBER_FORMAT_ID = 0x26, 0x29
@@ -50,7 +50,7 @@ _TIME_PERIODS = {
     "thisWeek": (0x15, 3), "lastWeek": (0x17, 4), "nextWeek": (0x16, 7),
     "thisMonth": (0x18, 9), "lastMonth": (0x13, 5), "nextMonth": (0x14, 8),
 }
-_CELL_IS_OPERATORS = {
+_CF_CELL_IS_CODES = {
     "between": 1, "notBetween": 2, "equal": 3, "notEqual": 4,
     "greaterThan": 5, "lessThan": 6, "greaterThanOrEqual": 7, "lessThanOrEqual": 8,
 }
@@ -72,7 +72,7 @@ _BORDER_CODES = {
     "double": 0x06, "hair": 0x07, "mediumDashed": 0x08, "dashDot": 0x09, "mediumDashDot": 0x0A,
     "dashDotDot": 0x0B, "mediumDashDotDot": 0x0C, "slantDashDot": 0x0D,
 }
-_PATTERNS = {
+_CF_PATTERN_CODES = {
     "none": 0, "solid": 1, "mediumGray": 2, "darkGray": 3, "lightGray": 4, "darkHorizontal": 5,
     "darkVertical": 6, "darkDown": 7, "darkUp": 8, "darkGrid": 9, "darkTrellis": 10,
     "lightHorizontal": 11, "lightVertical": 12, "lightDown": 13, "lightUp": 14, "lightGrid": 15,
@@ -80,7 +80,7 @@ _PATTERNS = {
 }
 
 
-def _unsupported(name: str):
+def _unsupported_cf_feature(name: str):
     return TypeError(f"{name} is not supported in XLSB conditional formats; use XlsxWriter for it")
 
 
@@ -88,12 +88,12 @@ def _prop(kind: int, data: bytes) -> tuple[int, bytes]:
     return kind, struct.pack("<HH", kind, 4 + len(data)) + data
 
 
-def _text(value: str) -> bytes:
+def _encode_wide_text(value: str) -> bytes:
     encoded = value.encode("utf-16-le")
     return struct.pack("<H", len(encoded) // 2) + encoded
 
 
-def _color(color) -> bytes:
+def _cf_color_record(color) -> bytes:
     """An 8-byte XFPropColor; Excel writes index 0xFF for RGB colors."""
     key = _color_key(color)
     if key[0] == "rgb":
@@ -111,12 +111,12 @@ def _color(color) -> bytes:
 def _font_props(font) -> list:
     for name in ("vertAlign", "charset", "family", "scheme", "outline", "shadow", "condense", "extend"):
         if getattr(font, name) is not None:
-            raise _unsupported(f"Font.{name}")
+            raise _unsupported_cf_feature(f"Font.{name}")
     props = []
     if font.color is not None:
-        props.append(_prop(_FONT_COLOR, _color(font.color)))
+        props.append(_prop(_FONT_COLOR, _cf_color_record(font.color)))
     if font.name is not None:
-        props.append(_prop(_FONT_NAME, _text(font.name)))
+        props.append(_prop(_FONT_NAME, _encode_wide_text(font.name)))
     if font.bold is not None:
         props.append(_prop(_BOLD, struct.pack("<H", 700 if font.bold else 400)))
     if font.underline is not None:
@@ -134,33 +134,33 @@ def _font_props(font) -> list:
 
 def _fill_props(fill) -> list:
     if isinstance(fill, GradientFill):
-        raise _unsupported("GradientFill")
+        raise _unsupported_cf_feature("GradientFill")
     props = []
     if fill.fill_type is not None:
-        props.append(_prop(_FILL_PATTERN, bytes((_PATTERNS[fill.fill_type],))))
+        props.append(_prop(_FILL_PATTERN, bytes((_CF_PATTERN_CODES[fill.fill_type],))))
     if fill.start_color is not None:
-        props.append(_prop(_FOREGROUND, _color(fill.start_color)))
+        props.append(_prop(_FOREGROUND, _cf_color_record(fill.start_color)))
     background = fill.end_color
     if background is None and fill.fill_type == "solid":
         # A conditional format paints a solid fill with its background color,
         # so a fill given only start_color would not show (as in XLSX).
         background = fill.start_color
     if background is not None:
-        props.append(_prop(_BACKGROUND, _color(background)))
+        props.append(_prop(_BACKGROUND, _cf_color_record(background)))
     return props
 
 
 def _border_props(border) -> list:
     for name in ("diagonal", "vertical", "horizontal", "start", "end"):
         if getattr(border, name) is not None:
-            raise _unsupported(f"Border.{name}")
+            raise _unsupported_cf_feature(f"Border.{name}")
     # Excel writes all four sides once any is set; an unset side is "none"
     # with the automatic color, as it reads the XLSX writer's empty elements.
     props = []
-    for name, kind in _BORDERS.items():
+    for name, kind in _CF_BORDER_BYTES.items():
         side = getattr(border, name)
         style = None if side is None else side.style
-        color = _AUTO_COLOR if side is None or side.color is None else _color(side.color)
+        color = _AUTO_COLOR if side is None or side.color is None else _cf_color_record(side.color)
         props.append(_prop(kind, color + struct.pack("<H", _BORDER_CODES[style or "none"])))
     return props
 
@@ -169,7 +169,7 @@ def _alignment_props(alignment) -> list:
     for name in ("vertical", "shrink_to_fit", "indent", "text_rotation", "relative_indent",
                  "justify_last_line", "reading_order"):
         if getattr(alignment, name) is not None:
-            raise _unsupported(f"Alignment.{name}")
+            raise _unsupported_cf_feature(f"Alignment.{name}")
     props = []
     if alignment.horizontal is not None:
         props.append(_prop(_HORIZONTAL, bytes((_HORIZONTAL_CODES[alignment.horizontal],))))
@@ -198,7 +198,7 @@ def dxf_payload(dxf: DifferentialStyle, register_numfmt) -> bytes:
         # Excel writes the format id right before the format string.
         props.append((_NUMBER_FORMAT - 0.5, struct.pack("<HHH", _NUMBER_FORMAT_ID, 6,
                                                        register_numfmt(dxf.number_format))))
-        props.append(_prop(_NUMBER_FORMAT, _text(dxf.number_format)))
+        props.append(_prop(_NUMBER_FORMAT, _encode_wide_text(dxf.number_format)))
     props.sort(key=lambda item: item[0])
     return struct.pack("<HHH", _DXF_FLAGS, 0, len(props)) + b"".join(data for _, data in props)
 
@@ -216,7 +216,7 @@ def _rule_fields(rule, corner: str):
     """``(iType, iTemplate, iParam, flags, formulas, text)`` for a rule."""
     flags = _STOP_IF_TRUE if rule.stop_if_true else 0
     if isinstance(rule, CellIsRule):
-        operator = _CELL_IS_OPERATORS.get(rule.operator)
+        operator = _CF_CELL_IS_CODES.get(rule.operator)
         if operator is None:
             raise TypeError(f"CellIsRule operator {rule.operator!r} is XLSX-only; use TextRule for text tests")
         return _CELL_IS, 0, operator, flags, list(rule.formula), None
@@ -249,11 +249,11 @@ def _rule_fields(rule, corner: str):
 
 BRT_BEGIN_CONDITIONAL_FORMATTING = 0x1CD
 
-_PATTERN_NAMES = {value: name for name, value in _PATTERNS.items()}
+_PATTERN_NAMES = {value: name for name, value in _CF_PATTERN_CODES.items()}
 _BORDER_NAMES = {value: name for name, value in _BORDER_CODES.items()}
 _HORIZONTAL_NAMES = {value: name for name, value in _HORIZONTAL_CODES.items()}
 _UNDERLINE_NAMES = {value: name for name, value in _UNDERLINE_CODES.items()}
-_CELL_IS_NAMES = {value: name for name, value in _CELL_IS_OPERATORS.items()}
+_CELL_IS_NAMES = {value: name for name, value in _CF_CELL_IS_CODES.items()}
 _TEXT_NAMES = {value: name for name, value in _TEXT_OPERATORS.items()}
 _TIME_PERIOD_NAMES = {template: name for name, (template, _param) in _TIME_PERIODS.items()}
 _BLANK_NAMES = {value: name for name, value in _BLANK_TEMPLATES.items()}
@@ -267,7 +267,7 @@ def _decoded_text(data: bytes) -> str:
 
 def dxf_from_payload(payload: bytes) -> DifferentialStyle:
     """A ``DifferentialStyle`` from a BrtDXF payload (the XFProp list)."""
-    from ._xlsb_styles import _color as color_at
+    from ._xlsb_styles import _read_brt_color as color_at
     from .styles import Alignment, Border, Font, PatternFill, Protection, Side
 
     count = struct.unpack_from("<H", payload, 4)[0]
@@ -331,8 +331,8 @@ def dxf_from_payload(payload: bytes) -> DifferentialStyle:
     )
 
 
-def _sqref(payload: bytes, offset: int) -> str:
-    from ._xlsb_validation import _sqref as format_sqref
+def _read_cf_sqref(payload: bytes, offset: int) -> str:
+    from ._xlsb_validation import _format_sqref as format_sqref
 
     count = struct.unpack_from("<I", payload, offset)[0]
     ranges = [struct.unpack_from("<IIII", payload, offset + 4 + 16 * index) for index in range(count)]
@@ -423,7 +423,7 @@ def read_conditional_formats(items, context, style_table, links=None):
             continue
         open_rule = False
         if record_id == BRT_BEGIN_CONDITIONAL_FORMATTING:
-            sqref = _sqref(payload, 8)
+            sqref = _read_cf_sqref(payload, 8)
         elif record_id == BRT_BEGIN_CF_RULE and sqref:
             if len(payload) >= 4 and struct.unpack_from("<I", payload)[0] in _SCALE_TEMPLATES:
                 pending = (sqref, payload, [])
@@ -508,7 +508,7 @@ _BAR_SHOW_VALUE = 0x01
 
 def _scale_color(color) -> bytes:
     """A BrtColor payload; Excel writes RGB colors opaque."""
-    data = _color(color)
+    data = _cf_color_record(color)
     if data[0] == 0x05:
         data = data[:7] + b"\xff"
     return data
@@ -589,7 +589,7 @@ def _read_cfvo(payload: bytes, context, origin):
 
 def _scale_rule(sqref, kind, priority, stop, parts, context):
     """A color scale, data bar or icon set from its sub-records."""
-    from ._xlsb_styles import _color as color_at
+    from ._xlsb_styles import _read_brt_color as color_at
     from .styles import ColorScaleRule, DataBarRule, IconSetRule
 
     first_col, first_row, _, _ = parse_cell_range(sqref.split()[0])
@@ -653,7 +653,7 @@ def conditional_formats_bin(formats, context, dxf_id, links=None) -> bytes:
     Excel 2010 extension."""
     formats = [(sqref, pivot, list(rules)) for sqref, pivot, rules in formats]
     taken = set()
-    for _sqref, _pivot, rules in formats:
+    for _read_cf_sqref, _pivot, rules in formats:
         for rule in rules:
             if rule.priority is None:
                 continue

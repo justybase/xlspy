@@ -13,7 +13,7 @@ from .biff_utils import build_record, iter_records, read_utf16
 from .comments import Comment
 from .refs import parse_cell_range, column_label
 
-COMMENTS_TYPE = "application/vnd.ms-excel.comments"
+_XLSB_COMMENTS_TYPE = "application/vnd.ms-excel.comments"
 BEGIN_COMMENTS, END_COMMENTS = 0x274, 0x275
 BEGIN_AUTHORS, END_AUTHORS, AUTHOR = 0x276, 0x277, 0x278
 BEGIN_LIST, END_LIST, BEGIN_COMMENT, END_COMMENT, TEXT = range(0x279, 0x27E)

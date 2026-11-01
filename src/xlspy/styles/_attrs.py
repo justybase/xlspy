@@ -21,7 +21,7 @@ def _is_reference_like(name: str) -> bool:
 
 
 _UNDERLINES = {"none", "single", "double", "singleAccounting", "doubleAccounting"}
-_VERT_ALIGNS = {"superscript", "subscript", "baseline"}
+_VERT_ALIGNS = frozenset({"superscript", "subscript", "baseline"})
 _PATTERN_TYPES = {
     "none", "solid", "gray125",
     "darkGray", "mediumGray", "lightGray", "gray0625",

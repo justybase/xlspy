@@ -25,10 +25,10 @@ from .._metadata import CT, MAIN, PKG_REL, REL, append_child, element_pattern, r
 from .._xlsx_edit import _attributes, _bytes, _required_match
 from ..refs import parse_cell_range
 from ._print import PageMargins, print_settings_for
+from ..chart_reader import _A as _A
+from ..chart_reader import _C as _C
+from ..chart_reader import _XDR as _XDR
 
-_XDR = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
-_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
-_C = "http://schemas.openxmlformats.org/drawingml/2006/chart"
 _CONTENT = {
     "drawing": "application/vnd.openxmlformats-officedocument.drawing+xml",
     "chart": "application/vnd.openxmlformats-officedocument.drawingml.chart+xml",
@@ -115,7 +115,7 @@ def _rels_path(part: str) -> str:
     return posixpath.join(posixpath.dirname(part), "_rels", posixpath.basename(part) + ".rels")
 
 
-def _resolve(part: str, target: str) -> str:
+def _resolve_part_target(part: str, target: str) -> str:
     if target.startswith("/"):
         return target.lstrip("/")
     return posixpath.normpath(posixpath.join(posixpath.dirname(part), target))
@@ -329,7 +329,7 @@ def _sheet_rels(scratch: dict[str, bytes]) -> dict[str, tuple[str, str]]:
     if not data:
         return {}
     return {
-        node.get("Id"): (node.get("Type").rsplit("/", 1)[-1], _resolve("xl/worksheets/sheet1.xml", node.get("Target")))
+        node.get("Id"): (node.get("Type").rsplit("/", 1)[-1], _resolve_part_target("xl/worksheets/sheet1.xml", node.get("Target")))
         for node in safe_fromstring(data)
     }
 
@@ -562,7 +562,7 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
     donor_drawing_rels = safe_fromstring(scratch[_rels_path(drawing)])
 
     host_drawing = next(
-        (_resolve(sheet_path, _target(node)) for node in sheet_rels
+        (_resolve_part_target(sheet_path, _target(node)) for node in sheet_rels
          if node.get("Type", "").endswith("/drawing")),
         None,
     )
@@ -579,7 +579,7 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
     mapping = {}
     for node in donor_drawing_rels:
         kind = node.get("Type").rsplit("/", 1)[-1]
-        source = _resolve(drawing, node.get("Target"))
+        source = _resolve_part_target(drawing, node.get("Target"))
         if kind == "chart":
             target = package.free_part("xl/charts", "chart", "xml")
             package.override(target, _CONTENT["chart"])
@@ -643,7 +643,7 @@ def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: E
     existing = _existing_tables(package)
     names = {attributes.get("displayName", "").casefold() for _, attributes in existing}
     on_sheet = {
-        _resolve(sheet_path, _target(node)) for node in sheet_rels
+        _resolve_part_target(sheet_path, _target(node)) for node in sheet_rels
         if node.get("Type", "").endswith("/table")
     }
     next_id = max((int(attributes.get("id", 0)) for _, attributes in existing), default=0) + 1
@@ -829,7 +829,7 @@ def sync_objects(updater, workbook, sheet) -> None:
 
     for node in list(sheet_rels):
         if node.get("Type", "").endswith("/table"):
-            target = _resolve(sheet_path, _target(node))
+            target = _resolve_part_target(sheet_path, _target(node))
             package.remove(target)
             sheet_rels.remove(node)
     host.remove_all("tableParts")

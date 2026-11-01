@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from .printing import (
     PageMargins,
 )
+from ._xlsb_writer_consts import _REL_PIVOT_CACHE as _REL_PIVOT_CACHE
+from ._xlsb_writer_consts import _REL_PIVOT_TABLE as _REL_PIVOT_TABLE
 
 
 _ATTR_ENTITIES = {'"': "&quot;"}
@@ -37,8 +39,6 @@ _REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationship
 _REL_DRAWING = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"
 _REL_HYPERLINK = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
 _REL_WORKSHEET = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
-_REL_PIVOT_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable"
-_REL_PIVOT_CACHE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition"
 _CT_PIVOT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"
 _CT_PIVOT_CACHE = "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"
 _DEFAULT_MARGINS = PageMargins()

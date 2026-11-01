@@ -7,12 +7,12 @@ from dataclasses import dataclass
 
 from ._text import check_xml_text
 from .refs import parse_cell_range
+from .formulas import _CONTROL_RE as _CONTROL_RE
 
 MAX_TARGET_LENGTH = 2079
 MAX_TOOLTIP_LENGTH = 255
 ALLOWED_SCHEMES = frozenset({"http", "https", "mailto", "ftp"})
 _SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.\-]*):")
-_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 @dataclass(frozen=True, slots=True)

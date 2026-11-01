@@ -104,7 +104,6 @@ from ._dimensions import (
 )
 from ._cell import (
     _new_cell as _new_cell,
-    _PLAIN_TYPES as _PLAIN_TYPES,
     Cell as Cell,
     CELL_SLOTS as CELL_SLOTS,
     MergedCell as MergedCell,

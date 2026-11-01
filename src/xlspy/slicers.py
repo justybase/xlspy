@@ -21,8 +21,9 @@ import xml.sax.saxutils as saxutils
 
 from ._extlst import SLICER_DRAWING, SLICER_DRAWING_CHOICE, EXT_TABLE_SLICER_CACHE, X14, X15
 from .refs import parse_cell_range
+from .pivots import _MAIN_NS as _MAIN_NS
+from ._text import _attr as _attr
 
-_MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 _EMU_PER_PIXEL = 9525
 # Excel's default item row height for a slicer, in EMU.
@@ -31,10 +32,6 @@ _FALLBACK_TEXT = (
     "This shape represents a table slicer. Table slicers are not supported "
     "in this version of Excel."
 )
-
-
-def _attr(value: str) -> str:
-    return saxutils.escape(value, {'"': "&quot;"})
 
 
 @dataclass(frozen=True, slots=True)

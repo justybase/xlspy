@@ -16,7 +16,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from ..utils.datetime import time_to_days, timedelta_to_days
 from .._metadata import MAIN, REL, PKG_REL, CT, qname, element_pattern, replace_element, serialize_like
-from .._xlsx_edit import _attributes, _bytes, _cell_value, _required_match
+from .._xlsx_edit import _attributes, _bytes, _cell_xml_value, _required_match
 from ..formula.sheets import rename_sheet_references
 from ..formulas import Formula
 from ..ignored_errors import ignored_errors_xml, snapshot as ignored_errors_snapshot
@@ -284,7 +284,7 @@ def _cols_xml(sheet: Worksheet, prefix: str) -> str:
     return f'<{prefix}cols>{"".join(parts)}</{prefix}cols>'
 
 
-def _patch_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
+def _patch_xml_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
     dimensions = {
         row: dimension
         for row, dimension in sheet.row_dimensions.items()
@@ -396,7 +396,7 @@ def _merge_xml(sheet: Worksheet, prefix: str) -> str:
     return f'<{prefix}mergeCells count="{len(ranges)}">{body}</{prefix}mergeCells>'
 
 
-def _number_text(value) -> str:
+def _cell_number_text(value) -> str:
     return f"{value:g}" if isinstance(value, float) else str(value)
 
 
@@ -410,7 +410,7 @@ def _sheet_format_xml(sheet: Worksheet, prefix: str) -> str:
     for name in ("defaultColWidth", "defaultRowHeight"):
         value = getattr(fmt, name)
         if value is not None:
-            attrs.append(f'{name}="{_number_text(value)}"')
+            attrs.append(f'{name}="{_cell_number_text(value)}"')
     for name in ("customHeight", "zeroHeight", "thickTop", "thickBottom"):
         value = getattr(fmt, name)
         if value is not None:
@@ -468,7 +468,7 @@ def _page_setup_xml(sheet: Worksheet, prefix: str) -> str:
     ):
         value = getattr(setup, name)
         if value is not None:
-            attrs.append(f"{name}={quoteattr(_number_text(value))}")
+            attrs.append(f"{name}={quoteattr(_cell_number_text(value))}")
     for name in ("useFirstPageNumber", "usePrinterDefaults", "blackAndWhite", "draft"):
         value = getattr(setup, name)
         if value is not None:
@@ -494,7 +494,7 @@ def _print_options_xml(sheet: Worksheet, prefix: str) -> str:
 def _page_margins_xml(sheet: Worksheet, prefix: str) -> str:
     margins = sheet.page_margins
     attrs = " ".join(
-        f'{name}="{_number_text(getattr(margins, name))}"'
+        f'{name}="{_cell_number_text(getattr(margins, name))}"'
         for name in ("left", "right", "top", "bottom", "header", "footer")
     )
     return f"<{prefix}pageMargins {attrs}/>"
@@ -621,7 +621,7 @@ def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
     )
     cols = _cols_xml(sheet, prefix)
     xml = replace_element(xml, "cols", cols, before=("sheetData",))
-    xml = _patch_rows(xml, sheet, prefix)
+    xml = _patch_xml_rows(xml, sheet, prefix)
     xml = replace_element(
         xml, "dimension",
         f'<{prefix}dimension ref="{_dimension_ref(sheet)}"/>',
@@ -782,7 +782,7 @@ def _sheet_xml(sheet: Worksheet, date_1904: bool, *, prefix: str = "") -> str:
             if cell is None:
                 continue
             value = _value_for_save(cell, date_1904)
-            kind, content = _cell_value(value, date_1904, prefix)
+            kind, content = _cell_xml_value(value, date_1904, prefix)
             attrs = [f'r="{_coordinate(row_number, column)}"']
             if cell._style_id:
                 attrs.append(f's="{cell._style_id}"')
@@ -1164,7 +1164,7 @@ def _calc_properties_xml(workbook, prefix: str) -> str:
         if value is not None:
             attrs.append(f'{name}="{value}"')
     if calc.iterateDelta is not None:
-        attrs.append(f'iterateDelta="{_number_text(calc.iterateDelta)}"')
+        attrs.append(f'iterateDelta="{_cell_number_text(calc.iterateDelta)}"')
     for name in (
         "fullCalcOnLoad", "iterate", "fullPrecision", "calcCompleted",
         "calcOnSave", "concurrentCalc", "forceFullCalc",

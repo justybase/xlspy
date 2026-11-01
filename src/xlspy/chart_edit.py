@@ -11,12 +11,12 @@ from xml.sax.saxutils import escape, unescape
 
 from .charts import LEGEND_POSITIONS
 
-_ROOT = re.compile(r"<(?:(\w+):)?chartSpace\b")
+_CHART_SPACE_ROOT = re.compile(r"<(?:(\w+):)?chartSpace\b")
 _AXES = ("catAx", "valAx", "dateAx", "serAx")
 
 
-def _prefix(xml: str) -> str:
-    match = _ROOT.search(xml)
+def _chart_prefix(xml: str) -> str:
+    match = _CHART_SPACE_ROOT.search(xml)
     return f"{match[1]}:" if match and match[1] else ""
 
 
@@ -26,7 +26,7 @@ def _drawing_prefix(xml: str) -> str:
     return f"{match[1]}:" if match else ""
 
 
-def _title_xml(c: str, a: str, text: str) -> str:
+def _edit_title_xml(c: str, a: str, text: str) -> str:
     return (
         f"<{c}title><{c}tx><{c}rich><{a}bodyPr/><{a}p><{a}r><{a}t>{escape(text)}</{a}t>"
         f"</{a}r></{a}p></{c}rich></{c}tx><{c}overlay val=\"0\"/></{c}title>"
@@ -60,7 +60,7 @@ def _set_title_in(xml: str, c: str, a: str, span: tuple[int, int], text: str | N
         return xml[:start] + xml[end:]
     run = re.search(rf"<{a}t>.*?</{a}t>|<{a}t/>", old, re.S)
     if run is None:
-        return xml[:start] + _title_xml(c, a, text) + xml[end:]
+        return xml[:start] + _edit_title_xml(c, a, text) + xml[end:]
     # Keep the formatting of the first run: its text changes, other runs go.
     paragraph = re.search(rf"<{a}p>.*?</{a}p>", old, re.S)
     first_run = re.search(rf"<{a}r>.*?</{a}r>", old, re.S)
@@ -89,7 +89,7 @@ def _auto_title_deleted(xml: str, c: str, deleted: bool) -> str:
 
 def set_chart_title(xml: bytes, text: str | None) -> bytes:
     source = xml.decode("utf-8")
-    c = _prefix(source)
+    c = _chart_prefix(source)
     a = _drawing_prefix(source) or "a:"
     chart = _element(source, c, "chart")
     if chart is None:
@@ -105,7 +105,7 @@ def set_chart_title(xml: bytes, text: str | None) -> bytes:
     if title is not None:
         source = _set_title_in(source, c, a, title, text)
     elif text is not None:
-        source = source[:inner] + _title_xml(c, a, text) + source[inner:]
+        source = source[:inner] + _edit_title_xml(c, a, text) + source[inner:]
     return _auto_title_deleted(source, c, text is None).encode("utf-8")
 
 
@@ -123,7 +123,7 @@ def _axis_span(source: str, c: str, index: int) -> tuple[int, int] | None:
 def set_axis_title(xml: bytes, index: int, text: str | None) -> bytes:
     """Set the title of the ``index``-th axis in document order (0: X, 1: Y)."""
     source = xml.decode("utf-8")
-    c = _prefix(source)
+    c = _chart_prefix(source)
     a = _drawing_prefix(source) or "a:"
     axis = _axis_span(source, c, index)
     if axis is None:
@@ -143,13 +143,13 @@ def set_axis_title(xml: bytes, index: int, text: str | None) -> bytes:
             rf"<{c}(?:numFmt|majorTickMark|minorTickMark|tickLblPos|spPr|txPr|crossAx)\b",
         ).search(body, grid_end)
         at = anchor.start() if anchor else body.rindex(f"</{c}")
-        body = body[:at] + _title_xml(c, a, text) + body[at:]
+        body = body[:at] + _edit_title_xml(c, a, text) + body[at:]
     return (source[:start] + body + source[end:]).encode("utf-8")
 
 
 def get_axis_title(xml: bytes, index: int) -> str | None:
     source = xml.decode("utf-8")
-    c = _prefix(source)
+    c = _chart_prefix(source)
     a = _drawing_prefix(source) or "a:"
     axis = _axis_span(source, c, index)
     if axis is None:
@@ -164,7 +164,7 @@ def get_axis_title(xml: bytes, index: int) -> str | None:
 
 def get_legend_position(xml: bytes) -> str | None:
     source = xml.decode("utf-8")
-    c = _prefix(source)
+    c = _chart_prefix(source)
     found = _element(source, c, "legend")
     if found is None:
         return None
@@ -183,7 +183,7 @@ def set_legend_position(xml: bytes, position: str | None) -> bytes:
             f"invalid legend position {position!r}; expected one of {sorted(LEGEND_POSITIONS)}"
         )
     source = xml.decode("utf-8")
-    c = _prefix(source)
+    c = _chart_prefix(source)
     found = _element(source, c, "legend")
     if position is None:
         if found is not None:
@@ -238,7 +238,7 @@ def _series_end_of_header(body: str, c: str) -> int:
 
 def set_series_title(xml: bytes, index: int, text: str) -> bytes:
     source = xml.decode("utf-8")
-    c = _prefix(source)
+    c = _chart_prefix(source)
     start, end = _series_span(source, c, index)
     body = source[start:end]
     tx = f"<{c}tx><{c}v>{escape(text)}</{c}v></{c}tx>"
@@ -256,7 +256,7 @@ def set_series_title(xml: bytes, index: int, text: str) -> bytes:
 
 def get_series_titles(xml: bytes) -> list[str | None]:
     source = xml.decode("utf-8")
-    c = _prefix(source)
+    c = _chart_prefix(source)
     titles: list[str | None] = []
     position = 0
     while (found := _element(source, c, "ser", position)) is not None:
@@ -274,7 +274,7 @@ def get_series_titles(xml: bytes) -> list[str | None]:
 def set_series_color(xml: bytes, index: int, color: str) -> bytes:
     """Fill a bar, area or pie series, or draw a line or scatter series, in ``color`` (RRGGBB)."""
     source = xml.decode("utf-8")
-    c = _prefix(source)
+    c = _chart_prefix(source)
     a = _drawing_prefix(source) or "a:"
     start, end = _series_span(source, c, index)
     groups = re.findall(rf"<{c}(\w+Chart)\b", source[:start])

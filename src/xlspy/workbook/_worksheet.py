@@ -22,7 +22,7 @@ from ._print import (
     PageSetup,
     PrintOptions,
 )
-from ._cell import Cell, MergedCell, WriteOnlyCell, _PLAIN_TYPES, _new_cell
+from ._cell import Cell, MergedCell, WriteOnlyCell, _CELL_TYPE_KINDS, _new_cell
 from ._coords import MultiCellRange, _CELL_RE, _coerce_column, _coerce_row, _coordinate, _normalize_range
 from ._dimensions import ColumnDimension, DimensionHolder, RowDimension, _column_key, _row_key
 from ._properties import AutoFilter, ColBreak, Pane, RowBreak, Selection, SheetFormatProperties, SheetProperties, SheetProtection, SheetView, _as_model_page_margins, _as_model_protection
@@ -557,7 +557,7 @@ class Worksheet:
         """
         row_cells = self._cells[row] = {}
         dirty = self._dirty_cells
-        plain_types = _PLAIN_TYPES
+        plain_types = _CELL_TYPE_KINDS
         date_styles = None
         dated = False
         for column, value in enumerate(values, 1):

@@ -17,7 +17,7 @@ from ..refs import column_label
 from ._chartsheets import _CHART_TYPE, _DRAWING_TYPE, _DRAWING_XML, _set_rels, pending_chartsheets, source_title
 from ._objects import _Package
 
-_CHARTSHEET_TYPE = "application/vnd.ms-excel.chartsheet"
+_XLSB_CHARTSHEET_TYPE = "application/vnd.ms-excel.chartsheet"
 # A chartsheet as Excel writes it: properties, one view, page setup, margins,
 # the drawing (relationship rId1) and an archive-id block.
 _SHEET = b"".join((
@@ -60,7 +60,7 @@ def add_chartsheets_xlsb(updater, workbook) -> None:
         package.add_rel(drawing_rels, drawing, "chart", chart)
         part = package.free_part("xl/chartsheets", "sheet", "bin")
         package.set(part, _SHEET)
-        package.override(part, _CHARTSHEET_TYPE)
+        package.override(part, _XLSB_CHARTSHEET_TYPE)
         part_rels = package.rels(part)
         package.add_rel(part_rels, part, "drawing", drawing)
         for owner, rels in ((drawing, drawing_rels), (part, part_rels)):

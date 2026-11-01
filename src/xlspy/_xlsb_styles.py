@@ -65,19 +65,19 @@ _BEGIN_CELL_XFS, _END_CELL_XFS = 0x269, 0x26A
 _BEGIN_STYLE_XFS, _END_STYLE_XFS = 0x272, 0x273
 _AC_BEGIN = 0x25  # BrtACBegin: the fonts block ends with KnownFonts inside one.
 
-_UNDERLINES = {value: name for name, value in _UNDERLINE_BYTES.items() if name not in (None, "none")}
+_BIFF_UNDERLINE_NAMES = {value: name for name, value in _UNDERLINE_BYTES.items() if name not in (None, "none")}
 _BASELINES = {1: "superscript", 2: "subscript"}
 _SCHEMES = {value: name for name, value in _FONT_SCHEME.items() if name is not None}
-_PATTERNS = {value: name for name, value in _PATTERN_BYTES.items() if name is not None}
-_BORDERS = {value: name for name, value in _BORDER_BYTES.items() if name not in (None, "none")}
-_HORIZONTAL = {value: name for name, value in _HORIZONTAL_BYTES.items() if name not in (None, "general")}
-_VERTICAL = {value: name for name, value in _VERTICAL_BYTES.items() if name not in (None, "bottom")}
+_BIFF_PATTERN_NAMES = {value: name for name, value in _PATTERN_BYTES.items() if name is not None}
+_BIFF_BORDER_NAMES = {value: name for name, value in _BORDER_BYTES.items() if name not in (None, "none")}
+_BIFF_HORIZONTAL_NAMES = {value: name for name, value in _HORIZONTAL_BYTES.items() if name not in (None, "general")}
+_BIFF_VERTICAL_NAMES = {value: name for name, value in _VERTICAL_BYTES.items() if name not in (None, "bottom")}
 # System foreground/background colors: what Excel stores for "no color".
 _SYSTEM_COLORS = (64, 65)
 _GRADIENT = 0x28
 
 
-def _color(data: bytes, offset: int, *, default_system: bool = False) -> Color | None:
+def _read_brt_color(data: bytes, offset: int, *, default_system: bool = False) -> Color | None:
     """A BrtColor ([MS-XLSB] 2.4.334); all zero bytes mean no color."""
     raw = data[offset:offset + 8]
     if len(raw) < 8 or not any(raw):
@@ -99,7 +99,7 @@ def _color(data: bytes, offset: int, *, default_system: bool = False) -> Color |
 def _font(payload: bytes) -> Font:
     height, flags, weight, baseline = struct.unpack_from("<HHHH", payload, 0)
     underline, family, charset = payload[8], payload[9], payload[10]
-    color = _color(payload, 12)
+    color = _read_brt_color(payload, 12)
     scheme = payload[20]
     name, _ = read_wide(payload, 21)
 
@@ -112,7 +112,7 @@ def _font(payload: bytes) -> Font:
         bold=True if weight >= 700 else None,
         italic=flag(0x02),
         strike=flag(0x08),
-        underline=_UNDERLINES.get(underline),
+        underline=_BIFF_UNDERLINE_NAMES.get(underline),
         vertAlign=_BASELINES.get(baseline),
         color=color,
         charset=charset or None,
@@ -137,7 +137,7 @@ def _fill(payload: bytes) -> PatternFill | GradientFill:
         for _ in range(count):
             if offset + 16 > len(payload):
                 break
-            color = _color(payload, offset)
+            color = _read_brt_color(payload, offset)
             position = struct.unpack_from("<d", payload, offset + 8)[0]
             if color is not None:
                 stops.append(Stop(color=color, position=position))
@@ -154,13 +154,13 @@ def _fill(payload: bytes) -> PatternFill | GradientFill:
             bottom=None if bottom == 1.0 else bottom,
             stop=tuple(stops),
         )
-    fill_type = _PATTERNS.get(pattern, "none")
+    fill_type = _BIFF_PATTERN_NAMES.get(pattern, "none")
     if fill_type == "none":
         return PatternFill(fill_type="none")
     return PatternFill(
         fill_type=fill_type,
-        start_color=_color(payload, 4, default_system=True),
-        end_color=_color(payload, 12, default_system=True),
+        start_color=_read_brt_color(payload, 4, default_system=True),
+        end_color=_read_brt_color(payload, 12, default_system=True),
     )
 
 
@@ -169,8 +169,8 @@ def _border(payload: bytes) -> Border:
     sides = []
     for index in range(5):
         offset = 1 + index * 10
-        style = _BORDERS.get(payload[offset])
-        color = _color(payload, offset + 2, default_system=True) if style else None
+        style = _BIFF_BORDER_NAMES.get(payload[offset])
+        color = _read_brt_color(payload, offset + 2, default_system=True) if style else None
         sides.append(Side(style=style, color=color) if style else None)
     top, bottom, left, right, diagonal_side = sides
     return Border(
@@ -183,8 +183,8 @@ def _border(payload: bytes) -> Border:
 def _xf(payload: bytes) -> tuple[int, _Xf]:
     parent, ifmt, font, fill, border = struct.unpack_from("<HHHHH", payload, 0)
     rotation, indent, align, flags = payload[10], payload[11], payload[12], payload[13]
-    horizontal = _HORIZONTAL.get(align & 0x07)
-    vertical = _VERTICAL.get((align >> 3) & 0x07)
+    horizontal = _BIFF_HORIZONTAL_NAMES.get(align & 0x07)
+    vertical = _BIFF_VERTICAL_NAMES.get((align >> 3) & 0x07)
     reading_order = (flags >> 2) & 0x03
     alignment = None
     if (horizontal or vertical or align & 0xC0 or flags & 0x01 or rotation or indent

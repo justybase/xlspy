@@ -21,7 +21,6 @@ from decimal import Decimal
 import math
 import numbers
 import re
-import xml.sax.saxutils as saxutils
 
 from ._extlst import X14, ext, ext_list
 from .formats import _unwrap_cell
@@ -29,9 +28,10 @@ from .formulas import Formula
 from .hyperlinks import Hyperlink
 from .refs import column_label, parse_cell_range
 from .styles import ExcelTable, table_column_names
+from ._text import _attr as _attr
 
 _MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-_PLAIN_TYPES = (str, bool, int, float, Decimal, date, datetime)
+_PIVOT_PLAIN_TYPES = (str, bool, int, float, Decimal, date, datetime)
 _PIVOT_EXT_LIST = ext_list([ext(
     "{962EF5D1-5CA2-4c93-8EF4-DBF5C05439D2}",
     '<x14:pivotTableDefinition hideValuesRow="1"/>',
@@ -50,11 +50,7 @@ _FUNCTION_LABELS = {
 _NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 
 
-def _attr(value: object) -> str:
-    return saxutils.escape(str(value), {'"': "&quot;"})
-
-
-def _number_text(value) -> str:
+def _pivot_number_text(value) -> str:
     if isinstance(value, float):
         if math.isnan(value):
             return "NaN"
@@ -77,10 +73,10 @@ _BLANK = _Blank()
 _NO_COLUMN = object()
 
 
-def _cell_value(cell):
+def _pivot_cell_value(cell):
     """The value a pivot reads from a written cell (formats and links unwrapped)."""
     cell = _unwrap_cell(cell)
-    if cell is None or isinstance(cell, _PLAIN_TYPES):
+    if cell is None or isinstance(cell, _PIVOT_PLAIN_TYPES):
         return cell
     if isinstance(cell, Hyperlink):
         return cell.display_text
@@ -134,7 +130,7 @@ def _shared_item_xml(value) -> str:
     if isinstance(value, Decimal):
         return f'<n v="{_attr(value)}"/>'
     if isinstance(value, (int, float)):
-        return f'<n v="{_number_text(value)}"/>'
+        return f'<n v="{_pivot_number_text(value)}"/>'
     return f'<s v="{_attr(value)}"/>'
 
 
@@ -175,7 +171,7 @@ class PivotValue:
         return f"{_FUNCTION_LABELS[self.function]} {self.field}"
 
 
-def _axis(value, name: str) -> tuple[str, ...]:
+def _pivot_axis_fields(value, name: str) -> tuple[str, ...]:
     if value is None:
         return ()
     if isinstance(value, str):
@@ -269,17 +265,17 @@ class PivotTable:
     autofit_columns: bool = False
 
     def __post_init__(self):
-        rows = _axis(self.rows, "rows")
+        rows = _pivot_axis_fields(self.rows, "rows")
         if len(rows) != 1:
             raise ValueError(
                 "the compact pivot layout needs exactly one row field"
             )
-        columns = _axis(self.columns, "columns")
+        columns = _pivot_axis_fields(self.columns, "columns")
         if len(columns) > 1:
             raise ValueError(
                 "the compact pivot layout accepts at most one column field"
             )
-        filters = _axis(self.filters, "filters")
+        filters = _pivot_axis_fields(self.filters, "filters")
         if len(set(rows) & set(columns)) or len((set(rows) | set(columns)) & set(filters)):
             raise ValueError("a pivot field cannot be on two axes at once")
         object.__setattr__(self, "rows", rows)
@@ -504,7 +500,7 @@ class PivotFeeder:
     def _feed_row(self, row) -> None:
         def cell_value_at(index: int):
             column = self._first_col + index
-            return _cell_value(row[column]) if column < len(row) else None
+            return _pivot_cell_value(row[column]) if column < len(row) else None
 
         def cell(index: int):
             return _key(cell_value_at(index))
@@ -878,8 +874,8 @@ class _Stats:
             if self.integer:
                 attrs += ' containsInteger="1"'
             attrs += (
-                f' minValue="{_number_text(self.low)}"'
-                f' maxValue="{_number_text(self.high)}"'
+                f' minValue="{_pivot_number_text(self.low)}"'
+                f' maxValue="{_pivot_number_text(self.high)}"'
             )
         return attrs
 

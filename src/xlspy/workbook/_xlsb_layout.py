@@ -50,8 +50,8 @@ _PRINT_RECORDS = frozenset({
 # the file does not have yet is inserted before the first of them.
 _AFTER_PRINT = (0x1A7, 0x1A8, 0x1AD, 0x1B1, 0x1B3, 0x226, 0x227, 0x228, 0x229,
                 0x27F, 0x280, 0x294, 0x25, END_SHEET)
-_AFTER_HYPERLINKS = (BRT_PRINT_OPTIONS, BRT_MARGINS, BRT_PAGE_SETUP, BRT_BEGIN_HEADER_FOOTER) + _AFTER_PRINT
-_AFTER_FILTER = (BEGIN_SORT_STATE, 0x1F0, 0xB1, 0x1CD, 0x23D, 0x1EE) + _AFTER_HYPERLINKS
+_BRT_AFTER_HYPERLINKS_AND_PRINT = (BRT_PRINT_OPTIONS, BRT_MARGINS, BRT_PAGE_SETUP, BRT_BEGIN_HEADER_FOOTER) + _AFTER_PRINT
+_AFTER_FILTER = (BEGIN_SORT_STATE, 0x1F0, 0xB1, 0x1CD, 0x23D, 0x1EE) + _BRT_AFTER_HYPERLINKS_AND_PRINT
 _AFTER_PROTECTION = (0x1A5, 0x1A6, BEGIN_FILTER) + _AFTER_FILTER
 _AFTER_VIEWS = (FORMAT_INFO, BEGIN_COL_INFOS, BEGIN_SHEET_DATA)
 
@@ -76,7 +76,7 @@ _PROPERTY_BITS = (
 _FIT_TO_PAGE = 8
 # BrtSheetProtection: fLocked, then the permissions, stored as "allowed" (the
 # inverse of the OOXML attributes).
-_PROTECTION_FIELDS = (
+_PROTECTION_FLAGS_NO_SHEET = (
     "objects", "scenarios", "formatCells", "formatColumns", "formatRows",
     "insertColumns", "insertRows", "insertHyperlinks", "deleteColumns", "deleteRows",
     "selectLockedCells", "sort", "autoFilter", "pivotTables", "selectUnlockedCells",
@@ -86,7 +86,7 @@ _DEFAULT_PAGE_SETUP = struct.pack("<8IH", 1, 100, 600, 600, 1, 1, 1, 1, 0x40) + 
 _DEFAULT_VIEW = bytes.fromhex("dc0300000000000000000000000040000000640000000000000000000000")
 
 
-def _cell(ref: str) -> tuple[int, int]:
+def _parse_sync_ref(ref: str) -> tuple[int, int]:
     column, row, _, _ = parse_cell_range(ref)
     return row, column
 
@@ -104,7 +104,7 @@ def _columns_state(sheet):
         (letter, dim.min, dim.max, dim.width, dim.hidden, dim.outlineLevel, dim.collapsed,
          dim.bestFit, dim.style)
         for letter, dim in sorted(
-            sheet.column_dimensions.items(), key=lambda item: _cell(f"{item[0]}1")[1],
+            sheet.column_dimensions.items(), key=lambda item: _parse_sync_ref(f"{item[0]}1")[1],
         )
         if dim.width is not None or dim.hidden or dim.outlineLevel or dim.collapsed
         or dim.bestFit or dim.style
@@ -181,7 +181,7 @@ def _find(data: bytes, record_id: int) -> bytes | None:
     return None
 
 
-def _sheet_properties(sheet, original: bytes | None) -> bytes:
+def _sheet_properties_payload(sheet, original: bytes | None) -> bytes:
     payload = bytearray(original if original and len(original) >= 23
                         else bytes.fromhex("c904020040000000000000ffffffffffffffff00000000"))
     flags = int.from_bytes(payload[0:3], "little")
@@ -198,7 +198,7 @@ def _sheet_properties(sheet, original: bytes | None) -> bytes:
     tab = properties.tabColor
     payload[3:11] = color_payload(_color_key(tab)) if tab is not None else bytes((0, 0x40, 0, 0, 0, 0, 0, 0))
     if properties.syncRef:
-        row, column = _cell(properties.syncRef)
+        row, column = _parse_sync_ref(properties.syncRef)
         struct.pack_into("<II", payload, 11, row, column)
     head = bytes(payload[:19])
     code_name = properties.codeName or ""
@@ -219,7 +219,7 @@ def _view_record(sheet, original: bytes | None) -> bytes:
     struct.pack_into("<H", payload, 0, flags)
     if view.view not in _VIEW_KINDS:
         raise ValueError(f"invalid sheet view {view.view!r}")
-    top, left = _cell(view.topLeftCell) if view.topLeftCell else (0, 0)
+    top, left = _parse_sync_ref(view.topLeftCell) if view.topLeftCell else (0, 0)
     struct.pack_into("<III", payload, 2, _VIEW_KINDS[view.view], top, left)
     if view.colorId is not None:
         payload[14] = view.colorId
@@ -235,7 +235,7 @@ def _view_record(sheet, original: bytes | None) -> bytes:
 def _pane_record(pane) -> bytes:
     if pane is None or not (pane.xSplit or pane.ySplit):
         return b""
-    top, left = _cell(pane.topLeftCell) if pane.topLeftCell else (0, 0)
+    top, left = _parse_sync_ref(pane.topLeftCell) if pane.topLeftCell else (0, 0)
     state = {"frozen": 0x03, "frozenSplit": 0x01}.get(pane.state, 0x00)
     return build_record(PANE, struct.pack(
         "<ddIII", float(pane.xSplit or 0), float(pane.ySplit or 0), top, left,
@@ -252,7 +252,7 @@ def _selection_records(view) -> bytes:
         selections = [Selection(pane=pane)]
     output = []
     for item in selections:
-        row, column = _cell(item.activeCell or "A1")
+        row, column = _parse_sync_ref(item.activeCell or "A1")
         ranges = []
         for part in (item.sqref or item.activeCell or "A1").split():
             c1, r1, c2, r2 = parse_cell_range(part)
@@ -297,7 +297,7 @@ def _column_records(sheet) -> bytes:
     default = round((fmt.defaultColWidth or 8.43) * 256)
     entries: list[list] = []
     for letter, _, _, width, hidden, level, collapsed, best_fit, style in _columns_state(sheet):
-        index = _cell(f"{letter}1")[1]
+        index = _parse_sync_ref(f"{letter}1")[1]
         flags = (
             (0x01 if hidden else 0) | (0x02 if width is not None else 0)
             | (0x04 if best_fit else 0) | ((level or 0) & 0x07) << 8
@@ -329,7 +329,7 @@ def _protection_record(sheet) -> bytes:
         value = int(password, 16)
     else:
         value = int(password_hash(password), 16)
-    flags = [1] + [0 if getattr(protection, name) else 1 for name in _PROTECTION_FIELDS]
+    flags = [1] + [0 if getattr(protection, name) else 1 for name in _PROTECTION_FLAGS_NO_SHEET]
     return build_record(SHEET_PROTECTION, struct.pack("<H16I", value, *flags))
 
 
@@ -512,7 +512,7 @@ def _row_payload(row: int, original: bytes | None, dim, default_height: int) -> 
     return build_record(ROW_HEADER, bytes(payload))
 
 
-def _patch_rows(data: bytes, sheet, saved_rows) -> bytes:
+def _patch_xlsb_rows(data: bytes, sheet, saved_rows) -> bytes:
     wanted = {row: values for row, *values in _rows_state(sheet)}
     touched = set(wanted) | {row for row, *_ in (saved_rows or ())}
     if not touched:
@@ -589,7 +589,7 @@ def patch_layout(data: bytes, sheet, groups) -> bytes:
     if {"views", "columns", "format"} & set(groups):
         data = _drop_legacy_column_wrappers(data)
     if "properties" in groups or "print" in groups:
-        data = replace_records(data, {WS_PROP}, _sheet_properties(sheet, _find(data, WS_PROP)),
+        data = replace_records(data, {WS_PROP}, _sheet_properties_payload(sheet, _find(data, WS_PROP)),
                                before=(WS_DIM, BEGIN_VIEWS) + _AFTER_VIEWS)
     if "views" in groups:
         data = replace_records(data, {BEGIN_VIEWS, END_VIEWS, BEGIN_VIEW, END_VIEW, PANE, SELECTION},
@@ -603,7 +603,7 @@ def patch_layout(data: bytes, sheet, groups) -> bytes:
             data = replace_records(data, {BEGIN_COL_INFOS, COL_INFO, END_COL_INFOS}, block,
                                    before=(BEGIN_SHEET_DATA,))
     if "rows" in groups or "format" in groups:
-        data = _patch_rows(data, sheet, saved.get("rows"))
+        data = _patch_xlsb_rows(data, sheet, saved.get("rows"))
     if "protection" in groups:
         block = _protection_record(sheet)
         if block or any(record.record_id in (SHEET_PROTECTION, SHEET_PROTECTION_ISO) for record, _ in records(data)):

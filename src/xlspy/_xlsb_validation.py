@@ -13,6 +13,7 @@ from ._xlsb_metadata import read_wide, wide_string
 from .biff_utils import build_record, iter_record_payloads
 from .data_validation import DataValidation, OPERATORS
 from .refs import column_label, parse_cell_range
+from ._xlsb_print import _NULL_STRING as _NULL_STRING
 
 BRT_BEGIN_DVALS = 0x23D
 BRT_DVAL = 0x40
@@ -22,7 +23,7 @@ BRT_END_DVALS = 0x23E
 # operators follow the order of the OOXML enumeration, as OPERATORS does.
 _TYPES = {"whole": 1, "decimal": 2, "list": 3, "date": 4, "time": 5, "text_length": 6, "custom": 7}
 _ERROR_STYLES = {"stop": 0, "warning": 1, "information": 2}
-_OPERATORS = {name: index for index, name in enumerate(OPERATORS)}
+_XLSB_OPERATOR_CODES = {name: index for index, name in enumerate(OPERATORS)}
 
 _LITERAL_LIST = 0x80        # fStrLookup: formula1 is a quoted list of values
 _ALLOW_BLANK = 0x100
@@ -30,11 +31,10 @@ _SUPPRESS_DROPDOWN = 0x200  # fSuppressCombo
 _SHOW_INPUT = 1 << 18
 _SHOW_ERROR = 1 << 19
 _OPERATOR_SHIFT = 20
-_NULL_STRING = b"\xff\xff\xff\xff"
 _EMPTY_FORMULA = b"\x00" * 8  # cce = 0, cb = 0
 
 
-def _nullable(text: str | None) -> bytes:
+def _nullable_or_empty(text: str | None) -> bytes:
     return _NULL_STRING if not text else wide_string(text)
 
 
@@ -51,7 +51,7 @@ def _flags(rule: DataValidation) -> int:
     if rule.show_error_message:
         flags |= _SHOW_ERROR
     if rule.operator is not None:
-        flags |= _OPERATORS[rule.operator] << _OPERATOR_SHIFT
+        flags |= _XLSB_OPERATOR_CODES[rule.operator] << _OPERATOR_SHIFT
     return flags
 
 
@@ -61,8 +61,8 @@ def _dval(rule: DataValidation, context) -> bytes:
     payload = bytearray(struct.pack("<II", _flags(rule), len(ranges)))
     for c1, r1, c2, r2 in ranges:
         payload += struct.pack("<IIII", r1, r2, c1, c2)
-    payload += _nullable(rule.error_title) + _nullable(rule.error)
-    payload += _nullable(rule.prompt_title) + _nullable(rule.prompt)
+    payload += _nullable_or_empty(rule.error_title) + _nullable_or_empty(rule.error)
+    payload += _nullable_or_empty(rule.prompt_title) + _nullable_or_empty(rule.prompt)
     # A list range is a reference; the other operands are values.
     operand = "R" if rule.type == "list" else "V"
     for text in (rule.formula1, rule.formula2):
@@ -95,7 +95,7 @@ _OPERATOR_NAMES = list(OPERATORS)
 _OPERATOR_TYPES = frozenset({"whole", "decimal", "date", "time", "text_length"})
 
 
-def _sqref(ranges) -> str:
+def _format_sqref(ranges) -> str:
     parts = []
     for r1, r2, c1, c2 in ranges:
         first = f"{column_label(c1)}{r1 + 1}"
@@ -134,7 +134,7 @@ def dval_rule(payload: bytes, context) -> DataValidation | None:
     operator = (flags >> _OPERATOR_SHIFT) & 0x0F
     return DataValidation(
         type=kind,
-        sqref=_sqref(ranges),
+        sqref=_format_sqref(ranges),
         formula1=formula1,
         formula2=formula2,
         # "between" is stored as 0, which XLSX leaves out: read it as the default.

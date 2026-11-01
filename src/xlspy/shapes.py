@@ -15,9 +15,10 @@ import xml.sax.saxutils as saxutils
 
 from ._text import check_xml_text
 from .refs import column_label, parse_cell_range
+from ._text import _attr as _attr
 
 EMU_PER_PIXEL = 9525
-_KINDS = {"rect": "rect", "round": "roundRect", "ellipse": "ellipse", "textbox": "rect"}
+_SHAPE_PRESETS = {"rect": "rect", "round": "roundRect", "ellipse": "ellipse", "textbox": "rect"}
 _ALIGN = {"left": "l", "center": "ctr", "right": "r"}
 _VALIGN = {"top": "t", "center": "ctr", "bottom": "b"}
 _COLOR_RE = re.compile(r"#([0-9A-Fa-f]{6})")
@@ -25,11 +26,7 @@ _FONT_SIZE_LIMITS = (1, 409)
 _NAMESPACE = uuid.UUID("6f1d8c2a-3b7e-4f0a-9d4c-2e8a5b1c7f30")
 
 
-def _attr(value: str) -> str:
-    return saxutils.escape(value, {'"': "&quot;"})
-
-
-def _color(value: str, name: str) -> str:
+def _shape_color(value: str, name: str) -> str:
     match = _COLOR_RE.fullmatch(value) if isinstance(value, str) else None
     if match is None:
         raise ValueError(f"{name} must be an RGB hex colour such as '#1F4E79', got {value!r}")
@@ -70,8 +67,8 @@ class Shape:
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"shape {field_name} must be a positive integer of pixels")
-        if self.kind not in _KINDS:
-            raise ValueError(f"shape kind must be one of {sorted(_KINDS)}, got {self.kind!r}")
+        if self.kind not in _SHAPE_PRESETS:
+            raise ValueError(f"shape kind must be one of {sorted(_SHAPE_PRESETS)}, got {self.kind!r}")
         if self.align not in _ALIGN:
             raise ValueError(f"shape align must be one of {sorted(_ALIGN)}, got {self.align!r}")
         if self.valign not in _VALIGN:
@@ -81,10 +78,10 @@ class Shape:
         if self.text is not None:
             check_xml_text(self.text, "shape text")
         if self.fill is not None:
-            _color(self.fill, "fill")
+            _shape_color(self.fill, "fill")
         if self.line is not None:
-            _color(self.line, "line")
-        _color(self.font_color, "font_color")
+            _shape_color(self.line, "line")
+        _shape_color(self.font_color, "font_color")
         low, high = _FONT_SIZE_LIMITS
         if isinstance(self.font_size, bool) or not isinstance(self.font_size, (int, float)) \
                 or not low <= self.font_size <= high:
@@ -121,7 +118,7 @@ def _run_properties(shape: Shape, tag: str) -> str:
     size = round(shape.font_size * 100)
     return (
         f'<a:{tag} lang="en-US" sz="{size}"{bold} dirty="0">'
-        f'<a:solidFill><a:srgbClr val="{_color(shape.font_color, "font_color")}"/></a:solidFill>'
+        f'<a:solidFill><a:srgbClr val="{_shape_color(shape.font_color, "font_color")}"/></a:solidFill>'
         f"</a:{tag}>"
     )
 
@@ -158,11 +155,11 @@ def shape_frame_xml(shape: Shape, object_id: int) -> str:
     textlink = f' textlink="{_link_reference(shape.link_cell)}"' if shape.link_cell else ""
     box = ' txBox="1"' if shape.kind == "textbox" else ""
     fill = (
-        f'<a:solidFill><a:srgbClr val="{_color(shape.fill, "fill")}"/></a:solidFill>'
+        f'<a:solidFill><a:srgbClr val="{_shape_color(shape.fill, "fill")}"/></a:solidFill>'
         if shape.fill is not None else "<a:noFill/>"
     )
     outline = (
-        f'<a:ln w="12700"><a:solidFill><a:srgbClr val="{_color(shape.line, "line")}"/></a:solidFill></a:ln>'
+        f'<a:ln w="12700"><a:solidFill><a:srgbClr val="{_shape_color(shape.line, "line")}"/></a:solidFill></a:ln>'
         if shape.line is not None else "<a:ln><a:noFill/></a:ln>"
     )
     return (
@@ -174,7 +171,7 @@ def shape_frame_xml(shape: Shape, object_id: int) -> str:
         f'<nvSpPr><cNvPr id="{object_id}" name="{_attr(name)}"/><cNvSpPr{box}/></nvSpPr>'
         '<spPr><a:xfrm><a:off x="0" y="0"/>'
         f'<a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
-        f'<a:prstGeom prst="{_KINDS[shape.kind]}"><a:avLst/></a:prstGeom>'
+        f'<a:prstGeom prst="{_SHAPE_PRESETS[shape.kind]}"><a:avLst/></a:prstGeom>'
         f"{fill}{outline}</spPr>"
         f'<txBody><a:bodyPr wrap="square" rtlCol="0" anchor="{_VALIGN[shape.valign]}"/>'
         f"<a:lstStyle/>{_paragraphs(shape, object_id)}</txBody>"

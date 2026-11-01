@@ -20,9 +20,9 @@ from xml.sax.saxutils import escape
 
 from ._text import check_cell_text, xstring_escape, xstring_unescape
 from .styles import Color, _coerce_color, _color_key
+from .styles._attrs import _VERT_ALIGNS as _VERT_ALIGNS
 
-_UNDERLINES = frozenset({"single", "double", "singleAccounting", "doubleAccounting"})
-_VERT_ALIGNS = frozenset({"superscript", "subscript", "baseline"})
+_RICH_UNDERLINES = frozenset({"single", "double", "singleAccounting", "doubleAccounting"})
 
 
 @dataclass(frozen=True)
@@ -49,8 +49,8 @@ class InlineFont:
     extend: bool | None = None
 
     def __post_init__(self):
-        if self.u is not None and self.u not in _UNDERLINES:
-            raise ValueError(f"u must be one of {sorted(_UNDERLINES)}, got {self.u!r}")
+        if self.u is not None and self.u not in _RICH_UNDERLINES:
+            raise ValueError(f"u must be one of {sorted(_RICH_UNDERLINES)}, got {self.u!r}")
         if self.vertAlign is not None and self.vertAlign not in _VERT_ALIGNS:
             raise ValueError(f"vertAlign must be one of {sorted(_VERT_ALIGNS)}")
         if self.sz is not None and (isinstance(self.sz, bool) or not isinstance(self.sz, (int, float))
@@ -164,8 +164,6 @@ def _color_attrs(key) -> str:
     return f'theme="{key[1]}"{tint}'
 
 
-
-
 def _font_from_rpr(rpr) -> InlineFont:
     values: dict[str, Any] = {}
     for child in rpr:
@@ -178,7 +176,7 @@ def _font_from_rpr(rpr) -> InlineFont:
             # other values InlineFont does not know are left out too, so
             # loading a file never fails on a run's font.
             underline = val or "single"
-            if underline in _UNDERLINES:
+            if underline in _RICH_UNDERLINES:
                 values["u"] = underline
         elif name == "sz" and val:
             size = float(val)

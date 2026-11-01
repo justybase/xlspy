@@ -16,7 +16,7 @@ from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
 
 from .._metadata import CT, PKG_REL
-from ._objects import _bytes, _Package, _rels_path, _resolve
+from ._objects import _bytes, _Package, _rels_path, _resolve_part_target
 
 _ANCHORS = frozenset(("twoCellAnchor", "oneCellAnchor", "absoluteAnchor"))
 _TAG = re.compile(r"<(/?)([\w.-]+:)?([\w.-]+)\b[^>]*?(/?)>|<!--.*?-->|<\?.*?\?>|<!\[CDATA\[.*?\]\]>", re.S)
@@ -124,7 +124,7 @@ def _referenced(package: _Package, part: str, skip: set[str]) -> bool:
             if node.get("TargetMode") == "External":
                 continue
             target = node.get("Target")
-            if target and _resolve(source, target) == part:
+            if target and _resolve_part_target(source, target) == part:
                 return True
     return False
 
@@ -169,7 +169,7 @@ def remove_drawing_objects(updater, sheet) -> None:
                 rels.remove(node)
                 target = node.get("Target")
                 if node.get("TargetMode") != "External" and target:
-                    orphans.append((node.get("Type", ""), _resolve(drawing, target)))
+                    orphans.append((node.get("Type", ""), _resolve_part_target(drawing, target)))
         ET.register_namespace("", PKG_REL)
         package.set(rels_path, _bytes(rels))
         for kind, target in orphans:
@@ -177,7 +177,7 @@ def remove_drawing_objects(updater, sheet) -> None:
                 continue
             if kind.endswith("/chart"):
                 companions = [
-                    _resolve(target, node.get("Target", "")) for node in package.rels(target)
+                    _resolve_part_target(target, node.get("Target", "")) for node in package.rels(target)
                     if node.get("Type", "").endswith(_CHART_COMPANIONS) and node.get("Target")
                 ]
                 _drop_part(package, target)

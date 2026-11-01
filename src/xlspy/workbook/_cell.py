@@ -26,7 +26,7 @@ from ._coords import _coerce_column, _coerce_row, _coordinate
 
 
 _new_cell = object.__new__
-_PLAIN_TYPES = {int: "n", float: "n", bool: "b", str: "s"}
+_CELL_TYPE_KINDS = {int: "n", float: "n", bool: "b", str: "s"}
 
 
 class Cell:
@@ -87,7 +87,7 @@ class Cell:
 
     @value.setter
     def value(self, value):
-        plain = _PLAIN_TYPES.get(type(value))
+        plain = _CELL_TYPE_KINDS.get(type(value))
         if plain is not None and not (plain == "s" and value.startswith("=")):
             # Exact int/float/bool/str: no formula, hyperlink or date handling.
             self._formula = None

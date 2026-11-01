@@ -18,13 +18,10 @@ from .._metadata import MAIN
 from .._text import xstring_unescape
 from ._model import CELL_SLOTS, Cell
 from ._reader import _apply_row_attributes, _date_kind, _load_row, _number_value
+from .._xlsx_read import _Fallback as _Fallback
 
 _ROW_ATTRIBUTES = (" ht=", " hidden=", " outlineLevel=", " collapsed=")
 _TYPED = frozenset({"s", "inlineStr", "b", "e", "str", "d"})
-
-
-class _Fallback(Exception):
-    pass
 
 
 def read_sheet_data(sheet, package, sheet_path, style_table, *, data_only, date_1904,

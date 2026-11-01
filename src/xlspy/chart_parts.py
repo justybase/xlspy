@@ -39,6 +39,9 @@ from .charts import (
 from .refs import parse_cell_range, quote_sheet_name
 from .shapes import shape_frame_xml
 from .slicers import slicer_frame_xml
+from .shapes import EMU_PER_PIXEL as EMU_PER_PIXEL
+from .slicers import _MC_NS as _MC_NS
+from ._text import _attr as _attr
 
 _CHART_AXES_XML = (
     "<catAx><axId val=\"10\"/><scaling><orientation val=\"minMax\"/></scaling>"
@@ -72,7 +75,6 @@ _XLSB_CHART_AXES_XML = (
 # out, so Excel-written XLSB files use the mc:AlternateContent form with the
 # legacy element as fallback. The XLSX path keeps the plain element, matching
 # the openpyxl oracle.
-_MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 _C14_NS = "http://schemas.microsoft.com/office/drawing/2007/8/2/chart"
 
 # Excel's XLSX loader draws charts that carry a legacy ``style`` element with
@@ -255,10 +257,6 @@ def _is_numeric_range(values: list) -> bool:
             return False
         seen = True
     return seen
-
-
-def _attr(value: str) -> str:
-    return saxutils.escape(value, {'"': "&quot;"})
 
 
 def _solid(color: str) -> str:
@@ -627,7 +625,7 @@ def _font_size_hundredths(points: float) -> str:
     return str(round(points * 100))
 
 
-def _title_xml(chart, xlsb: bool) -> str:
+def _chart_title_xml(chart, xlsb: bool) -> str:
     title_text = saxutils.escape(chart.title)
     if xlsb:
         size = "1800" if chart.title_size is None else _font_size_hundredths(chart.title_size)
@@ -669,7 +667,7 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
             parts.append(f"<style val=\"{chart.style}\"/>")
     parts.append("<chart>")
     if chart.title is not None:
-        parts.append(_title_xml(chart, xlsb))
+        parts.append(_chart_title_xml(chart, xlsb))
     else:
         # The automatic title: the series name of a single-series chart. Excel
         # saves it as an empty title; with autoTitleDeleted alone an XLSB
@@ -697,7 +695,7 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
                 for index in indexes
             )
             axes = '<axId val="20"/><axId val="200"/>' if secondary else '<axId val="10"/><axId val="100"/>'
-            parts.append(_group_xml(kind, group_xml, grouping, vary, labels, axes, gap=gap))
+            parts.append(_chart_group_xml(kind, group_xml, grouping, vary, labels, axes, gap=gap))
         parts.append(_combined_axes_xml(chart, groups, xlsb))
         return _finish_chart(parts, chart)
     series_xml = "".join(
@@ -763,7 +761,7 @@ def _series_groups(chart) -> dict[tuple[str, bool], list[int]]:
     return groups
 
 
-def _group_xml(kind: str, series_xml: str, grouping, vary: str, labels: str, axes: str,
+def _chart_group_xml(kind: str, series_xml: str, grouping, vary: str, labels: str, axes: str,
                *, gap: int = 150) -> str:
     if kind == "bar":
         overlap = "<overlap val=\"100\"/>" if grouping else ""
@@ -834,9 +832,6 @@ def _finish_chart(parts: list, chart) -> str:
         "xmlns=\"http://schemas.openxmlformats.org/drawingml/2006/chart\">"
         f"{''.join(parts)}</chartSpace>"
     )
-
-
-EMU_PER_PIXEL = 9525
 
 
 def _chart_frame_xml(chart, position: int) -> str:

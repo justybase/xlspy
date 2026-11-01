@@ -112,7 +112,7 @@ _CACHE_TAIL = (
 )
 
 _AXIS_ROW, _AXIS_COL, _AXIS_PAGE, _AXIS_DATA = 0x01, 0x02, 0x04, 0x08
-_SUBTOTALS = {"sum": 0, "count": 1, "average": 2, "max": 3, "min": 4}
+_XLSB_SUBTOTAL_CODES = {"sum": 0, "count": 1, "average": 2, "max": 3, "min": 4}
 _DISPLAY_GRAND = 0x0D  # BrtBeginSXLI item type of a grand total
 
 # BrtBeginPCDFAtbl type flags (read off Excel's files).
@@ -321,7 +321,7 @@ def pivot_table_bin(render: PivotRender, data_field_format_ids: list[int | None]
     parts.append(build_record(_DIS, struct.pack("<I", len(render.value_captions))))
     for column, spec, numfmt in zip(render.value_indices, pivot.value_specs, data_field_format_ids):
         payload = struct.pack(
-            "<6I", column, _SUBTOTALS[spec.function], 0, 0, 0, numfmt or 0,
+            "<6I", column, _XLSB_SUBTOTAL_CODES[spec.function], 0, 0, 0, numfmt or 0,
         ) + b"\x01" + wide_string(spec.caption)
         parts.append(build_record(_DI, payload))
         parts.append(build_record(_END_DI))

@@ -195,7 +195,7 @@ def _general_number(value: float) -> str:
     return _scientific(value)
 
 
-def _number_text(value: float, number_format: str) -> str:
+def _formatted_number_text(value: float, number_format: str) -> str:
     sections = _sections(number_format)
     section = sections[0]
     if value < 0 and len(sections) > 1 and sections[1]:
@@ -259,7 +259,7 @@ def cell_text(value, number_format: str | None = None) -> str | None:
             return "NaN" if number != number else "-∞" if number < 0 else "∞"
         if number_format:
             try:
-                return _number_text(number, number_format)
+                return _formatted_number_text(number, number_format)
             except (ValueError, OverflowError):
                 return _general_number(number)
         return _general_number(number)

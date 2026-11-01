@@ -73,7 +73,7 @@ def formula_text(formula, groups, context, sheet_name, row, column):
     return decode_formula(formula, context, sheet=sheet_name, origin=(column, row))
 
 
-def iter_indexed_rows(reader, sheet_name, *, data_only=True, data=None, with_styles=False):
+def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, with_styles=False):
     """Yield ``(row_number, [(column, value), ...])`` for every BrtRowHdr, with
     1-based rows and 0-based columns; formulas are decoded when not data_only.
     With ``with_styles`` the cells are ``(column, value, style_id)``."""
@@ -165,7 +165,7 @@ def sheet_dimension(reader, sheet_name):
     return None
 
 
-def iter_rows(reader, sheet_name, *, data_only=True):
+def read_xlsb_rows(reader, sheet_name, *, data_only=True):
     """Yield rows shaped like the bulk reader: the first data row fixes the first
     column, missing and empty rows are synthesized, and later wider rows widen."""
     first_row_record = None
@@ -173,7 +173,7 @@ def iter_rows(reader, sheet_name, *, data_only=True):
     first_column = None
     width = 0
     previous_row = None
-    for row_number, cells in iter_indexed_rows(reader, sheet_name, data_only=data_only):
+    for row_number, cells in iter_xlsb_indexed_rows(reader, sheet_name, data_only=data_only):
         if first_row_record is None:
             first_row_record = row_number
         last_row_record = row_number

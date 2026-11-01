@@ -34,11 +34,11 @@ _NULL_STRING = b"\xff\xff\xff\xff"
 FIT_TO_PAGE_BYTE, FIT_TO_PAGE_BIT = 1, 0x01
 
 
-def _nullable(text: str | None) -> bytes:
+def _nullable_text(text: str | None) -> bytes:
     return _NULL_STRING if text is None else wide_string(text)
 
 
-def _page_setup(settings: PrintSettings) -> bytes:
+def _xlsb_page_setup_record(settings: PrintSettings) -> bytes:
     """BrtPageSetup, or nothing when no page option is set (as in XLSX)."""
     if (settings.paper_size is None and not settings.fit_to_page
             and settings.scale is None and settings.orientation is None):
@@ -55,10 +55,10 @@ def _page_setup(settings: PrintSettings) -> bytes:
     return build_record(BRT_PAGE_SETUP, payload)
 
 
-def _header_footer(settings: PrintSettings) -> bytes:
+def _header_footer_record(settings: PrintSettings) -> bytes:
     if settings.header is None and settings.footer is None:
         return b""
-    payload = struct.pack("<H", _HEADER_FOOTER_FLAGS) + _nullable(settings.header) + _nullable(settings.footer)
+    payload = struct.pack("<H", _HEADER_FOOTER_FLAGS) + _nullable_text(settings.header) + _nullable_text(settings.footer)
     payload += _NULL_STRING * 4  # even and first-page headers and footers
     return build_record(BRT_BEGIN_HEADER_FOOTER, payload) + build_record(BRT_END_HEADER_FOOTER)
 
@@ -87,8 +87,8 @@ def print_records(settings: PrintSettings) -> bytes:
             "<6d", margins.left, margins.right, margins.top, margins.bottom,
             margins.header, margins.footer,
         )),
-        _page_setup(settings),
-        _header_footer(settings),
+        _xlsb_page_setup_record(settings),
+        _header_footer_record(settings),
         _breaks(BRT_BEGIN_ROW_BREAKS, BRT_END_ROW_BREAKS, settings.row_breaks, 16383),
         _breaks(BRT_BEGIN_COL_BREAKS, BRT_END_COL_BREAKS, settings.col_breaks, 1048575),
     ))

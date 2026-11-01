@@ -3,16 +3,16 @@
 import struct
 import uuid
 from .hyperlinks import Hyperlink
+from ._xlsb_style_records import _BRT_BORDER as _BRT_BORDER
+from ._xlsb_style_records import _BRT_FILL as _BRT_FILL
+from ._xlsb_style_records import _BRT_FMT as _BRT_FMT
+from ._xlsb_style_records import _BRT_FONT as _BRT_FONT
+from ._xlsb_style_records import _BRT_XF as _BRT_XF
 
 
 _REL_PIVOT_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable"
 _REL_PIVOT_CACHE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition"
 # BIFF12 record identifiers used in xl/styles.bin ([MS-XLSB] section 2.1.4).
-_BRT_FONT = 0x002B
-_BRT_FMT = 0x002C
-_BRT_FILL = 0x002D
-_BRT_BORDER = 0x002E
-_BRT_XF = 0x002F
 _BRT_BEGIN_FILLS = 0x025B
 _BRT_END_FILLS = 0x025C
 _BRT_BEGIN_FONTS = 0x0263

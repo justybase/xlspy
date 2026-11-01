@@ -15,8 +15,8 @@ from typing import Any
 
 from ..formulas import Formula
 from ..refs import column_label, parse_cell_range, shift_references as translate_formula
+from ..refs import _MAX_ROW as _MAX_ROW
 
-_MAX_ROW = 1048576
 _MAX_COL = 16384
 _CELL_REF = re.compile(
     r"(?<![A-Za-z0-9_.])(\$?)([A-Za-z]{1,3})(\$?)([0-9]+)(?![A-Za-z0-9_(.])"
