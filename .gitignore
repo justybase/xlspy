@@ -165,3 +165,6 @@ examples/output/
 # Local clutter from a failed shell redirect and the agent tool config
 $null
 .commandcode/
+
+# Debug symbols written next to the native module by maturin (build output)
+*.pdb
