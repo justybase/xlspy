@@ -4,7 +4,7 @@
 
 `xlspy` includes a **native extension** (`_rs_core`, Rust/PyO3) that accelerates XLSB read and write, the XLSX read and write paths and workbook-model loading. It is enabled by default. Set `XLSPY_ACCEL=python` (or the older `XLSPY_DISABLE_C_EXT=1`) to force the pure Python fallback.
 
-The measurements below predate the Rust port and were taken with the C extension (`_c_core`) it replaced; "C extension" in them means the native path. The port's own comparison against C is in [Validation](validation.md#rust-port-of-the-native-extension-2026-10-31).
+**Historical note.** Every measurement on this page was taken before the Rust port (2026-10-31). In those runs the native path was the C extension (`_c_core`, built with setuptools). The rows are labelled "C extension" as they were recorded; in them, "C extension on" is the native path and "C extension off" is the pure-Python path. The C code was removed in commit `68d4f67`. The port's own comparison against C is in [Validation](validation.md#rust-port-of-the-native-extension-2026-10-31). The numbers have not been re-measured on the Rust module.
 
 This page reports the write and read benchmarks on three machines. All were measured on **2026-10-19** with the same scripts and parameters. Dataset: **50,000 × 50** (2.5 million cells), `mixed` layout, median of **three runs** per measurement.
 
@@ -18,7 +18,7 @@ This page reports the write and read benchmarks on three machines. All were meas
 | C compiler | MSVC | Apple clang 21 | GCC 15.2.0 |
 | openpyxl / xlsxwriter | 3.1.5 / 3.2.9 | 3.1.5 / 3.2.9 | 3.1.5 / 3.2.9 |
 
-The Python patch version differs on WSL2 (3.14.8 against 3.14.7). The difference is treated as negligible. The C extension was built with the default `setup.py` flags on each system.
+The Python patch version differs on WSL2 (3.14.8 against 3.14.7). The difference is treated as negligible. The C extension was built with the default `setup.py` flags on each system. Both `setup.py` and the C extension have since been removed; the package is built with maturin.
 
 ## Results
 
@@ -119,7 +119,7 @@ every case ran at 0.90–0.99× of the baseline time, so no case is slower than 
 Re-run of the writers and readers on one machine, with the Python libraries that
 read or write the same formats. Windows 11, AMD Ryzen 7 7840HS, Python 3.14.7,
 the xlspy development tree at commit `75828a1`. The benchmark scripts and the XLSB read path of
-the C extension (`src/xlspy/c_ext/_c_core.c`) have uncommitted changes; the read
+the C extension (`src/xlspy/c_ext/_c_core.c`, removed in `68d4f67`) had uncommitted changes; the read
 numbers below are for the changed code.
 Library versions: openpyxl 3.1.5, xlsxwriter 3.2.9, PyExcelerate 0.13.0,
 python-calamine 0.9.0, fastexcel 0.21.0 with pyarrow 26.0.0, pyxlsb 1.0.10.
@@ -335,7 +335,7 @@ python examples/write_benchmark.py --writers xlsx-inline,xlsb-inline --c-ext bot
 python examples/write_benchmark.py --src ../other-checkout/src --csv other.csv
 ```
 
-- **Writers**: `xlsx-shared`, `xlsx-inline`, `xlsb-shared`, `xlsb-inline` (xlspy, `--c-ext on|off|both`), `openpyxl` (`write_only=True`), and `xlsxwriter` (`constant_memory=True`). openpyxl and xlsxwriter are optional; missing ones are skipped.
+- **Writers**: `xlsx-shared`, `xlsx-inline`, `xlsb-shared`, `xlsb-inline` (xlspy, `--c-ext on|off|both`), `openpyxl` (`write_only=True`), and `xlsxwriter` (`constant_memory=True`). openpyxl and xlsxwriter are optional; missing ones are skipped. `--c-ext` now selects the native backend (the Rust module): `on` leaves it enabled, `off` sets `XLSPY_DISABLE_C_EXT=1`. The JSON field is still named `c_ext`.
 - **Data**: `--dataset mixed` (default) is the eight-type layout of `performance_test.py` and is deterministic. `--dataset random --seed N` is a seeded, text-heavy alternative. With `--input stream` (default), every writer consumes the same generator. With `--input list`, the rows are built before the clock starts.
 - **Metrics**: wall time, peak resident memory, output size, and, with `--tracemalloc`, a separate untimed run's Python allocation peak (memory the native extension allocates directly is not traced).
 - **Targets**: `--target file` (default) or `--target memory` (an `io.BytesIO`, xlspy writers only).
