@@ -29,9 +29,8 @@ unless `XLSPY_RUN_EXCEL_COM=1` is set; run them with `-p no:faulthandler`.
 
 ## Lint and type checks
 
-CI runs both; the mypy configuration in `pyproject.toml` lists the modules
-that still have type errors, and every other module (new ones included) must
-pass:
+CI runs both. The mypy configuration in `pyproject.toml` checks every module in
+`src/xlspy` with no ignore list, so a new module must pass as well:
 
 ```bash
 python -m pip install ruff mypy

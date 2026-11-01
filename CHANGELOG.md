@@ -147,8 +147,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native accelerator selects one backend, the Rust module. Its private switches were renamed (`_c_*` to
   `_native_*` in `xlspy._accel`). The public names (`HAVE_NATIVE`, `HAVE_C_EXT`, `ACCEL_MODE`, `ACCEL_BACKEND`,
   `XLSPY_ACCEL`, `XLSPY_DISABLE_C_EXT`) are unchanged.
-- Mypy checks more modules strictly: they were removed from the `ignore_errors` list in `pyproject.toml`. Nineteen
-  modules are still excluded.
+- Mypy checks every module in `src/xlspy`: the `ignore_errors` list in `pyproject.toml` (nineteen modules at the start
+  of this cycle) is gone.
 - Ruff also enforces `PLE`, `PIE`, `TRY203`, `C4`, `RET`, `B010` and `B023`, which report nothing after this change.
 - Pivot tables no longer resize the columns of their sheet when Excel refreshes them on open, unless the
   new `PivotTable(autofit_columns=True)` asks for it (Excel's "Autofit column widths on update", written for
@@ -260,6 +260,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A named style whose fill is a colour string (`fill="00FF00"`) no longer raises `AttributeError` when it is written
+  to XLSX or added to an XLSB workbook. A colour string is a solid fill of that colour.
+- A corrupt XLSX `sharedStrings` part without an `sst` element raises `ValueError` ("sharedStrings element was not
+  found") instead of `TypeError`.
 - `ws.protection` and `ws.page_margins` accept the public `SheetProtection` and `PageMargins` objects and store
   them as the model's own types, so a sheet protected with `xlspy.SheetProtection(password=...)` saves and loads.
 - Writing a sheet whose data is far from the origin (for example `A1` and `XFD1048576`) no longer builds every
