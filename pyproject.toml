@@ -119,11 +119,3 @@ files = ["src/xlspy"]
 mypy_path = ["src"]
 ignore_missing_imports = true
 warn_unused_configs = true
-
-# Modules that still have type errors (2026-10-29 baseline). New modules are
-# checked; remove a module from this list once mypy passes for it.
-[[tool.mypy.overrides]]
-module = [
-    "xlspy.xlsx_writer",
-]
-ignore_errors = true

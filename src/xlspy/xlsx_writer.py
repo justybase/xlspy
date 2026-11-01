@@ -5,12 +5,11 @@ import io
 import math
 import shutil
 import tempfile
-import zipfile
 import xml.sax.saxutils as saxutils
 from typing import Any, Iterable, Mapping, Tuple
 from . import _zip_threads, chart_parts
 from ._accel import encode_xlsx_row as accel_encode_xlsx_row
-from ._output import StagedWriter
+from ._output import PackageZip, StagedWriter
 from ._writer_common import FilterData, WriterFrontEnd
 from .doc_properties import DocumentPropertiesMixin
 from ._text import check_cell_text, xstring_escape
@@ -219,9 +218,9 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
     def __init__(self, file: str | io.IOBase, compressionLevel: int = 3, useSharedStrings: bool = True,
                  spool_max_bytes: int = DEFAULT_SPOOL_BYTES):
         self._file = file
-        self._worksheet_data: list[Tuple[str, Iterable[list[Any]], bool]] = []
-        self._shared_strings: list[str] = []
-        self._shared_strings_dict: dict[str, int] = {}
+        self._worksheet_data: list[Tuple[str, Iterable[list[Any]] | None, bool]] = []
+        self._shared_strings: list[str | tuple[str, str]] = []
+        self._shared_strings_dict: dict[str | tuple[str, str], int] = {}
         self._sheet_count = 0
         self._sst_unique_count = 0
         self._sst_all_count = 0
@@ -230,7 +229,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         self._compressionLevel = compressionLevel
         self._useSharedStrings = useSharedStrings
         self._spool_max_bytes = spool_max_bytes
-        self._zf: zipfile.ZipFile = None
+        self._zf: PackageZip = None  # type: ignore[assignment]  # set when the workbook opens
         self._output = None  # StagedOutput while open
         self._letters = self._generate_column_letters()
         self._aborted = False
@@ -726,7 +725,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
 
     def _register_dxf_style(self, dxf: DifferentialStyle) -> int:
         font_key = None if dxf.font is None else _font_key_from(dxf.font)
-        if _font_is_empty(font_key):
+        if font_key is None or _font_is_empty(font_key):
             font_id = None
         else:
             if font_key in self._dxf_font_registry:
@@ -813,7 +812,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         return xf_index
 
     def write_dataframe(
-        self, df, include_index: bool = False, na_rep=None, formats: dict = None,
+        self, df, include_index: bool = False, na_rep=None, formats: dict | None = None,
         *, header_style: Style | None = None, styles: dict[str, Style] | None = None,
         merges: list[str] | tuple[str, ...] | None = None,
         conditional_formats: list | tuple | None = None,
@@ -1494,7 +1493,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         sst_file.write(header.encode('utf-8'))
         strings = self._shared_strings
         for start in range(0, len(strings), _SST_CHUNK_STRINGS):
-            chunk = strings[start:start + _SST_CHUNK_STRINGS]
+            chunk: Any = strings[start:start + _SST_CHUNK_STRINGS]
             # Plain-text chunks are escaped in one pass: joined on NUL (which a
             # string could only hold as a control character), then split again.
             # Rich runs (tuples) make join() fail; those chunks go item by item.
@@ -1619,6 +1618,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 + (f">{formula_xml}</cfRule>" if formula_xml else "/>")
             )
         if isinstance(rule, ColorScaleRule):
+            cfvos: tuple[FormatObject | None, ...]
             if rule.midpoint is None:
                 cfvos = (rule.minimum, rule.maximum)
             else:
@@ -1637,20 +1637,20 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
                 f"<colorScale>{inner}{colors}</colorScale></cfRule>"
             )
         if isinstance(rule, IconSetRule):
-            attrs = [f'iconSet="{rule.icon_style}"']
+            icon_attrs = [f'iconSet="{rule.icon_style}"']
             if rule.show_value is not None:
-                attrs.append(f'showValue="{1 if rule.show_value else 0}"')
+                icon_attrs.append(f'showValue="{1 if rule.show_value else 0}"')
             if rule.percent is not None:
-                attrs.append(f'percent="{1 if rule.percent else 0}"')
+                icon_attrs.append(f'percent="{1 if rule.percent else 0}"')
             if rule.reverse is not None:
-                attrs.append(f'reverse="{1 if rule.reverse else 0}"')
-            cfvos = "".join(
+                icon_attrs.append(f'reverse="{1 if rule.reverse else 0}"')
+            cfvo_xml = "".join(
                 self._format_object_xml(FormatObject(rule.cfvo_type, value))
                 for value in rule.values
             )
             return (
                 f'<cfRule type="iconSet" priority="{priority}"{stop}>'
-                f'<iconSet {" ".join(attrs)}>{cfvos}</iconSet></cfRule>'
+                f'<iconSet {" ".join(icon_attrs)}>{cfvo_xml}</iconSet></cfRule>'
             )
         # DataBarRule
         min_xml = (
@@ -2306,12 +2306,12 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         for row_idx in sorted(by_row):
             cells = by_row[row_idx]
             width = max(cells) + 1
-            row = [None] * width
+            cell_row: list[Any] = [None] * width
             for column, value in cells.items():
-                row[column] = value
+                cell_row[column] = value
             buf = io.StringIO()
             buf.write(f'<row r="{row_idx + 1}">')
-            self._write_row_cells(buf, row, row_idx, {}, [])
+            self._write_row_cells(buf, cell_row, row_idx, {}, [])
             buf.write('</row>')
             sink.write(buf.getvalue().encode('utf-8'))
             body.num_rows = max(body.num_rows, row_idx + 1)
@@ -2328,12 +2328,12 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
         for row_idx in sorted(by_row):
             cells = by_row[row_idx]
             width = max(cells) + 1
-            row = [None] * width
+            cell_row: list[Any] = [None] * width
             for column, value in cells.items():
-                row[column] = value
+                cell_row[column] = value
             buf = io.StringIO()
             buf.write(f'<row r="{row_idx + 1}">')
-            self._write_row_cells(buf, row, row_idx, {}, [])
+            self._write_row_cells(buf, cell_row, row_idx, {}, [])
             buf.write('</row>')
             rows_xml.append(buf.getvalue())
             max_row = max(max_row, row_idx + 1)
@@ -2348,7 +2348,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             "</worksheet>",
         )
         sheet_id = sheet_index + 1
-        rels = []
+        rels: list[Any] = []
         for render in renders:
             rid = f"rId{len(rels) + 1}"
             rels.append((
@@ -2393,7 +2393,7 @@ class XlsxWriter(WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
             self._sst_unique_count += 1
         buffer.write(f'<c t="s"{style_ref}><v>{string_index}</v></c>')
 
-    def _write_string_cell(self, buffer: io.StringIO, cell_value: str, is_header: bool = False, xf_index: int = None):
+    def _write_string_cell(self, buffer: io.StringIO, cell_value: str, is_header: bool = False, xf_index: int | None = None):
         check_cell_text(cell_value)
         if self._useSharedStrings:
             self._sst_all_count += 1

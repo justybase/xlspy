@@ -161,6 +161,9 @@ class StagedWriter:
     ``_aborted`` when a sheet write fails part-way.
     """
 
+    # Set by set_workbook_protection; None while the workbook has no protection.
+    _workbook_protection: WorkbookProtection | None
+
     def set_workbook_protection(self, protection: WorkbookProtection) -> None:
         self._require_writable()
         if not isinstance(protection, WorkbookProtection):
