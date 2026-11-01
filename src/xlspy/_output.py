@@ -245,8 +245,8 @@ class StagedWriter:
         else:
             try:
                 zf.close()
-            except Exception:
-                pass  # the archive is being dropped; a failure here changes nothing
+            except OSError:
+                pass  # the archive is being dropped; a failed write changes nothing
             output.discard()
 
 

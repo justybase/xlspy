@@ -1398,8 +1398,8 @@ def load_workbook(filename, *, read_only: bool = False, data_only: bool = False,
             with open(path, "rb") as source:
                 workbook.vba_archive = SafeZipFile(io.BytesIO(source.read()))
         return workbook
-    except Exception:
-        # A failed load must not leave the updater's temporary package behind.
+    except BaseException:
+        # A failed load (or an interrupt) must not leave the updater's temporary package behind.
         updater.close()
         raise
 

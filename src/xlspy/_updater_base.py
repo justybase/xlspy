@@ -69,6 +69,8 @@ class _UpdaterBase:
         self._package.close()
 
     def __del__(self):
+        # An exception raised in __del__ cannot reach a caller; it would only be
+        # reported as unraisable, so the cleanup swallows any failure.
         try:
             self.close()
         except Exception:
