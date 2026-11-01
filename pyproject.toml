@@ -119,3 +119,5 @@ files = ["src/xlspy"]
 mypy_path = ["src"]
 ignore_missing_imports = true
 warn_unused_configs = true
+# Check the bodies of unannotated functions too; without this, mypy skips them.
+check_untyped_defs = true
