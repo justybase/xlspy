@@ -141,8 +141,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Ragged rows: the first row present in an XLSX sheet sets the width the other rows are padded to (as documented
-  for `iter_rows`). A blank first row used to count as width 0, so the padding did not happen; now it is the same
+- Ragged rows: the first row present in an XLSX sheet sets the width the other rows are padded to in
+  `ExcelReader.get_rows()` / `read_all()` (as documented in `docs/usage.md`). `Worksheet.iter_rows()` pads to the
+  sheet width, as openpyxl does. A blank first row used to count as width 0, so the padding did not happen; now it is the same
   whether or not the sheet starts with a blank row.
 - The native accelerator selects one backend, the Rust module. Its private switches were renamed (`_c_*` to
   `_native_*` in `xlspy._accel`). The public names (`HAVE_NATIVE`, `HAVE_C_EXT`, `ACCEL_MODE`, `ACCEL_BACKEND`,
