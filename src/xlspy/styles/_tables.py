@@ -1,0 +1,137 @@
+"""Excel table descriptions and the column names they imply."""
+
+from __future__ import annotations
+from dataclasses import dataclass
+from ..hyperlinks import Hyperlink
+from ..refs import column_label, parse_cell_range
+from ._attrs import _TABLE_NAME_RE, _is_reference_like
+
+
+@dataclass(frozen=True, slots=True)
+class ExcelTable:
+    """An Excel table (ListObject) bound to a rectangular range."""
+
+    display_name: str
+    ref: str
+    columns: list[str] | tuple[str, ...] | None = None
+    header_row: bool = True
+    totals_row: bool = False
+    style_name: str = "TableStyleMedium9"
+    show_first_column: bool = False
+    show_last_column: bool = False
+    show_row_stripes: bool = True
+    show_column_stripes: bool = False
+
+    def __post_init__(self):
+        if not isinstance(self.display_name, str) or _TABLE_NAME_RE.fullmatch(
+            self.display_name
+        ) is None:
+            raise ValueError(
+                f"invalid table display name {self.display_name!r}"
+            )
+        if _is_reference_like(self.display_name):
+            raise ValueError(
+                f"invalid table display name {self.display_name!r}: "
+                "it reads as a cell reference, which Excel refuses"
+            )
+        first_col, _, last_col, _ = parse_cell_range(self.ref)
+        if self.columns is not None:
+            if not isinstance(self.columns, (list, tuple)):
+                raise TypeError("columns must be a list of strings or None")
+            columns = tuple(self.columns)
+            for column in columns:
+                if not isinstance(column, str):
+                    raise TypeError("columns must be a list of strings or None")
+            if self.header_row and len(columns) != last_col - first_col + 1:
+                raise ValueError(
+                    "len(columns) must match the table ref width"
+                )
+            object.__setattr__(self, "columns", columns)
+        for name in (
+            "header_row", "totals_row",
+            "show_first_column", "show_last_column",
+            "show_row_stripes", "show_column_stripes",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, bool):
+                raise TypeError(f"{name} must be bool")
+        if not isinstance(self.style_name, str):
+            raise TypeError("style_name must be a string")
+
+
+def table_column_names(table: ExcelTable, header_cells) -> list[str]:
+    """Column names for ``table``, checked against the cells of its header row.
+
+    Excel opens a table only when each header cell holds text equal (ignoring
+    case) to its column's name and the names are unique; Excel 16.0 refuses
+    the whole file otherwise. Names come from ``table.columns`` or, when that
+    is not given, from the header cells. ``header_cells`` is the sheet row
+    holding the header (``None`` if the data never reached it).
+    """
+    first_col, first_row, last_col, _ = parse_cell_range(table.ref)
+    width = last_col - first_col + 1
+    if not table.header_row:
+        if table.columns is not None:
+            return list(table.columns)
+        return [f"Column{i + 1}" for i in range(width)]
+    row = header_cells or ()
+    names = []
+    for offset in range(width):
+        col = first_col + offset
+        ref = f"{column_label(col)}{first_row + 1}"
+        cell = row[col] if col < len(row) else None
+        if isinstance(cell, tuple) and len(cell) == 2 and isinstance(cell[1], str):
+            cell = cell[0]  # a (value, number format) cell
+        if isinstance(cell, Hyperlink):
+            cell = cell.display_text  # written to the cell as plain text
+        if not isinstance(cell, str) or cell == "":
+            raise ValueError(
+                f"table {table.display_name!r}: header cell {ref} must hold text "
+                f"(found {cell!r}); Excel requires a text header for every table column"
+            )
+        if table.columns is not None:
+            name = table.columns[offset]
+            if name.casefold() != cell.casefold():
+                raise ValueError(
+                    f"table {table.display_name!r}: column name {name!r} does not match "
+                    f"header cell {ref} ({cell!r}); Excel requires them to be equal"
+                )
+        else:
+            name = cell
+        names.append(name)
+    seen = set()
+    for name in names:
+        if name.casefold() in seen:
+            raise ValueError(
+                f"table {table.display_name!r}: duplicate column name {name!r}; "
+                "Excel requires unique table column names"
+            )
+        seen.add(name.casefold())
+    return names
+
+
+def capture_table_headers(rows, tables, store: dict):
+    """Yield ``rows`` unchanged, checking each table's header row as it passes.
+
+    A copy of every header row is kept in ``store`` (row index -> cells) for
+    ``table_column_names``. Checking while the row streams past means a bad
+    header fails before the rest of the sheet is encoded.
+    """
+    by_row: dict[int, list] = {}
+    for table in tables:
+        if table.header_row:
+            by_row.setdefault(parse_cell_range(table.ref)[1], []).append(table)
+    if not by_row:
+        yield from rows
+        return
+    for row_idx, row in enumerate(rows):
+        header_tables = by_row.get(row_idx)
+        if header_tables is not None:
+            from ..formats import _unwrap_cell  # formats imports this module
+
+            # A (value, format) or (value, Style) header is its value.
+            cells = [_unwrap_cell(cell) for cell in row]
+            store[row_idx] = cells
+            for table in header_tables:
+                table_column_names(table, cells)
+        yield row
