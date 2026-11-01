@@ -83,10 +83,10 @@ def main():
     args = parser.parse_args()
 
     from bench_io import rows
-    from xlspy import _accel, xlsx_writer
+    from xlspy import _accel, _xlsx_writer_sheet
 
     if args.no_native_rows:
-        xlsx_writer.accel_encode_xlsx_row = lambda *a, **k: None
+        _xlsx_writer_sheet.accel_encode_xlsx_row = lambda *a, **k: None
 
     def data():
         if args.data == "plain":
@@ -139,21 +139,28 @@ def main():
     python_cells = 0.0  # _write_row_cells: the Python cell writer, for rows the native encoder hands back
     formula_cells = 0.0
     trailer_cells = 0.0  # the sheet's <hyperlinks> and their relationships, written after the rows
+    # The XLSX writer's methods live in its facade and the mixin modules it is split into.
+    XLSX_WRITER_FILES = tuple(
+        f"{module}.py" for module in (
+            "xlsx_writer", "_xlsx_writer_xml", "_xlsx_writer_sheet",
+            "_xlsx_writer_styles", "_xlsx_writer_parts", "_xlsx_writer_sheet_xml",
+        )
+    )
     for (filename, _line, name), (_cc, _nc, tottime, cumtime, _callers) in stats.items():
         if name == "write_sheet":
             total = cumtime
-        if name == "_write_body" and filename.endswith("xlsx_writer.py"):
+        if name == "_write_body" and filename.endswith(XLSX_WRITER_FILES):
             body["tottime"] += tottime
             body["cumtime"] += cumtime
         if name == "encode_xlsx_row":
             native += tottime
-        if name in glue and filename.endswith("xlsx_writer.py"):
+        if name in glue and filename.endswith(XLSX_WRITER_FILES):
             glue[name] += cumtime
-        if name == "_write_row_cells" and filename.endswith("xlsx_writer.py"):
+        if name == "_write_row_cells" and filename.endswith(XLSX_WRITER_FILES):
             python_cells += cumtime
-        if name == "_write_formula_cell" and filename.endswith("xlsx_writer.py"):
+        if name == "_write_formula_cell" and filename.endswith(XLSX_WRITER_FILES):
             formula_cells += cumtime
-        if name in ("_link_relationships", "_hyperlinks_xml") and filename.endswith("xlsx_writer.py"):
+        if name in ("_link_relationships", "_hyperlinks_xml") and filename.endswith(XLSX_WRITER_FILES):
             trailer_cells += cumtime
     if total is None:
         raise SystemExit("write_sheet not found in the profile")
