@@ -118,7 +118,7 @@ every case ran at 0.90–0.99× of the baseline time, so no case is slower than 
 
 Re-run of the writers and readers on one machine, with the Python libraries that
 read or write the same formats. Windows 11, AMD Ryzen 7 7840HS, Python 3.14.7,
-xlspy 0.12.0 at commit `75828a1`. The benchmark scripts and the XLSB read path of
+the xlspy development tree at commit `75828a1`. The benchmark scripts and the XLSB read path of
 the C extension (`src/xlspy/c_ext/_c_core.c`) have uncommitted changes; the read
 numbers below are for the changed code.
 Library versions: openpyxl 3.1.5, xlsxwriter 3.2.9, PyExcelerate 0.13.0,
