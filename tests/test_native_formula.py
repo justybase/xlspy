@@ -54,7 +54,7 @@ def _sheet_xml(rows, shared, native=True):
     patch = (
         contextlib.nullcontext()
         if native
-        else mock.patch.object(xlspy.xlsx_writer, "accel_encode_xlsx_row", lambda *a, **k: None)
+        else mock.patch.object(xlspy._xlsx_writer_sheet, "accel_encode_xlsx_row", lambda *a, **k: None)
     )
     with patch:
         buffer = io.BytesIO()

@@ -43,7 +43,7 @@ def _package(rows, shared, native=True):
     patch = (
         contextlib.nullcontext()
         if native
-        else mock.patch.object(xlspy.xlsx_writer, "accel_encode_xlsx_row", lambda *a, **k: None)
+        else mock.patch.object(xlspy._xlsx_writer_sheet, "accel_encode_xlsx_row", lambda *a, **k: None)
     )
     with patch:
         buffer = io.BytesIO()
@@ -68,7 +68,7 @@ def test_hyperlink_package_matches_python_writer(shared):
 def test_link_rows_after_the_first_are_written_natively():
     # The parity test above would also pass if every link went to the Python
     # writer, so count the rows the native encoder wrote with link records.
-    original = xlspy.xlsx_writer.accel_encode_xlsx_row
+    original = xlspy._xlsx_writer_sheet.accel_encode_xlsx_row
     native_link_rows = []
 
     def spy(*args, **kwargs):
@@ -77,7 +77,7 @@ def test_link_rows_after_the_first_are_written_natively():
             native_link_rows.append(len(result[3]))
         return result
 
-    with mock.patch.object(xlspy.xlsx_writer, "accel_encode_xlsx_row", spy):
+    with mock.patch.object(xlspy._xlsx_writer_sheet, "accel_encode_xlsx_row", spy):
         _package(ROWS, True, native=True)
     assert len(native_link_rows) >= 3
 

@@ -39,7 +39,7 @@ def encoder(request, monkeypatch):
         def no_c(*args, **kwargs):
             return None
 
-        monkeypatch.setattr(xlspy.xlsx_writer, "accel_encode_xlsx_row", no_c)
+        monkeypatch.setattr(xlspy._xlsx_writer_sheet, "accel_encode_xlsx_row", no_c)
         monkeypatch.setattr(xlspy.writer, "encode_xlsb_row", no_c)
         monkeypatch.setattr(xlspy.writer, "encode_xlsb_row_inline", no_c)
     return request.param
@@ -339,7 +339,7 @@ def test_native_and_python_xlsx_encoders_agree_on_ordinary_text(monkeypatch):
     outputs = []
     for use_c in (True, False):
         if not use_c:
-            monkeypatch.setattr(xlspy.xlsx_writer, "accel_encode_xlsx_row", lambda *a, **k: None)
+            monkeypatch.setattr(xlspy._xlsx_writer_sheet, "accel_encode_xlsx_row", lambda *a, **k: None)
         for shared in (True, False):
             data = _write(XlsxWriter, shared, rows)
             with zipfile.ZipFile(io.BytesIO(data)) as archive:

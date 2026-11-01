@@ -648,7 +648,7 @@ def _cell_styles_via_openpyxl(path):
 def test_value_style_cells_xlsx(tmp_path, monkeypatch, use_c):
     import xlspy.xlsx_writer
     if not use_c:
-        monkeypatch.setattr(xlspy.xlsx_writer, "accel_encode_xlsx_row", lambda *a, **k: None)
+        monkeypatch.setattr(xlspy._xlsx_writer_sheet, "accel_encode_xlsx_row", lambda *a, **k: None)
     bold = Style(font=Font(bold=True))
     red = Style(fill="FF0000", number_format="0.0")
     rows = [["h1", "h2", "h3"]]
