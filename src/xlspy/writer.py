@@ -2,7 +2,6 @@ from .exceptions import UnsupportedFeatureError
 import datetime
 import math
 from decimal import Decimal
-import zipfile
 import struct
 from typing import Any, Iterable, Tuple
 import io
@@ -133,7 +132,7 @@ def _hlink_payload(row: int, col: int, link: Hyperlink, rid: str | None) -> byte
     if link.is_internal:
         relationship, location, display = "", link.location, link.location
     else:
-        relationship, location, display = rid, "", link.target
+        relationship, location, display = rid or "", "", link.target or ""
     return (
         struct.pack("<4I", row, row, col, col)
         + wide_string(relationship) + wide_string(location)
@@ -208,7 +207,9 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         self._filtered_data_list: list[FilterData] = []
         self._sheetCnt = 1
         self._compressionLevel = compressionLevel
-        self._zf: zipfile.ZipFile = None
+        # The package being written; set by open() and typed loosely because the
+        # threaded ZipFile in _zip_threads adds methods that zipfile.ZipFile lacks.
+        self._zf: Any = None
         self._letters = chart_parts.column_letters()
 
         self._format_registry: dict[str, int] = {}
@@ -265,9 +266,9 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         self._reserved_cf_priorities: set[int] = set()
         self._next_cf_priority = 1
         self._xlsb_formula_context = None
-        self._sheet_comments = {}
-        self._sheet_link_rels = {}
-        self._workbook_protection = None
+        self._sheet_comments: dict[int, Any] = {}
+        self._sheet_link_rels: dict[int, Any] = {}
+        self._workbook_protection: Any = None
 
     def _register_numfmt(self, fmt_string: str) -> int:
         numfmt_id = self._format_registry.get(fmt_string)
@@ -760,7 +761,7 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             raise
 
     def write_dataframe(
-        self, df, include_index: bool = False, na_rep=None, formats: dict = None,
+        self, df, include_index: bool = False, na_rep=None, formats: dict | None = None,
         *, header_style: Style | None = None, styles: dict[str, Style] | None = None,
         merges: list[str] | tuple[str, ...] | None = None,
         column_widths: dict | None = None,
@@ -1453,8 +1454,9 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
             head = self._sheet1Bytes[:9] + self._color_payload(tab_key) + self._sheet1Bytes[17:54]
         if print_spec is not None and print_spec.fit_to_page:
             # The BrtWsProp payload starts at byte 6; fFitToPage is in its second byte.
-            head = bytearray(head)
-            head[6 + FIT_TO_PAGE_BYTE] |= FIT_TO_PAGE_BIT
+            patched = bytearray(head)
+            patched[6 + FIT_TO_PAGE_BYTE] |= FIT_TO_PAGE_BIT
+            head = bytes(patched)
         buffer.write(head)
         # First flag byte of BrtBeginWsView: fDspGrid (0x04), fDspRwCol,
         # fDspZeros, fSelected (0x40, first sheet only) and fDspRuler.
@@ -1543,8 +1545,8 @@ class XlsbWriter(WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPrope
         # encoder, which only emits default row headers.
         heights = heights or {}
         custom_rows = set(heights) | set(hidden_row_set)
-        array_ranges = []
-        row_style_ids_cache = {}
+        array_ranges: list[Any] = []
+        row_style_ids_cache: dict[Any, Any] = {}
 
         row_idx = -1
         last_written = -1  # index of the last row record written

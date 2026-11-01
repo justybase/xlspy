@@ -113,7 +113,7 @@ def range_to_tuple(range_string: str):
 
 def rows_from_range(range_string: str):
     min_col, min_row, max_col, max_row = range_boundaries(range_string)
-    if None in (min_col, min_row, max_col, max_row):
+    if min_col is None or min_row is None or max_col is None or max_row is None:
         raise ValueError(f"{range_string} is not a rectangular cell range")
     cols = [get_column_letter(col) for col in range(min_col, max_col + 1)]
     for row in range(min_row, max_row + 1):
@@ -122,7 +122,7 @@ def rows_from_range(range_string: str):
 
 def cols_from_range(range_string: str):
     min_col, min_row, max_col, max_row = range_boundaries(range_string)
-    if None in (min_col, min_row, max_col, max_row):
+    if min_col is None or min_row is None or max_col is None or max_row is None:
         raise ValueError(f"{range_string} is not a rectangular cell range")
     for col in range(min_col, max_col + 1):
         letter = get_column_letter(col)

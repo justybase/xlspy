@@ -8,6 +8,7 @@ BrtBorder, 2.4.674 BrtFill, 2.4.683 BrtFont, 2.4.863 BrtXF, 2.4.334 BrtColor);
 from __future__ import annotations
 
 import struct
+from typing import Any
 
 from .biff_utils import build_record
 
@@ -69,7 +70,7 @@ def color_payload(color_key) -> bytes:
         return bytes((0x07, color_key[1])) + struct.pack('<h', scaled) + bytes((0, 0, 0, 0xFF))
     return bytes(8)  # ("auto",)
 
-def font_record(font_key: tuple) -> bytes:
+def font_record(font_key: Any) -> bytes:
     """Build a BrtFont record ([MS-XLSB] 2.4.683) from a font key."""
     flags = 0
     for bit, value in (
@@ -104,7 +105,7 @@ def font_record(font_key: tuple) -> bytes:
     payload.extend(name)
     return build_record(_BRT_FONT, bytes(payload))
 
-def fill_record(fill_key: tuple) -> bytes:
+def fill_record(fill_key: Any) -> bytes:
     """Build a BrtFill record ([MS-XLSB] 2.4.674) from a fill key."""
     if fill_key[0] == "gradient":
         return gradient_fill_record(fill_key)
@@ -116,7 +117,7 @@ def fill_record(fill_key: tuple) -> bytes:
     payload.extend(bytes(48))  # unused gradient fields
     return build_record(_BRT_FILL, bytes(payload))
 
-def gradient_fill_record(fill_key: tuple) -> bytes:
+def gradient_fill_record(fill_key: Any) -> bytes:
     _, fill_type, degree, left, right, top, bottom, stops = fill_key
     linear = fill_type == "linear"
     payload = bytearray()
@@ -146,7 +147,7 @@ def gradient_fill_record(fill_key: tuple) -> bytes:
         payload.extend(struct.pack('<d', float(position)))
     return build_record(_BRT_FILL, bytes(payload))
 
-def border_record(border_key: tuple) -> bytes:
+def border_record(border_key: Any) -> bytes:
     """Build a BrtBorder record ([MS-XLSB] 2.4.311) from a border key."""
     diagonal = 0
     if border_key.diagonal_down:

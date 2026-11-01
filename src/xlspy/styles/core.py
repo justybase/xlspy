@@ -1322,6 +1322,18 @@ def _protection_key_from(protection: Protection) -> _ProtectionKey:
     return _ProtectionKey(protection.locked, protection.hidden)
 
 
+def fill_key_for(fill):
+    """The fill component key of a Style fill: a PatternFill, a GradientFill, or a
+    colour string, which is a solid fill of that colour (``Style.fill``)."""
+    if isinstance(fill, PatternFill):
+        return _pattern_fill_key(fill)
+    if isinstance(fill, GradientFill):
+        return _fill_key_from(fill)
+    if fill is not None:
+        return ("pattern", "solid", ("rgb", f"FF{fill}"), None)
+    return None
+
+
 def split_style(style: Style) -> tuple:
     """Split a ``Style`` into hashable ``(font, fill, border, numfmt, align, prot)`` keys.
 
@@ -1367,12 +1379,8 @@ def split_style(style: Style) -> tuple:
     fill_key = None
     if style.pattern is not None:
         fill_key = _pattern_fill_key(style.pattern)
-    if fill_key is None and isinstance(style.fill, PatternFill):
-        fill_key = _pattern_fill_key(style.fill)
-    if fill_key is None and isinstance(style.fill, GradientFill):
-        fill_key = _fill_key_from(style.fill)
-    if fill_key is None and style.fill is not None:
-        fill_key = ("pattern", "solid", ("rgb", f"FF{style.fill}"), None)
+    if fill_key is None:
+        fill_key = fill_key_for(style.fill)
 
     border_key = None
     if style.border is not None:

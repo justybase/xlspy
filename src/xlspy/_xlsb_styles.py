@@ -12,6 +12,8 @@ from __future__ import annotations
 from .exceptions import UnsupportedFeatureError
 import struct
 
+from typing import Any
+
 from ._xlsb_metadata import read_wide
 from ._xlsb_style_records import (
     _BORDER_BYTES,
@@ -45,6 +47,7 @@ from .styles import (
     _font_is_empty,
     _font_key_from,
     _protection_key_from,
+    fill_key_for,
 )
 from .workbook._styles import XlsxStyleTable, _Xf
 
@@ -211,10 +214,24 @@ def _xf(payload: bytes) -> tuple[int, _Xf]:
 class XlsbStyleTable(XlsxStyleTable):
     """The style sheet of a loaded XLSB package, with append-only additions."""
 
+    # Set by from_bin() and the append paths; declared here for the type checker
+    # (annotations only, so no attribute is created at class level).
+    _source_bin: bytes
+    _saved_counts: tuple[int, int, int, int]
+    _cell_style_count: int
+    _font_keys: list[Any]
+    _fill_keys: list[Any]
+    _border_keys: list[Any]
+    _dxf_keys: list[Any]
+    _new_dxfs: list[Any]
+    _new_style_xfs: list[Any]
+    _new_cell_styles: list[Any]
+
     @classmethod
     def from_bin(cls, data: bytes | None) -> "XlsbStyleTable":
         table = cls()
         table._source_bin = data or b""
+        table._cell_style_count = 0
         if data:
             table._parse_bin(data)
         if not table.xfs:
@@ -278,9 +295,9 @@ class XlsbStyleTable(XlsxStyleTable):
                     self.dxfs.append(None)
             elif kind == _STYLE and len(payload) >= 8:
                 ixf, grbit = struct.unpack_from("<IH", payload, 0)
-                builtin = payload[6]
+                builtin_byte = payload[6]
                 name, _ = read_wide(payload, 8)
-                cell_styles.append((name, ixf, builtin if grbit & 0x01 else None, bool(grbit & 0x02)))
+                cell_styles.append((name, ixf, builtin_byte if grbit & 0x01 else None, bool(grbit & 0x02)))
         self._cell_style_count = len(cell_styles)
         for _parent, xf in style_xfs:
             self.cell_style_xfs.append(self._style_for(xf))
@@ -335,7 +352,7 @@ class XlsbStyleTable(XlsxStyleTable):
         xf = _Xf(
             num_fmt_id=self._intern_numfmt(number_format) if number_format and number_format != "General" else 0,
             font_id=self._intern_font(_font_key_from(base.font)) if base.font else 0,
-            fill_id=self._intern_fill(_fill_key_from(base.fill)) if base.fill else 0,
+            fill_id=self._intern_fill(fill_key_for(base.fill)) if base.fill else 0,
             border_id=self._intern_border(_border_key(base.border)) if base.border else 0,
             alignment=base.alignment, protection=base.protection,
         )

@@ -10,6 +10,7 @@ instead of being guessed.
 from __future__ import annotations
 
 import struct
+from typing import Any
 
 from ._xlsb_formulas import compile_formula
 from .biff_utils import build_record
@@ -271,8 +272,13 @@ def dxf_from_payload(payload: bytes) -> DifferentialStyle:
 
     count = struct.unpack_from("<H", payload, 4)[0]
     offset = 6
-    font, fill, sides, alignment, protection = {}, {}, {}, {}, {}
-    number_format = None
+    # Keyword arguments for the style constructors below, so the values are mixed.
+    font: dict[str, Any] = {}
+    fill: dict[str, Any] = {}
+    sides: dict[str, Any] = {}
+    alignment: dict[str, Any] = {}
+    protection: dict[str, Any] = {}
+    number_format: str | None = None
     for _ in range(count):
         kind, size = struct.unpack_from("<HH", payload, offset)
         data = payload[offset + 4:offset + size]
@@ -454,7 +460,7 @@ def rule_bin(rule, priority: int, dxf_id: int, context, letters) -> bytes:
     # Formulas are relative to the range's top-left cell, like XLSX.
     compiled, sizes = [], []
     for formula in formulas:
-        stats = {}
+        stats: dict[str, int] = {}
         compiled.append(compile_formula(
             formula, context, origin=(first_col, first_row), cell_relative=True, stats=stats,
         ))
@@ -518,7 +524,7 @@ def cfvo_bin(kind: str, value, context, origin, gte: bool = False) -> bytes:
         if value is None:
             raise ValueError("a formula threshold needs a formula")
         text = str(value)
-        stats = {}
+        stats: dict[str, int] = {}
         formula = compile_formula(
             text[1:] if text.startswith("=") else text, context,
             origin=origin, cell_relative=True, stats=stats,

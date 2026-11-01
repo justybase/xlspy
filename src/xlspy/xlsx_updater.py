@@ -10,7 +10,7 @@ import numbers
 import os
 import re
 from decimal import Decimal
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 from xml.parsers import expat
 from ._safe_xml import harden_expat
 
@@ -800,7 +800,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             type_attribute = ' t="str"'
             cached_xml = f"<{prefix}v>{escape_xml_text(cached)}</{prefix}v>"
         elif cached is not None:
-            cached_xml = f"<{prefix}v>{repr(float(cached))}</{prefix}v>"
+            cached_xml = f"<{prefix}v>{repr(float(cast(Any, cached)))}</{prefix}v>"
         array_attribute = (
             f' t="array" ref="{escape_xml_text(formula.array_ref)}"'
             if formula.array_ref is not None
@@ -1008,12 +1008,12 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                     rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?dimension\b[^>]*>", source
                 )
                 if dimension_match:
-                    opening = dimension_match.group(0).decode("utf-8")
+                    dimension_opening = dimension_match.group(0).decode("utf-8")
                     replacements.append(
                         (
                             dimension_match.start(),
                             dimension_match.end(),
-                            replace_or_add_xml_attribute(opening, "ref", dimension_ref).encode(
+                            replace_or_add_xml_attribute(dimension_opening, "ref", dimension_ref).encode(
                                 "utf-8"
                             ),
                         )
@@ -1037,12 +1037,12 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                     rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>", source
                 )
                 if auto_filter_match:
-                    opening = auto_filter_match.group(0).decode("utf-8")
+                    filter_opening = auto_filter_match.group(0).decode("utf-8")
                     replacements.append(
                         (
                             auto_filter_match.start(),
                             auto_filter_match.end(),
-                            replace_or_add_xml_attribute(opening, "ref", dimension_ref).encode(
+                            replace_or_add_xml_attribute(filter_opening, "ref", dimension_ref).encode(
                                 "utf-8"
                             ),
                         )

@@ -18,6 +18,7 @@ from .core import (  # noqa: F401
     _date_cell_xf,
     _fill_key_from,
     _font_is_empty,
+    fill_key_for,
     _font_key_from,
     _pattern_fill_key,
     _protection_key_from,

@@ -210,6 +210,12 @@ class ExcelReader:
             self._archive.close()
             self._archive = None
 
+    def _zip(self) -> zipfile.ZipFile:
+        """The open archive. Reading after close() raises a clear error."""
+        if self._archive is None:
+            raise ValueError("ExcelReader is closed")
+        return self._archive
+
     def __enter__(self):
         if self._path is not None:
             self.open(self._path)
@@ -225,7 +231,7 @@ class ExcelReader:
     def read_part(self, path: str) -> bytes | None:
         """The bytes of a package part, or None when the package has no such part."""
         try:
-            return self._archive.read(path)
+            return self._zip().read(path)
         except KeyError:
             return None
 
@@ -269,26 +275,26 @@ class ExcelReader:
             from .comments import find_comment_parts
             rid = self._worksheet_name_to_id[sheet_name]
             path = self._resolve_path(self._worksheet_id_to_location[rid])
-            _, _, parts = find_comment_parts(self._archive.read, self._archive.namelist(), path)
-            return parse_comments(self._archive.read(parts['comments'][0]))[0] if 'comments' in parts else {}
+            _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
+            return parse_comments(self._zip().read(parts['comments'][0]))[0] if 'comments' in parts else {}
         from .comments import find_comment_parts, read_comments
         rid = self._worksheet_name_to_id[sheet_name]
         path = self._resolve_path(self._worksheet_id_to_location[rid])
-        _, _, parts = find_comment_parts(self._archive.read, self._archive.namelist(), path)
-        return read_comments(self._archive.read(parts["comments"][0])) if "comments" in parts else {}
+        _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
+        return read_comments(self._zip().read(parts["comments"][0])) if "comments" in parts else {}
 
     def get_defined_names(self):
         """Return global and worksheet-local user names (not built-in names)."""
         if self._is_xlsb:
             from ._xlsb_formulas import FormulaContext
-            return FormulaContext(self.get_sheet_names(), self._archive.read('xl/workbook.bin'), self.read_part).defined_names()
+            return FormulaContext(self.get_sheet_names(), self._zip().read('xl/workbook.bin'), self.read_part).defined_names()
         from ._metadata import read_defined_names
-        return read_defined_names(self._archive.read("xl/workbook.xml"), self.get_sheet_names())
+        return read_defined_names(self._zip().read("xl/workbook.xml"), self.get_sheet_names())
 
     def _open_xlsx(self, path: str):
         self._archive = SafeZipFile(path, 'r')
 
-        with self._archive.open('xl/workbook.xml') as f:
+        with self._zip().open('xl/workbook.xml') as f:
             content = f.read().decode('utf-8')
             self._parse_workbook_xml(content)
 
@@ -303,7 +309,7 @@ class ExcelReader:
     def _open_xlsb(self, path: str):
         self._archive = SafeZipFile(path, 'r')
 
-        with self._archive.open('xl/workbook.bin') as f:
+        with self._zip().open('xl/workbook.bin') as f:
             raw = f.read()
             stream = _MemoryStream(raw)
             reader = BiffReader(stream)
@@ -338,10 +344,10 @@ class ExcelReader:
 
     def _fill_rels(self, ext: str):
         rels_path = f'xl/_rels/workbook.{ext}.rels'
-        if rels_path not in self._archive.namelist():
+        if rels_path not in self._zip().namelist():
             return
 
-        with self._archive.open(rels_path) as f:
+        with self._zip().open(rels_path) as f:
             content = f.read().decode('utf-8')
 
         parser = harden_expat(ParserCreate(namespace_separator='}'))
@@ -368,7 +374,7 @@ class ExcelReader:
         if self._shared_strings_location is None:
             return
         entry_path = self._resolve_path(self._shared_strings_location)
-        with self._archive.open(entry_path) as f:
+        with self._zip().open(entry_path) as f:
             raw = f.read()
         native = _accel_read_xlsx_sst(raw)
         if native is not None:
@@ -427,7 +433,7 @@ class ExcelReader:
         if self._shared_strings_location is None:
             return
         entry_path = self._resolve_path(self._shared_strings_location)
-        with self._archive.open(entry_path) as f:
+        with self._zip().open(entry_path) as f:
             raw = f.read()
         sst = _accel_read_sst(raw)
         if sst is not None:
@@ -459,7 +465,7 @@ class ExcelReader:
         if self._styles_location is None:
             return
         entry_path = self._resolve_path(self._styles_location)
-        with self._archive.open(entry_path) as f:
+        with self._zip().open(entry_path) as f:
             content = f.read().decode('utf-8')
 
         self._styles_cell_xfs_array = []
@@ -512,7 +518,7 @@ class ExcelReader:
         if self._styles_location is None:
             return
         entry_path = self._resolve_path(self._styles_location)
-        with self._archive.open(entry_path) as f:
+        with self._zip().open(entry_path) as f:
             raw = f.read()
         stream = _MemoryStream(raw)
         reader = BiffReader(stream)
@@ -560,7 +566,7 @@ class ExcelReader:
         location = self._worksheet_id_to_location[r_id]
         entry_path = self._resolve_path(location)
 
-        with self._archive.open(entry_path) as f:
+        with self._zip().open(entry_path) as f:
             raw = f.read()
 
         if HAVE_NATIVE:
