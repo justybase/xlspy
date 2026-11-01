@@ -673,7 +673,7 @@ def test_value_style_cells_xlsx(tmp_path, monkeypatch, use_c):
 def test_value_style_cells_xlsb(tmp_path, monkeypatch, use_c):
     import xlspy.writer
     if not use_c:
-        monkeypatch.setattr(xlspy.writer, "encode_xlsb_row", lambda *a, **k: None)
+        monkeypatch.setattr(xlspy._xlsb_writer_bin, "encode_xlsb_row", lambda *a, **k: None)
     bold = Style(bold=True)
     rows = [["h"], *[[(r, bold)] for r in range(1, 20)], [("x", Style(number_format="0.00"))]]
     path = tmp_path / "cells.xlsb"

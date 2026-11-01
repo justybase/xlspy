@@ -40,8 +40,8 @@ def encoder(request, monkeypatch):
             return None
 
         monkeypatch.setattr(xlspy._xlsx_writer_sheet, "accel_encode_xlsx_row", no_c)
-        monkeypatch.setattr(xlspy.writer, "encode_xlsb_row", no_c)
-        monkeypatch.setattr(xlspy.writer, "encode_xlsb_row_inline", no_c)
+        monkeypatch.setattr(xlspy._xlsb_writer_bin, "encode_xlsb_row", no_c)
+        monkeypatch.setattr(xlspy._xlsb_writer_bin, "encode_xlsb_row_inline", no_c)
     return request.param
 
 
@@ -184,7 +184,7 @@ def test_shared_string_table_refuses_text_over_the_limit(encoder, text, monkeypa
         if not _accel.HAVE_NATIVE:
             pytest.skip("native extension not built")
     else:
-        monkeypatch.setattr(xlspy.writer, "accel_encode_xlsb_sst", lambda *args: None)
+        monkeypatch.setattr(xlspy._xlsb_writer_parts, "accel_encode_xlsb_sst", lambda *args: None)
     with pytest.raises(ValueError, match="32767"):
         _sst_writer(["ok", text])._write_shared_strings_bin(io.BytesIO())
 
@@ -199,7 +199,7 @@ def test_native_and_python_shared_string_tables_agree(text, monkeypatch):
     strings = ["short", text]
     c_bytes = io.BytesIO()
     _sst_writer(strings)._write_shared_strings_bin(c_bytes)
-    monkeypatch.setattr(xlspy.writer, "accel_encode_xlsb_sst", lambda *args: None)
+    monkeypatch.setattr(xlspy._xlsb_writer_parts, "accel_encode_xlsb_sst", lambda *args: None)
     python_bytes = io.BytesIO()
     _sst_writer(strings)._write_shared_strings_bin(python_bytes)
     assert c_bytes.getvalue() == python_bytes.getvalue()

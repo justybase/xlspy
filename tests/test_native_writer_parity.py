@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from xlspy import XlsbWriter, XlsxWriter, _accel, _xlsx_writer_sheet, writer, xlsx_writer
+from xlspy import XlsbWriter, XlsxWriter, _accel, _xlsb_writer_bin, _xlsb_writer_parts, _xlsx_writer_sheet, writer, xlsx_writer
 
 pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 
@@ -46,8 +46,8 @@ def test_native_rows_match_python_rows(tmp_path, monkeypatch, cls, suffix, share
             if not use_c:
                 none = lambda *args, **kwargs: None
                 patch.setattr(_xlsx_writer_sheet, "accel_encode_xlsx_row", none)
-                patch.setattr(writer, "encode_xlsb_row", none)
-                patch.setattr(writer, "encode_xlsb_row_inline", none)
+                patch.setattr(_xlsb_writer_bin, "encode_xlsb_row", none)
+                patch.setattr(_xlsb_writer_bin, "encode_xlsb_row_inline", none)
             path = tmp_path / f"{use_c}.{suffix}"
             with cls(path, useSharedStrings=shared) as book:
                 book.add_sheet("S")
