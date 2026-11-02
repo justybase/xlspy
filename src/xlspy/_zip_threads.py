@@ -11,9 +11,10 @@ Two ways in:
   sequential write; at levels 0-1 zlib's block boundaries follow the input
   chunks, so the compressed bytes can differ. Output stays deterministic.)
 - ``DeflateSegment`` compresses data that must be stored *after* a header that
-  is only known later (an XLSX sheet: ``<dimension>`` depends on the rows).  The
-  segment ends with a sync flush, so ``replay_member`` can write
-  header + segment + trailer as one valid deflate stream, as pigz does.
+  is only known later (a sheet: the XLSX ``<dimension>`` and the XLSB
+  ``BrtWsDim`` depend on the rows).  The segment ends with a sync flush, so
+  ``replay_member`` can write header + segment + trailer as one valid deflate
+  stream, as pigz does.
 
 Both reach into ``zipfile._ZipWriteFile._compressor``; ``AVAILABLE`` is False
 when that attribute is not there, and callers then write sequentially.

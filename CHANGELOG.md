@@ -438,7 +438,23 @@ Migration from 0.10:
   `ws.protection`.
 - The XLSB writer used record ids 0x86/0x87 for BrtBeginColInfos and
   BrtEndColInfos instead of 0x186/0x187; loading such a file and editing
-  column widths now drops the old wrappers.
+  column widths now drops the old wrappers. Excel tolerated the old ids, but
+  LibreOffice dropped every cell of such a sheet (#1).
+- `XlsbWriter` wrote `BrtWsDim` as `(0, 0, 0, 0)` whatever the data (#1). Excel
+  ignores the record on load, but readers that size rows from it failed: pyxlsb
+  raised `IndexError` on the first cell past column A, and
+  `load_workbook(read_only=True)` reported no `max_row`. The record now holds
+  the used range by Excel's rule, checked against the files Excel saves: rows
+  with cells or a non-default row header (height, hidden, outline), columns of
+  every cell record (values, formulas, styled blanks, array members); an empty
+  sheet keeps zeros. Since the record precedes the rows, a sheet larger than the
+  64 KB row buffer is compressed on the worker thread into a spool (memory up to
+  1 MiB, then disk) and written behind its head as one deflate stream, as the
+  XLSX writer does for `<dimension>`. Speed and peak memory are unchanged.
+  Read-only rows are now padded to the dimension's width, as for a file Excel
+  saved; files from older versions still read as unsized.
+- A sheet added through the model and saved as `.xlsb` got a dimension
+  stretched to A1 (`create_sheet("New")["D5"] = 1` gave `A1:D5`, Excel writes `D5`).
 - XLSB icon sets: `reverse` was written inverted, and `4Rating`/`5Rating`
   were rejected; data bars without lengths now use Excel's 10%/90%.
 - XLSX dataBar `showValue`/`minLength`/`maxLength` were read from `<cfRule>`

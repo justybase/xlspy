@@ -57,6 +57,7 @@ test = [
     "pytest-timeout",
     "hypothesis",
     "psutil",
+    "pyxlsb",  # a second XLSB reader (tests/test_xlsb_interop.py)
     "xlsxwriter",
 ]
 examples = [

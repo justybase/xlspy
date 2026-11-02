@@ -175,28 +175,27 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         slicer_rid = f"rId{link_rid_start}" if spec.slicers else None
         link_rid_start += int(slicer_rid is not None)
         try:
-            with self._zf.open_threaded(f"xl/worksheets/sheet{sheet_id}.bin") as sheet_file:
-                self._write_worksheet_bin(
-                    sheet_file, data, self._sheet_count - 1,
-                    style_ranges=spec.style_ranges, header_style=spec.header_style,
-                    merge_refs=spec.merge_refs, widths=spec.widths, hidden_cols=spec.hidden_cols,
-                    heights=spec.heights, hidden_row_set=spec.hidden_rows,
-                    freeze_panes=freeze_panes, auto_filter=auto_filter,
-                    auto_filter_ref=auto_filter_ref,
-                    drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
-                    cf_rules=spec.cf_rules, row_outline=spec.row_outline, col_outline=spec.col_outline,
-                    sheet_protection=sheet_protection,
-                    show_grid_lines=show_grid_lines, view=spec.view,
-                    header_rows=spec.header_rows, tab_key=spec.tab_key, zoom=spec.zoom,
-                    filter_cells=[
-                        (r1, c1, c2) for table in spec.tables if table.header_row
-                        for c1, r1, c2, _r2 in (parse_cell_range(table.ref),)
-                    ],
-                    comment_vml_rid=(f'rId{3 + len(table_ids) + int(has_drawing)}' if spec.comments else None),
-                    link_rids=link_rids, link_rid_start=link_rid_start,
-                    print_spec=spec.print_settings, validations=spec.validations,
-                    sparklines=spec.sparklines, slicer_rel=slicer_rid,
-                )
+            self._write_worksheet_bin(
+                f"xl/worksheets/sheet{sheet_id}.bin", data, self._sheet_count - 1,
+                style_ranges=spec.style_ranges, header_style=spec.header_style,
+                merge_refs=spec.merge_refs, widths=spec.widths, hidden_cols=spec.hidden_cols,
+                heights=spec.heights, hidden_row_set=spec.hidden_rows,
+                freeze_panes=freeze_panes, auto_filter=auto_filter,
+                auto_filter_ref=auto_filter_ref,
+                drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
+                cf_rules=spec.cf_rules, row_outline=spec.row_outline, col_outline=spec.col_outline,
+                sheet_protection=sheet_protection,
+                show_grid_lines=show_grid_lines, view=spec.view,
+                header_rows=spec.header_rows, tab_key=spec.tab_key, zoom=spec.zoom,
+                filter_cells=[
+                    (r1, c1, c2) for table in spec.tables if table.header_row
+                    for c1, r1, c2, _r2 in (parse_cell_range(table.ref),)
+                ],
+                comment_vml_rid=(f'rId{3 + len(table_ids) + int(has_drawing)}' if spec.comments else None),
+                link_rids=link_rids, link_rid_start=link_rid_start,
+                print_spec=spec.print_settings, validations=spec.validations,
+                sparklines=spec.sparklines, slicer_rel=slicer_rid,
+            )
             self._sheet_link_rels[sheet_id] = link_rids
             self._register_sheet_parts(
                 sheet_id, sheet_name, spec, pivot_renders, pending_pivots, pivot_names,
@@ -316,5 +315,4 @@ class _XlsbSheetMixin(_XlsbWriterHost):
 
     def _write_empty_sheet(self, sheet_index: int) -> None:
         """A sheet that was added but never written holds no rows."""
-        with self._zf.open_threaded(f"xl/worksheets/sheet{sheet_index + 1}.bin") as sheet_file:
-            self._write_worksheet_bin(sheet_file, [], sheet_index)
+        self._write_worksheet_bin(f"xl/worksheets/sheet{sheet_index + 1}.bin", [], sheet_index)

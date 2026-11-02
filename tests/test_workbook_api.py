@@ -690,9 +690,11 @@ def test_read_only_binary_files_written_by_xlspy_are_not_truncated(tmp_path):
         writer.write_sheet([[1, 2, Formula("A1*2")], [4]])
     workbook = load_workbook(path, read_only=True)
     try:
-        # XlsbWriter stores an A1:A1 dimension placeholder: treat it as unsized.
-        assert workbook["Data"].max_row is None
-        assert list(workbook["Data"].values) == [(1, 2, "=A1*2"), (4,)]
+        # BrtWsDim holds the used range, so rows read back padded to its width,
+        # as from a file Excel saved (older files: see test_xlsb_interop.py).
+        assert workbook["Data"].dimensions == "A1:C2"
+        assert workbook["Data"].max_row == 2
+        assert list(workbook["Data"].values) == [(1, 2, "=A1*2"), (4, None, None)]
     finally:
         workbook.close()
     updated = tmp_path / "updated.xlsb"

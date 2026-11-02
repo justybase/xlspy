@@ -417,7 +417,7 @@ class XlsbEditMixin(XlsxEditMixin):
         output.append(data[end.header_start:])
         patched = b''.join(output)
         coordinates = [parse_cell_range(ref) for ref in targets]
-        # Existing cells count too: XlsbWriter stores an A1:A1 placeholder.
+        # Existing cells count too: xlspy before 0.11 wrote an A1:A1 placeholder.
         current_row, previous_column = None, -1
         for record, payload in all_records:
             if not begin.data_end <= record.header_start < end.header_start:
@@ -432,7 +432,10 @@ class XlsbEditMixin(XlsxEditMixin):
         dimension = next(((record, payload) for record, payload in all_records if record.record_id == 0x94), None)
         if dimension is not None:
             r1, r2, c1, c2 = struct.unpack('<IIII', dimension[1])
-            coordinates.append((c1, r1, c2, r2))
+            # (0, 0, 0, 0) is an empty sheet (or A1 alone, which the scan above
+            # finds): keeping it would stretch a new sheet's range to A1.
+            if (r1, r2, c1, c2) != (0, 0, 0, 0):
+                coordinates.append((c1, r1, c2, r2))
         bounds = struct.pack('<IIII', min(v[1] for v in coordinates), max(v[3] for v in coordinates), min(v[0] for v in coordinates), max(v[2] for v in coordinates))
         if dimension is not None and dimension[0].data_end <= begin.header_start:
             # Before the sheet data, so its offsets are unchanged in ``patched``.

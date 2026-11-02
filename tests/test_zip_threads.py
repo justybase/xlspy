@@ -40,10 +40,13 @@ def test_threaded_members_match_sequential(monkeypatch, cls, level, shared):
     assert threaded == sequential
 
 
-def test_threaded_xlsb_sheet_is_byte_identical_at_default_level(monkeypatch):
-    threaded = _write(XlsbWriter, 3, True)
-    monkeypatch.setattr(_zip_threads, "AVAILABLE", False)
-    assert threaded == _write(XlsbWriter, 3, True)
+@pytest.mark.parametrize("cls", [XlsxWriter, XlsbWriter])
+def test_threaded_output_is_deterministic(cls):
+    # A sheet larger than the row buffer is compressed in segments (its head,
+    # which holds the dimension, is known only after the rows), so the archive
+    # bytes differ from a sequential write; the members do not (see above), and
+    # the same input always gives the same bytes.
+    assert _write(cls, 3, True) == _write(cls, 3, True)
 
 
 def test_failed_write_stops_the_worker():

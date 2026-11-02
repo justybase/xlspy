@@ -9,6 +9,9 @@ import struct
 from collections.abc import Iterable, Iterator
 import io
 import itertools
+import shutil
+import tempfile
+from . import _zip_threads
 from ._accel import encode_xlsb_row, encode_xlsb_row_inline, xlsb_row_has_formatted as accel_row_has_formatted
 from ._widths import estimate_column_widths
 from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell, _unwrap_cell
@@ -46,23 +49,131 @@ from ._xlsb_metadata import replace_records, sheet_protection_bin, wide_string
 # Rows are encoded into a memory buffer that is written out once it passes this size.
 _BUFFER_SIZE = 65536
 
+# BrtWsDim sits at a fixed place in the sheet head: its record header at bytes
+# 29-31 of the template, its payload (rwFirst, rwLast, colFirst, colLast) at 32-47.
+_WS_DIM_HEADER = b"\x94\x01\x10"
+_WS_DIM_OFFSET = 32
+# The body of a sheet larger than the row buffer is spooled until its dimension
+# is known; each spool (raw and compressed) moves to disk past this size.
+_SPOOL_MAX_BYTES = 1 << 20
 
-def _flush(buffer: io.BytesIO, sheet_file: io.BufferedWriter) -> None:
-    sheet_file.write(buffer.getvalue())
+
+class _UsedRange:
+    """The used range of the sheet written so far, for BrtWsDim.
+
+    Excel's rule, checked against the files it saves: the rows span every row
+    with a cell record or a row header that is not the default one (a height,
+    a hidden flag or an outline level, even without cells); the columns span
+    every cell record (values, formulas, styled blanks, array members). A row
+    header with default values and no cells does not count. An unused sheet
+    keeps (0, 0, 0, 0)."""
+
+    __slots__ = ("first_row", "last_row", "first_col", "last_col")
+
+    def __init__(self) -> None:
+        self.first_row = self.last_row = self.first_col = self.last_col = -1
+
+    def add_row(self, row: int) -> None:
+        if self.first_row < 0 or row < self.first_row:
+            self.first_row = row
+        if row > self.last_row:
+            self.last_row = row
+
+    def add_cols(self, first_col: int, last_col: int) -> None:
+        if self.first_col < 0 or first_col < self.first_col:
+            self.first_col = first_col
+        if last_col > self.last_col:
+            self.last_col = last_col
+
+    def payload(self) -> bytes:
+        if self.first_row < 0:
+            return bytes(16)
+        if self.first_col < 0:
+            return struct.pack('<IIII', self.first_row, self.last_row, 0, 0)
+        return struct.pack('<IIII', self.first_row, self.last_row, self.first_col, self.last_col)
+
+
+class _SheetSpool:
+    """The body of a sheet part (rows and tail) while its head waits for BrtWsDim.
+
+    BrtWsDim comes before the rows, but the used range is known only after them.
+    The body flushed from the row buffer goes to a raw spool and, when the archive
+    compresses on a worker thread, through a DeflateSegment at the same time, as
+    the XLSX writer does for ``<dimension>``; ``finish`` then writes the patched
+    head, the compressed body and the tail as one deflate stream. A sheet whose
+    body never leaves the row buffer is written to the archive directly."""
+
+    __slots__ = ("_zf", "_name", "_raw", "_compressed", "_segment")
+
+    def __init__(self, zf: Any, name: str) -> None:
+        self._zf = zf
+        self._name = name
+        self._raw: Any = None
+        self._compressed: Any = None
+        self._segment: Any = None
+
+    def write(self, data: bytes) -> None:
+        if self._raw is None:
+            self._raw = tempfile.SpooledTemporaryFile(max_size=_SPOOL_MAX_BYTES)
+            if self._zf.threaded_deflate():
+                self._compressed = tempfile.SpooledTemporaryFile(max_size=_SPOOL_MAX_BYTES)
+                self._segment = _zip_threads.DeflateSegment(
+                    self._zf.deflate_pool(), self._zf.compresslevel, self._compressed)
+        self._raw.write(data)
+        if self._segment is not None:
+            self._segment.write(data)
+
+    def finish(self, head: bytes, tail: bytes) -> None:
+        """Write ``head``, the spooled body and ``tail`` as the archive member."""
+        raw = self._raw
+        if raw is not None:
+            raw.seek(0)
+        if self._segment is not None:
+            self._segment.finish()
+            self._segment = None
+            self._compressed.seek(0)
+            _zip_threads.replay_member(self._zf, self._name, head, raw, self._compressed, tail)
+            return
+        with self._zf.open(self._name, "w") as member:
+            member.write(head)
+            if raw is not None:
+                shutil.copyfileobj(raw, member, _BUFFER_SIZE)
+            member.write(tail)
+
+    def close(self) -> None:
+        """Drop the spools; also when writing the sheet failed."""
+        if self._segment is not None:
+            self._segment.cancel()
+            self._segment = None
+        for spool in (self._raw, self._compressed):
+            if spool is not None:
+                spool.close()
+        self._raw = self._compressed = None
+
+
+def _set_dimension(head: bytearray, dimension: bytes) -> None:
+    """Write the BrtWsDim payload into the sheet head (see _WS_DIM_OFFSET)."""
+    if head[_WS_DIM_OFFSET - 3:_WS_DIM_OFFSET] != _WS_DIM_HEADER:
+        raise RuntimeError("internal error: BrtWsDim is not at its template offset in the sheet head")
+    head[_WS_DIM_OFFSET:_WS_DIM_OFFSET + 16] = dimension
+
+
+def _flush(buffer: io.BytesIO, spool: _SheetSpool) -> None:
+    spool.write(buffer.getvalue())
     buffer.seek(0)
     buffer.truncate()
 
 
-def _flush_if_full(buffer: io.BytesIO, sheet_file: io.BufferedWriter) -> None:
+def _flush_if_full(buffer: io.BytesIO, spool: _SheetSpool) -> None:
     if buffer.tell() > _BUFFER_SIZE:
-        _flush(buffer, sheet_file)
+        _flush(buffer, spool)
 
 
 class _XlsbBinMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
     def _write_worksheet_bin(
-        self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[Any]],
+        self, part_name: str, worksheet_data: Iterable[list[Any]],
         worksheet_index: int, *, style_ranges: Any = (), header_style: Style | None = None,
         merge_refs: Any = (), widths: Any = None, hidden_cols: Any = frozenset(), heights: Any = None,
         hidden_row_set: Any = frozenset(), freeze_panes: str | None = None,
@@ -79,130 +190,183 @@ class _XlsbBinMixin(_XlsbWriterHost):
         slicer_rel: str | None = None,
     ) -> None:
         buffer = io.BytesIO()
-        # (row, column, Hyperlink, relationship id or None) for the BrtHLink records.
-        hyperlinks: list[Any] = []
-        if link_rids is None:
-            link_rids = {}
-        sheet_name = self._worksheet_data[worksheet_index][0]
-        data_iterator, end_col = self._write_sheet_head(
-            buffer, worksheet_data, style_ranges=style_ranges, header_style=header_style,
-            widths=widths, hidden_cols=hidden_cols, freeze_panes=freeze_panes,
-            auto_filter=auto_filter, row_outline=row_outline, col_outline=col_outline,
-            show_grid_lines=show_grid_lines, view=view, filter_cells=filter_cells,
-            header_rows=header_rows, tab_key=tab_key, zoom=zoom, print_spec=print_spec,
-        )
+        spool = _SheetSpool(self._zf, part_name)
+        try:
+            used = _UsedRange()
+            rows_first = rows_last = cols_last = -1
+            cols_first = 1 << 30
+            # (row, column, Hyperlink, relationship id or None) for the BrtHLink records.
+            hyperlinks: list[Any] = []
+            if link_rids is None:
+                link_rids = {}
+            sheet_name = self._worksheet_data[worksheet_index][0]
+            data_iterator, end_col = self._write_sheet_head(
+                buffer, worksheet_data, style_ranges=style_ranges, header_style=header_style,
+                widths=widths, hidden_cols=hidden_cols, freeze_panes=freeze_panes,
+                auto_filter=auto_filter, row_outline=row_outline, col_outline=col_outline,
+                show_grid_lines=show_grid_lines, view=view, filter_cells=filter_cells,
+                header_rows=header_rows, tab_key=tab_key, zoom=zoom, print_spec=print_spec,
+            )
+            # The head stays aside until the rows give its dimension.
+            head = bytearray(buffer.getvalue())
+            buffer.seek(0)
+            buffer.truncate()
 
-        # Rows with a custom height or hidden flag cannot use the fast C
-        # encoder, which only emits default row headers.
-        heights = heights or {}
-        custom_rows = set(heights) | set(hidden_row_set)
-        array_ranges: list[Any] = []
-        row_style_ids_cache: dict[Any, Any] = {}
+            # Rows with a custom height or hidden flag cannot use the fast C
+            # encoder, which only emits default row headers.
+            heights = heights or {}
+            custom_rows = set(heights) | set(hidden_row_set)
+            array_ranges: list[Any] = []
+            row_style_ids_cache: dict[Any, Any] = {}
 
-        row_idx = -1
-        last_written = -1  # index of the last row record written
-        # Width of the whole sheet, measured as the rows stream past. The column
-        # records come before the rows and use the sample, but the autofilter is
-        # written after the rows and must span every column that holds a value.
-        stream_width = end_col
-        for row_idx, row in enumerate(data_iterator):
-            for col_idx in range(len(row) - 1, -1, -1):
-                cell = row[col_idx]
-                if cell is not None and _unwrap_cell(cell) is not None:
-                    if col_idx + 1 > stream_width:
+            row_idx = -1
+            last_written = -1  # index of the last row record written
+            # Width of the whole sheet, measured as the rows stream past. The column
+            # records come before the rows and use the sample, but the autofilter is
+            # written after the rows and must span every column that holds a value.
+            stream_width = end_col
+            for row_idx, row in enumerate(data_iterator):
+                # The last entry that gets a cell record (anything but None).
+                last_cell = len(row) - 1
+                while last_cell >= 0 and row[last_cell] is None:
+                    last_cell -= 1
+                # Only a value past the width seen so far can widen it; a
+                # (None, format) entry holds no value.
+                for col_idx in range(last_cell, stream_width - 1, -1):
+                    cell = row[col_idx]
+                    if cell is not None and _unwrap_cell(cell) is not None:
                         stream_width = col_idx + 1
-                    break
-            c_has_formatted = accel_row_has_formatted(row)
-            if c_has_formatted is None:
-                has_formatted = any(_is_formatted_cell(c) for c in row if c is not None)
-            else:
-                has_formatted = c_has_formatted
-            row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
+                        break
+                c_has_formatted = accel_row_has_formatted(row)
+                if c_has_formatted is None:
+                    has_formatted = any(_is_formatted_cell(c) for c in row if c is not None)
+                else:
+                    has_formatted = c_has_formatted
+                row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
 
-            if row_outline is None:
-                outline_level, outline_hidden, outline_collapsed = 0, False, False
-            else:
-                outline_level, outline_hidden = row_outline.state_at(row_idx)
-                outline_collapsed = row_outline.collapsed_at(row_idx)
-            if (
-                len(row) == 0 and not array_ranges and not row_styles and not outline_level
-                and not outline_collapsed and row_idx not in custom_rows
-            ):
-                # An empty row with no height, flags or style needs no row record;
-                # XLSB rows carry their own index, so the gap is kept.
-                continue
-            last_written = row_idx
-            use_native = not array_ranges and (not has_formatted or self._fmt_xf)
-            style_ids = None
-            if use_native and row_styles:
-                if has_formatted:
-                    # Only look styles up: the Python encoder registers the
-                    # styles of formatted cells in its own order.
-                    try:
+                if row_outline is None:
+                    outline_level, outline_hidden, outline_collapsed = 0, False, False
+                else:
+                    outline_level, outline_hidden = row_outline.state_at(row_idx)
+                    outline_collapsed = row_outline.collapsed_at(row_idx)
+                if (
+                    len(row) == 0 and not array_ranges and not row_styles and not outline_level
+                    and not outline_collapsed and row_idx not in custom_rows
+                ):
+                    # An empty row with no height, flags or style needs no row record;
+                    # XLSB rows carry their own index, so the gap is kept.
+                    continue
+                last_written = row_idx
+                # The used range (see _UsedRange), kept in locals on this hot path.
+                # Every entry that is not None gets a cell record, and so does a None
+                # with a range style (a styled blank). Array members are added below.
+                if row_styles:
+                    styled_first, styled_last = min(row_styles), max(row_styles)
+                    if styled_last > last_cell:
+                        last_cell = styled_last
+                    if styled_first < cols_first:
+                        cols_first = styled_first
+                if last_cell >= 0:
+                    if last_cell > cols_last:
+                        cols_last = last_cell
+                    # Only a cell left of the columns seen so far can move the start.
+                    first_cell = 0
+                    while first_cell < cols_first and row[first_cell] is None:
+                        first_cell += 1
+                    if first_cell < cols_first:
+                        cols_first = first_cell
+                if last_cell >= 0 or (
+                    row_idx in custom_rows or outline_level or outline_collapsed or outline_hidden
+                ):
+                    # As in Excel, a row is used when it has cells or a row header
+                    # that is not the default one (height, hidden, outline).
+                    if rows_first < 0:
+                        rows_first = row_idx
+                    rows_last = row_idx
+                use_native = not array_ranges and (not has_formatted or self._fmt_xf)
+                style_ids = None
+                if use_native and row_styles:
+                    if has_formatted:
+                        # Only look styles up: the Python encoder registers the
+                        # styles of formatted cells in its own order.
+                        try:
+                            style_ids = _style_ids_for_row(
+                                row_styles, len(row), self._style_xf_map.__getitem__,
+                                row_style_ids_cache,
+                            )
+                        except KeyError:
+                            use_native = False
+                    else:
                         style_ids = _style_ids_for_row(
-                            row_styles, len(row), self._style_xf_map.__getitem__,
+                            row_styles, len(row), self._register_style,
                             row_style_ids_cache,
                         )
-                    except KeyError:
-                        use_native = False
-                else:
-                    style_ids = _style_ids_for_row(
-                        row_styles, len(row), self._register_style,
-                        row_style_ids_cache,
-                    )
-            if use_native:
-                fmt_xf = self._fmt_xf if has_formatted else None
-                row_header = None
-                if row_idx in custom_rows or outline_level or outline_collapsed:
-                    row_header = self._row_header_record(
-                        row_idx, len(row) - 1 if row else 0,
-                        self._row_height_twips(heights[row_idx]) if row_idx in heights else None,
-                        row_idx in hidden_row_set or outline_hidden,
-                        outline_level, outline_collapsed,
-                    )
-                cell_data = None
-                if self._use_shared_strings:
-                    c_result = encode_xlsb_row(
-                        row, self._shared_strings_dict, self._shared_strings,
-                        self._sst_unique_count, self._sst_all_count, row_idx,
-                        style_ids, fmt_xf, row_header,
-                    )
-                    if c_result is not None:
-                        cell_data, self._sst_unique_count, self._sst_all_count = c_result
-                else:
-                    cell_data = encode_xlsb_row_inline(row, row_idx, style_ids, fmt_xf, row_header)
-                if cell_data is not None:
-                    buffer.write(cell_data)
-                    if buffer.tell() > _BUFFER_SIZE:
-                        _flush(buffer, sheet_file)
-                    continue
+                if use_native:
+                    fmt_xf = self._fmt_xf if has_formatted else None
+                    row_header = None
+                    if row_idx in custom_rows or outline_level or outline_collapsed:
+                        row_header = self._row_header_record(
+                            row_idx, len(row) - 1 if row else 0,
+                            self._row_height_twips(heights[row_idx]) if row_idx in heights else None,
+                            row_idx in hidden_row_set or outline_hidden,
+                            outline_level, outline_collapsed,
+                        )
+                    cell_data = None
+                    if self._use_shared_strings:
+                        c_result = encode_xlsb_row(
+                            row, self._shared_strings_dict, self._shared_strings,
+                            self._sst_unique_count, self._sst_all_count, row_idx,
+                            style_ids, fmt_xf, row_header,
+                        )
+                        if c_result is not None:
+                            cell_data, self._sst_unique_count, self._sst_all_count = c_result
+                    else:
+                        cell_data = encode_xlsb_row_inline(row, row_idx, style_ids, fmt_xf, row_header)
+                    if cell_data is not None:
+                        buffer.write(cell_data)
+                        if buffer.tell() > _BUFFER_SIZE:
+                            _flush(buffer, spool)
+                        continue
 
-            height_twips = self._row_height_twips(heights[row_idx]) if row_idx in heights else None
-            self._write_python_row(
-                buffer, row, row_idx, row_styles, height_twips=height_twips,
-                hidden=row_idx in hidden_row_set or outline_hidden,
-                outline_level=outline_level, outline_collapsed=outline_collapsed,
-                array_ranges=array_ranges, hyperlinks=hyperlinks, link_rids=link_rids,
-                link_rid_start=link_rid_start, style_ranges=style_ranges,
-                header_style=header_style, sheet_name=sheet_name,
+                height_twips = self._row_height_twips(heights[row_idx]) if row_idx in heights else None
+                self._write_python_row(
+                    buffer, row, row_idx, row_styles, height_twips=height_twips,
+                    hidden=row_idx in hidden_row_set or outline_hidden,
+                    outline_level=outline_level, outline_collapsed=outline_collapsed,
+                    array_ranges=array_ranges, hyperlinks=hyperlinks, link_rids=link_rids,
+                    link_rid_start=link_rid_start, style_ranges=style_ranges,
+                    header_style=header_style, sheet_name=sheet_name,
+                )
+                if buffer.tell() > _BUFFER_SIZE:
+                    _flush(buffer, spool)
+
+            if rows_first >= 0:
+                used.add_row(rows_first)
+                used.add_row(rows_last)
+            if cols_last >= 0:
+                used.add_cols(cols_first, cols_last)
+            row_idx = self._write_rows_after_data(
+                buffer, spool, row_idx, last_written, array_ranges=array_ranges,
+                row_outline=row_outline, heights=heights, hidden_row_set=hidden_row_set,
+                style_ranges=style_ranges, header_style=header_style, sheet_name=sheet_name,
+                used=used,
             )
-            if buffer.tell() > _BUFFER_SIZE:
-                _flush(buffer, sheet_file)
-
-        row_idx = self._write_rows_after_data(
-            buffer, sheet_file, row_idx, last_written, array_ranges=array_ranges,
-            row_outline=row_outline, heights=heights, hidden_row_set=hidden_row_set,
-            style_ranges=style_ranges, header_style=header_style, sheet_name=sheet_name,
-        )
-        self._write_sheet_tail(
-            buffer, row_idx, worksheet_index, stream_width, sheet_protection=sheet_protection,
-            header_rows=header_rows, auto_filter=auto_filter, auto_filter_ref=auto_filter_ref,
-            merge_refs=merge_refs, cf_rules=cf_rules, validations=validations, hyperlinks=hyperlinks,
-            print_spec=print_spec, drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
-            comment_vml_rid=comment_vml_rid, sparklines=sparklines, slicer_rel=slicer_rel,
-        )
-        if buffer.tell() > 0:
-            sheet_file.write(buffer.getvalue())
+            for c1, r1, c2, r2 in array_ranges:
+                # Every cell of an array formula's range gets a record.
+                used.add_row(r1)
+                used.add_row(r2)
+                used.add_cols(c1, c2)
+            self._write_sheet_tail(
+                buffer, row_idx, worksheet_index, stream_width, sheet_protection=sheet_protection,
+                header_rows=header_rows, auto_filter=auto_filter, auto_filter_ref=auto_filter_ref,
+                merge_refs=merge_refs, cf_rules=cf_rules, validations=validations, hyperlinks=hyperlinks,
+                print_spec=print_spec, drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
+                comment_vml_rid=comment_vml_rid, sparklines=sparklines, slicer_rel=slicer_rel,
+            )
+            _set_dimension(head, used.payload())
+            spool.finish(bytes(head), buffer.getvalue())
+        finally:
+            spool.close()
 
     def _write_sheet_head(
         self, buffer: io.BytesIO, worksheet_data: Iterable[list[Any]], *, style_ranges: Any,
@@ -488,16 +652,18 @@ class _XlsbBinMixin(_XlsbWriterHost):
 
 
     def _write_rows_after_data(
-        self, buffer: io.BytesIO, sheet_file: io.BufferedWriter, row_idx: int, last_written: int, *,
+        self, buffer: io.BytesIO, spool: _SheetSpool, row_idx: int, last_written: int, *,
         array_ranges: list[Any], row_outline: Any, heights: dict, hidden_row_set: Any,
-        style_ranges: Any, header_style: Style | None, sheet_name: str,
+        style_ranges: Any, header_style: Style | None, sheet_name: str, used: _UsedRange,
     ) -> int:
         """Write the row records that follow the last data row: skipped empty rows at
         the end, the rows of array formulas that reach past the data, and grouped
-        rows past the data. Returns the index of the last row."""
+        rows past the data. Returns the index of the last row; every row record
+        written is added to ``used``."""
         # Empty rows at the end of the data were skipped in the loop; their records are
         # written now, so the sheet keeps its shape (an empty frame is still one row).
         for trailing_row in range(last_written + 1, row_idx + 1):
+            # Default headers without cells: not part of the used range.
             buffer.write(self._row_header_record(trailing_row, 0, None, False, 0, False))
         if array_ranges:
             final_row = max(bounds[3] for bounds in array_ranges)
@@ -522,7 +688,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
                         style = self._register_style(extra_styles[col]) if col in extra_styles else 0
                         buffer.write(formula_cell(ArrayValue(r1, c1), col, style, self._formula_context(),
                                                   sheet=sheet_name, row=extra_row))
-                _flush_if_full(buffer, sheet_file)
+                _flush_if_full(buffer, spool)
             row_idx = max(row_idx, final_row)
 
         if row_outline is not None:
@@ -532,12 +698,13 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 if extra_idx in heights:
                     height_twips = self._row_height_twips(heights[extra_idx])
                 outline_level, outline_hidden = row_outline.state_at(extra_idx)
+                used.add_row(extra_idx)
                 buffer.write(self._row_header_record(
                     extra_idx, 0, height_twips,
                     extra_idx in hidden_row_set or outline_hidden,
                     outline_level, row_outline.collapsed_at(extra_idx),
                 ))
-                _flush_if_full(buffer, sheet_file)
+                _flush_if_full(buffer, spool)
 
         return row_idx
 
