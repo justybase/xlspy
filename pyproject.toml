@@ -89,9 +89,10 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
-# Baseline (Linux, Python 3.12, with pandas/polars installed) is ~87% branch
-# coverage; the threshold leaves headroom for platform differences.
-fail_under = 84
+# CI combines a native run and an XLSPY_ACCEL=python run. Both together reach
+# 90% branch coverage (2026-11-02, with pandas/polars installed); the floor is
+# one point under that.
+fail_under = 89
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

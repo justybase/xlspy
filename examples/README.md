@@ -6,7 +6,7 @@ Start with the [quick start](../README.md#quick-start) or the
 Runnable scripts demonstrating `xlspy`. Each script inserts `../src` on
 `sys.path`, so you can run them straight from a clone without installing the
 package. Scripts that create workbooks write them to the current directory
-(the pandas/polars scripts accept an optional output directory argument).
+(the pandas/polars scripts and `format_demo.py` accept an optional output directory argument).
 
 ```bash
 python examples/simple_usage.py

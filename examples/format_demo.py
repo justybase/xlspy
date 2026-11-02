@@ -62,7 +62,8 @@ def date_formats_sheet():
 
 
 if __name__ == "__main__":
-    out_dir = os.path.dirname(__file__)
+    # The current directory, or the directory given as the first argument.
+    out_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 
     print("Creating XLSX file with formatted cells...")
     with XlsxWriter(os.path.join(out_dir, "format_demo.xlsx")) as writer:
