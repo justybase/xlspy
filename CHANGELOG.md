@@ -141,6 +141,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal: names that several modules defined are consolidated. Identical copies now have one owner
+  module; helpers with the same behaviour are one function; different functions that shared a name are
+  renamed, so each name means one thing. Only private names changed, with one exception:
+  `xlspy.workbook._model._PLAIN_TYPES` (an accidental re-export) is no longer exported. The package's
+  write-back of pending parts is owned by `ZipPackage.apply_parts`, and `<sheetData>` is located in one
+  module (`xlspy._sheet_data`).
 - Internal: the four largest modules are split. `styles/core.py` and `workbook/_model.py` are now facades
   over focused modules; `xlsx_writer.py` and `writer.py` keep `XlsxWriter` and `XlsbWriter` and take their
   methods from mixins. Every name the old modules exported still imports from the same path, and the

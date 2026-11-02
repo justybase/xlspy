@@ -56,26 +56,41 @@ needs a declaration in its mixin.
 - **Hardened XML entry point.** All package parts are parsed through
   `_safe_xml.fromstring` and `_safe_xml.iterparse`.
 
-## What is not consolidated yet
+## Phase C: decisions and what is left
 
-These are the remaining steps. Each one changes which class owns the package,
-so each needs a decision before code.
+Phase C started with 69 top-level names defined in more than one module (22
+with identical bodies, 47 with different ones). Decisions taken:
 
-1. **Package ownership.** `XlsxUpdater` and `XlsbUpdater` are public classes, and
-   the object model uses them as package holders. Moving that role to `ZipPackage`
-   alone is the first step. It changes what `XlsxUpdater` owns, not its public methods.
-2. **Two sheet-XML rewriters.** `_xlsx_edit.py` (stage 2) and `workbook/_loaded.py`
-   (stage 3) both rewrite `<sheetData>`, dimensions and autofilter. They are not
-   yet a single implementation.
-3. **Same names, different bodies.** A scan of the package (AST comparison)
-   finds 29 top-level names defined in more than one module, each with a
-   different body, for example `_attr` (5 modules), `_color` (4), `_number_text`
-   (4), and `iter_rows` / `iter_indexed_rows` (XLSX and XLSB, different formats,
-   so these are expected). Each group needs a look before any merge, since the
-   behaviour may differ.
-4. **XLSB pair.** `workbook/_xlsb_loaded.py` and `_xlsb_edit.py` / `_xlsb_sheets.py`
-   overlap in the same way as the XLSX pair above.
+- **Package ownership.** `ZipPackage` owns the write-back of pending parts
+  (`apply_parts`: one transaction, rolled back on failure). `XlsxEditMixin._apply_parts`
+  and the object model's `_Package.commit` both go through it, so the object model
+  writes without going through the updater. `XlsxUpdater` and `XlsbUpdater` keep
+  their public methods and stay the handle the object model uses for the sheet map
+  and the date system.
+- **One sheet locator.** `_sheet_data.py` finds `<sheetData>` (with or without a
+  prefix, empty or not) and replaces its body. `XlsxUpdater._patch_sheet_xml`,
+  `_xlsx_edit` and `workbook/_loaded.py` use it.
+- **Duplicate names.** Identical copies have one owner module. Equivalent helpers are
+  one function. Different meanings under one name are renamed, so each name means one
+  thing. `tests/test_no_duplicate_top_level_names.py` keeps it that way. Three public
+  names are defined by two models on purpose (`SheetProtection`, `PageMargins`,
+  `Outline`); renaming them changes the API, so they stay.
 
+Still not consolidated:
+
+1. **Row-level sheet rewriters.** The locator is shared, but the code that edits the
+   rows inside `<sheetData>` is still per caller: `_xlsx_edit.update_cells` (cell
+   values), `workbook/_loaded._patch_xml_rows` (row attributes),
+   `XlsxUpdater._patch_sheet_file` (streaming, bytes) and
+   `workbook/_xlsb_layout._patch_xlsb_rows` (binary records). They edit different
+   things, so merging them is a design step. The dimension and autoFilter rewriting
+   is also still in two places (`XlsxUpdater._patch_sheet_xml` and `replace_element`
+   in `_xlsx_edit` / `_loaded`).
+2. **XLSB pair.** `workbook/_xlsb_loaded.py` and `_xlsb_edit.py` / `_xlsb_sheets.py`
+   still overlap in responsibilities. Phase C only removed the duplicate names.
+3. **Updater as holder.** The object model still reads `updater._sheets`,
+   `updater._date_1904` and calls `updater._apply_parts` for writes outside the
+   package. Moving those into a model object is the next ownership step.
 ## Where to make a change
 
 - A new read feature: stage 3 (`workbook/_reader.py`) and, if it is a fast path,
