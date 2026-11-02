@@ -475,6 +475,18 @@ Migration from 0.10:
   the prolog is refused with `InvalidFileError`, which blocks entity-expansion ("billion laughs") payloads.
 - A package whose parts add up to more than 4 GiB uncompressed is refused, not only a part above 2 GiB.
 
+### Internal
+
+- The object model reaches an updater's package only through `PackageHandle`; `workbook/*` reads no `updater._*`
+  attribute (73 before). Function-level imports went from 150 to 21, and no reader, writer or updater module
+  imports `xlspy.workbook` (`tests/test_import_layers.py`).
+- Shared XLSX worksheet walks in `_sheet_data.py` (`patch_rows`, `insert_rows`, `patch_cells`,
+  `set_dimension_ref`); shared XLSB record encoders for panes, selections, protection, margins, breaks and
+  headers/footers, used by both the writer and the loaded-workbook save.
+- The longest functions are split into named steps (the XLSB worksheet encoder, both `write_sheet` paths, the
+  XLSX and XLSB model loaders, the Python row readers). Output is byte for byte the same; benchmarks are within 3%.
+- `docs/architecture.md` describes the layers, `PackageHandle`, the XLSB updater/model map and the error policy.
+
 ## [0.10.1] - 2026-10-24
 
 ### Changed

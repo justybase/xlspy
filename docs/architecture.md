@@ -2,7 +2,7 @@
 
 xlspy grew in three stages. Each stage still has code in the package, and the
 public API reaches more than one of them. This page maps which module does what,
-so changes go to the right place. It describes the code as of 2026-11-01.
+so changes go to the right place. It describes the code as of 2026-11-02.
 
 ## The three generations
 
@@ -16,7 +16,8 @@ Stage 3 is not independent of the earlier stages:
 
 - `load_workbook` opens the package through `XlsxUpdater` (`workbook/_reader.py`,
   the XLSX branch) and through `XlsbUpdater` (`workbook/_xlsb_reader.py`). The
-  updater holds the zip package and the shared-string table.
+  updater holds the zip package and the shared-string table. The model reaches
+  them only through `_package_handle.PackageHandle` (see below).
 - `Workbook.save` writes loaded sheets with `workbook/_loaded.save_loaded`. In
   the save path `workbook/_writer.py` still constructs `XlsxUpdater`.
 - `dataframe.py` and the sheet writers use `XlsxWriter` and `XlsbWriter` directly.
@@ -77,25 +78,71 @@ with identical bodies, 47 with different ones). Decisions taken:
   `_xlsx_edit` and `workbook/_loaded.py` use it.
 - **Duplicate names.** Identical copies have one owner module. Equivalent helpers are
   one function. Different meanings under one name are renamed, so each name means one
-  thing. `tests/test_no_duplicate_top_level_names.py` keeps it that way. Three public
-  names are defined by two models on purpose (`SheetProtection`, `PageMargins`,
-  `Outline`); renaming them changes the API, so they stay.
+  thing. `tests/test_no_duplicate_top_level_names.py` keeps it that way, with no
+  exceptions left (the model classes became `WorksheetProtection`,
+  `WorksheetPageMargins`, and the writer's outline index `OutlineIndex`).
 
-Still not consolidated:
+## Layers and the updater boundary (Q4)
 
-1. **Row-level sheet rewriters.** The locator is shared, but the code that edits the
-   rows inside `<sheetData>` is still per caller: `_xlsx_edit.update_cells` (cell
-   values), `workbook/_loaded._patch_xml_rows` (row attributes),
-   `XlsxUpdater._patch_sheet_file` (streaming, bytes) and
-   `workbook/_xlsb_layout._patch_xlsb_rows` (binary records). They edit different
-   things, so merging them is a design step. The dimension and autoFilter rewriting
-   is also still in two places (`XlsxUpdater._patch_sheet_xml` and `replace_element`
-   in `_xlsx_edit` / `_loaded`).
-2. **XLSB pair.** `workbook/_xlsb_loaded.py` and `_xlsb_edit.py` / `_xlsb_sheets.py`
-   still overlap in responsibilities. Phase C only removed the duplicate names.
-3. **Updater as holder.** The object model still reads `updater._sheets`,
-   `updater._date_1904` and calls `updater._apply_parts` for writes outside the
-   package. Moving those into a model object is the next ownership step.
+**Layers.** Writers, readers and updaters are the lower layer; the object model
+(`xlspy.workbook`) is built on them. No lower-layer module imports
+`xlspy.workbook`, and `import xlspy` or opening an updater leaves the model
+unloaded. Imports sit at module level; a function-level import needs a reason
+in a comment (optional pandas/polars/numpy, a real cycle or a rare heavy path).
+`tests/test_import_layers.py` checks all three and caps the function-level
+imports (21, down from 150).
+
+**PackageHandle.** `_package_handle.PackageHandle(updater)` is the model's only
+view of an updater's private state: the staged `package`, the `sheets` map, the
+`date_1904` flag, `chartsheets`, `apply_parts`, `recalculate`, `sheet_xml` /
+`sheet_bin`, `part_or_none`, `tag_prefix` and `rewrite_sheet_list`. An AST test
+(`tests/test_package_handle.py`) fails when a module under `workbook/` reads
+`updater._<name>`; the count went from 73 to 0. A new need goes into the handle
+rather than into the model.
+
+**XLSX worksheet edits.** `_sheet_data.py` holds the shared walks over a worksheet
+part: `sheet_data_match` / `replace_sheet_data_body` (the locator),
+`patch_rows` (each `<row>`, with numbers for rows without `r`), `insert_rows`,
+`patch_cells` (each `<c>`, with its reference) and `set_dimension_ref`, which
+keeps the existing `<dimension>` element and adds a missing one in schema order.
+`_xlsx_edit.update_cells`, `workbook/_loaded._patch_xml_rows` and
+`XlsxUpdater._patch_sheet_xml` use them. Two rewriters stay separate on purpose:
+`XlsxUpdater._patch_sheet_file` works on the byte stream, without parsing the
+part, and `workbook/_xlsb_layout._patch_xlsb_rows` edits binary records.
+
+**XLSB: who does what.**
+
+| Concern | Updater side | Model side |
+|---|---|---|
+| Sheet list in `workbook.bin` (add, remove, rename, reorder) | `_xlsb_sheets.py` | calls it through `PackageHandle.rewrite_sheet_list` |
+| Cell values written into a sheet part | `xlsb_updater.py` | `workbook/_xlsb_loaded.py` (save) |
+| Sheet metadata records: read | `_xlsb_metadata.py` (codecs) | `workbook/_xlsb_sheet_meta.py` (into the model) |
+| Sheet metadata records: write | `_xlsb_metadata.py`, `_xlsb_print.py` (shared encoders: `pane_record`, `selection_record`, `sheet_protection_record`, `margins_record`, `breaks_block`, `header_footer_block`) | `workbook/_xlsb_layout.py` (re-encodes only the changed groups) |
+| Template features (CF, validations, tables) | `_xlsb_edit.py` (opt-in, never in bulk loops) | read in `workbook/_xlsb_reader.py` |
+
+`XlsbWriter` uses the same encoders, so a record has one encoder whichever path
+writes it.
+
+**Writers.** Both `write_sheet` methods check their options through
+`_writer_common.WriterFrontEnd._check_sheet_options`, which returns a
+`SheetSpec` before anything is recorded; `_claim_sheet_options` then takes the
+table and slicer names and the conditional-format priorities. A rejected call
+leaves the writer usable on both formats.
+
+**Corrupt input.** `exceptions.reading(path)` turns the decoders' own errors
+into `InvalidFileError` naming the file (`ExcelReader.open` and its row
+readers, `load_workbook`, the updater constructors). Low-level decoders raise
+`InvalidFileError` directly. A `KeyError` for an unknown sheet name is left as
+it is. `ExcelReader` still stops quietly when an XLSB record is cut short at the
+end of a sheet, on both backends.
+
+**Long functions.** Functions over about 150 lines were split into named steps
+where that helps: the XLSB worksheet encoder, both `_write_sheet` methods, the
+XLSX worksheet reader (`_read_core_sheet` now reads elements through
+`_ELEMENT_READERS`), `load_workbook_xlsb`, and the Python row readers outside
+their per-cell loops. Each split kept the output byte for byte and the benchmarks
+within 3%. `formula/tokenizer._parse` stays one state machine.
+
 ## Where to make a change
 
 - A new read feature: stage 3 (`workbook/_reader.py`) and, if it is a fast path,
