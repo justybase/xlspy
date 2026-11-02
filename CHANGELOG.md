@@ -172,6 +172,8 @@ Migration from 0.10:
 
 ### Changed
 
+- The macOS wheels need macOS 10.12 or later on Intel (x86_64) and 11.0 on Apple silicon: the
+  native module is Rust now, whose standard library starts at 10.12. The 0.10 wheels claimed 10.9.
 - `XlsxWriter` and `XlsbWriter` choose the default autofilter by one rule (`tests/test_autofilter_parity.py`).
   An explicit `auto_filter_ref` is written as given. Otherwise a filter is added only when data follows the
   header, and it spans the columns up to the last one holding a value and the rows down to the last data row or

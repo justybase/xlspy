@@ -73,6 +73,12 @@ docs = [
 [tool.cibuildwheel]
 build = "cp311-* cp312-* cp313-* cp314-* cp315-*"
 
+# Rust's standard library needs macOS 10.12 on x86_64 (arm64 starts at 11.0), so
+# the wheels claim 10.12, not the 10.9 of the CPython 3.11 build; delocate refuses
+# a wheel whose tag promises less than its extension needs.
+[tool.cibuildwheel.macos]
+environment = { MACOSX_DEPLOYMENT_TARGET = "10.12" }
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
