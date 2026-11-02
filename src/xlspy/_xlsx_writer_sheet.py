@@ -60,7 +60,8 @@ from .styles import (
     parse_cell_range,
     styles_for_row,
 )
-from ._xlsx_writer_xml import _EMPTY_ROW_STYLES, _FLUSH_BYTES, _REL_DRAWING, _REL_PIVOT_TABLE, _REL_WORKSHEET, _SheetBody, _Tee, _WIDTH_SAMPLE_ROWS, _format_number
+from ._widths import ColumnWidthMeter
+from ._xlsx_writer_xml import _EMPTY_ROW_STYLES, _FLUSH_BYTES, _REL_DRAWING, _REL_PIVOT_TABLE, _REL_WORKSHEET, _SheetBody, _Tee, _format_number
 from ._xlsx_writer_host import _XlsxWriterHost
 from ._dataframe_rows import dataframe_to_rows
 
@@ -112,6 +113,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         conditional_formats: list | tuple | None = None,
         tables: list[ExcelTable] | tuple[ExcelTable, ...] | None = None,
         column_widths: dict | None = None,
+        autofit_rows: int | None = 1000,
+        autofit_padding: float = 0.0,
         hidden_columns: list | tuple | set | None = None,
         row_heights: dict | None = None,
         hidden_rows: list | tuple | set | None = None,
@@ -157,6 +160,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             images=images, shapes=shapes, print_settings=print_settings, column_widths=column_widths,
             hidden_columns=hidden_columns, row_heights=row_heights, hidden_rows=hidden_rows,
             row_groups=row_groups, column_groups=column_groups, freeze_panes=freeze_panes,
+            autofit_rows=autofit_rows, autofit_padding=autofit_padding,
         )
         # Every option is valid; only now record what this sheet claims. A second
         # write to the same sheet is refused after the options are checked, so a
@@ -203,12 +207,19 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 data = tee_rows(data, feeders)
             if pending:
                 data = overlay_rows(data, pending)
+            button_rows = {spec.header_rows - 1, *(parse_cell_range(t.ref)[1] for t in spec.tables)}
+            if auto_filter_ref is not None:
+                button_rows.add(parse_cell_range(auto_filter_ref)[1])
+            width_styles = (spec.style_ranges, spec.header_style if has_styles else None)
+            meter = ColumnWidthMeter(
+                lambda r, length: styles_for_row(r, length, *width_styles), spec.autofit[0], button_rows,
+            )
             body = self._write_body(
                 data, row_sink,
                 spec.style_ranges, spec.header_style if has_styles else None,
                 spec.heights, spec.hidden_rows, has_styles,
                 spec.tables,
-                row_outline=spec.row_outline,
+                row_outline=spec.row_outline, meter=meter,
             )
             same_sheet = self._place_pivots(feeders, sheet_name, row_sink, body)
             if segment is not None:
@@ -227,7 +238,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 body, sheet_index, spec.split_freeze, freeze_panes, spec.widths, spec.hidden_cols,
                 spec.print_settings, row_outline=spec.row_outline, col_outline=spec.col_outline,
                 show_grid_lines=show_grid_lines,
-                width_styles=(spec.style_ranges, spec.header_style if has_styles else None),
+                meter=meter, autofit_padding=spec.autofit[1],
                 filter_cells=filter_cells, tab_key=spec.tab_key, zoom=spec.zoom, view=spec.view,
             )
             tail = self._sheet_tail(
@@ -381,6 +392,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         conditional_formats: list | tuple | None = None,
         tables: list[ExcelTable] | tuple[ExcelTable, ...] | None = None,
         column_widths: dict | None = None,
+        autofit_rows: int | None = 1000,
+        autofit_padding: float = 0.0,
         hidden_columns: list | tuple | set | None = None,
         row_heights: dict | None = None,
         hidden_rows: list | tuple | set | None = None,
@@ -427,6 +440,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             conditional_formats=conditional_formats,
             tables=tables,
             column_widths=column_widths,
+            autofit_rows=autofit_rows,
+            autofit_padding=autofit_padding,
             hidden_columns=hidden_columns,
             row_heights=row_heights,
             hidden_rows=hidden_rows,
@@ -451,15 +466,16 @@ class _XlsxSheetMixin(_XlsxWriterHost):
 
     def _write_body(self, data, spool, style_ranges, header_style, heights,
                     hidden_row_set, has_styles, table_headers=(),
-                    row_outline=None):
+                    row_outline=None, meter=None):
         """Encode every row into ``spool`` and return a ``_SheetBody``.
 
-        Only the first ``_WIDTH_SAMPLE_ROWS`` rows are kept, for automatic
-        column widths, plus the header rows of ``table_headers``, which are
-        checked as soon as they stream past.
+        ``meter`` measures the automatic column widths of the first rows (its
+        ``limit``); the header rows of ``table_headers`` are kept, and checked
+        as soon as they stream past.
         Hyperlink cells are recorded so the trailer can link them.
         """
-        head: list = []
+        head: list = []  # kept empty: the meter measures the rows
+        measure_until = meter.limit if meter is not None else 0
         hyperlinks: list = []
         header_rows: dict = {}
         num_rows = 0
@@ -478,8 +494,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             data = capture_table_headers(data, table_headers, header_rows)
         last_written = -1  # index of the last <row> written
         for row_idx, row in enumerate(data):
-            if row_idx < _WIDTH_SAMPLE_ROWS:
-                head.append(row)
+            if row_idx < measure_until:
+                meter.add(row_idx, row)
             num_rows = row_idx + 1
             if len(row) > max_cols:
                 max_cols = len(row)

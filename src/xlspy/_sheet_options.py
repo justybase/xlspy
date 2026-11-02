@@ -28,6 +28,8 @@ class SheetOptions:
     conditional_formats: list | tuple | None = None
     tables: list | tuple | None = None
     column_widths: dict | None = None
+    autofit_rows: int = 1000
+    autofit_padding: float = 0.0
     hidden_columns: list | tuple | set | None = None
     row_heights: dict | None = None
     hidden_rows: list | tuple | set | None = None

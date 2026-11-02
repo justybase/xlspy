@@ -114,6 +114,7 @@ class _XlsxWriterHost:
             sparklines: Any, slicers: Any, charts: Any, data_validations: Any, images: Any, shapes: Any,
             print_settings: Any, column_widths: Any, hidden_columns: Any, row_heights: Any, hidden_rows: Any,
             row_groups: Any, column_groups: Any, freeze_panes: Any,
+            autofit_rows: Any = 1000, autofit_padding: Any = 0.0,
             check_style: Any | None = None,
         ) -> SheetSpec: ...
         def _claim_sheet_options(self, spec: SheetSpec) -> None: ...
@@ -144,7 +145,7 @@ class _XlsxWriterHost:
         def _resolve_slicers(self, slicer_specs: Any) -> Any: ...
         def _sheet_head(self, body: Any, sheet_index: Any, split_freeze: Any, freeze_panes: Any, widths: Any,
                         hidden_cols: Any, print_spec: Any, row_outline: Any = None, col_outline: Any = None,
-                        show_grid_lines: Any = True, width_styles: Any = ((), None), filter_cells: Any = (),
+                        show_grid_lines: Any = True, meter: Any = None, autofit_padding: Any = 0.0, filter_cells: Any = (),
                         tab_key: Any = None, zoom: Any = None, view: Any = (True, True, False)) -> Any: ...
         def _sheet_tail(self, body: Any, sheet_index: Any, merge_refs: Any, cf_rules: Any, table_specs: Any,
                         table_bounds: Any, validations: Any, link_rels: Any, auto_filter: Any, drawing_rid: Any,

@@ -34,6 +34,20 @@ CF_RULES = (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule, *
 RENAMED_WRITER_ARGUMENTS = {"compressionLevel": "compression_level", "useSharedStrings": "use_shared_strings"}
 
 
+def check_autofit(rows: Any, padding: Any) -> tuple[int | None, float]:
+    """``autofit_rows`` (rows measured for automatic widths; None: all, 0: none)
+    and ``autofit_padding`` (characters added to each measured column)."""
+    if rows is not None and (isinstance(rows, bool) or not isinstance(rows, int)):
+        raise TypeError("autofit_rows must be an int or None")
+    if rows is not None and rows < 0:
+        raise ValueError("autofit_rows must be >= 0 (or None for every row)")
+    if isinstance(padding, bool) or not isinstance(padding, (int, float)):
+        raise TypeError("autofit_padding must be a number of characters")
+    if not 0 <= padding <= 255:
+        raise ValueError("autofit_padding must be between 0 and 255 characters")
+    return rows, float(padding)
+
+
 def reject_unknown_arguments(owner: str, extra: Mapping[str, object]) -> None:
     """Raise TypeError for keywords ``owner`` does not take, naming the new
     spelling of a renamed one."""
@@ -77,6 +91,7 @@ class SheetSpec:
     shapes: list[Any]
     print_settings: PrintSettings | None
     widths: Any
+    autofit: tuple[int | None, float]
     hidden_cols: set[int]
     heights: Any
     hidden_rows: set[int]
@@ -142,6 +157,7 @@ class WriterFrontEnd:
         sparklines: Any, slicers: Any, charts: Any, data_validations: Any, images: Any, shapes: Any,
         print_settings: Any, column_widths: Any, hidden_columns: Any, row_heights: Any, hidden_rows: Any,
         row_groups: Any, column_groups: Any, freeze_panes: Any,
+        autofit_rows: Any = 1000, autofit_padding: Any = 0.0,
         check_style: Callable[[Style], None] | None = None,
     ) -> SheetSpec:
         """Check and normalize the options of ``write_sheet``; raise before anything
@@ -183,6 +199,7 @@ class WriterFrontEnd:
         shape_specs = normalize_shapes(shapes)
         print_spec = normalize_print_settings(print_settings)
         widths = self._normalize_widths(column_widths, "column_widths")
+        autofit = check_autofit(autofit_rows, autofit_padding)
         hidden_cols = normalize_hidden_columns(hidden_columns)
         heights = self._normalize_row_heights(row_heights)
         hidden_row_set = normalize_hidden_rows(hidden_rows)
@@ -203,7 +220,7 @@ class WriterFrontEnd:
             comments=comment_specs, cf_rules=cf_rules, cf_priorities=cf_priorities,
             tables=table_specs, sparklines=sparkline_groups, slicers=slicer_specs,
             charts=chart_specs, validations=validations, images=image_specs, shapes=shape_specs,
-            print_settings=print_spec, widths=widths, hidden_cols=hidden_cols, heights=heights,
+            print_settings=print_spec, widths=widths, autofit=autofit, hidden_cols=hidden_cols, heights=heights,
             hidden_rows=hidden_row_set, row_outline=row_outline, col_outline=col_outline,
             split_freeze=split_freeze,
         )

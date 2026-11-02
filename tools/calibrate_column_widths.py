@@ -1,5 +1,9 @@
 """Measure Excel's AutoFit widths (COM, Windows + Excel) for the width estimator.
 
+Run it on a display at 100% scaling: column widths are defined at 96 DPI, and
+Excel measures AutoFit text at the display's scaling (at 175% letters round
+differently and the result is useless for the estimator).
+
 Writes probe values with xlspy (so the workbook has xlspy's default font,
 Calibri 11), lets Excel AutoFit every column and records ``ColumnWidth``.
 

@@ -6,14 +6,13 @@ import datetime
 import math
 from decimal import Decimal
 import struct
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 import io
-import itertools
 import shutil
 import tempfile
 from . import _zip_threads
 from ._accel import encode_xlsb_row, encode_xlsb_row_inline, xlsb_row_has_formatted as accel_row_has_formatted
-from ._widths import estimate_column_widths
+from ._widths import ColumnWidthMeter
 from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell, _unwrap_cell
 from .excel_dates import datetime_to_serial
 from .styles import (
@@ -175,7 +174,8 @@ class _XlsbBinMixin(_XlsbWriterHost):
     def _write_worksheet_bin(
         self, part_name: str, worksheet_data: Iterable[list[Any]],
         worksheet_index: int, *, style_ranges: Any = (), header_style: Style | None = None,
-        merge_refs: Any = (), widths: Any = None, hidden_cols: Any = frozenset(), heights: Any = None,
+        merge_refs: Any = (), widths: Any = None, autofit: tuple[int | None, float] = (1000, 0.0),
+        hidden_cols: Any = frozenset(), heights: Any = None,
         hidden_row_set: Any = frozenset(), freeze_panes: str | None = None,
         auto_filter: bool | None = None, auto_filter_ref: str | None = None,
         drawing_rel: str | None = None,
@@ -200,16 +200,24 @@ class _XlsbBinMixin(_XlsbWriterHost):
             if link_rids is None:
                 link_rids = {}
             sheet_name = self._worksheet_data[worksheet_index][0]
-            data_iterator, end_col, sample_value_cols = self._write_sheet_head(
-                buffer, worksheet_data, style_ranges=style_ranges, header_style=header_style,
-                widths=widths, hidden_cols=hidden_cols, freeze_panes=freeze_panes,
-                auto_filter=auto_filter, row_outline=row_outline, col_outline=col_outline,
-                show_grid_lines=show_grid_lines, view=view, filter_cells=filter_cells,
-                header_rows=header_rows, tab_key=tab_key, zoom=zoom, print_spec=print_spec,
-                auto_filter_ref=auto_filter_ref,
+            self._write_sheet_head(
+                buffer, freeze_panes=freeze_panes, row_outline=row_outline, col_outline=col_outline,
+                show_grid_lines=show_grid_lines, view=view, tab_key=tab_key, zoom=zoom,
+                print_spec=print_spec,
             )
-            # The head stays aside until the rows give its dimension.
+            # The head stays aside until the rows give its dimension and the
+            # column widths, which are measured as the rows stream past.
             head = bytearray(buffer.getvalue())
+            data_iterator = iter(worksheet_data)
+            autofit_rows, autofit_padding = autofit
+            button_rows = {header_rows - 1, *(r for r, _c1, _c2 in filter_cells)}
+            if auto_filter_ref is not None:
+                button_rows.add(parse_cell_range(auto_filter_ref)[1])
+            meter = ColumnWidthMeter(
+                lambda r, length: styles_for_row(r, length, style_ranges, header_style),
+                autofit_rows, button_rows,
+            )
+            measure_until = meter.limit
             buffer.seek(0)
             buffer.truncate()
 
@@ -225,8 +233,10 @@ class _XlsbBinMixin(_XlsbWriterHost):
             # Width of the whole sheet, measured as the rows stream past. The column
             # records come before the rows and use the sample, but the autofilter is
             # written after the rows and must span every column that holds a value.
-            stream_width = sample_value_cols
+            stream_width = 0
             for row_idx, row in enumerate(data_iterator):
+                if row_idx < measure_until:
+                    meter.add(row_idx, row)
                 # The last entry that gets a cell record (anything but None).
                 last_cell = len(row) - 1
                 while last_cell >= 0 and row[last_cell] is None:
@@ -366,23 +376,21 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 comment_vml_rid=comment_vml_rid, sparklines=sparklines, slicer_rel=slicer_rel,
             )
             _set_dimension(head, used.payload())
+            head += self._sheet_columns(
+                meter, autofit_padding, stream_width, data_rows, header_rows, auto_filter,
+                auto_filter_ref, filter_cells, widths, hidden_cols, col_outline,
+            )
             spool.finish(bytes(head), buffer.getvalue())
         finally:
             spool.close()
 
     def _write_sheet_head(
-        self, buffer: io.BytesIO, worksheet_data: Iterable[list[Any]], *, style_ranges: Any,
-        header_style: Style | None, widths: Any, hidden_cols: Any, freeze_panes: str | None,
-        auto_filter: bool | None, row_outline: Any, col_outline: Any, show_grid_lines: bool,
-        view: tuple[bool, bool, bool], filter_cells: Any, header_rows: int, tab_key: Any,
-        zoom: int | None, print_spec: PrintSettings | None, auto_filter_ref: str | None = None,
-    ) -> tuple[Iterator[list[Any]], int, int]:
-        """Write the records before the first row (sheet properties, view, pane,
-        selection, format info, column widths, BrtBeginSheetData).
-
-        The column widths come from the first 100 rows; returns the rows (those
-        read ahead included), the number of columns the sample uses (at least 1)
-        and the number of columns up to the sample's last value (0 without one)."""
+        self, buffer: io.BytesIO, *, freeze_panes: str | None, row_outline: Any, col_outline: Any,
+        show_grid_lines: bool, view: tuple[bool, bool, bool], tab_key: Any, zoom: int | None,
+        print_spec: PrintSettings | None,
+    ) -> None:
+        """Write the records before the column widths (sheet properties, view,
+        pane, selection, format info); ``_sheet_columns`` writes the rest."""
         if tab_key is None:
             head = self._sheet1Bytes[:54]
         else:
@@ -419,39 +427,6 @@ class _XlsbBinMixin(_XlsbWriterHost):
 
         buffer.write(self._pane_record(freeze_panes))
 
-        data_iterator = iter(worksheet_data)
-        rows_to_analyze = []
-        max_cols = 0
-
-        for _ in range(100):
-            try:
-                row = next(data_iterator)
-            except StopIteration:
-                break
-            rows_to_analyze.append(row)
-            # Columns up to the last cell with a value.
-            for col_idx in range(len(row) - 1, -1, -1):
-                cell = row[col_idx]
-                if cell is not None and _unwrap_cell(cell) is not None:
-                    max_cols = max(max_cols, col_idx + 1)
-                    break
-
-        end_col = max(max_cols, 1)
-
-        # Filter buttons widen their header cells: the explicit range, or the
-        # default one over the columns with values when data follows the header.
-        if auto_filter is not False:
-            if auto_filter_ref is not None:
-                c1, r1, c2, _r2 = parse_cell_range(auto_filter_ref)
-                filter_cells = [*filter_cells, (r1, c1, c2)]
-            elif len(rows_to_analyze) > header_rows and max_cols > 0:
-                filter_cells = [*filter_cells, (header_rows - 1, 0, max_cols - 1)]
-        col_widths_array = estimate_column_widths(
-            rows_to_analyze, end_col,
-            lambda row_idx, length: styles_for_row(row_idx, length, style_ranges, header_style),
-            filter_cells,
-        )
-
         # The last two bytes of BrtWsFmtInfo are the maximum row and column
         # outline levels; the template holds zeros.
         outline_levels = bytes((
@@ -466,21 +441,31 @@ class _XlsbBinMixin(_XlsbWriterHost):
             # remainder (EndWsView .. BrtWsFmtInfo) is layout-independent.
             buffer.write(self._sheet1Bytes[123:157])
         buffer.write(outline_levels)
+
+    def _sheet_columns(
+        self, meter: ColumnWidthMeter, padding: float, stream_width: int, data_rows: int,
+        header_rows: int, auto_filter: bool | None, auto_filter_ref: str | None, filter_cells: Any,
+        widths: Any, hidden_cols: Any, col_outline: Any,
+    ) -> bytes:
+        """The column widths and BrtBeginSheetData, the end of the sheet head."""
+        end_col = max(stream_width, 1)
+        # Filter buttons widen their header cells: the explicit range, or the
+        # default one over the columns with values when data follows the header.
+        if auto_filter is not False:
+            if auto_filter_ref is not None:
+                c1, r1, c2, _r2 = parse_cell_range(auto_filter_ref)
+                filter_cells = [*filter_cells, (r1, c1, c2)]
+            elif data_rows > header_rows and stream_width > 0:
+                filter_cells = [*filter_cells, (header_rows - 1, 0, stream_width - 1)]
+        buffer = io.BytesIO()
         self._write_cols_width(
-            buffer, 0, end_col, col_widths_array, widths, hidden_cols,
+            buffer, 0, end_col, meter.widths(end_col, filter_cells, padding), widths, hidden_cols,
             col_outline,
         )
         # Template offsets 159..177 hold BrtBeginSheetData plus the complete
         # ACCELLTABLE block (ACBegin/RwDescent/ACEnd); rows follow directly.
         buffer.write(self._sheet1Bytes[159:177])
-
-
-        if rows_to_analyze:
-            data_iterator = itertools.chain(rows_to_analyze, data_iterator)
-        else:
-            data_iterator = iter([])
-
-        return data_iterator, end_col, max_cols
+        return buffer.getvalue()
 
     def _write_python_row(
         self, buffer: io.BytesIO, row: Any, row_idx: int, row_styles: dict[int, Style], *,

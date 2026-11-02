@@ -5,7 +5,7 @@ import xml.sax.saxutils as saxutils
 from ._writer_common import FilterData
 from ._text import xstring_escape
 from .data_validation import data_validation_xml
-from ._widths import estimate_column_widths, file_width
+from ._widths import ColumnWidthMeter, file_width
 from ._extlst import (
     CT_SLICER,
     CT_SLICER_CACHE,
@@ -18,7 +18,6 @@ from .styles import (
     ExcelTable,
     parse_cell_range,
     table_column_names,
-    styles_for_row,
 )
 from ._xlsx_writer_xml import _DEFAULT_MARGINS, _REL_HYPERLINK, _REL_TABLE, _format_number, _outline_col_attr
 from ._xlsx_writer_host import _XlsxWriterHost
@@ -140,7 +139,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
 
     def _sheet_head(self, body, sheet_index, split_freeze, freeze_panes, widths,
                     hidden_cols, print_spec, row_outline=None, col_outline=None,
-                    show_grid_lines=True, width_styles=((), None), filter_cells=(),
+                    show_grid_lines=True, meter=None, autofit_padding=0.0, filter_cells=(),
                     tab_key=None, zoom=None, view=(True, True, False)):
         """Everything before ``<sheetData>`` content: properties, views, widths."""
         parts = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -167,12 +166,9 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             if max_col_level:
                 level_attrs += f' outlineLevelCol="{max_col_level}"'
             parts.append(f'<sheetFormatPr defaultRowHeight="15"{level_attrs}/>')
-        style_ranges, header_style = width_styles
-        col_widths = estimate_column_widths(
-            body.head, body.max_cols,
-            lambda row_idx, length: styles_for_row(row_idx, length, style_ranges, header_style),
-            filter_cells,
-        )
+        if meter is None:
+            meter = ColumnWidthMeter(rows=0)
+        col_widths = meter.widths(body.max_cols, filter_cells, autofit_padding)
         for col, width in widths.items():
             if 0 <= col < body.max_cols:
                 col_widths[col] = width

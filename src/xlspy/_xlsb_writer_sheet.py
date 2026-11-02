@@ -51,6 +51,8 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         styles: dict[str, Style] | None = None,
         merges: list[str] | tuple[str, ...] | None = None,
         column_widths: dict | None = None,
+        autofit_rows: int | None = 1000,
+        autofit_padding: float = 0.0,
         hidden_columns: list | tuple | set | None = None,
         row_heights: dict | None = None,
         hidden_rows: list | tuple | set | None = None,
@@ -90,6 +92,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             images=images, shapes=shapes, print_settings=print_settings, column_widths=column_widths,
             hidden_columns=hidden_columns, row_heights=row_heights, hidden_rows=hidden_rows,
             row_groups=row_groups, column_groups=column_groups, freeze_panes=freeze_panes,
+            autofit_rows=autofit_rows, autofit_padding=autofit_padding,
             check_style=self._reject_rich_style,
         )
         current_sheet = self._worksheet_data[-1][0] if self._worksheet_data else "Sheet1"
@@ -178,7 +181,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             self._write_worksheet_bin(
                 f"xl/worksheets/sheet{sheet_id}.bin", data, self._sheet_count - 1,
                 style_ranges=spec.style_ranges, header_style=spec.header_style,
-                merge_refs=spec.merge_refs, widths=spec.widths, hidden_cols=spec.hidden_cols,
+                merge_refs=spec.merge_refs, widths=spec.widths, autofit=spec.autofit, hidden_cols=spec.hidden_cols,
                 heights=spec.heights, hidden_row_set=spec.hidden_rows,
                 freeze_panes=freeze_panes, auto_filter=auto_filter,
                 auto_filter_ref=auto_filter_ref,
@@ -242,6 +245,8 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         *, header_style: Style | None = None, styles: dict[str, Style] | None = None,
         merges: list[str] | tuple[str, ...] | None = None,
         column_widths: dict | None = None,
+        autofit_rows: int | None = 1000,
+        autofit_padding: float = 0.0,
         hidden_columns: list | tuple | set | None = None,
         row_heights: dict | None = None,
         hidden_rows: list | tuple | set | None = None,
@@ -289,6 +294,8 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             styles=styles,
             merges=merges,
             column_widths=column_widths,
+            autofit_rows=autofit_rows,
+            autofit_padding=autofit_padding,
             hidden_columns=hidden_columns,
             row_heights=row_heights,
             hidden_rows=hidden_rows,

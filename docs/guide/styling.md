@@ -158,25 +158,55 @@ Practical advice:
 ### Column widths
 
 Columns you do not size with `column_widths` get an automatic width from the
-first 100 rows, close to Excel's own *AutoFit* but never narrower:
+first 1000 rows (`autofit_rows`): Excel's own *AutoFit* on a display at 100%
+scaling, plus one spare pixel:
 
-- Text is measured per character with widths taken from Excel (Calibri 11):
-  `W`, `M`, `@` and capitals take more room than `i` or `l`, and Chinese,
-  Japanese or Korean characters about two digits each.
+- Text is measured in pixels as Excel measures it: Calibri's glyph widths as
+  Windows (GDI) draws them at 96 DPI, for the cell's font size and weight,
+  plus Excel's margin. Over 11,786 cells measured in Excel (8 to 36 pt,
+  regular and bold, text and numbers) the estimate is Excel's width to the
+  pixel. Chinese, Japanese or Korean characters take about two digits each.
 - Numbers and dates are measured as Excel shows them: `(1234567.891, "#,##0.00")`
-  as `1,234,567.89`, General numbers with at most 11 characters, and dates
-  with their format. Month and day names, `TRUE`/`FALSE` and separators
-  depend on the reader's language, so they get room for long names.
+  as `1,234,567.89`, General numbers with at most 11 characters besides the
+  sign (with room for a decimal point as wide as a digit, as Excel keeps),
+  and dates with their format. Month and day names, `TRUE`/`FALSE`, default
+  dates and separators depend on the reader's language, so they get room for
+  the long renderings.
 - Bold text, a `Font(size=...)` from the cell's style, and wrapped text (the
-  longest line) are taken into account.
+  longest line) are taken into account. Other fonts are measured as Calibri.
+- At other display scalings Excel measures text at the scaled size, where
+  letters round differently; the widths are then usually a little wider than
+  that Excel's own AutoFit.
 - Header cells under a filter or table drop-down button get two extra
   characters for the button.
 - A column is never narrower than Excel's default width (8.43).
 
-Values beyond the first 100 rows are not measured; give `column_widths` for
-columns whose longest values come later. `tools/score_column_widths.py`
-compares the estimate with Excel's AutoFit widths recorded by
-`tools/calibrate_column_widths.py`.
+Two options of `write_sheet()` (also `SheetOptions`, `write_dataframe()`,
+`to_xlsx()` and `to_xlsb()`) tune it:
+
+```python
+writer.write_sheet(
+    rows,
+    autofit_rows=5000,     # rows measured; None: every row, 0: none (default widths)
+    autofit_padding=1.5,   # characters added to every automatic width
+)
+```
+
+- `autofit_rows` (default `1000`): values past these rows are not measured.
+  The rows are measured as they stream past, so `None` costs no memory, only
+  time: measuring takes about 1-2 microseconds per cell, several times what
+  writing the cell costs. On 50,000 rows x 50 columns the XLSB file takes
+  0.5 s with the default and 4.9 s with `None`; 500,000 rows x 6 columns,
+  1.1 s and 3.9 s.
+- `autofit_padding` (default `0`): extra room, in characters, for each
+  measured column, for example for a font that is not Calibri or for a
+  reader with a wider locale. Columns that stay at the default width and
+  columns in `column_widths` do not get it.
+
+`tools/gdi_column_widths.py` regenerates the glyph widths from Windows, and
+`tools/score_column_widths.py` compares the estimate with Excel's AutoFit
+widths recorded by `tools/calibrate_column_widths.py` (run it on a display at
+100% scaling).
 
 #### Fixed widths
 

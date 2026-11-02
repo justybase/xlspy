@@ -11,7 +11,7 @@ from ._xlsb_writer_consts import _REL_PIVOT_CACHE as _REL_PIVOT_CACHE, _REL_PIVO
 
 _ATTR_ENTITIES = {'"': "&quot;"}
 # Rows sampled for automatic column widths (the historical limit).
-_WIDTH_SAMPLE_ROWS = 100
+_WIDTH_SAMPLE_ROWS = 1000  # rows measured for automatic column widths by default
 # Encoded row bytes are handed to the spool once they grow past this size.
 _FLUSH_BYTES = 1 << 20
 # Shared-string entries written per chunk of sharedStrings.xml.
