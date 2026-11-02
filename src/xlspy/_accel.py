@@ -3,8 +3,10 @@
 ``XLSPY_ACCEL`` chooses the backend:
 
 - ``auto`` (default) or ``rust``: the native module when it is built.
-- ``python``: no native code. ``XLSPY_DISABLE_C_EXT=1`` means the same; the
-  name predates the Rust port and is kept for compatibility.
+- ``python``: no native code.
+
+``XLSPY_DISABLE_C_EXT``, the switch from before the Rust port, was removed;
+setting it raises ImportError so the choice is not silently ignored.
 
 Every wrapper below returns None when the native module does not provide the
 function (or is disabled), and the caller then uses the pure-Python
@@ -21,8 +23,8 @@ _MODULE = "xlspy._rs_core"
 _MODES = ("auto", "rust", "python")
 
 ACCEL_MODE = _os.environ.get("XLSPY_ACCEL", "auto").strip().lower() or "auto"
-if _os.environ.get("XLSPY_DISABLE_C_EXT", "0") == "1":
-    ACCEL_MODE = "python"
+if "XLSPY_DISABLE_C_EXT" in _os.environ:
+    raise ImportError("XLSPY_DISABLE_C_EXT was removed; set XLSPY_ACCEL=python to disable the native module")
 if ACCEL_MODE not in _MODES:
     raise ImportError(f"XLSPY_ACCEL must be one of {sorted(_MODES)}, not {ACCEL_MODE!r}")
 
@@ -84,8 +86,6 @@ if _native is not None:
 
 # True when the native backend provides the core readers and writers.
 HAVE_NATIVE = all(n in _impl for n in ("encode_xlsb_row", "calc_column_widths", "read_xlsb_worksheet"))
-# Alias kept from the C-extension days (see CHANGELOG).
-HAVE_C_EXT = HAVE_NATIVE
 
 # Raw functions of the native module (None when it does not provide them).
 _native_encode_xlsb_row: Any = _impl.get("encode_xlsb_row")

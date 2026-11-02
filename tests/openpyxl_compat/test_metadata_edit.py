@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import openpyxl
-import pytest
 
 from ._util import close_quietly, golden_path, xlspy_load
 

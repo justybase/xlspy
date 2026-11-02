@@ -70,11 +70,11 @@ def error_workbook(tmp_path):
     return path
 
 
-@pytest.mark.parametrize("use_c", [True, False])
-def test_bulk_read_returns_error_values(error_workbook, monkeypatch, use_c):
-    if use_c and not reader_module.HAVE_NATIVE:
+@pytest.mark.parametrize("native", [True, False])
+def test_bulk_read_returns_error_values(error_workbook, monkeypatch, native):
+    if native and not reader_module.HAVE_NATIVE:
         pytest.skip("native extension not built")
-    monkeypatch.setattr(reader_module, "HAVE_NATIVE", use_c)
+    monkeypatch.setattr(reader_module, "HAVE_NATIVE", native)
     with ExcelReader(str(error_workbook)) as reader:
         rows = reader.read_all("S")
     assert rows[0] == [10, 20, 30]
@@ -82,11 +82,11 @@ def test_bulk_read_returns_error_values(error_workbook, monkeypatch, use_c):
     assert isinstance(rows[1][0], CellError) and rows[1][0] == "error:#N/A"
 
 
-@pytest.mark.parametrize("use_c", [True, False])
-def test_openpyxl_mode_returns_bare_error_text(error_workbook, monkeypatch, use_c):
-    if use_c and not reader_module.HAVE_NATIVE:
+@pytest.mark.parametrize("native", [True, False])
+def test_openpyxl_mode_returns_bare_error_text(error_workbook, monkeypatch, native):
+    if native and not reader_module.HAVE_NATIVE:
         pytest.skip("native extension not built")
-    monkeypatch.setattr(reader_module, "HAVE_NATIVE", use_c)
+    monkeypatch.setattr(reader_module, "HAVE_NATIVE", native)
     with ExcelReader(str(error_workbook), errors="openpyxl") as reader:
         rows = reader.read_all("S")
     assert rows[1][0] == "#N/A"

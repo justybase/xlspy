@@ -1,0 +1,24 @@
+# pip install pre-commit && pre-commit install
+# The hooks run the tools installed in the active environment (pip install -e ".[test]" ruff mypy),
+# so they match the versions CI uses.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff check
+        entry: ruff check
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy (src/xlspy)
+        entry: mypy
+        language: system
+        types: [python]
+        files: ^src/
+        pass_filenames: false
+      - id: cargo-fmt
+        name: cargo fmt --check
+        entry: cargo fmt --manifest-path rust/xlspy_core/Cargo.toml --check
+        language: system
+        types: [rust]
+        pass_filenames: false

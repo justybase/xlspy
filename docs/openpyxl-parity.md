@@ -26,7 +26,7 @@ gap is implemented the same test starts passing without changes.
 - `tests/openpyxl_compat/` compares values, styles, metadata, object counts and
   no-op ZIP preservation; `tools/compare_openpyxl_model.py` produces a semantic
   JSON diff.
-- CI job `compat` pins `openpyxl==3.1.5`.
+- The `test` extra pins `openpyxl==3.1.5`, so every CI test job runs the harness.
 - Current results: the compatibility harness is **85 passed, 0 xfailed**; the
   full suite is **1452 passed, 132 skipped**. All planned harness checks pass.
 

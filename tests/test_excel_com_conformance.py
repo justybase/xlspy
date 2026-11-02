@@ -40,6 +40,7 @@ def _excel_available() -> bool:
 
 
 pytestmark = [
+    pytest.mark.com,
     pytest.mark.skipif(not _excel_available(), reason="Microsoft Excel COM is not available"),
     pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 (pwsh) is required"),
 ]

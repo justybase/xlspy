@@ -437,19 +437,19 @@ _XL_HORIZONTAL = {"general": 1, "left": -4131, "center": -4108, "right": -4152, 
 _XL_VERTICAL = {"top": -4160, "center": -4108, "bottom": -4107, "justify": -4130, "distributed": -4117}
 _XL_READING_ORDER = {0: -5002, 1: -5003, 2: -5004}
 _ALIGNMENT_CASES = {
-    "A1": dict(horizontal="center", vertical="top", wrap_text=True),
-    "B1": dict(horizontal="right", vertical="center", shrink_to_fit=True),
-    "C1": dict(horizontal="left", indent=3),
-    "D1": dict(horizontal="justify", vertical="justify"),
-    "E1": dict(horizontal="distributed", vertical="distributed", indent=1),
-    "F1": dict(horizontal="fill"),
-    "G1": dict(horizontal="centerContinuous"),
-    "H1": dict(text_rotation=45),
-    "A2": dict(text_rotation=135),
-    "B2": dict(text_rotation=255),
-    "C2": dict(horizontal="general", reading_order=2),
-    "D2": dict(reading_order=1),
-    "E2": dict(vertical="bottom"),
+    "A1": {"horizontal": "center", "vertical": "top", "wrap_text": True},
+    "B1": {"horizontal": "right", "vertical": "center", "shrink_to_fit": True},
+    "C1": {"horizontal": "left", "indent": 3},
+    "D1": {"horizontal": "justify", "vertical": "justify"},
+    "E1": {"horizontal": "distributed", "vertical": "distributed", "indent": 1},
+    "F1": {"horizontal": "fill"},
+    "G1": {"horizontal": "centerContinuous"},
+    "H1": {"text_rotation": 45},
+    "A2": {"text_rotation": 135},
+    "B2": {"text_rotation": 255},
+    "C2": {"horizontal": "general", "reading_order": 2},
+    "D2": {"reading_order": 1},
+    "E2": {"vertical": "bottom"},
 }
 
 

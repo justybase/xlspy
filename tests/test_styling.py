@@ -644,10 +644,10 @@ def _cell_styles_via_openpyxl(path):
     return openpyxl.load_workbook(path).active
 
 
-@pytest.mark.parametrize("use_c", [True, False])
-def test_value_style_cells_xlsx(tmp_path, monkeypatch, use_c):
+@pytest.mark.parametrize("native", [True, False])
+def test_value_style_cells_xlsx(tmp_path, monkeypatch, native):
     import xlspy.xlsx_writer
-    if not use_c:
+    if not native:
         monkeypatch.setattr(xlspy._xlsx_writer_sheet, "accel_encode_xlsx_row", lambda *a, **k: None)
     bold = Style(font=Font(bold=True))
     red = Style(fill="FF0000", number_format="0.0")
@@ -669,10 +669,10 @@ def test_value_style_cells_xlsx(tmp_path, monkeypatch, use_c):
     assert sheet["C31"].number_format == "0.0" and sheet["C31"].value == 45413
 
 
-@pytest.mark.parametrize("use_c", [True, False])
-def test_value_style_cells_xlsb(tmp_path, monkeypatch, use_c):
+@pytest.mark.parametrize("native", [True, False])
+def test_value_style_cells_xlsb(tmp_path, monkeypatch, native):
     import xlspy.writer
-    if not use_c:
+    if not native:
         monkeypatch.setattr(xlspy._xlsb_writer_bin, "encode_xlsb_row", lambda *a, **k: None)
     bold = Style(bold=True)
     rows = [["h"], *[[(r, bold)] for r in range(1, 20)], [("x", Style(number_format="0.00"))]]

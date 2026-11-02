@@ -8,7 +8,7 @@ between iterations, and reports medians.
 Writers (``--writers``, comma-separated, default ``all``):
 
   xlsx-shared, xlsx-inline, xlsb-shared, xlsb-inline
-      xlspy, with the C extension on, off, or both (``--c-ext``).
+      xlspy, with the native (Rust) module on, off, or both (``--native``).
   openpyxl
       openpyxl ``Workbook(write_only=True)``; skipped if not installed.
   xlsxwriter
@@ -28,7 +28,7 @@ What is measured, per run:
                   set; Linux: ru_maxrss). Includes the interpreter and imports;
                   ``baseline_rss_mb`` is the resident set just before the write.
   tracemalloc_mb  With ``--tracemalloc``, a separate run's peak of Python
-                  allocations. It excludes memory the C extension allocates
+                  allocations. It excludes memory the native module allocates
                   directly, and tracing slows the write, so these runs are not
                   timed.
   file_mb         Size of the output file.
@@ -39,7 +39,7 @@ the medians; ``--csv`` also writes one row per run.
 Usage:
     python examples/write_benchmark.py --rows 50000 --cols 50 --iterations 3 \\
         --output bench.json
-    python examples/write_benchmark.py --writers xlsx-inline,xlsb-inline --c-ext both
+    python examples/write_benchmark.py --writers xlsx-inline,xlsb-inline --native both
 """
 
 import argparse
@@ -217,7 +217,7 @@ def run_worker(args):
     if args.writer in XLSPY_WRITERS:
         from xlspy import _accel
 
-        result["c_ext"] = bool(_accel.HAVE_NATIVE)
+        result["native"] = bool(_accel.HAVE_NATIVE)
     else:
         __import__(args.writer)  # import before the baseline so it is not counted as write memory
     ext = "xlsb" if args.writer.startswith("xlsb") else "xlsx"
@@ -331,7 +331,7 @@ def _jobs(args):
     unknown = set(writers) - set(ALL_WRITERS)
     if unknown:
         raise SystemExit(f"unknown writers: {', '.join(sorted(unknown))}")
-    modes = {"on": ["on"], "off": ["off"], "both": ["on", "off"]}[args.c_ext]
+    modes = {"on": ["on"], "off": ["off"], "both": ["on", "off"]}[args.native]
     jobs = []
     for writer in writers:
         if writer in OTHER_WRITERS:
@@ -354,16 +354,14 @@ def _run_job(args, writer, mode, tracemalloc, outdir):
     if tracemalloc:
         cmd.append("--tracemalloc")
     env = dict(os.environ)
-    env.pop("XLSPY_DISABLE_C_EXT", None)
-    if mode == "off":
-        env["XLSPY_DISABLE_C_EXT"] = "1"
+    env["XLSPY_ACCEL"] = "python" if mode == "off" else "auto"
     proc = subprocess.run(cmd, env=env, capture_output=True, text=True)
     lines = [line for line in proc.stdout.splitlines() if line.startswith("{")]
     if proc.returncode != 0 or not lines:
         return {"writer": writer, "status": "error", "error": (proc.stderr or proc.stdout)[-500:]}
     result = json.loads(lines[-1])
-    if mode is not None and result.get("c_ext") != (mode == "on"):
-        result.update(status="error", error=f"C extension state {result.get('c_ext')} does not match --c-ext {mode}")
+    if mode is not None and result.get("native") != (mode == "on"):
+        result.update(status="error", error=f"native module state {result.get('native')} does not match --native {mode}")
     return result
 
 
@@ -398,7 +396,7 @@ def run_orchestrator(args):
     jobs = _jobs(args)
     report = {"environment": environment(args),
               "parameters": {k: getattr(args, k) for k in ("rows", "cols", "iterations", "dataset", "input",
-                                                           "target", "seed", "c_ext", "tracemalloc")},
+                                                           "target", "seed", "native", "tracemalloc")},
               "runs": []}
     outdir = args.outdir or tempfile.mkdtemp(prefix="xlspy_bench_")
     os.makedirs(outdir, exist_ok=True)
@@ -419,7 +417,7 @@ def run_orchestrator(args):
         with open(args.output, "w", encoding="utf-8") as out:
             json.dump(report, out, indent=2)
     if args.csv:
-        fields = ["label", "iteration", "writer", "c_ext", "status", "rows", "cols", "dataset", "input", "seed",
+        fields = ["label", "iteration", "writer", "native", "status", "rows", "cols", "dataset", "input", "seed",
                   "elapsed_s", "peak_rss_mb", "baseline_rss_mb", "tracemalloc_mb", "file_mb", "error"]
         with open(args.csv, "w", newline="", encoding="utf-8") as out:
             writer = csv.DictWriter(out, fieldnames=fields, extrasaction="ignore")
@@ -444,8 +442,8 @@ def main(argv=None):
     parser.add_argument("--cols", type=int, default=50)
     parser.add_argument("--iterations", type=int, default=3, help="timed runs per writer (default 3)")
     parser.add_argument("--writers", default="all", help=f"comma-separated: {', '.join(ALL_WRITERS)}, or all")
-    parser.add_argument("--c-ext", choices=["on", "off", "both"], default="on",
-                        help="xlspy with the C extension, without it, or both (default on)")
+    parser.add_argument("--native", choices=["on", "off", "both"], default="on",
+                        help="xlspy with the native (Rust) module, without it, or both (default on)")
     parser.add_argument("--dataset", choices=sorted(DATASETS), default="mixed")
     parser.add_argument("--seed", type=int, default=0, help="seed for the random dataset (default 0)")
     parser.add_argument("--input", choices=["stream", "list"], default="stream")

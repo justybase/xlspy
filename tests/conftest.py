@@ -1,4 +1,6 @@
-import os, shutil
+import gc
+import os
+import shutil
 
 import pytest
 
@@ -36,3 +38,35 @@ def pytest_sessionfinish(session):
             shutil.rmtree(PROJECT_TMP)
         except OSError:
             pass
+
+
+# Microsoft Excel through COM, shared by the tests marked `com`.
+@pytest.fixture(scope="module")
+def excel():
+    client = pytest.importorskip("win32com.client")
+    app = client.DispatchEx("Excel.Application")
+    app.Visible = False
+    app.DisplayAlerts = False
+    app.EnableEvents = False
+    yield app
+    gc.collect()
+    app.Quit()
+    del app
+    gc.collect()
+
+
+@pytest.fixture
+def open_workbook(excel):
+    opened = []
+    def open_file(path):
+        workbook = excel.Workbooks.Open(str(path), 0, True)
+        opened.append(workbook)
+        return workbook
+    yield open_file
+    while opened:
+        workbook = opened.pop()
+        try:
+            workbook.Close(False)
+        finally:
+            del workbook
+    gc.collect()

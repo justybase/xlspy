@@ -435,9 +435,6 @@ def _charts_workbook() -> Workbook:
     categories = Reference(data, min_col=1, min_row=2, max_row=5)
     values = Reference(data, min_col=2, min_row=1, max_col=3, max_row=5)
     one_series = Reference(data, min_col=2, min_row=1, max_row=5)
-    xvalues = Reference(data, min_col=2, min_row=2, max_row=5)
-    yvalues = Reference(data, min_col=3, min_row=2, max_row=5)
-    zvalues = Reference(data, min_col=4, min_row=2, max_row=5)
 
     bar = BarChart()
     bar.type = "col"

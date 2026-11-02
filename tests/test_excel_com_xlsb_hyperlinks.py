@@ -5,7 +5,6 @@ import os
 import pytest
 
 from xlspy import Chart, ChartSeries, Hyperlink, Style, XlsbWriter
-from test_excel_com_metadata import excel, open_workbook  # noqa: F401
 
 pytestmark = [pytest.mark.com, pytest.mark.skipif(os.environ.get('XLSPY_RUN_EXCEL_COM') != '1', reason='Set XLSPY_RUN_EXCEL_COM=1')]
 

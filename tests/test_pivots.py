@@ -60,7 +60,7 @@ def parts(data: bytes) -> dict[str, str]:
         return {
             name: zf.read(name).decode("utf-8")
             for name in zf.namelist()
-            if name.endswith(".xml") or name.endswith(".rels")
+            if name.endswith((".xml", ".rels"))
         }
 
 

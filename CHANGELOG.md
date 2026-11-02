@@ -141,6 +141,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `__version__` is read from the installed package metadata, so `pyproject.toml` is the only place the version is
+  set. A source tree that was never installed reports `0+unknown`.
+- Tests that start Microsoft Excel (`test_excel_com_conformance.py`, the Excel checks in `test_comprehensive.py`) are
+  marked `com` and need `XLSPY_RUN_EXCEL_COM=1`, like the other Excel tests. Each test has a 300 s time limit
+  (`pytest-timeout`).
+- Internal: CI lints `tests`, `tools`, `benchmarks` and `examples` with ruff, type-checks for Python 3.11 and 3.14,
+  runs the pure-Python fallback on Linux, Windows and macOS with Python 3.11 and 3.14, and the release workflow runs
+  the test suite before it builds wheels. The `test` extra pins `openpyxl==3.1.5` (the version the compatibility
+  goldens were made with), which replaces the separate `compat` job. The Excel fixtures under `tests/data` that
+  the tests need are committed.
 - Internal: names that several modules defined are consolidated. Identical copies now have one owner
   module; helpers with the same behaviour are one function; different functions that shared a name are
   renamed, so each name means one thing. Only private names changed, with one exception:
@@ -271,8 +281,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model cannot read, such as a prompt-only validation, and to remove one
   object of a grouped drawing; both would lose data.
 
+### Removed
+
+- **Breaking:** `XLSPY_DISABLE_C_EXT` and `xlspy._accel.HAVE_C_EXT`, kept from before the Rust port. Use
+  `XLSPY_ACCEL=python` and `HAVE_NATIVE`. Setting `XLSPY_DISABLE_C_EXT` now makes `import xlspy` raise
+  `ImportError`, so a script that still sets it does not silently run the native code. The benchmark scripts take
+  `--native on|off|both` instead of `--c-ext`, and their JSON reports `native` instead of `c_ext`.
+
 ### Fixed
 
+- The type stub `_rs_core.pyi` lists the `write_r` parameter of `encode_xlsx_row`; `stubtest` failed without it.
 - A named style whose fill is a colour string (`fill="00FF00"`) no longer raises `AttributeError` when it is written
   to XLSX or added to an XLSB workbook. A colour string is a solid fill of that colour.
 - A corrupt XLSX `sharedStrings` part without an `sst` element raises `ValueError` ("sharedStrings element was not

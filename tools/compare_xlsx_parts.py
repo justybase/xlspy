@@ -34,7 +34,7 @@ def compare(before_root, after_root):
             continue
         with zipfile.ZipFile(before[rel]) as old, zipfile.ZipFile(after[rel]) as new:
             old_names, new_names = set(old.namelist()), set(new.namelist())
-            changed = [name for name in sorted(old_names ^ new_names)]
+            changed = sorted(old_names ^ new_names)
             changed += [
                 name for name in sorted(old_names & new_names)
                 if name not in IGNORED and old.read(name) != new.read(name)

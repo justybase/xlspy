@@ -9,7 +9,6 @@ from xml.etree import ElementTree as ET
 import pytest
 import openpyxl
 from openpyxl.comments import Comment as OpenpyxlComment
-from openpyxl.styles import Font as OpenpyxlFont
 
 from xlspy import (
     Comment, DefinedName, ExcelReader, Formula, SheetProtection, Style,
@@ -551,7 +550,7 @@ def test_prefixed_workbook_sheet_styles_and_comments(tmp_path):
     path = tmp_path / "prefixes.xlsx"
     make_book(path, comments={"A1": Comment("original", "Jan")})
     parts = payloads(path)
-    replacements = {name: ET.tostring(ET.fromstring(data), encoding="utf-8") for name, data in parts.items() if name.endswith(".xml") or name.endswith(".rels")}
+    replacements = {name: ET.tostring(ET.fromstring(data), encoding="utf-8") for name, data in parts.items() if name.endswith((".xml", ".rels"))}
     replace_parts(path, replacements)
     updater = XlsxUpdater(path)
     try:

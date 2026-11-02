@@ -4,17 +4,17 @@ Dataset: 50000 x 50 (2.5M cells) by default, mixed types
 (str, int, float, bool, date, datetime, Decimal, big int).
 
 Write:
-  - xlspy (C_EXT) XLSB            - default, compiled C extension
+  - xlspy (native) XLSB           - default, native (Rust) module
   - xlspy (Python) XLSB           - pure-Python fallback, measured in a
-                                    subprocess with XLSPY_DISABLE_C_EXT=1
+                                    subprocess with XLSPY_ACCEL=python
   - xlspy XLSX
   - openpyxl XLSX (write_only=True, the streaming equivalent of
     xlsxwriter's constant_memory mode)
   - xlsxwriter XLSX (constant_memory=True)
 
 Read (each library reads back its own output file):
-  - xlspy (C_EXT) XLSB
-  - xlspy (Python) XLSB           - subprocess with XLSPY_DISABLE_C_EXT=1
+  - xlspy (native) XLSB
+  - xlspy (Python) XLSB           - subprocess with XLSPY_ACCEL=python
   - xlspy XLSX
   - openpyxl XLSX (read_only=True)
 
@@ -206,7 +206,7 @@ def run_read_openpyxl(filename):
 def _worker_write_xlsb_python(filename, rows, cols):
     """Worker entry point: times a pure-Python XLSB write.
 
-    Must run in a subprocess with XLSPY_DISABLE_C_EXT=1 (the flag is
+    Must run in a subprocess with XLSPY_ACCEL=python (the flag is
     evaluated at import time, so it cannot be toggled in-process).
     Prints `RESULT seconds=<t> size_mb=<s>` for the parent to parse.
     """
@@ -223,8 +223,8 @@ def _worker_read_xlsb_python(filename):
 
 
 def _run_python_fallback_worker(worker, *args):
-    """Runs this script as a subprocess with the C extension disabled."""
-    env = dict(os.environ, XLSPY_DISABLE_C_EXT="1")
+    """Runs this script as a subprocess with the native module disabled."""
+    env = dict(os.environ, XLSPY_ACCEL="python")
     cmd = [sys.executable, os.path.abspath(__file__), "--worker", worker,
            *args]
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
@@ -335,7 +335,7 @@ if __name__ == "__main__":
     print("\n### Write\n")
     print("| Library | Format | Time | Size |")
     print("|---------|--------|------|------|")
-    print(f"| **xlspy (C_EXT)** | XLSB | **{w_xlsb_c:.2f} s** | {s_xlsb:.2f} MB |")
+    print(f"| **xlspy (native)** | XLSB | **{w_xlsb_c:.2f} s** | {s_xlsb:.2f} MB |")
     print(f"| xlspy (Python) | XLSB | {w_xlsb_py:.2f} s | {s_xlsb_py:.2f} MB |")
     print(f"| xlspy | XLSX | {w_xlsx:.2f} s | {s_xlsx:.2f} MB |")
     print(f"| openpyxl (write_only) | XLSX | {w_openpyxl:.2f} s | {s_openpyxl:.2f} MB |")
@@ -343,7 +343,7 @@ if __name__ == "__main__":
     print("\n### Read\n")
     print("| Library | Format | Time | Notes |")
     print("|---------|--------|------|-------|")
-    print(f"| **xlspy (C_EXT)** | XLSB | **{r_xlsb_c:.2f} s** | default, compiled C |")
+    print(f"| **xlspy (native)** | XLSB | **{r_xlsb_c:.2f} s** | default, native module |")
     print(f"| xlspy | XLSX | {r_xlsx:.2f} s | uses expat XML parser (C) |")
     print(f"| xlspy (Python) | XLSB | {r_xlsb_py:.2f} s | pure Python fallback |")
     print(f"| openpyxl (read_only) | XLSX | {r_openpyxl:.2f} s | read-only mode |")

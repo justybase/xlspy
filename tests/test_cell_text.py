@@ -337,8 +337,8 @@ def test_native_and_python_xlsx_encoders_agree_on_ordinary_text(monkeypatch):
     rows = [["Name", "Note"], ["plain", "a&b"], ["żółw", ASTRAL + "x"],
             ["_x", "x_"], ["_x00G0_", "tab\tand\nnewline"]]
     outputs = []
-    for use_c in (True, False):
-        if not use_c:
+    for native in (True, False):
+        if not native:
             monkeypatch.setattr(xlspy._xlsx_writer_sheet, "accel_encode_xlsx_row", lambda *a, **k: None)
         for shared in (True, False):
             data = _write(XlsxWriter, shared, rows)

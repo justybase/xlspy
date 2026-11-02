@@ -380,7 +380,6 @@ def parent(args):
         "rows": args.rows,
         "cols": args.cols,
         "repeat": args.repeat,
-        "c_ext": not os.environ.get("XLSPY_DISABLE_C_EXT"),
         "accel": accel_info(),
         "versions": _versions(),
         "results": results,

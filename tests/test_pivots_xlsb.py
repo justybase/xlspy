@@ -73,15 +73,15 @@ TABLE = "xl/pivotTables/pivotTable1.bin"
 CACHE = "xl/pivotCache/pivotCacheDefinition1.bin"
 
 SHAPES = {
-    "row_one": dict(),
-    "row_two": dict(values=["Sales", "Units"]),
-    "row_col": dict(columns="Quarter"),
-    "row_col_two": dict(columns="Quarter", values=["Sales", "Units"]),
-    "text_column": dict(columns="Product"),
-    "filter": dict(filters="Product"),
-    "average": dict(values=[PivotValue("Units", "average")]),
-    "count": dict(values=[PivotValue("Sales", "count")]),
-    "max": dict(values=[PivotValue("Sales", "max", number_format="#,##0")]),
+    "row_one": {},
+    "row_two": {"values": ["Sales", "Units"]},
+    "row_col": {"columns": "Quarter"},
+    "row_col_two": {"columns": "Quarter", "values": ["Sales", "Units"]},
+    "text_column": {"columns": "Product"},
+    "filter": {"filters": "Product"},
+    "average": {"values": [PivotValue("Units", "average")]},
+    "count": {"values": [PivotValue("Sales", "count")]},
+    "max": {"values": [PivotValue("Sales", "max", number_format="#,##0")]},
 }
 RANGES = {
     "row_one": "A12:B16", "row_two": "A12:C16", "row_col": "A12:D17",

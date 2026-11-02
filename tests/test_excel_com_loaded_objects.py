@@ -11,7 +11,6 @@ import os
 import pytest
 
 from xlspy import load_workbook
-from test_excel_com_metadata import excel, open_workbook  # noqa: F401
 from test_model_loaded_objects import ROWS, _add_everything, _source
 
 pytestmark = [pytest.mark.com, pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",

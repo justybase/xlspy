@@ -1,7 +1,6 @@
 """Opt-in validation of notes, template edits and protection in real Excel."""
 
 import os
-import gc
 
 import pytest
 
@@ -11,37 +10,6 @@ pytestmark = [
     pytest.mark.com,
     pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1 to validate in Excel"),
 ]
-
-
-@pytest.fixture(scope="module")
-def excel():
-    client = pytest.importorskip("win32com.client")
-    app = client.DispatchEx("Excel.Application")
-    app.Visible = False
-    app.DisplayAlerts = False
-    app.EnableEvents = False
-    yield app
-    gc.collect()
-    app.Quit()
-    del app
-    gc.collect()
-
-
-@pytest.fixture
-def open_workbook(excel):
-    opened = []
-    def open_file(path):
-        workbook = excel.Workbooks.Open(str(path), 0, True)
-        opened.append(workbook)
-        return workbook
-    yield open_file
-    while opened:
-        workbook = opened.pop()
-        try:
-            workbook.Close(False)
-        finally:
-            del workbook
-    gc.collect()
 
 
 def test_notes_dimensions_names_and_protection_in_excel(tmp_path, open_workbook):

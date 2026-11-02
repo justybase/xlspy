@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from xlspy import ExcelReader, Formula, XlsxWriter
+from xlspy import ExcelReader, XlsxWriter
 from xlspy._xlsx_read import translate_formula
 from test_comments_and_editing import replace_parts
 
@@ -125,7 +125,6 @@ def test_shared_formula_negative_reference():
 
 
 def test_strict_open_xml_is_readable_and_refused_for_editing(tmp_path):
-    import zipfile
     from xlspy import Comment, DefinedName, XlsxUpdater, XlsxWriter, load_workbook
     source, strict = tmp_path / "source.xlsx", tmp_path / "strict.xlsx"
     with XlsxWriter(source) as writer:

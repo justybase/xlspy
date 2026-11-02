@@ -10,7 +10,6 @@ from xlspy import (
     CellRichText, Chart, ChartSeries, InlineFont, Style, TextBlock, DataValidation, Formula, Image, PageMargins, PrintSettings, XlsbWriter,
     XlsxWriter,
 )
-from test_excel_com_metadata import excel, open_workbook  # noqa: F401
 from test_xlsb_charts_extended import CHARTS, ROWS
 from test_excel_com_properties_charts import GIF_1X1, _bmp, _png
 

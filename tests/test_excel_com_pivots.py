@@ -122,6 +122,7 @@ def _retry(call):
             if error.hresult != rejected or attempt == 19:
                 raise
             time.sleep(0.5)
+    return None
 
 
 def _open(excel, path):

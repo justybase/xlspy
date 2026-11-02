@@ -75,6 +75,7 @@ def encode_xlsx_row(
     fmt_xf: dict[Any, Any] | None = None,
     row_attrs: str | None = None,
     link_xf: int | None = None,
+    write_r: bool = True,
 ) -> tuple[bytes, int, int, list[tuple[int, int, Any]]] | None: ...
 @final
 class XlsbReader(Iterator[list[Any]]):

@@ -1,8 +1,6 @@
 """Binary metadata round trips, preservation, transactions and formula tokens."""
 
-import io
 import struct
-import tracemalloc
 import zipfile
 
 import pytest
@@ -11,7 +9,7 @@ from xlspy import (
     Comment, DefinedName, ExcelReader, Formula, SheetProtection, Style,
     WorkbookProtection, XlsbWriter, XlsbUpdater,
 )
-from xlspy._xlsb_metadata import records, parse_comments, comments_bin
+from xlspy._xlsb_metadata import records
 from xlspy.biff_utils import build_record
 from xlspy._xlsb_formulas import FormulaContext, compile_formula, decode_formula, parsed_formula
 from xlspy.comments import find_comment_parts

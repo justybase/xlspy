@@ -3,7 +3,6 @@
 import zipfile
 from pathlib import Path
 
-import pytest
 
 from xlspy import FormulaRule, load_workbook
 from xlspy.biff_utils import iter_record_payloads

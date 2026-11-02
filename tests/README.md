@@ -21,7 +21,7 @@ python -m pytest
 Without the native extension (the pure-Python fallback that CI also runs):
 
 ```bash
-XLSPY_DISABLE_C_EXT=1 python -m pytest        # PowerShell: $env:XLSPY_DISABLE_C_EXT="1"
+XLSPY_ACCEL=python python -m pytest        # PowerShell: $env:XLSPY_ACCEL="python"
 ```
 
 Tests that drive Microsoft Excel through COM (Windows, `pywin32`) are skipped
@@ -34,7 +34,7 @@ CI runs both. The mypy configuration in `pyproject.toml` checks every module in
 
 ```bash
 python -m pip install ruff mypy
-ruff check src
+ruff check src tests tools benchmarks examples
 mypy
 ```
 
@@ -62,7 +62,7 @@ python -m pytest tests/openpyxl_compat -q
 python tools/compare_openpyxl_model.py LEFT.xlsx RIGHT.xlsx
 ```
 
-The harness uses openpyxl 3.1.x (pinned to 3.1.5 in CI). A missing feature is
+The harness uses openpyxl 3.1.5 (pinned in the `test` extra). A missing feature is
 reported as `xfail` with the ID from
 [`docs/openpyxl-parity.md`](../docs/openpyxl-parity.md), which also records the
 current implementation status and the remaining phases.

@@ -4,7 +4,6 @@ import os
 
 import pytest
 
-from test_excel_com_metadata import excel, open_workbook  # noqa: F401
 from xlspy import Workbook, load_workbook
 from xlspy.styles import (
     CellIsRule, ColorScaleRule, DataBarRule, DifferentialStyle, Font, FormatObject, IconSetRule,

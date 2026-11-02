@@ -207,6 +207,7 @@ class TestCrossValidation:
         assert rows == data, f"None row: {rows} != {data}"
 
     # ─── Excel COM (conditional on win32com) ─────────────────────────
+    @pytest.mark.com
     def test_excel_opens_our_xlsb(self, tmp_dir):
         pytest.importorskip("win32com.client")
         import win32com.client
@@ -225,6 +226,7 @@ class TestCrossValidation:
         finally:
             excel.Quit()
 
+    @pytest.mark.com
     def test_excel_opens_our_xlsx(self, tmp_dir):
         pytest.importorskip("win32com.client")
         import win32com.client
@@ -240,6 +242,7 @@ class TestCrossValidation:
         finally:
             excel.Quit()
 
+    @pytest.mark.com
     def test_excel_write_and_readback(self, tmp_dir):
         pytest.importorskip("win32com.client")
         import win32com.client

@@ -1,4 +1,4 @@
-"""Benchmark styled writes: time per scenario, writer and C-extension mode.
+"""Benchmark styled writes: time per scenario, writer and backend (native or Python).
 
 Every run happens in a fresh worker process (this script re-invoked with
 ``--worker``). Rows and styles are built before the clock starts; the timed
@@ -111,7 +111,7 @@ def _scenarios():
         return "sheet", (_rows(n), {
             "header_style": header,
             "styles": {f"A1:L{n}": boxed},
-            "row_heights": {r: 18 for r in range(0, n, 3)},
+            "row_heights": dict.fromkeys(range(0, n, 3), 18),
             "row_groups": [Group(r, r + 4) for r in range(10, n - 10, 20)],
         })
 
@@ -197,17 +197,17 @@ def worker(args):
         "elapsed_s": elapsed,
         "tracemalloc_mb": peak / 2**20 if peak is not None else None,
         "file_bytes": os.path.getsize(path),
-        "c_ext": _accel.HAVE_NATIVE,
+        "native": _accel.HAVE_NATIVE,
     }
     if not args.keep:
         os.remove(path)
     print(json.dumps(result))
 
 
-def _run_worker(args, scenario, fmt, c_ext, trace=False, keep=None):
+def _run_worker(args, scenario, fmt, native, trace=False, keep=None):
     env = os.environ.copy()
     env["PYTHONPATH"] = args.src + os.pathsep + env.get("PYTHONPATH", "")
-    env["XLSPY_DISABLE_C_EXT"] = "0" if c_ext else "1"
+    env["XLSPY_ACCEL"] = "auto" if native else "python"
     cmd = [sys.executable, os.path.abspath(__file__), "--worker",
            "--scenario", scenario, "--format", fmt, "--rows", str(args.rows)]
     if trace:
@@ -223,17 +223,17 @@ def _run_worker(args, scenario, fmt, c_ext, trace=False, keep=None):
 def orchestrate(args):
     scenarios = args.scenarios.split(",") if args.scenarios else list(_scenarios_names())
     formats = args.formats.split(",")
-    modes = {"on": [True], "off": [False], "both": [True, False]}[args.c_ext]
+    modes = {"on": [True], "off": [False], "both": [True, False]}[args.native]
     runs = {}
     for iteration in range(args.iterations):
         for scenario in scenarios:
             for fmt in formats:
-                for c_ext in modes:
-                    key = f"{scenario}/{fmt}/{'c' if c_ext else 'py'}"
+                for native in modes:
+                    key = f"{scenario}/{fmt}/{'native' if native else 'py'}"
                     keep = None
                     if args.keep and iteration == 0:
-                        keep = os.path.join(args.keep, "c" if c_ext else "py")
-                    result = _run_worker(args, scenario, fmt, c_ext, keep=keep)
+                        keep = os.path.join(args.keep, "native" if native else "py")
+                    result = _run_worker(args, scenario, fmt, native, keep=keep)
                     runs.setdefault(key, []).append(result)
                     if "error" in result:
                         print(f"{key}: ERROR {result['error']}", file=sys.stderr)
@@ -251,9 +251,9 @@ def orchestrate(args):
     if args.tracemalloc:
         for scenario in scenarios:
             for fmt in formats:
-                for c_ext in modes:
-                    key = f"{scenario}/{fmt}/{'c' if c_ext else 'py'}"
-                    result = _run_worker(args, scenario, fmt, c_ext, trace=True)
+                for native in modes:
+                    key = f"{scenario}/{fmt}/{'native' if native else 'py'}"
+                    result = _run_worker(args, scenario, fmt, native, trace=True)
                     if "tracemalloc_mb" in result and key in summary:
                         summary[key]["tracemalloc_mb"] = result["tracemalloc_mb"]
     report = {
@@ -312,7 +312,8 @@ def main():
     parser.add_argument("--iterations", type=int, default=5)
     parser.add_argument("--scenarios", help="comma-separated subset")
     parser.add_argument("--formats", default="xlsx,xlsb")
-    parser.add_argument("--c-ext", choices=("on", "off", "both"), default="on")
+    parser.add_argument("--native", choices=("on", "off", "both"), default="on",
+                        help="the native (Rust) module on, off (XLSPY_ACCEL=python) or both")
     parser.add_argument("--tracemalloc", action="store_true")
     parser.add_argument("--keep", help="directory for one output file per scenario")
     parser.add_argument("--label", default="")

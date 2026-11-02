@@ -38,7 +38,7 @@ def _autofit(cells):
         writer.add_sheet("Probe")
         # A blank first row: the writer bolds row 1 and filters it.
         writer.write_sheet([[None] * len(row), row], auto_filter=False,
-                           column_widths={i: 8.43 for i in range(len(row))})
+                           column_widths=dict.fromkeys(range(len(row)), 8.43))
     app = win32com.client.DispatchEx("Excel.Application")
     app.Visible = False
     app.DisplayAlerts = False

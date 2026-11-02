@@ -231,9 +231,9 @@ class _XlsbBinMixin:
                 # XLSB rows carry their own index, so the gap is kept.
                 continue
             last_written = row_idx
-            use_c = not array_ranges and (not has_formatted or self._fmt_xf)
+            use_native = not array_ranges and (not has_formatted or self._fmt_xf)
             style_ids = None
-            if use_c and row_styles:
+            if use_native and row_styles:
                 if has_formatted:
                     # Only look styles up: the Python encoder registers the
                     # styles of formatted cells in its own order.
@@ -243,13 +243,13 @@ class _XlsbBinMixin:
                             row_style_ids_cache,
                         )
                     except KeyError:
-                        use_c = False
+                        use_native = False
                 else:
                     style_ids = _style_ids_for_row(
                         row_styles, len(row), self._register_style,
                         row_style_ids_cache,
                     )
-            if use_c:
+            if use_native:
                 fmt_xf = self._fmt_xf if has_formatted else None
                 row_header = None
                 if row_idx in custom_rows or outline_level or outline_collapsed:

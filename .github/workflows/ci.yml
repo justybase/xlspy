@@ -25,6 +25,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -63,6 +65,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install linters
         run: |
@@ -71,11 +75,12 @@ jobs:
 
       - name: Ruff
         run: |
-          ruff check src
+          ruff check src tests tools benchmarks examples
 
-      - name: Mypy
+      - name: Mypy (oldest and newest stable Python)
         run: |
           mypy
+          mypy --python-version 3.14
 
       - name: "Mypy: stub usage (accepted and rejected argument types)"
         run: |
@@ -145,11 +150,12 @@ jobs:
         run: cargo audit
 
   test-fallback:
-    name: Pure-Python fallback (${{ matrix.os }})
+    name: Pure-Python fallback (${{ matrix.os }}, ${{ matrix.python-version }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.14"]
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -160,7 +166,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -179,44 +187,10 @@ jobs:
           XLSPY_ACCEL: python
         run: python -c "from xlspy._accel import HAVE_NATIVE; print('native:', HAVE_NATIVE); assert not HAVE_NATIVE, 'native extension should be disabled!'"
 
-      - name: Check the legacy switch also disables it
-        env:
-          XLSPY_DISABLE_C_EXT: "1"
-        run: python -c "from xlspy._accel import HAVE_NATIVE; assert not HAVE_NATIVE, 'XLSPY_DISABLE_C_EXT=1 should still disable it'"
-
       - name: Run tests with the native extension disabled
         env:
           XLSPY_ACCEL: python
         run: python -m pytest tests/ -v --tb=short
-
-  compat:
-    name: openpyxl compatibility
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust/xlspy_core
-
-      - name: Install package with test deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[test]"
-          pip install "openpyxl==3.1.5"
-
-      - name: Run the compatibility harness
-        run: python -m pytest tests/openpyxl_compat -v --tb=short
 
   wheel-smoke:
     name: Wheel smoke test (installed wheel, clean venv)
@@ -230,6 +204,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -273,6 +249,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -314,6 +292,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

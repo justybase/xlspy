@@ -51,7 +51,7 @@ def _records(path, part="xl/worksheets/sheet1.bin"):
 
 def test_records_match_excel(tmp_path):
     records = _records(_write(tmp_path, SETTINGS))
-    payloads = {kind: payload for kind, payload in records}
+    payloads = dict(records)
     for kind, expected in EXCEL.items():
         assert payloads[kind] == bytes.fromhex(expected), hex(kind)
     assert [payload for kind, payload in records if kind == 0x18C] == [bytes.fromhex(h) for h in EXCEL_BREAKS]

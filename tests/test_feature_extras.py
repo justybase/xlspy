@@ -4,7 +4,7 @@ import zipfile
 
 import pytest
 
-from xlspy import PrintSettings, XlsbWriter, XlsxWriter
+from xlspy import PrintSettings, XlsxWriter
 
 openpyxl = pytest.importorskip("openpyxl")
 

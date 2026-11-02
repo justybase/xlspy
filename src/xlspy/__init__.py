@@ -1,3 +1,5 @@
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError, version as _metadata_version
+
 from .exceptions import InvalidFileError, UnsupportedFeatureError, XlspyError
 from .writer import XlsbWriter
 from .xlsx_writer import XlsxWriter
@@ -60,7 +62,10 @@ from .printing import PageMargins, PrintSettings
 from ._sheet_options import SheetOptions
 from .dataframe import dataframe_to_rows, to_xlsb, to_xlsx
 
-__version__ = "0.10.1"
+try:  # pyproject.toml is the single source of the version
+    __version__ = _metadata_version("xlspy")
+except _PackageNotFoundError:  # imported from a source tree that was never installed
+    __version__ = "0+unknown"
 
 _WORKBOOK_EXPORTS = {
     "Workbook",

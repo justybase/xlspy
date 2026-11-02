@@ -39,7 +39,6 @@ from xlspy import (
     Hyperlink,
     PatternFill,
     Side,
-    Style,
     Workbook,
     load_workbook,
 )

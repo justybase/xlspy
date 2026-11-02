@@ -4,7 +4,6 @@ import os
 
 import pytest
 
-from test_excel_com_metadata import excel, open_workbook  # noqa: F401
 from xlspy import load_workbook
 
 pytestmark = [pytest.mark.com, pytest.mark.skipif(

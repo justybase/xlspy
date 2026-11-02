@@ -9,7 +9,7 @@ import zipfile
 
 import pytest
 
-from xlspy import Chart, ChartSeries, CellRichText, ExcelReader, Hyperlink, Formula, XlsbWriter, XlsxWriter
+from xlspy import Chart, ChartSeries, CellRichText, ExcelReader, XlsbWriter, XlsxWriter
 
 ROWS = 120_000
 COLS = 5
@@ -75,12 +75,12 @@ def test_spooled_styled_sheet_matches_in_memory_output(tmp_path):
     from xlspy import Style
 
     data = [["A", "B"]] + [[i, f"x{i}"] for i in range(2000)]
-    kwargs = dict(
-        header_style=Style(bold=True, fill="#183C52", font_color="#FFFFFF"),
-        styles={"A2:A2001": Style(number_format="#,##0")},
-        auto_filter=True,
-        freeze_panes="A2",
-    )
+    kwargs = {
+        "header_style": Style(bold=True, fill="#183C52", font_color="#FFFFFF"),
+        "styles": {"A2:A2001": Style(number_format="#,##0")},
+        "auto_filter": True,
+        "freeze_panes": "A2",
+    }
     paths = []
     for spool in (None, 1):
         path = tmp_path / f"styled_{spool}.xlsx"
@@ -402,7 +402,7 @@ rows = [
      datetime.datetime(2024, 1, 2, 3, 4, 5)],
     [Odd(), "x" * 300, 7],
 ]
-print("c_row=" + str(_accel.encode_xlsb_row_inline(["a"], 0) is not None))
+print("native_row=" + str(_accel.encode_xlsb_row_inline(["a"], 0) is not None))
 with XlsbWriter(sys.argv[1], useSharedStrings=False) as writer:
     writer.add_sheet("Data")
     writer.write_sheet(rows)
@@ -410,7 +410,7 @@ with XlsbWriter(sys.argv[1], useSharedStrings=False) as writer:
 
 
 @pytest.mark.skipif(not _accel_available(), reason="native extension not built")
-def test_xlsb_inline_c_and_python_encoders_write_identical_bytes(tmp_path):
+def test_xlsb_inline_native_and_python_encoders_write_identical_bytes(tmp_path):
     import os
     import subprocess
     import sys
@@ -421,16 +421,16 @@ def test_xlsb_inline_c_and_python_encoders_write_identical_bytes(tmp_path):
     script = tmp_path / "write_inline.py"
     script.write_text(_PARITY_SCRIPT, encoding="utf-8")
     members = {}
-    for label, disable in (("c", "0"), ("python", "1")):
+    for label, accel in (("native", "auto"), ("python", "python")):
         out = tmp_path / f"{label}.xlsb"
-        env = dict(os.environ, PYTHONPATH=src_dir, XLSPY_DISABLE_C_EXT=disable)
+        env = dict(os.environ, PYTHONPATH=src_dir, XLSPY_ACCEL=accel)
         proc = subprocess.run(
             [sys.executable, str(script), str(out)],
             env=env, capture_output=True, text=True, encoding="utf-8", check=False,
         )
         assert proc.returncode == 0, proc.stderr
-        expected = "c_row=True" if disable == "0" else "c_row=False"
+        expected = "native_row=True" if accel == "auto" else "native_row=False"
         assert expected in proc.stdout
         with zipfile.ZipFile(out) as archive:
             members[label] = archive.read("xl/worksheets/sheet1.bin")
-    assert members["c"] == members["python"]
+    assert members["native"] == members["python"]

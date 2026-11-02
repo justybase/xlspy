@@ -48,12 +48,13 @@ polars = [
     "polars>=1.0",
 ]
 test = [
-    "openpyxl>=3.1,<3.2",
+    "openpyxl==3.1.5",  # the openpyxl_compat goldens were made with it
     "pandas",
     "polars",
     "pytest",
     "pytest-cov",
     "pytest-randomly",
+    "pytest-timeout",
     "hypothesis",
     "psutil",
     "xlsxwriter",
@@ -62,14 +63,16 @@ examples = [
     "memory-profiler"
 ]
 
+# The architectures come from the runner (CIBW_ARCHS in .github/workflows/publish.yml).
 [tool.cibuildwheel]
 build = "cp311-* cp312-* cp313-* cp314-* cp315-*"
-archs = "auto64"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra --strict-markers --strict-config"
+# A hung test (an Excel dialog, a native loop) fails instead of stalling CI.
+timeout = 300
 markers = [
     "com: requires Microsoft Excel via COM; skipped unless XLSPY_RUN_EXCEL_COM=1",
     "printer: reads or sets Excel's PageSetup, which needs a reachable default printer; skipped unless XLSPY_RUN_EXCEL_PRINT=1",
@@ -112,6 +115,8 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "src/xlspy/__init__.py" = ["F401"]
+# The lambdas read Excel COM properties and are called at once, inside the loop.
+"tests/test_excel_com_xlsb_parity.py" = ["B023"]
 
 [tool.mypy]
 python_version = "3.11"

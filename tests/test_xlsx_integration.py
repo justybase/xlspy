@@ -161,8 +161,7 @@ def _local(tag):
 
 
 def _rel_ids(root):
-    ids = [rel.get("Id") for rel in root.findall("pkg:Relationship", NS)]
-    return ids
+    return [rel.get("Id") for rel in root.findall("pkg:Relationship", NS)]
 
 
 # ---------------------------------------------------------------- structure

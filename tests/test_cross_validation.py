@@ -18,7 +18,7 @@ import pathlib
 
 import pytest
 
-from xlspy import ExcelReader, XlsbWriter, XlsxUpdater, XlsxWriter
+from xlspy import ExcelReader, XlsxUpdater, XlsxWriter
 
 from golden_data import SHEETS, encoded_sheets, writer_rows
 

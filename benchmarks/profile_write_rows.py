@@ -135,7 +135,7 @@ def main():
     total = None
     body = {"tottime": 0.0, "cumtime": 0.0}
     native = 0.0
-    glue = {name: 0.0 for name in GLUE}
+    glue = dict.fromkeys(GLUE, 0.0)
     python_cells = 0.0  # _write_row_cells: the Python cell writer, for rows the native encoder hands back
     formula_cells = 0.0
     trailer_cells = 0.0  # the sheet's <hyperlinks> and their relationships, written after the rows

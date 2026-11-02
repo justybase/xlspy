@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 import openpyxl
-import pytest
 
 from xlspy import (
     DataValidation,

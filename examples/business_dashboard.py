@@ -235,7 +235,7 @@ def build_dashboard(path):
            **FRAME),
     ]
 
-    widths = {letter: 14 for letter in "ABCDEFGH"}
+    widths = dict.fromkeys("ABCDEFGH", 14)
     widths.update({"I": 3, "J": 3, "K": 20, "L": 14, "M": 12, "N": 12, "O": 12, "P": 12,
                    "Q": 12, "R": 16, "S": 18, "T": 14})
     styles = {
@@ -254,24 +254,24 @@ def build_dashboard(path):
     }
     table = ExcelTable("Sprzedaz", f"A{HEADER_ROW}:H{LAST_DATA_ROW}", columns=HEADERS)
 
-    options: dict[str, Any] = dict(
-        merges=["A1:H1", "A2:H2"],
-        column_widths=widths,
-        styles=styles,
-        tables=[table],
-        charts=charts,
-        shapes=cards,
-        show_grid_lines=False,
-        show_row_col_headers=False,
-        zoom=90,
-        tab_color="#1F4E79",
-        sparklines=[SparklineGroup(
+    options: dict[str, Any] = {
+        "merges": ["A1:H1", "A2:H2"],
+        "column_widths": widths,
+        "styles": styles,
+        "tables": [table],
+        "charts": charts,
+        "shapes": cards,
+        "show_grid_lines": False,
+        "show_row_col_headers": False,
+        "zoom": 90,
+        "tab_color": "#1F4E79",
+        "sparklines": [SparklineGroup(
             data="L37:Q40", location="R37:R40", kind="line", color="#2E75B6", markers=True,
             last_point=True,
         )],
-        slicers=[Slicer(table="Sprzedaz", column="Region", anchor="K4",
+        "slicers": [Slicer(table="Sprzedaz", column="Region", anchor="K4",
                         width=144, height=180, caption="Region")],
-    )
+    }
 
     writer_class = XlsxWriter if xlsx else XlsbWriter
     with writer_class(path) as writer:
