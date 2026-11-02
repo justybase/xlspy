@@ -1,7 +1,10 @@
 """XlsbWriter cell string records: inline and rich strings, filter defined names."""
 from __future__ import annotations
 
+import io
 import struct
+from collections.abc import Callable
+from typing import Any
 from .styles import (
     _FontKey,
     _color_key,
@@ -17,7 +20,7 @@ class _XlsbStringsMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
     @staticmethod
-    def _write_inline_str(buffer, text: str, col_idx: int, style_ref: int):
+    def _write_inline_str(buffer: io.BytesIO, text: str, col_idx: int, style_ref: int) -> None:
         """BrtCellSt: the text is stored in the cell, so no shared-string table grows.
 
         The count is in UTF-16 code units, so a non-BMP character counts as two.
@@ -74,8 +77,9 @@ class _XlsbStringsMixin(_XlsbWriterHost):
             payload += b"".join(struct.pack('<HH', ich, ifnt) for ich, ifnt in runs)
         return payload
 
-    def _write_rich_str(self, buffer, rich: CellRichText, shared_strings_dict, shared_strings_append,
-                        row_idx, col_idx, style_override=None):
+    def _write_rich_str(self, buffer: io.BytesIO, rich: CellRichText, shared_strings_dict: dict[Any, int],
+                        shared_strings_append: Callable[[Any], None], row_idx: int, col_idx: int,
+                        style_override: int | None = None) -> None:
         text, runs = self._rich_runs(rich)
         if not runs:
             self._write_str(buffer, text, shared_strings_dict, shared_strings_append, row_idx, col_idx,
@@ -98,7 +102,9 @@ class _XlsbStringsMixin(_XlsbWriterHost):
         buffer.write(b'\x07\x0C')
         buffer.write(struct.pack('<III', col_idx, style_ref, string_index))
 
-    def _write_str(self, buffer, cell, shared_strings_dict, shared_strings_append, row_idx, col_idx, style_override=None):
+    def _write_str(self, buffer: io.BytesIO, cell: str, shared_strings_dict: dict[Any, int],
+                   shared_strings_append: Callable[[Any], None], row_idx: int, col_idx: int,
+                   style_override: int | None = None) -> None:
         if not self._use_shared_strings:
             style_ref = style_override if style_override is not None else (3 if row_idx == 0 else 0)
             self._write_inline_str(buffer, cell, col_idx, style_ref)

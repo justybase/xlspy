@@ -32,7 +32,7 @@ from ._xlsx_writer_host import _XlsxWriterHost
 class _XlsxPartsMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
-    def _write_workbook_parts(self):
+    def _write_workbook_parts(self) -> None:
         # Excel compares sheet names without regard to case.
         sheet_names = {name.casefold() for name, _data, _hidden in self._worksheet_data}
         for sheet_index, location in self._internal_links:
@@ -122,7 +122,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             with self._zf.open_threaded("xl/sharedStrings.xml") as sst_file:
                 self._write_shared_strings_xml(sst_file)
 
-    def _chart_xml(self, chart, sheet_name: str) -> str:
+    def _chart_xml(self, chart: Any, sheet_name: str) -> str:
         return chart_parts.chart_xml(self._letters, chart, sheet_name)
 
     def _create_worksheet_rels(self, sheet_id: int) -> str:
@@ -325,7 +325,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
                 ("x15", X15), ("x14", X14)),
         ])
 
-    def _write_shared_strings_xml(self, sst_file: io.BufferedWriter):
+    def _write_shared_strings_xml(self, sst_file: io.BufferedWriter) -> None:
         # Written in chunks: the table can hold millions of strings, and one
         # growing string would keep the whole encoded part in memory.
         header = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -355,7 +355,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             sst_file.write(xstring_escape(body).encode('utf-8'))
         sst_file.write(b'</sst>')
 
-    def _write_shared_strings_items(self, sst_file, strings) -> None:
+    def _write_shared_strings_items(self, sst_file: io.BufferedWriter, strings: list[Any]) -> None:
         parts: list[str] = []
         for s in strings:
             if type(s) is tuple:  # ("rich", runs) from _write_rich_cell, already escaped

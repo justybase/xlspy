@@ -71,14 +71,14 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         header_rows: int = 1,
         tab_color: Color | str | None = None,
         zoom: int | None = None,
-        sparklines=None,
-        slicers=None,
-        shapes=None,
+        sparklines: Any = None,
+        slicers: Any = None,
+        shapes: Any = None,
         show_row_col_headers: bool = True,
         show_zero_values: bool = True,
         right_to_left: bool = False,
         pivots: list | tuple | None = None,
-    ):
+    ) -> None:
         self._require_writable()
         spec = self._check_sheet_options(
             header_style=header_style, show_grid_lines=show_grid_lines, header_rows=header_rows,

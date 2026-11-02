@@ -1,7 +1,7 @@
 """Module-level helpers of the XLSX writer: XML fragments, spool and flush constants."""
 from __future__ import annotations
 
-from typing import IO, Protocol
+from typing import IO, Any, Protocol
 from dataclasses import dataclass, field
 from .printing import (
     PageMargins,
@@ -62,14 +62,14 @@ class _SheetBody:
     header_rows: dict = field(default_factory=dict)  # row index -> cells, for table headers
 
 
-def _format_number(value) -> str:
+def _format_number(value: object) -> str:
     """Shortest numeric literal: ``1.0`` -> ``"1"``, ``0.5`` -> ``"0.5"``."""
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value)
 
 
-def _outline_col_attr(col_outline, index: int) -> str:
+def _outline_col_attr(col_outline: Any, index: int) -> str:
     """``<col>`` attributes for a column's outline level and collapsed flag."""
     if col_outline is None:
         return ""
@@ -80,7 +80,7 @@ def _outline_col_attr(col_outline, index: int) -> str:
     return attrs
 
 
-def _alignment_xml(align) -> str:
+def _alignment_xml(align: Any) -> str:
     attrs = []
     if align.horizontal is not None:
         attrs.append(f'horizontal="{align.horizontal}"')
@@ -105,7 +105,7 @@ def _alignment_xml(align) -> str:
     return f'<alignment {" ".join(attrs)}/>' if attrs else ""
 
 
-def _protection_xml(prot) -> str:
+def _protection_xml(prot: Any) -> str:
     attrs = []
     if prot.locked is not None:
         attrs.append(f'locked="{1 if prot.locked else 0}"')

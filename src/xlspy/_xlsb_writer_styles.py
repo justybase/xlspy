@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import typing
+from typing import Any
 from .exceptions import UnsupportedFeatureError
 import struct
 from .styles import (
@@ -127,7 +128,7 @@ class _XlsbStylesMixin(_XlsbWriterHost):
     def _xlsb_border_record(self, border_key: tuple) -> bytes:
         return border_record(border_key)
 
-    def _build_style_record(self, ifmt: int = 0, **options) -> bytes:
+    def _build_style_record(self, ifmt: int = 0, **options: Any) -> bytes:
         return xf_record(ifmt, **options)
 
     def _build_styles_bin(self) -> bytes:

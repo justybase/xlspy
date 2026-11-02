@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import struct
 import io
+from typing import Any
 from ._widths import file_width
 from .biff_utils import build_record
 from ._xlsb_metadata import pane_record, selection_record
@@ -88,8 +89,8 @@ class _XlsbViewsMixin(_XlsbWriterHost):
         self, buffer: io.BytesIO, start_col: int, end_col: int,
         col_widths_array: list[float], widths: dict | None = None,
         hidden_cols: set | frozenset = frozenset(),
-        col_outline=None,
-    ):
+        col_outline: Any = None,
+    ) -> None:
         widths = widths or {}
         buffer.write(build_record(_BRT_BEGIN_COL_INFOS, b''))
 

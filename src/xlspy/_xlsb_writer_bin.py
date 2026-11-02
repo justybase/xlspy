@@ -63,18 +63,19 @@ class _XlsbBinMixin(_XlsbWriterHost):
 
     def _write_worksheet_bin(
         self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[Any]],
-        worksheet_index: int, *, style_ranges=(), header_style: Style | None = None,
-        merge_refs=(), widths=None, hidden_cols=frozenset(), heights=None,
-        hidden_row_set=frozenset(), freeze_panes: str | None = None,
+        worksheet_index: int, *, style_ranges: Any = (), header_style: Style | None = None,
+        merge_refs: Any = (), widths: Any = None, hidden_cols: Any = frozenset(), heights: Any = None,
+        hidden_row_set: Any = frozenset(), freeze_panes: str | None = None,
         auto_filter: bool | None = None, auto_filter_ref: str | None = None,
         drawing_rel: str | None = None,
         table_rel_ids: list[str] | None = None,
         cf_rules: list | None = None,
-        row_outline=None, col_outline=None,
-        sheet_protection=None, comment_vml_rid=None, show_grid_lines=True, view=(True, True, False),
-        filter_cells=(), header_rows=1, tab_key=None, zoom=None,
+        row_outline: Any = None, col_outline: Any = None,
+        sheet_protection: Any = None, comment_vml_rid: str | None = None, show_grid_lines: bool = True,
+        view: tuple[bool, bool, bool] = (True, True, False),
+        filter_cells: Any = (), header_rows: int = 1, tab_key: Any = None, zoom: int | None = None,
         link_rids: dict | None = None, link_rid_start: int = 2,
-        print_spec: PrintSettings | None = None, validations=(), sparklines=(),
+        print_spec: PrintSettings | None = None, validations: Any = (), sparklines: Any = (),
         slicer_rel: str | None = None,
     ) -> None:
         buffer = io.BytesIO()
