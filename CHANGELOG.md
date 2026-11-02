@@ -322,6 +322,9 @@ Migration from 0.10:
 
 ### Fixed
 
+- `XlsbWriter.write_sheet` checks `auto_filter_ref` before the rows stream, as `XlsxWriter` does. Before, a
+  non-string or malformed range failed after the sheet part was started, and the writer could no longer save.
+  Both writers now share one option check (`WriterFrontEnd._check_sheet_options`).
 - `ExcelReader.open()` (and `with ExcelReader(path)`) closes the archive when the workbook part fails to parse.
   Before, the ZIP file stayed open, and on Windows the file could not be deleted until the process ended.
 - **Breaking:** an XLSB cell formula that points at a shared or array formula the sheet does not define raises

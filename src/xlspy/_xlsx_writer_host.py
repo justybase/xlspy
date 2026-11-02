@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from ._metadata import DefinedName, WorkbookProtection
     from ._output import PackageZip
-    from ._writer_common import FilterData
+    from ._writer_common import FilterData, SheetSpec
     from .comments import Comment
     from .images import Image, MediaParts
     from .printing import PrintSettings
@@ -107,6 +107,16 @@ class _XlsxWriterHost:
         def _sheet_index_by_name(self, name: str) -> int | None: ...
         def _split_freeze_cell(self, ref: str) -> tuple[int, int]: ...
         def _claim_cf_priority(self, rule: Any) -> int: ...
+        def _check_sheet_options(
+            self, *, header_style: Any, show_grid_lines: Any, header_rows: Any, tab_color: Any, zoom: Any,
+            show_row_col_headers: Any, show_zero_values: Any, right_to_left: Any, styles: Any, merges: Any,
+            comments: Any, sheet_protection: Any, auto_filter_ref: Any, conditional_formats: Any, tables: Any,
+            sparklines: Any, slicers: Any, charts: Any, data_validations: Any, images: Any, shapes: Any,
+            print_settings: Any, column_widths: Any, hidden_columns: Any, row_heights: Any, hidden_rows: Any,
+            row_groups: Any, column_groups: Any, freeze_panes: Any,
+            check_style: Any | None = None,
+        ) -> SheetSpec: ...
+        def _claim_sheet_options(self, spec: SheetSpec) -> None: ...
         def _normalize_cf_rules(self, conditional_formats: Any) -> Any: ...
         def _normalize_tables(self, tables: Any) -> Any: ...
         @staticmethod

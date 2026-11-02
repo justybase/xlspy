@@ -14,11 +14,11 @@ from . import _zip_threads
 from ._accel import encode_xlsx_row as accel_encode_xlsx_row
 from ._text import check_cell_text, xstring_escape
 from .charts import Chart
-from .data_validation import DataValidation, normalize_validations
+from .data_validation import DataValidation
 from .excel_dates import datetime_to_serial
 from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell
 from .formulas import Formula
-from .comments import Comment, normalize_comments
+from .comments import Comment
 from ._metadata import SheetProtection, replace_element
 from .ignored_errors import ignored_errors_xml
 from ._extlst import (
@@ -29,10 +29,9 @@ from ._extlst import (
     ext,
     ext_list,
 )
+from ._writer_common import SheetSpec
 from ._sheet_options import XLSX_OPTIONS, SheetOptions, resolve_sheet_options
-from .shapes import normalize_shapes
-from .slicers import normalize_slicers
-from .sparklines import normalize_sparklines, sparklines_ext
+from .sparklines import sparklines_ext
 from .pivots import (
     PivotFeeder,
     merge_cells,
@@ -42,11 +41,9 @@ from .pivots import (
 )
 from .hyperlinks import Hyperlink
 from ._scalars import numpy_value
-from .images import Image, normalize_images
-from .outline import build_outline
+from .images import Image
 from .printing import (
     PrintSettings,
-    normalize_print_settings,
 )
 from .rich_text import CellRichText
 from .styles import (
@@ -54,27 +51,37 @@ from .styles import (
     Color,
     ExcelTable,
     Style,
-    check_header_rows,
-    check_sheet_view,
-    check_zoom,
-    header_style_ranges,
-    tab_color_key,
     _date_cell_xf,
     _record_cell_xf,
     _style_ids_for_row,
     _xf_for_style_format,
     capture_table_headers,
-    explicit_cf_priorities,
     merge_styles,
-    normalize_hidden_columns,
-    normalize_hidden_rows,
-    normalize_style_ranges,
     parse_cell_range,
     styles_for_row,
 )
 from ._xlsx_writer_xml import _EMPTY_ROW_STYLES, _FLUSH_BYTES, _REL_DRAWING, _REL_PIVOT_TABLE, _REL_WORKSHEET, _SheetBody, _Tee, _WIDTH_SAMPLE_ROWS, _format_number
 from ._xlsx_writer_host import _XlsxWriterHost
 from ._dataframe_rows import dataframe_to_rows
+
+
+def _filter_cells(
+    tables: list[Any], table_bounds: list[Any], auto_filter: bool | None,
+    auto_filter_ref: str | None, body: Any, header_rows: int,
+) -> list[tuple[int, int, int]]:
+    """The header cells under a filter drop-down button, as ``(row, first column,
+    last column)``: they need room for it."""
+    filter_cells = [
+        (r1, c1, c2) for table, (c1, r1, c2, _r2) in zip(tables, table_bounds)
+        if table.header_row
+    ]
+    if auto_filter is not False:
+        if auto_filter_ref is not None:
+            c1, r1, c2, _r2 = parse_cell_range(auto_filter_ref)
+            filter_cells.append((r1, c1, c2))
+        elif body.num_rows > header_rows:
+            filter_cells.append((header_rows - 1, 0, body.max_cols - 1))
+    return filter_cells
 
 
 class _XlsxSheetMixin(_XlsxWriterHost):
@@ -140,64 +147,22 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         formulas and the other options are described in the documentation.
         """
         self._require_writable()
-        if header_style is not None and not isinstance(header_style, Style):
-            raise TypeError("header_style must be a Style instance")
-        if not isinstance(show_grid_lines, bool):
-            raise TypeError("show_grid_lines must be a bool")
-        header_rows = check_header_rows(header_rows)
-        tab_key = tab_color_key(tab_color)
-        zoom = check_zoom(zoom)
-        view = check_sheet_view(show_row_col_headers, show_zero_values, right_to_left)
-        style_ranges, header_style = header_style_ranges(
-            normalize_style_ranges(styles), header_style, header_rows,
-        )
-        merge_refs = self._normalize_merges(merges)
-        comment_specs = normalize_comments(comments, merges=merge_refs)
-        if sheet_protection is not None and not isinstance(sheet_protection, SheetProtection):
-            raise TypeError("sheet_protection must be SheetProtection")
-        if auto_filter_ref is not None:
-            # Validate before rows are streamed: a late error aborts the writer.
-            if not isinstance(auto_filter_ref, str):
-                raise TypeError("auto_filter_ref must be an A1 range string")
-            parse_cell_range(auto_filter_ref)
-        cf_rules = self._normalize_cf_rules(conditional_formats)
-        table_specs = self._normalize_tables(tables)
-        spark_groups = normalize_sparklines(sparklines)
-        slicer_specs = normalize_slicers(
-            slicers, table_specs, self._slicer_names, self._slicer_caches, self._slicer_targets,
-        )
-        chart_specs = self._normalize_charts(charts)
-        validations = normalize_validations(data_validations)
-        image_specs = normalize_images(images)
-        shape_specs = normalize_shapes(shapes)
-        print_spec = normalize_print_settings(print_settings)
-        widths = self._normalize_widths(column_widths, "column_widths")
-        hidden_cols = normalize_hidden_columns(hidden_columns)
-        heights = self._normalize_row_heights(row_heights)
-        hidden_row_set = normalize_hidden_rows(hidden_rows)
-        row_outline = build_outline(row_groups, "row")
-        col_outline = build_outline(column_groups, "column")
-        if col_outline is not None:
-            hidden_cols = hidden_cols | col_outline.hidden_indices()
-        split_freeze = None
-        if freeze_panes is not None and freeze_panes != "":
-            split_freeze = self._split_freeze_cell(freeze_panes)
-        cf_priorities = explicit_cf_priorities(
-            cf_rules, self._seen_cf_priorities, self._reserved_cf_priorities,
+        spec = self._check_sheet_options(
+            header_style=header_style, show_grid_lines=show_grid_lines, header_rows=header_rows,
+            tab_color=tab_color, zoom=zoom, show_row_col_headers=show_row_col_headers,
+            show_zero_values=show_zero_values, right_to_left=right_to_left, styles=styles,
+            merges=merges, comments=comments, sheet_protection=sheet_protection,
+            auto_filter_ref=auto_filter_ref, conditional_formats=conditional_formats, tables=tables,
+            sparklines=sparklines, slicers=slicers, charts=charts, data_validations=data_validations,
+            images=images, shapes=shapes, print_settings=print_settings, column_widths=column_widths,
+            hidden_columns=hidden_columns, row_heights=row_heights, hidden_rows=hidden_rows,
+            row_groups=row_groups, column_groups=column_groups, freeze_panes=freeze_panes,
         )
         # Every option is valid; only now record what this sheet claims. A second
         # write to the same sheet is refused after the options are checked, so a
         # bad argument still reports its own error.
         self._reject_second_write()
-        self._table_names.update(table.display_name for table in table_specs)
-        self._slicer_names.update(slicer.display_name.casefold() for slicer in slicer_specs)
-        self._slicer_caches.update(slicer.cache_name.casefold() for slicer in slicer_specs)
-        self._slicer_targets.update(
-            (slicer.table.casefold(), slicer.column.casefold()) for slicer in slicer_specs
-        )
-        for priority in cf_priorities:
-            self._reserved_cf_priorities.add(priority)
-            self._next_cf_priority = max(self._next_cf_priority, priority + 1)
+        self._claim_sheet_options(spec)
         if not self._worksheet_data:
             self.add_sheet("Sheet1")
 
@@ -205,9 +170,9 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         sheet_name, _, hidden = self._worksheet_data[sheet_index]
         self._worksheet_data[sheet_index] = (sheet_name, None, hidden)
         sheet_id = self._sheet_count
-        has_styles = bool(style_ranges) or header_style is not None
+        has_styles = bool(spec.style_ranges) or spec.header_style is not None
 
-        pivot_plans = normalize_pivots(pivots, table_specs, self._pivot_names, sheet_name)
+        pivot_plans = normalize_pivots(pivots, spec.tables, self._pivot_names, sheet_name)
         for plan in pivot_plans:
             target_index = self._sheet_index_by_name(plan.target_sheet)
             if (
@@ -240,126 +205,39 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 data = overlay_rows(data, pending)
             body = self._write_body(
                 data, row_sink,
-                style_ranges, header_style if has_styles else None,
-                heights, hidden_row_set, has_styles,
-                table_specs,
-                row_outline=row_outline,
+                spec.style_ranges, spec.header_style if has_styles else None,
+                spec.heights, spec.hidden_rows, has_styles,
+                spec.tables,
+                row_outline=spec.row_outline,
             )
-            own_renders = []
-            for feeder in feeders:
-                render = feeder.result()
-                render.assign_ids(self._next_pivot_id)
-                self._next_pivot_id += 1
-                self._pivot_renders.append(render)
-                own_renders.append(render)
-            same_sheet = [
-                render for render in own_renders
-                if render.plan.target_sheet.casefold() == sheet_name.casefold()
-            ]
-            if same_sheet:
-                self._append_pivot_rows(row_sink, same_sheet, body)
-            for render in own_renders:
-                if any(render is item for item in same_sheet):
-                    continue
-                target_index = self._sheet_index_by_name(render.plan.target_sheet)
-                if target_index is not None and target_index in self._sheet_written:
-                    raise ValueError(
-                        f"pivot target sheet {render.plan.target_sheet!r} was written "
-                        "before its source sheet"
-                    )
-                self._pending_pivots.setdefault(render.plan.target_sheet, []).append(render)
+            same_sheet = self._place_pivots(feeders, sheet_name, row_sink, body)
             if segment is not None:
                 segment.finish()
                 segment = None
-            table_rels, table_bounds = self._register_tables(table_specs, sheet_id, body)
-            rels = list(table_rels)
-            link_rels = self._link_relationships(body.hyperlinks, rels)
-            rels.extend(link_rels)
-            for render in (pending or []) + same_sheet:
-                rid = f"rId{len(rels) + 1}"
-                rels.append((
-                    rid, _REL_PIVOT_TABLE,
-                    f"../pivotTables/pivotTable{render.pivot_id}.xml", False,
-                ))
-            slicer_parts = self._resolve_slicers(slicer_specs)
-            drawing_rid = None
-            if chart_specs or image_specs or shape_specs or slicer_parts:
-                drawing_rid = f"rId{len(rels) + 1}"
-                rels.append((drawing_rid, _REL_DRAWING,
-                             f"../drawings/drawing{sheet_id}.xml", False))
-                self._sheet_drawings.add(sheet_id)
-            slicer_rids = []
-            for _slicer, part_no in slicer_parts:
-                rid = f"rId{len(rels) + 1}"
-                rels.append((rid, REL_SLICER, f"../slicers/slicer{part_no}.xml", False))
-                slicer_rids.append(rid)
-            if slicer_parts:
-                self._sheet_slicers[sheet_id] = [slicer for slicer, _ in slicer_parts]
-            if shape_specs:
-                self._sheet_shapes[sheet_id] = shape_specs
-            if chart_specs:
-                self._sheet_charts[sheet_id] = chart_specs
-            if image_specs:
-                self._sheet_images[sheet_id] = image_specs
-                self._sheet_image_media[sheet_id] = [
-                    self._media.name(image) for image in image_specs
-                ]
-            if print_spec is not None:
-                self._sheet_print[sheet_index] = print_spec
-            for row_idx, col_idx, link in body.hyperlinks:
-                if link.is_internal:
-                    self._internal_links.append((sheet_index, link.location))
-            if auto_filter is None and table_specs:
+            table_rels, table_bounds = self._register_tables(spec.tables, sheet_id, body)
+            rels, link_rels, drawing_rid, slicer_rids = self._register_sheet_parts(
+                sheet_id, sheet_index, spec, body, table_rels, (pending or []) + same_sheet,
+            )
+            if auto_filter is None and spec.tables:
                 auto_filter = False
-            # Header cells under a filter drop-down button need room for it.
-            filter_cells = [
-                (r1, c1, c2) for table, (c1, r1, c2, _r2) in zip(table_specs, table_bounds)
-                if table.header_row
-            ]
-            if auto_filter is not False:
-                if auto_filter_ref is not None:
-                    c1, r1, c2, _r2 = parse_cell_range(auto_filter_ref)
-                    filter_cells.append((r1, c1, c2))
-                elif body.num_rows > header_rows:
-                    filter_cells.append((header_rows - 1, 0, body.max_cols - 1))
+            filter_cells = _filter_cells(
+                spec.tables, table_bounds, auto_filter, auto_filter_ref, body, spec.header_rows,
+            )
             head = self._sheet_head(
-                body, sheet_index, split_freeze, freeze_panes, widths, hidden_cols,
-                print_spec, row_outline=row_outline, col_outline=col_outline,
+                body, sheet_index, spec.split_freeze, freeze_panes, spec.widths, spec.hidden_cols,
+                spec.print_settings, row_outline=spec.row_outline, col_outline=spec.col_outline,
                 show_grid_lines=show_grid_lines,
-                width_styles=(style_ranges, header_style if has_styles else None),
-                filter_cells=filter_cells, tab_key=tab_key, zoom=zoom, view=view,
+                width_styles=(spec.style_ranges, spec.header_style if has_styles else None),
+                filter_cells=filter_cells, tab_key=spec.tab_key, zoom=spec.zoom, view=spec.view,
             )
             tail = self._sheet_tail(
-                body, sheet_index, merge_refs, cf_rules, table_specs, table_bounds,
-                validations, link_rels, auto_filter, drawing_rid, print_spec,
-                auto_filter_ref=auto_filter_ref, header_rows=header_rows,
+                body, sheet_index, spec.merge_refs, spec.cf_rules, spec.tables, table_bounds,
+                spec.validations, link_rels, auto_filter, drawing_rid, spec.print_settings,
+                auto_filter_ref=auto_filter_ref, header_rows=spec.header_rows,
             )
-            if sheet_protection is not None:
-                tail = '</sheetData>' + sheet_protection.to_xml() + tail[len('</sheetData>'):]
-            if ignored_errors:
-                tail = replace_element(
-                    tail, 'ignoredErrors', ignored_errors_xml(ignored_errors),
-                    before=('drawing', 'legacyDrawing', 'tableParts'),
-                )
-            if comment_specs:
-                self._sheet_comments[sheet_id] = comment_specs
-                rid = f"rId{len(rels) + 1}"
-                rels.append((rid, _REL_WORKSHEET.rsplit('/', 1)[0] + '/comments',
-                             f'../comments/comment{sheet_id}.xml', False))
-                vml_rid = f"rId{len(rels) + 1}"
-                rels.append((vml_rid, _REL_WORKSHEET.rsplit('/', 1)[0] + '/vmlDrawing',
-                             f'../drawings/commentsDrawing{sheet_id}.vml', False))
-                tail = replace_element(tail, 'legacyDrawing', f'<legacyDrawing r:id="{vml_rid}"/>', before=('tableParts',))
-            # Sparklines and slicers live in the sheet's extLst, which must be the last child.
-            sheet_exts = [sparklines_ext(spark_groups, sheet_name)]
-            if slicer_rids:
-                items = "".join(f'<x14:slicer r:id="{rid}"/>' for rid in slicer_rids)
-                sheet_exts.append(ext(EXT_SHEET_SLICER_LIST,
-                                      f"<x14:slicerList>{items}</x14:slicerList>",
-                                      ("x14", X14), ("x15", X15)))
-            extensions = ext_list(sheet_exts)
-            if extensions:
-                tail = replace_element(tail, 'extLst', extensions)
+            tail = self._finish_tail(
+                tail, rels, sheet_id, sheet_name, spec, sheet_protection, ignored_errors, slicer_rids,
+            )
             if rels:
                 self._sheet_rels[sheet_id] = rels
             spool.seek(0)
@@ -385,6 +263,116 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             spool.close()
             if compressed is not None:
                 compressed.close()
+
+    def _register_sheet_parts(
+        self, sheet_id: int, sheet_index: int, spec: SheetSpec, body: Any,
+        table_rels: list[tuple[str, str, str, bool]], pivots: list[Any],
+    ) -> tuple[list[tuple[str, str, str, bool]], list[Any], str | None, list[str]]:
+        """Record the parts a written sheet refers to (hyperlinks, pivots, drawing,
+        slicers, shapes, charts, images, print settings) and number their
+        relationships after the tables'. Returns the relationships, the hyperlink
+        ones, the drawing's id and the slicers' ids."""
+        rels = list(table_rels)
+        link_rels = self._link_relationships(body.hyperlinks, rels)
+        rels.extend(link_rels)
+        for render in pivots:
+            rid = f"rId{len(rels) + 1}"
+            rels.append((
+                rid, _REL_PIVOT_TABLE,
+                f"../pivotTables/pivotTable{render.pivot_id}.xml", False,
+            ))
+        slicer_parts = self._resolve_slicers(spec.slicers)
+        drawing_rid = None
+        if spec.charts or spec.images or spec.shapes or slicer_parts:
+            drawing_rid = f"rId{len(rels) + 1}"
+            rels.append((drawing_rid, _REL_DRAWING,
+                         f"../drawings/drawing{sheet_id}.xml", False))
+            self._sheet_drawings.add(sheet_id)
+        slicer_rids = []
+        for _slicer, part_no in slicer_parts:
+            rid = f"rId{len(rels) + 1}"
+            rels.append((rid, REL_SLICER, f"../slicers/slicer{part_no}.xml", False))
+            slicer_rids.append(rid)
+        if slicer_parts:
+            self._sheet_slicers[sheet_id] = [slicer for slicer, _ in slicer_parts]
+        if spec.shapes:
+            self._sheet_shapes[sheet_id] = spec.shapes
+        if spec.charts:
+            self._sheet_charts[sheet_id] = spec.charts
+        if spec.images:
+            self._sheet_images[sheet_id] = spec.images
+            self._sheet_image_media[sheet_id] = [
+                self._media.name(image) for image in spec.images
+            ]
+        if spec.print_settings is not None:
+            self._sheet_print[sheet_index] = spec.print_settings
+        for row_idx, col_idx, link in body.hyperlinks:
+            if link.is_internal:
+                self._internal_links.append((sheet_index, link.location))
+        return rels, link_rels, drawing_rid, slicer_rids
+
+    def _place_pivots(self, feeders: list[PivotFeeder], sheet_name: str, row_sink: Any, body: Any) -> list[Any]:
+        """Number the pivots this sheet's rows fed, append those that land on this
+        sheet below its rows and queue the others for their target sheet;
+        returns the ones placed here."""
+        own_renders = []
+        for feeder in feeders:
+            render = feeder.result()
+            render.assign_ids(self._next_pivot_id)
+            self._next_pivot_id += 1
+            self._pivot_renders.append(render)
+            own_renders.append(render)
+        same_sheet = [
+            render for render in own_renders
+            if render.plan.target_sheet.casefold() == sheet_name.casefold()
+        ]
+        if same_sheet:
+            self._append_pivot_rows(row_sink, same_sheet, body)
+        for render in own_renders:
+            if any(render is item for item in same_sheet):
+                continue
+            target_index = self._sheet_index_by_name(render.plan.target_sheet)
+            if target_index is not None and target_index in self._sheet_written:
+                raise ValueError(
+                    f"pivot target sheet {render.plan.target_sheet!r} was written "
+                    "before its source sheet"
+                )
+            self._pending_pivots.setdefault(render.plan.target_sheet, []).append(render)
+        return same_sheet
+
+    def _finish_tail(
+        self, tail: str, rels: list[tuple[str, str, str, bool]], sheet_id: int, sheet_name: str,
+        spec: SheetSpec, sheet_protection: SheetProtection | None, ignored_errors: Any, slicer_rids: list[str],
+    ) -> str:
+        """Add the protection, ignored errors, comment parts (to ``rels``) and the
+        sparkline and slicer extensions to the sheet's closing XML."""
+        if sheet_protection is not None:
+            tail = '</sheetData>' + sheet_protection.to_xml() + tail[len('</sheetData>'):]
+        if ignored_errors:
+            tail = replace_element(
+                tail, 'ignoredErrors', ignored_errors_xml(ignored_errors),
+                before=('drawing', 'legacyDrawing', 'tableParts'),
+            )
+        if spec.comments:
+            self._sheet_comments[sheet_id] = spec.comments
+            rid = f"rId{len(rels) + 1}"
+            rels.append((rid, _REL_WORKSHEET.rsplit('/', 1)[0] + '/comments',
+                         f'../comments/comment{sheet_id}.xml', False))
+            vml_rid = f"rId{len(rels) + 1}"
+            rels.append((vml_rid, _REL_WORKSHEET.rsplit('/', 1)[0] + '/vmlDrawing',
+                         f'../drawings/commentsDrawing{sheet_id}.vml', False))
+            tail = replace_element(tail, 'legacyDrawing', f'<legacyDrawing r:id="{vml_rid}"/>', before=('tableParts',))
+        # Sparklines and slicers live in the sheet's extLst, which must be the last child.
+        sheet_exts = [sparklines_ext(spec.sparklines, sheet_name)]
+        if slicer_rids:
+            items = "".join(f'<x14:slicer r:id="{rid}"/>' for rid in slicer_rids)
+            sheet_exts.append(ext(EXT_SHEET_SLICER_LIST,
+                                  f"<x14:slicerList>{items}</x14:slicerList>",
+                                  ("x14", X14), ("x15", X15)))
+        extensions = ext_list(sheet_exts)
+        if extensions:
+            tail = replace_element(tail, 'extLst', extensions)
+        return tail
 
     def write_dataframe(
         self, df: Any, include_index: bool = False, na_rep: Any = None, formats: dict | None = None,

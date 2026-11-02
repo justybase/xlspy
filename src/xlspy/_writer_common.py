@@ -5,14 +5,26 @@ format priorities. The writers keep only what differs between the formats.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
+from ._metadata import SheetProtection
 from .charts import Chart
+from .comments import normalize_comments
+from .data_validation import normalize_validations
+from .images import normalize_images
+from .outline import build_outline
+from .printing import PrintSettings, normalize_print_settings
+from .shapes import normalize_shapes
+from .slicers import normalize_slicers
+from .sparklines import normalize_sparklines
 from .refs import check_sheet_name, parse_cell_range
 from .styles import (
     EXTRA_CF_RULES, CellIsRule, ColorScaleRule, DataBarRule, ExcelTable, FormulaRule,
-    IconSetRule, _column_index,
+    IconSetRule, Style, _column_index, check_header_rows, check_sheet_view, check_zoom,
+    explicit_cf_priorities, header_style_ranges, normalize_hidden_columns, normalize_hidden_rows,
+    normalize_style_ranges, tab_color_key,
 )
 
 CF_RULES = (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule, *EXTRA_CF_RULES)
@@ -41,6 +53,38 @@ class FilterData:
     end_row: int = 0
 
 
+@dataclass
+class SheetSpec:
+    """The options of one ``write_sheet`` call, checked and normalized; nothing of
+    the writer's state has changed yet when this exists."""
+
+    view: tuple[bool, bool, bool]
+    header_rows: int
+    tab_key: Any
+    zoom: int | None
+    style_ranges: list[Any]
+    header_style: Style | None
+    merge_refs: list[str]
+    comments: dict[str, Any]
+    cf_rules: list[Any]
+    cf_priorities: list[int]
+    tables: list[Any]
+    sparklines: list[Any]
+    slicers: list[Any]
+    charts: list[Any]
+    validations: list[Any]
+    images: list[Any]
+    shapes: list[Any]
+    print_settings: PrintSettings | None
+    widths: Any
+    hidden_cols: set[int]
+    heights: Any
+    hidden_rows: set[int]
+    row_outline: Any
+    col_outline: Any
+    split_freeze: tuple[int, int] | None
+
+
 class WriterFrontEnd:
     """Methods both writers use unchanged; they read the writer's own state
     (``_worksheet_data``, ``_table_names``, the CF priority sets)."""
@@ -51,6 +95,13 @@ class WriterFrontEnd:
     _next_cf_priority: int
     _seen_cf_priorities: set[int]
     _reserved_cf_priorities: set[int]
+    _slicer_names: set[str]
+    _slicer_caches: set[str]
+    _slicer_targets: set[tuple[str, str]]
+
+    if TYPE_CHECKING:
+        # Each writer encodes its own conditional format records.
+        def _normalize_cf_rules(self, conditional_formats: Any) -> list[Any]: ...
 
     def add_sheet(self, sheet_name: str, hidden: bool = False) -> None:
         check_sheet_name(sheet_name, (name for name, _data, _hidden in self._worksheet_data))
@@ -79,6 +130,91 @@ class WriterFrontEnd:
             if sheet_name.casefold() == folded:
                 return index
         return None
+
+    def _check_sheet_options(
+        self, *, header_style: Any, show_grid_lines: Any, header_rows: Any, tab_color: Any, zoom: Any,
+        show_row_col_headers: Any, show_zero_values: Any, right_to_left: Any, styles: Any, merges: Any,
+        comments: Any, sheet_protection: Any, auto_filter_ref: Any, conditional_formats: Any, tables: Any,
+        sparklines: Any, slicers: Any, charts: Any, data_validations: Any, images: Any, shapes: Any,
+        print_settings: Any, column_widths: Any, hidden_columns: Any, row_heights: Any, hidden_rows: Any,
+        row_groups: Any, column_groups: Any, freeze_panes: Any,
+        check_style: Callable[[Style], None] | None = None,
+    ) -> SheetSpec:
+        """Check and normalize the options of ``write_sheet``; raise before anything
+        is recorded, so a rejected call leaves the writer as it was.
+
+        ``check_style`` sees the header style and every range style before they are
+        combined (the XLSB writer refuses rich-text styles there)."""
+        if header_style is not None and not isinstance(header_style, Style):
+            raise TypeError("header_style must be a Style instance")
+        if not isinstance(show_grid_lines, bool):
+            raise TypeError("show_grid_lines must be a bool")
+        header_rows = check_header_rows(header_rows)
+        tab_key = tab_color_key(tab_color)
+        zoom = check_zoom(zoom)
+        view = check_sheet_view(show_row_col_headers, show_zero_values, right_to_left)
+        style_ranges = normalize_style_ranges(styles)
+        if check_style is not None:
+            for candidate in ([header_style] if header_style is not None else []) + [item[-1] for item in style_ranges]:
+                check_style(candidate)
+        style_ranges, header_style = header_style_ranges(style_ranges, header_style, header_rows)
+        merge_refs = self._normalize_merges(merges)
+        comment_specs = normalize_comments(comments, merges=merge_refs)
+        if sheet_protection is not None and not isinstance(sheet_protection, SheetProtection):
+            raise TypeError("sheet_protection must be SheetProtection")
+        if auto_filter_ref is not None:
+            # Checked before the rows stream: a late error aborts the writer.
+            if not isinstance(auto_filter_ref, str):
+                raise TypeError("auto_filter_ref must be an A1 range string")
+            parse_cell_range(auto_filter_ref)
+        cf_rules = self._normalize_cf_rules(conditional_formats)
+        table_specs = self._normalize_tables(tables)
+        sparkline_groups = normalize_sparklines(sparklines)
+        slicer_specs = normalize_slicers(
+            slicers, table_specs, self._slicer_names, self._slicer_caches, self._slicer_targets,
+        )
+        chart_specs = self._normalize_charts(charts)
+        validations = normalize_validations(data_validations)
+        image_specs = normalize_images(images)
+        shape_specs = normalize_shapes(shapes)
+        print_spec = normalize_print_settings(print_settings)
+        widths = self._normalize_widths(column_widths, "column_widths")
+        hidden_cols = normalize_hidden_columns(hidden_columns)
+        heights = self._normalize_row_heights(row_heights)
+        hidden_row_set = normalize_hidden_rows(hidden_rows)
+        row_outline = build_outline(row_groups, "row")
+        col_outline = build_outline(column_groups, "column")
+        if col_outline is not None:
+            hidden_cols = hidden_cols | col_outline.hidden_indices()
+        split_freeze = None
+        if freeze_panes is not None and freeze_panes != "":
+            split_freeze = self._split_freeze_cell(freeze_panes)
+        # Explicit priorities are reserved up front, so automatic ones skip them.
+        cf_priorities = explicit_cf_priorities(
+            cf_rules, self._seen_cf_priorities, self._reserved_cf_priorities,
+        )
+        return SheetSpec(
+            view=view, header_rows=header_rows, tab_key=tab_key, zoom=zoom,
+            style_ranges=style_ranges, header_style=header_style, merge_refs=merge_refs,
+            comments=comment_specs, cf_rules=cf_rules, cf_priorities=cf_priorities,
+            tables=table_specs, sparklines=sparkline_groups, slicers=slicer_specs,
+            charts=chart_specs, validations=validations, images=image_specs, shapes=shape_specs,
+            print_settings=print_spec, widths=widths, hidden_cols=hidden_cols, heights=heights,
+            hidden_rows=hidden_row_set, row_outline=row_outline, col_outline=col_outline,
+            split_freeze=split_freeze,
+        )
+
+    def _claim_sheet_options(self, spec: SheetSpec) -> None:
+        """Record the names and priorities a checked sheet takes."""
+        self._table_names.update(table.display_name for table in spec.tables)
+        self._slicer_names.update(slicer.display_name.casefold() for slicer in spec.slicers)
+        self._slicer_caches.update(slicer.cache_name.casefold() for slicer in spec.slicers)
+        self._slicer_targets.update(
+            (slicer.table.casefold(), slicer.column.casefold()) for slicer in spec.slicers
+        )
+        for priority in spec.cf_priorities:
+            self._reserved_cf_priorities.add(priority)
+            self._next_cf_priority = max(self._next_cf_priority, priority + 1)
 
     def _check_unknown_cf_rule(self, rule) -> None:
         if hasattr(rule, "sqref") and not isinstance(rule, CF_RULES):
