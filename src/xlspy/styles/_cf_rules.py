@@ -3,6 +3,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import warnings
+from collections.abc import Callable
 from typing import Any
 from ..refs import parse_cell_range
 from ._attrs import Color, _CELL_IS_OPERATORS, _CFVO_TYPES, _FORMAT_OBJECT_TYPES, _ICON_SETS, _coerce_color
@@ -189,8 +190,11 @@ class IconSetRule:
     stop_if_true: bool | None = None
     priority: int | None = None
 
-    def __init__(self, sqref, icon_style, values, cfvo_type="percent", show_value=None,
-                 percent=None, reverse=None, stop_if_true=None, priority=None, *, type=None):
+    def __init__(self, sqref: str, icon_style: str, values: list[float | str] | tuple[float | str, ...],
+                 cfvo_type: str = "percent", show_value: bool | None = None,
+                 percent: bool | None = None, reverse: bool | None = None,
+                 stop_if_true: bool | None = None, priority: int | None = None, *,
+                 type: str | None = None) -> None:
         if type is not None and type != "iconSet":
             warnings.warn(
                 "IconSetRule(type=...) is deprecated; pass cfvo_type= "
@@ -413,34 +417,41 @@ EXTRA_CF_RULES = (
 # openpyxl exposes the OOXML rule type on every conditional-formatting rule.
 # The local rule classes use descriptive field names, so the aliases are added
 # here without changing their constructors.
-def _text_rule_type(rule):
+def _text_rule_type(rule: Any) -> str:
     return "containsText" if rule.operator == "contains" else rule.operator
 
 
-def _duplicate_rule_type(rule):
+def _duplicate_rule_type(rule: Any) -> str:
     return "uniqueValues" if rule.unique else "duplicateValues"
 
 
-def _blanks_rule_type(rule):
-    return {
+def _blanks_rule_type(rule: Any) -> str:
+    types: dict[str, str] = {
         "blanks": "containsBlanks",
         "no_blanks": "notContainsBlanks",
         "errors": "containsErrors",
         "no_errors": "notContainsErrors",
-    }[rule.kind]
+    }
+    return types[rule.kind]
+
+
+def _fixed_rule_type(name: str) -> Callable[[Any], str]:
+    def rule_type(rule: Any) -> str:
+        return name
+    return rule_type
 
 
 _RULE_TYPES = (
-    (CellIsRule, lambda rule: "cellIs"),
-    (FormulaRule, lambda rule: "expression"),
-    (ColorScaleRule, lambda rule: "colorScale"),
-    (DataBarRule, lambda rule: "dataBar"),
-    (IconSetRule, lambda rule: "iconSet"),
-    (TopBottomRule, lambda rule: "top10"),
-    (AboveAverageRule, lambda rule: "aboveAverage"),
+    (CellIsRule, _fixed_rule_type("cellIs")),
+    (FormulaRule, _fixed_rule_type("expression")),
+    (ColorScaleRule, _fixed_rule_type("colorScale")),
+    (DataBarRule, _fixed_rule_type("dataBar")),
+    (IconSetRule, _fixed_rule_type("iconSet")),
+    (TopBottomRule, _fixed_rule_type("top10")),
+    (AboveAverageRule, _fixed_rule_type("aboveAverage")),
     (TextRule, _text_rule_type),
     (DuplicateRule, _duplicate_rule_type),
-    (TimePeriodRule, lambda rule: "timePeriod"),
+    (TimePeriodRule, _fixed_rule_type("timePeriod")),
     (BlanksRule, _blanks_rule_type),
 )
 

@@ -52,7 +52,7 @@ class WriterFrontEnd:
     _seen_cf_priorities: set[int]
     _reserved_cf_priorities: set[int]
 
-    def add_sheet(self, sheet_name: str, hidden: bool = False):
+    def add_sheet(self, sheet_name: str, hidden: bool = False) -> None:
         check_sheet_name(sheet_name, (name for name, _data, _hidden in self._worksheet_data))
         self._sheet_count += 1
         self._worksheet_data.append((sheet_name, iter([]), hidden))

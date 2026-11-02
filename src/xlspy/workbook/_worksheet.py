@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 from ..exceptions import UnsupportedFeatureError
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import replace
 import datetime as _datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, overload
 from ..charts import Chart
 from ..comments import Comment
 from ..data_validation import DataValidation
@@ -29,6 +29,9 @@ from ._properties import AutoFilter, ColBreak, Pane, RowBreak, Selection, SheetF
 from ._tables import ConditionalFormattingList, DataValidationList, Table, TableList, _expect
 
 if TYPE_CHECKING:
+    from .._metadata import SheetProtection
+    from ..printing import PageMargins
+    from ._print import HeaderFooterItem
     from ._workbook import Workbook
 
 
@@ -46,7 +49,7 @@ class Worksheet:
     _reader: Any
     _saved_print_settings: Any
 
-    def __init__(self, workbook: Workbook, title: str, *, index: int | None = None):
+    def __init__(self, workbook: Workbook, title: str, *, index: int | None = None) -> None:
         self._workbook = workbook
         self._title = title
         self._index = index
@@ -75,8 +78,8 @@ class Worksheet:
         self._hidden_rows: set[int] = set()
         self._data_validations = DataValidationList()
         self._tables = TableList()
-        self._charts: list = []
-        self._images: list = []
+        self._charts: list[Chart] = []
+        self._images: list[Image] = []
         self._conditional_formats = ConditionalFormattingList()
         # For a loaded workbook: how many objects of each list a save already
         # put into the package (see _objects.pending_objects).
@@ -100,7 +103,7 @@ class Worksheet:
         self._comments: dict[str, Comment] = {}
         self._legacy_drawing = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Worksheet {self._title!r}>"
 
     @property
@@ -108,7 +111,7 @@ class Worksheet:
         return self._title
 
     @title.setter
-    def title(self, value: str):
+    def title(self, value: str) -> None:
         if value != self._title:
             self._workbook._check_title(value, self)
             self._workbook._rename_sheet(self, value)
@@ -120,7 +123,7 @@ class Worksheet:
         return self._sheet_state
 
     @sheet_state.setter
-    def sheet_state(self, value: str):
+    def sheet_state(self, value: str) -> None:
         if value not in {"visible", "hidden", "veryHidden"}:
             raise ValueError("sheet_state must be visible, hidden or veryHidden")
         self._sheet_state = value
@@ -143,7 +146,7 @@ class Worksheet:
         return self._freeze_panes
 
     @freeze_panes.setter
-    def freeze_panes(self, value: str | None):
+    def freeze_panes(self, value: str | None) -> None:
         if value == "":
             value = None
         if value is not None:
@@ -182,7 +185,7 @@ class Worksheet:
         return self._auto_filter
 
     @auto_filter.setter
-    def auto_filter(self, value):
+    def auto_filter(self, value: AutoFilter | str | None) -> None:
         if value is None:
             self._auto_filter = AutoFilter()
         elif isinstance(value, AutoFilter):
@@ -218,7 +221,7 @@ class Worksheet:
         return self._sheet_view.showGridLines
 
     @show_gridlines.setter
-    def show_gridlines(self, value: bool | None):
+    def show_gridlines(self, value: bool | None) -> None:
         self._sheet_view.showGridLines = value
         self._mark_dirty("sheet_view")
 
@@ -227,7 +230,7 @@ class Worksheet:
         return self._protection
 
     @protection.setter
-    def protection(self, value) -> None:
+    def protection(self, value: WorksheetProtection | SheetProtection | None) -> None:
         self._protection = _as_model_protection(value)
 
     @property
@@ -235,7 +238,7 @@ class Worksheet:
         return self._page_margins
 
     @page_margins.setter
-    def page_margins(self, value) -> None:
+    def page_margins(self, value: WorksheetPageMargins | PageMargins) -> None:
         self._page_margins = _as_model_page_margins(value)
 
     @property
@@ -264,31 +267,31 @@ class Worksheet:
         return self.dimensions
 
     @property
-    def rows(self):
+    def rows(self) -> Iterator[tuple[Cell, ...]]:
         return self.iter_rows()
 
     @property
-    def columns(self):
+    def columns(self) -> Iterator[tuple[Cell, ...]]:
         return self.iter_cols()
 
     @property
-    def values(self):
+    def values(self) -> Iterator[tuple[Any, ...]]:
         return self.iter_rows(values_only=True)
 
     @property
-    def data_validations(self):
+    def data_validations(self) -> DataValidationList:
         return self._data_validations
 
     @property
-    def tables(self):
+    def tables(self) -> TableList:
         return self._tables
 
     @property
-    def charts(self):
+    def charts(self) -> list[Chart]:
         return self._charts
 
     @property
-    def images(self):
+    def images(self) -> list[Image]:
         return self._images
 
     @property
@@ -297,27 +300,27 @@ class Worksheet:
 
     # -- printing (openpyxl names) --------------------------------------
     @property
-    def oddHeader(self):
+    def oddHeader(self) -> HeaderFooterItem:
         return self.HeaderFooter.oddHeader
 
     @property
-    def oddFooter(self):
+    def oddFooter(self) -> HeaderFooterItem:
         return self.HeaderFooter.oddFooter
 
     @property
-    def evenHeader(self):
+    def evenHeader(self) -> HeaderFooterItem:
         return self.HeaderFooter.evenHeader
 
     @property
-    def evenFooter(self):
+    def evenFooter(self) -> HeaderFooterItem:
         return self.HeaderFooter.evenFooter
 
     @property
-    def firstHeader(self):
+    def firstHeader(self) -> HeaderFooterItem:
         return self.HeaderFooter.firstHeader
 
     @property
-    def firstFooter(self):
+    def firstFooter(self) -> HeaderFooterItem:
         return self.HeaderFooter.firstFooter
 
     @property
@@ -325,7 +328,7 @@ class Worksheet:
         return self._print_area
 
     @print_area.setter
-    def print_area(self, value):
+    def print_area(self, value: str | Iterable[str] | None) -> None:
         """An A1 range, several separated by commas, or a list of ranges."""
         if value is not None and not isinstance(value, str):
             value = ",".join(value)
@@ -337,7 +340,7 @@ class Worksheet:
         return self._print_title_rows
 
     @print_title_rows.setter
-    def print_title_rows(self, value: str | None):
+    def print_title_rows(self, value: str | None) -> None:
         self._print_title_rows = value
 
     @property
@@ -346,7 +349,7 @@ class Worksheet:
         return self._print_title_cols
 
     @print_title_cols.setter
-    def print_title_cols(self, value: str | None):
+    def print_title_cols(self, value: str | None) -> None:
         self._print_title_cols = value
 
     @property
@@ -377,7 +380,7 @@ class Worksheet:
         """Delete ``amount`` columns starting at column ``idx``; the rest move left."""
         _shift.shift_cols(self, idx, amount, delete=True)
 
-    def move_range(self, cell_range, rows: int = 0, cols: int = 0, translate: bool = False) -> None:
+    def move_range(self, cell_range: str, rows: int = 0, cols: int = 0, translate: bool = False) -> None:
         """Move the cells of ``cell_range``; cells at the destination are replaced.
         ``translate=True`` shifts the relative references of moved formulas."""
         _shift.move_range(self, cell_range, rows, cols, translate)
@@ -396,7 +399,7 @@ class Worksheet:
             img = replace(img, path=img.data, anchor=anchor)
         self._images.append(img)
 
-    def add_table(self, table) -> None:
+    def add_table(self, table: ExcelTable | Table) -> None:
         _expect(table, (ExcelTable, Table), "table", "an xlspy ExcelTable or Table")
         self._tables.append(table)
 
@@ -405,7 +408,7 @@ class Worksheet:
         self._data_validations.append(data_validation)
 
     # -- cells --------------------------------------------------------
-    def cell(self, row: int, column: int | str, value=None) -> Cell:
+    def cell(self, row: int, column: int | str, value: Any = None) -> Cell:
         row = _coerce_row(row)
         column = _coerce_column(column)
         if self._is_merged_subcell(row, column):
@@ -423,7 +426,7 @@ class Worksheet:
             cell.value = value
         return cell
 
-    def _set_cell_raw(self, row: int, column: int, value=None, style_id: int = 0,
+    def _set_cell_raw(self, row: int, column: int, value: Any = None, style_id: int = 0,
                       data_type: str = "n", formula_text: str | None = None) -> Cell:
         # Loader hot path: bounds are checked inline and the cell is filled
         # directly, which is what Cell.__init__ + _load_value would do.
@@ -456,7 +459,7 @@ class Worksheet:
     def _existing_cell(self, row: int, column: int) -> Cell | None:
         return self._cells.get(row, {}).get(column)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str | int) -> Any:
         if isinstance(key, str):
             if ":" in key:
                 c1, r1, c2, r2 = parse_cell_range(key)
@@ -472,7 +475,7 @@ class Worksheet:
             return tuple(self.cell(row, col) for col in range(1, self._max_column + 1))
         raise TypeError("worksheet indices must be A1 references or row numbers")
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: Any) -> None:
         if isinstance(key, str) and ":" in key:
             c1, r1, c2, r2 = parse_cell_range(key)
             if isinstance(value, (tuple, list)):
@@ -494,7 +497,7 @@ class Worksheet:
             return
         raise TypeError("worksheet indices must be A1 references")
 
-    def append(self, iterable: Iterable[Any]):
+    def append(self, iterable: Iterable[Any]) -> int:
         if isinstance(iterable, Mapping):
             row = self._max_row + 1
             for key, value in iterable.items():
@@ -617,8 +620,17 @@ class Worksheet:
                 found[kind] = style_id
         return found
 
-    def iter_rows(self, min_row=None, max_row=None, min_col=None, max_col=None,
-                  values_only: bool = False):
+    @overload
+    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | None = None,
+                  max_col: int | None = None, values_only: Literal[False] = False) -> Iterator[tuple[Cell, ...]]: ...
+    @overload
+    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | None = None,
+                  max_col: int | None = None, *, values_only: Literal[True]) -> Iterator[tuple[Any, ...]]: ...
+    @overload
+    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | None = None,
+                  max_col: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]: ...
+    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | None = None,
+                  max_col: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]:
         min_row = 1 if min_row is None else _coerce_row(min_row)
         max_row = self._max_row if max_row is None else _coerce_row(max_row)
         min_col = 1 if min_col is None else _coerce_column(min_col)
@@ -629,12 +641,21 @@ class Worksheet:
             else:
                 yield tuple(self.cell(row, col) for col in range(min_col, max_col + 1))
 
-    def _value_at(self, row: int, col: int):
+    def _value_at(self, row: int, col: int) -> Any:
         cell = self._cells.get(row, {}).get(col)
         return None if cell is None else cell.value
 
-    def iter_cols(self, min_col=None, max_col=None, min_row=None, max_row=None,
-                  values_only: bool = False):
+    @overload
+    def iter_cols(self, min_col: int | None = None, max_col: int | None = None, min_row: int | None = None,
+                  max_row: int | None = None, values_only: Literal[False] = False) -> Iterator[tuple[Cell, ...]]: ...
+    @overload
+    def iter_cols(self, min_col: int | None = None, max_col: int | None = None, min_row: int | None = None,
+                  max_row: int | None = None, *, values_only: Literal[True]) -> Iterator[tuple[Any, ...]]: ...
+    @overload
+    def iter_cols(self, min_col: int | None = None, max_col: int | None = None, min_row: int | None = None,
+                  max_row: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]: ...
+    def iter_cols(self, min_col: int | None = None, max_col: int | None = None, min_row: int | None = None,
+                  max_row: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]:
         min_col = 1 if min_col is None else _coerce_column(min_col)
         max_col = self._max_column if max_col is None else _coerce_column(max_col)
         min_row = 1 if min_row is None else _coerce_row(min_row)
@@ -648,7 +669,7 @@ class Worksheet:
     # -- merges -------------------------------------------------------
     def merge_cells(self, range_string: str | None = None, start_row: int | None = None,
                     start_column: int | None = None, end_row: int | None = None,
-                    end_column: int | None = None):
+                    end_column: int | None = None) -> None:
         if range_string is None:
             if start_row is None or start_column is None or end_row is None or end_column is None:
                 raise TypeError("merge_cells needs a range or all four boundaries")
@@ -665,7 +686,7 @@ class Worksheet:
 
     def unmerge_cells(self, range_string: str | None = None, start_row: int | None = None,
                       start_column: int | None = None, end_row: int | None = None,
-                      end_column: int | None = None):
+                      end_column: int | None = None) -> None:
         if range_string is None:
             if start_row is None or start_column is None or end_row is None or end_column is None:
                 raise TypeError("unmerge_cells needs a range or all four boundaries")
@@ -693,12 +714,12 @@ class Worksheet:
         return False
 
     # -- dirty tracking ----------------------------------------------
-    def _mark_dirty(self, *parts: str):
+    def _mark_dirty(self, *parts: str) -> None:
         self._dirty = True
         for part in parts:
             self._dirty_meta.add(part)
 
-    def _clear_dirty(self):
+    def _clear_dirty(self) -> None:
         self._dirty = False
         self._dirty_cells.clear()
         self._dirty_styles.clear()
@@ -713,11 +734,11 @@ class Worksheet:
 class WriteOnlyWorksheet(Worksheet):
     """Streaming-friendly sheet that stores rows rather than Cell objects."""
 
-    def __init__(self, workbook: Workbook, title: str, *, index: int | None = None):
+    def __init__(self, workbook: Workbook, title: str, *, index: int | None = None) -> None:
         super().__init__(workbook, title, index=index)
         self._rows: list[list[Any]] = []
 
-    def append(self, iterable: Iterable[Any]):
+    def append(self, iterable: Iterable[Any]) -> int:
         if isinstance(iterable, Mapping):
             entries = []
             for key, value in iterable.items():
@@ -746,10 +767,10 @@ class WriteOnlyWorksheet(Worksheet):
         self._mark_dirty("rows")
         return self._max_row
 
-    def cell(self, row, column, value=None):
+    def cell(self, row: int, column: int | str, value: Any = None) -> Cell:
         raise ValueError("cannot access a cell in a write-only worksheet; use append()")
 
-    def iter_rows(self, *args, **kwargs):
+    def iter_rows(self, *args: Any, **kwargs: Any) -> Iterator[tuple[Any, ...]]:
         for row in self._rows:
             if kwargs.get("values_only"):
                 yield tuple(row)
@@ -764,16 +785,16 @@ class Chartsheet:
     its title; by default the workbook's first worksheet).
     """
 
-    def __init__(self, workbook: Workbook, title: str, index: int | None = None):
+    def __init__(self, workbook: Workbook, title: str, index: int | None = None) -> None:
         self._workbook = workbook
         self._title = title  # the caller checks the name
         self.sheet_state = "visible"
         self._index = index
-        self._charts: list = []
+        self._charts: list[Chart] = []
         self._part: str | None = None  # the package part, once in a file
         self._source: Worksheet | str | None = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Chartsheet {self.title!r}>"
 
     @property
@@ -781,7 +802,7 @@ class Chartsheet:
         return self._title
 
     @title.setter
-    def title(self, value: str):
+    def title(self, value: str) -> None:
         if value == self._title:
             return
         if self._part is not None:
@@ -790,10 +811,10 @@ class Chartsheet:
         self._title = value
 
     @property
-    def charts(self):
+    def charts(self) -> list[Chart]:
         return self._charts
 
-    def add_chart(self, chart, source: Worksheet | str | None = None) -> None:
+    def add_chart(self, chart: Chart, source: Worksheet | str | None = None) -> None:
         if self._part is None:
             _expect(chart, Chart, "chart", "an xlspy Chart")
             if self._charts:

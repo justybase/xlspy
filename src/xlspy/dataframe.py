@@ -16,9 +16,16 @@ from __future__ import annotations
 import datetime
 import importlib
 from decimal import Decimal
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 from collections.abc import Iterator
 
+
+if TYPE_CHECKING:
+    from ._metadata import SheetProtection
+    from ._output import WriteTarget
+    from .styles import Style
+
+_Target = TypeVar("_Target", bound="WriteTarget")
 
 _MISSING = object()
 _SECONDS_PER_DAY = 86400.0
@@ -26,7 +33,7 @@ _SECONDS_PER_DAY = 86400.0
 _import_cache: dict[str, Any] = {}
 
 
-def _lazy_import(name: str):
+def _lazy_import(name: str) -> Any:
     """Import a module once, returning ``None`` when it is not installed."""
     if name not in _import_cache:
         try:
@@ -36,32 +43,32 @@ def _lazy_import(name: str):
     return _import_cache[name]
 
 
-def _get_pandas():
+def _get_pandas() -> Any:
     return _lazy_import("pandas")
 
 
-def _get_numpy():
+def _get_numpy() -> Any:
     return _lazy_import("numpy")
 
 
-def _is_pandas_frame(obj) -> bool:
+def _is_pandas_frame(obj: object) -> bool:
     """Duck-typed check that avoids importing pandas."""
     return hasattr(obj, "itertuples") and hasattr(obj, "columns") and hasattr(obj, "dtypes")
 
 
-def _is_polars_frame(obj) -> bool:
+def _is_polars_frame(obj: object) -> bool:
     """Duck-typed check that avoids importing polars."""
     return hasattr(obj, "iter_rows") and hasattr(obj, "columns") and not hasattr(obj, "itertuples")
 
 
-def _flatten_label(label) -> str:
+def _flatten_label(label: object) -> str:
     """Turn a column label into a string, joining MultiIndex tuples with a space."""
     if isinstance(label, tuple):
         return " ".join(str(part) for part in label)
     return str(label)
 
 
-def _normalize_cell(value, pd, np):
+def _normalize_cell(value: Any, pd: Any, np: Any) -> Any:
     """Map a cell value to a type the writers understand.
 
     Returns ``_MISSING`` for every flavour of missing value (``None``,
@@ -113,7 +120,7 @@ def _normalize_cell(value, pd, np):
     return value
 
 
-def _normalize_numpy(value, np):
+def _normalize_numpy(value: Any, np: Any) -> Any:
     """Convert a numpy scalar, mapping every NaT/NaN flavour to ``_MISSING``."""
     if isinstance(value, np.datetime64):
         if np.isnat(value):
@@ -134,7 +141,7 @@ def _normalize_numpy(value, np):
     return _MISSING if result is None else result
 
 
-def _pandas_rows(df, include_index: bool):
+def _pandas_rows(df: Any, include_index: bool) -> tuple[list[str], Iterator[tuple[Any, ...]]]:
     headers = [_flatten_label(col) for col in df.columns]
 
     data_rows = df.itertuples(index=False, name=None)
@@ -154,7 +161,7 @@ def _pandas_rows(df, include_index: bool):
         index_headers.append(str(name))
     headers = index_headers + headers
 
-    def with_index():
+    def with_index() -> Iterator[tuple[Any, ...]]:
         for index_key, data_row in zip(df.index, data_rows):
             levels = index_key if nlevels > 1 else (index_key,)
             yield tuple(levels) + data_row
@@ -162,7 +169,7 @@ def _pandas_rows(df, include_index: bool):
     return headers, with_index()
 
 
-def _polars_rows(df, include_index: bool):
+def _polars_rows(df: Any, include_index: bool) -> tuple[list[str], Iterator[tuple[Any, ...]]]:
     if include_index:
         raise ValueError(
             "polars DataFrames have no index, so include_index=True is not supported."
@@ -171,13 +178,13 @@ def _polars_rows(df, include_index: bool):
     return headers, df.iter_rows()
 
 
-def _format_lookup(headers, formats):
+def _format_lookup(headers: list[str], formats: dict[str, str] | None) -> list[str | None]:
     if not formats:
         return [None] * len(headers)
     return [formats.get(header) for header in headers]
 
 
-def _convert_cell(cell, fmt_string, na_rep, pd, np):
+def _convert_cell(cell: Any, fmt_string: str | None, na_rep: Any, pd: Any, np: Any) -> Any:
     value = _normalize_cell(cell, pd, np)
     if value is _MISSING:
         return na_rep
@@ -187,11 +194,11 @@ def _convert_cell(cell, fmt_string, na_rep, pd, np):
 
 
 def dataframe_to_rows(
-    df,
+    df: Any,
     include_index: bool = False,
-    na_rep=None,
+    na_rep: Any = None,
     formats: dict[str, str] | None = None,
-) -> Iterator[list]:
+) -> Iterator[list[Any]]:
     """Yield a pandas or polars DataFrame as rows ready for ``write_sheet``.
 
     Parameters
@@ -233,31 +240,31 @@ def dataframe_to_rows(
 
 
 def to_xlsx(
-    df,
-    path,
+    df: Any,
+    path: _Target,
     sheet_name: str = "Sheet1",
     *,
     include_index: bool = False,
-    na_rep=None,
+    na_rep: Any = None,
     formats: dict[str, str] | None = None,
-    header_style=None,
+    header_style: Style | None = None,
     styles: dict | None = None,
     merges: list[str] | tuple[str, ...] | None = None,
     conditional_formats: list | tuple | None = None,
-    tables=None,
+    tables: Any = None,
     column_widths: dict | None = None,
-    hidden_columns=None,
+    hidden_columns: Any = None,
     row_heights: dict | None = None,
-    hidden_rows=None,
-    row_groups=None,
-    column_groups=None,
+    hidden_rows: Any = None,
+    row_groups: Any = None,
+    column_groups: Any = None,
     freeze_panes: str | None = None,
     auto_filter: bool | None = None,
-    charts=None,
-    comments=None,
-    sheet_protection=None,
-    **writer_kwargs,
-):
+    charts: Any = None,
+    comments: Any = None,
+    sheet_protection: SheetProtection | None = None,
+    **writer_kwargs: Any,
+) -> _Target:
     """Write a DataFrame straight to an ``.xlsx`` file and return ``path``.
 
     A failed conversion leaves ``path`` as it was: the writer stages the file
@@ -281,31 +288,31 @@ def to_xlsx(
     return path
 
 def to_xlsb(
-    df,
-    path,
+    df: Any,
+    path: _Target,
     sheet_name: str = "Sheet1",
     *,
     include_index: bool = False,
-    na_rep=None,
+    na_rep: Any = None,
     formats: dict[str, str] | None = None,
-    header_style=None,
+    header_style: Style | None = None,
     styles: dict | None = None,
     merges: list[str] | tuple[str, ...] | None = None,
     column_widths: dict | None = None,
-    hidden_columns=None,
+    hidden_columns: Any = None,
     row_heights: dict | None = None,
-    hidden_rows=None,
-    row_groups=None,
-    column_groups=None,
+    hidden_rows: Any = None,
+    row_groups: Any = None,
+    column_groups: Any = None,
     freeze_panes: str | None = None,
     auto_filter: bool | None = None,
-    charts=None,
-    tables=None,
-    conditional_formats=None,
-    comments=None,
-    sheet_protection=None,
-    **writer_kwargs,
-):
+    charts: Any = None,
+    tables: Any = None,
+    conditional_formats: Any = None,
+    comments: Any = None,
+    sheet_protection: SheetProtection | None = None,
+    **writer_kwargs: Any,
+) -> _Target:
     """Write a DataFrame straight to an ``.xlsb`` file and return ``path``.
 
     A failed conversion leaves ``path`` as it was: the writer stages the file

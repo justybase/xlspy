@@ -7,8 +7,8 @@
 Full suite on Windows 11 with the project's `.venv` and the Rust module built:
 **2138 passed, 192 skipped, 1 xfailed**. The new regression tests are in
 `tests/test_p0_regressions.py` and `tests/test_safe_xml.py`. `ruff check src` and
-`mypy` (the configuration in `pyproject.toml`) pass. Mypy still excludes 19
-modules listed in `[tool.mypy.overrides]`.
+`mypy` (the configuration in `pyproject.toml`) pass. At the time, mypy excluded 19
+modules listed in `[tool.mypy.overrides]`; it now checks all of them.
 
 The test count in the 2026-10-31 section below is from that date and is not
 updated.

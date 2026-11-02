@@ -6,6 +6,7 @@ expressions to BIFF12 tokens. Excel recalculates on open.
 """
 
 from __future__ import annotations
+from collections.abc import Iterator
 
 import math
 import re
@@ -101,7 +102,7 @@ _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
-def _scan_tokens(text: str):
+def _scan_tokens(text: str) -> Iterator[tuple[str, str, int, int]]:
     """Yield ``(kind, value, start, end)`` for identifiers and structure.
 
     String literals and quoted sheet names are yielded as ``"literal"`` so the
@@ -208,7 +209,7 @@ class Formula:
     value: object = None
     array_ref: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "text", normalize_formula(self.text))
         if self.value is not None and (
             isinstance(self.value, bool)

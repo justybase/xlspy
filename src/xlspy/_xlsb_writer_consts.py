@@ -1,5 +1,7 @@
 """Module-level constants and record helpers of the XLSB writer (BIFF12 record ids)."""
 from __future__ import annotations
+from collections.abc import Iterable, Iterator
+from typing import Any
 
 import struct
 import uuid
@@ -89,7 +91,7 @@ _PANE_ACTIVE = {"bottomRight": 0, "topRight": 1, "bottomLeft": 2, "topLeft": 3}
 _MAX_STR_RUNS = 32767
 
 
-def _capture_cells(rows, store: dict):
+def _capture_cells(rows: Iterable[list[Any]], store: dict) -> Iterator[list[Any]]:
     """Yield rows unchanged, filling the chart-cache slots they cover."""
     columns = [(col_idx, first_row, slots) for col_idx, (first_row, slots) in store.items()]
     for row_idx, row in enumerate(rows):

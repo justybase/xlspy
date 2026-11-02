@@ -39,7 +39,7 @@ class Cell:
         "_named_style",
     )
 
-    def __init__(self, sheet: Worksheet, row: int, column: int, value=None, style_id: int = 0):
+    def __init__(self, sheet: Worksheet, row: int, column: int, value: Any = None, style_id: int = 0) -> None:
         self._sheet = sheet
         self._row = _coerce_row(row)
         self._column = _coerce_column(column)
@@ -73,15 +73,15 @@ class Cell:
         return _coordinate(self._row, self._column)
 
     @property
-    def parent(self):
+    def parent(self) -> Worksheet:
         return self._sheet
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Cell {self._sheet.title!r}.{self.coordinate}>"
 
     # -- value --------------------------------------------------------
     @property
-    def value(self):
+    def value(self) -> Any:
         if isinstance(self._formula, Formula):
             return "=" + self._formula.text
         if isinstance(self._formula, str):
@@ -89,7 +89,7 @@ class Cell:
         return self._value
 
     @value.setter
-    def value(self, value):
+    def value(self, value: Any) -> None:
         plain = _CELL_TYPE_KINDS.get(type(value))
         if plain is not None and not (plain == "s" and value.startswith("=")):
             # Exact int/float/bool/str: no formula, hyperlink or date handling.
@@ -136,7 +136,7 @@ class Cell:
         self._mark_dirty()
 
     @property
-    def formula(self):
+    def formula(self) -> Formula | str | None:
         return self._formula
 
     @property
@@ -144,7 +144,7 @@ class Cell:
         return self._data_type
 
     @property
-    def internal_value(self):
+    def internal_value(self) -> Any:
         return self._value
 
     @property
@@ -159,15 +159,15 @@ class Cell:
         return "utf-8"
 
     @property
-    def base_date(self):
+    def base_date(self) -> _datetime.datetime:
         return self._sheet._workbook.epoch
 
     @property
-    def hyperlink(self):
+    def hyperlink(self) -> Hyperlink | None:
         return self._hyperlink
 
     @hyperlink.setter
-    def hyperlink(self, value):
+    def hyperlink(self, value: Hyperlink | None) -> None:
         if value is not None and not isinstance(value, Hyperlink):
             raise TypeError("hyperlink must be a xlspy Hyperlink or None")
         self._hyperlink = value
@@ -175,11 +175,11 @@ class Cell:
         self._sheet._mark_dirty("hyperlinks")
 
     @property
-    def comment(self):
+    def comment(self) -> Comment | None:
         return self._comment
 
     @comment.setter
-    def comment(self, value):
+    def comment(self, value: Comment | None) -> None:
         if value is not None and not isinstance(value, Comment):
             raise TypeError("comment must be a xlspy Comment or None")
         self._comment = value
@@ -220,49 +220,49 @@ class Cell:
         return self._style().font
 
     @font.setter
-    def font(self, value: Font | None):
+    def font(self, value: Font | None) -> None:
         if value is not None and not isinstance(value, Font):
             raise TypeError("font must be a xlspy Font or None")
         self._set_style(replace(self._style(), font=value, bold=None, italic=None,
                                 underline=None, font_color=None))
 
     @property
-    def fill(self):
+    def fill(self) -> str | PatternFill | GradientFill | None:
         return self._style().fill
 
     @fill.setter
-    def fill(self, value):
+    def fill(self, value: str | PatternFill | GradientFill | None) -> None:
         if value is not None and not isinstance(value, (str, PatternFill, GradientFill)):
             raise TypeError("fill must be a color, PatternFill, GradientFill or None")
         self._set_style(replace(self._style(), fill=value, pattern=None))
 
     @property
-    def border(self):
+    def border(self) -> Border | None:
         return self._style().border
 
     @border.setter
-    def border(self, value):
+    def border(self, value: Border | None) -> None:
         if value is not None and not isinstance(value, Border):
             raise TypeError("border must be a xlspy Border or None")
         self._set_style(replace(self._style(), border=value))
 
     @property
-    def alignment(self):
+    def alignment(self) -> Alignment | None:
         return self._style().alignment
 
     @alignment.setter
-    def alignment(self, value):
+    def alignment(self, value: Alignment | None) -> None:
         if value is not None and not isinstance(value, Alignment):
             raise TypeError("alignment must be a xlspy Alignment or None")
         self._set_style(replace(self._style(), alignment=value,
                                 horizontal=None, vertical=None, wrap=None))
 
     @property
-    def protection(self):
+    def protection(self) -> Protection | None:
         return self._style().protection
 
     @protection.setter
-    def protection(self, value):
+    def protection(self, value: Protection | None) -> None:
         if value is not None and not isinstance(value, Protection):
             raise TypeError("protection must be a xlspy Protection or None")
         self._set_style(replace(self._style(), protection=value))
@@ -273,7 +273,7 @@ class Cell:
         return "General" if fmt is None else fmt
 
     @number_format.setter
-    def number_format(self, value: str):
+    def number_format(self, value: str) -> None:
         if not isinstance(value, str):
             raise TypeError("number_format must be a string")
         workbook = self._sheet._workbook
@@ -292,11 +292,11 @@ class Cell:
         self._sheet._mark_dirty("styles")
 
     @property
-    def style(self):
+    def style(self) -> Style:
         return self._style()
 
     @style.setter
-    def style(self, value):
+    def style(self, value: Style | NamedStyle | str) -> None:
         if isinstance(value, str):
             named = None
             for entry in self._sheet._workbook.named_styles:
@@ -344,7 +344,7 @@ class Cell:
         self._dirty = False
 
     # -- convenience --------------------------------------------------
-    def offset(self, row=0, column=0):
+    def offset(self, row: int = 0, column: int = 0) -> Cell:
         return self._sheet.cell(self._row + row, self._column + column)
 
 
@@ -359,14 +359,14 @@ class MergedCell(Cell):
     """A cell inside a merged range other than its top-left anchor."""
 
     @Cell.value.setter  # type: ignore[attr-defined]  # mypy does not model a property setter on the class
-    def value(self, value):
+    def value(self, value: Any) -> None:
         raise AttributeError("read-only cell (merged range)")
 
 
 class WriteOnlyCell:
     """A value with optional style, used with ``WriteOnlyWorksheet.append``."""
 
-    def __init__(self, worksheet, value=None):
+    def __init__(self, worksheet: Any, value: Any = None) -> None:
         self.parent = worksheet
         self.value = value
         self.font = None
@@ -378,5 +378,5 @@ class WriteOnlyCell:
         self.comment = None
         self.hyperlink = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<WriteOnlyCell {self.value!r}>"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError, version as _metadata_version
+from typing import Any
 
 from .exceptions import InvalidFileError, UnsupportedFeatureError, XlspyError
 from .writer import XlsbWriter
@@ -105,7 +106,7 @@ _WORKBOOK_EXPORTS = {
 }
 
 
-def __getattr__(name):
+def __getattr__(name: str) -> Any:
     if name in _WORKBOOK_EXPORTS:
         from . import workbook as _workbook
 

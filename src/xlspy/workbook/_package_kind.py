@@ -2,9 +2,14 @@
 and, for .xlsm/.xltm, the VBA project taken from ``Workbook.vba_archive``."""
 
 from __future__ import annotations
+import zipfile
+from typing import TYPE_CHECKING
 
 from .._metadata import CT
 from ._objects import _Package
+
+if TYPE_CHECKING:
+    from ..xlsx_updater import XlsxUpdater
 
 _MAIN_TYPES = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
@@ -17,7 +22,8 @@ _VBA_TYPE = "application/vnd.ms-office.vbaProject"
 _VBA_REL = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
 
 
-def set_package_kind(updater, extension: str, vba_archive=None) -> None:
+def set_package_kind(updater: XlsxUpdater, extension: str,
+                     vba_archive: zipfile.ZipFile | None = None) -> None:
     """Give the workbook part the content type of ``extension``; a
     macro-enabled kind also gets the VBA project of ``vba_archive`` (a
     ``zipfile.ZipFile`` such as ``load_workbook(..., keep_vba=True)`` sets)."""

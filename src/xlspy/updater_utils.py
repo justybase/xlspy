@@ -26,7 +26,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 from collections.abc import Callable, Iterable, Sequence
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
@@ -785,7 +785,7 @@ class ZipPackage:
         index = self._index_for(name)
         override = self._overrides.get(index)
         if isinstance(override, bytes):
-            stream = BytesIO(override)
+            stream: IO[bytes] = BytesIO(override)
             try:
                 yield stream
             finally:

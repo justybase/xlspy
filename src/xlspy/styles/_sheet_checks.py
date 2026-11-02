@@ -1,10 +1,12 @@
 """Sheet-level normalisers: hidden rows and columns, conditional-format priorities."""
 
 from __future__ import annotations
+from collections.abc import Iterable
+from typing import Any
 from ..refs import _column_index
 
 
-def explicit_cf_priorities(rules, *taken: set) -> list[int]:
+def explicit_cf_priorities(rules: Iterable[Any], *taken: set[int]) -> list[int]:
     """The explicit priorities of ``rules``, checked against each other and ``taken``.
 
     Nothing is registered, so the writer can reserve them only once the whole
@@ -21,7 +23,7 @@ def explicit_cf_priorities(rules, *taken: set) -> list[int]:
     return priorities
 
 
-def normalize_hidden_columns(items, kind: str = "hidden_columns") -> set[int]:
+def normalize_hidden_columns(items: Any, kind: str = "hidden_columns") -> set[int]:
     """Validate a collection of column letters or 0-based ints; returns the indices."""
     if items is None:
         return set()
@@ -45,7 +47,7 @@ def normalize_hidden_columns(items, kind: str = "hidden_columns") -> set[int]:
     return result
 
 
-def normalize_hidden_rows(items) -> set[int]:
+def normalize_hidden_rows(items: Any) -> set[int]:
     """Validate a collection of 0-based row ints; returns them as a set."""
     if items is None:
         return set()

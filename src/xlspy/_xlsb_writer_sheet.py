@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from typing import Any
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import TYPE_CHECKING
 from ._sheet_options import XLSB_OPTIONS, SheetOptions, resolve_sheet_options
 from . import chart_parts
 from .styles import (
@@ -34,11 +35,17 @@ from .outline import build_outline
 from ._xlsb_writer_consts import _capture_cells
 from ._xlsb_writer_host import _XlsbWriterHost
 
+if TYPE_CHECKING:
+    from ._metadata import SheetProtection
+    from .comments import Comment
+    from .styles import Color
+
 
 class _XlsbSheetMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
-    def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None, **kwargs):
+    def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None,
+                    **kwargs: Any) -> None:
         """Write rows to the current sheet.
 
         Sheet settings come from ``options`` (a ``SheetOptions``) or from keyword
@@ -46,7 +53,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         field of ``options``. ``ignored_errors`` is an XLSX-only option.
         """
         opts = resolve_sheet_options(options, kwargs, XLSB_OPTIONS, "XlsbWriter")
-        return self._write_sheet(data, **opts.as_kwargs(XLSB_OPTIONS))
+        self._write_sheet(data, **opts.as_kwargs(XLSB_OPTIONS))
 
     def _write_sheet(
         self,
@@ -70,11 +77,11 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         data_validations: list[DataValidation] | tuple[DataValidation, ...] | None = None,
         tables: list | tuple | None = None,
         conditional_formats: list | tuple | None = None,
-        comments=None,
-        sheet_protection=None,
+        comments: Mapping[str, Comment] | None = None,
+        sheet_protection: SheetProtection | None = None,
         show_grid_lines: bool = True,
         header_rows: int = 1,
-        tab_color=None,
+        tab_color: Color | str | None = None,
         zoom: int | None = None,
         sparklines=None,
         slicers=None,
@@ -273,7 +280,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             raise
 
     def write_dataframe(
-        self, df, include_index: bool = False, na_rep=None, formats: dict | None = None,
+        self, df: Any, include_index: bool = False, na_rep: Any = None, formats: dict | None = None,
         *, header_style: Style | None = None, styles: dict[str, Style] | None = None,
         merges: list[str] | tuple[str, ...] | None = None,
         column_widths: dict | None = None,
@@ -287,20 +294,20 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         auto_filter_ref: str | None = None,
         charts: list | tuple | None = None,
         images: list | tuple | None = None,
-        print_settings=None,
+        print_settings: PrintSettings | None = None,
         data_validations: list | tuple | None = None,
         tables: list | tuple | None = None,
         conditional_formats: list | tuple | None = None,
-        comments=None,
-        sheet_protection=None,
+        comments: Mapping[str, Comment] | None = None,
+        sheet_protection: SheetProtection | None = None,
         show_grid_lines: bool = True,
-        tab_color=None,
+        tab_color: Color | str | None = None,
         zoom: int | None = None,
         show_row_col_headers: bool = True,
         show_zero_values: bool = True,
         right_to_left: bool = False,
         pivots: list | tuple | None = None,
-    ):
+    ) -> None:
         """Write a pandas or polars DataFrame to the current sheet.
 
         pandas and polars are optional: they are imported lazily only when a

@@ -7,12 +7,12 @@ from ._metadata import DefinedName
 from ._xlsb_writer_host import _XlsbWriterHost
 
 if TYPE_CHECKING:
-    pass
+    from ._xlsb_formulas import FormulaContext
 
 
 class XlsbWriterMetadata(_XlsbWriterHost):
 
-    def _formula_context(self):
+    def _formula_context(self) -> FormulaContext:
         if self._xlsb_formula_context is None:
             from ._xlsb_formulas import FormulaContext
             self._xlsb_formula_context = FormulaContext(lambda: [name for name, _, _ in self._worksheet_data])
@@ -41,7 +41,7 @@ class XlsbWriterMetadata(_XlsbWriterHost):
             data = replace_records(data, {0x216, 0x2A5}, workbook_protection_bin(self._workbook_protection), before=(0x87, 0x8F))
         return data
 
-    def _register_filter_names(self):
+    def _register_filter_names(self) -> None:
         # Name indexes already written into cell formulas must stay stable.
         # Append filter names after user/future names and use the same XTI table.
         from ._xlsb_formulas import _Name
@@ -54,7 +54,7 @@ class XlsbWriterMetadata(_XlsbWriterHost):
             definition = DefinedName('_FilterDatabase', quote_sheet_name(title) + '!' + first + ':' + last, title)
             context.names.append(_Name(definition.name, title, 0x21, definition=definition))
 
-    def _register_slicer_names(self):
+    def _register_slicer_names(self) -> None:
         # Excel links each slicer cache to a workbook name holding #N/A; the
         # name record carries flag 0x10 as Excel writes it.
         from ._xlsb_formulas import _Name
@@ -62,7 +62,7 @@ class XlsbWriterMetadata(_XlsbWriterHost):
         for cache_name in self._slicer_cache_names:
             context.names.append(_Name(cache_name, None, 0x10, definition=DefinedName(cache_name, '#N/A')))
 
-    def _register_print_names(self):
+    def _register_print_names(self) -> None:
         # Built-in (fBuiltin) sheet names, as Excel stores _xlnm.Print_Area
         # and _xlnm.Print_Titles in XLSB.
         from ._xlsb_formulas import _Name

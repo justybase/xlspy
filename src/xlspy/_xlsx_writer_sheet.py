@@ -80,7 +80,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
 
-    def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None, **kwargs):
+    def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None,
+                    **kwargs: Any) -> None:
         """Write rows to the current sheet.
 
         ``data`` is consumed once, row by row. Sheet settings come from ``options``
@@ -91,7 +92,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         formulas and the other options are described in the documentation.
         """
         opts = resolve_sheet_options(options, kwargs, XLSX_OPTIONS, "XlsxWriter")
-        return self._write_sheet(data, **opts.as_kwargs(XLSX_OPTIONS))
+        self._write_sheet(data, **opts.as_kwargs(XLSX_OPTIONS))
 
     def _write_sheet(
         self,
@@ -385,7 +386,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 compressed.close()
 
     def write_dataframe(
-        self, df, include_index: bool = False, na_rep=None, formats: dict | None = None,
+        self, df: Any, include_index: bool = False, na_rep: Any = None, formats: dict | None = None,
         *, header_style: Style | None = None, styles: dict[str, Style] | None = None,
         merges: list[str] | tuple[str, ...] | None = None,
         conditional_formats: list | tuple | None = None,
@@ -411,7 +412,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         show_zero_values: bool = True,
         right_to_left: bool = False,
         pivots: list | tuple | None = None,
-    ):
+    ) -> None:
         """Write a pandas or polars DataFrame to the current sheet.
 
         pandas and polars are optional: they are imported lazily only when a

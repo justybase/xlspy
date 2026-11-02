@@ -5,6 +5,7 @@ without creating an import cycle.
 """
 
 from __future__ import annotations
+from collections.abc import Iterable
 
 import re
 from functools import lru_cache
@@ -148,7 +149,7 @@ def quote_sheet_name(sheet_name: str) -> str:
 _SHEET_NAME_FORBIDDEN = frozenset(r':\/?*[]')
 
 
-def check_sheet_name(sheet_name, existing=()) -> None:
+def check_sheet_name(sheet_name: str, existing: Iterable[str] = ()) -> None:
     """Raise unless Excel accepts ``sheet_name`` beside the ``existing`` names.
 
     Excel refuses to open a workbook with a sheet name that is empty, longer

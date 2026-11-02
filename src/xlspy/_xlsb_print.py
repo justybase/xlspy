@@ -5,6 +5,7 @@ from an XLSX file as XLSB, so both formats print alike.
 """
 
 from __future__ import annotations
+from collections.abc import Sequence
 
 import struct
 
@@ -63,7 +64,7 @@ def _header_footer_record(settings: PrintSettings) -> bytes:
     return build_record(BRT_BEGIN_HEADER_FOOTER, payload) + build_record(BRT_END_HEADER_FOOTER)
 
 
-def _breaks(begin: int, end: int, breaks, last: int) -> bytes:
+def _breaks(begin: int, end: int, breaks: Sequence[int] | None, last: int) -> bytes:
     if not breaks:
         return b""
     parts = [build_record(begin, struct.pack("<II", len(breaks), len(breaks)))]

@@ -30,7 +30,7 @@ def serial_to_datetime(serial: float, date_1904: bool = False) -> datetime.datet
     return WINDOWS_EPOCH + datetime.timedelta(days=serial)
 
 
-def datetime_to_serial(value, date_1904: bool = False) -> float:
+def datetime_to_serial(value: datetime.date, date_1904: bool = False) -> float:
     """Convert a ``date``/``datetime`` to an Excel serial number.
 
     Timezone-aware datetimes keep their offset: the serial describes the

@@ -257,12 +257,12 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
             for sqref, rule in read_conditional_formats(
                 conditional, formula_context, workbook._styles, extensions,
             ):
-                payload = extensions.get(id(rule))
+                extension = extensions.get(id(rule))
                 rule = sheet._conditional_formats.add(sqref, rule)
                 read += 1
-                if payload is not None:
+                if extension is not None:
                     # Kept with the rule while it stays as it was read.
-                    sheet._cf_extensions[id(rule)] = (rule, repr(rule), payload)
+                    sheet._cf_extensions[id(rule)] = (rule, repr(rule), extension)
             note_unread(
                 sheet, "conditional_formatting",
                 sum(record_id == BRT_BEGIN_CF_RULE for record_id, _ in conditional) - read,

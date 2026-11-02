@@ -72,7 +72,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
     opaque ZIP members and are never parsed or rewritten.
     """
 
-    def __init__(self, path: str | os.PathLike[str]):
+    def __init__(self, path: str | os.PathLike[str]) -> None:
         self._package = ZipPackage(path)
         if self._package.has("xl/workbook.bin"):
             raise ValueError("The input is XLSB; use XlsbUpdater")
@@ -423,7 +423,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         return date_1904
 
     def _collect_styles_stream(
-        self, sheet_data, *, headers_provided: bool
+        self, sheet_data: Any, *, headers_provided: bool
     ) -> tuple[dict[int, int], dict[int, int]]:
         """Collect dominant styles from an mmap without copying the sheet."""
 
@@ -485,7 +485,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         return dominant(header_counts), dominant(data_counts)
 
     @staticmethod
-    def _shared_string_ref_count_stream(sheet_data) -> int:
+    def _shared_string_ref_count_stream(sheet_data: Any) -> int:
         count = 0
         parser = harden_expat(expat.ParserCreate())
 

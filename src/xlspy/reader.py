@@ -173,7 +173,7 @@ class ExcelReader:
         path: str | None = None,
         use_memory_stream_for_xlsb: bool = True,
         errors: str = "legacy",
-    ):
+    ) -> None:
         if errors not in {"legacy", "openpyxl"}:
             raise ValueError("errors must be 'legacy' or 'openpyxl'")
         self._errors = errors

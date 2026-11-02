@@ -6,9 +6,9 @@ BrtBorder, 2.4.674 BrtFill, 2.4.683 BrtFont, 2.4.863 BrtXF, 2.4.334 BrtColor);
 """
 
 from __future__ import annotations
+from typing import Any
 
 import struct
-from typing import Any
 
 from .biff_utils import build_record
 
@@ -54,7 +54,7 @@ def numfmt_record(ifmt: int, fmt_string: str) -> bytes:
     payload = struct.pack('<HI', ifmt, len(encoded) // 2) + encoded
     return build_record(_BRT_FMT, payload)
 
-def color_payload(color_key) -> bytes:
+def color_payload(color_key: tuple[Any, ...] | None) -> bytes:
     """An 8-byte BrtColor ([MS-XLSB] 2.4.334) for a ``split_style`` color."""
     if color_key is None:
         return bytes(8)  # automatic
@@ -166,7 +166,8 @@ def border_record(border_key: Any) -> bytes:
 
 def xf_record(
     ifmt: int = 0, *, flags: int = 0, font_id: int = 0, fill_id: int = 0,
-    border_id: int = 0, alignment=None, protection=None, apply_flags: bool = False,
+    border_id: int = 0, alignment: tuple[Any, ...] | None = None,
+    protection: tuple[Any, ...] | None = None, apply_flags: bool = False,
 ) -> bytes:
     """Build a BrtXF record ([MS-XLSB] 2.4.863).
 

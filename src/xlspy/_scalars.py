@@ -7,9 +7,10 @@ float16/float32 (``float64`` already is a ``float``). numpy is never imported
 here: a scalar is recognised by its class's module and its dtype.
 """
 from __future__ import annotations
+from typing import Any
 
 
-def numpy_value(value):
+def numpy_value(value: Any) -> Any:
     """``value.item()`` for a numpy int, unsigned, bool or float16/32 scalar; else ``value``."""
     if type(value).__module__ != "numpy" or getattr(value, "shape", None) != ():
         return value

@@ -1,7 +1,9 @@
 """Workbook and sheet property objects: views, calculation, protection, filters, breaks."""
 
 from __future__ import annotations
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 import datetime as _datetime
 from ..printing import PageMargins as PublicPageMargins
 from .._metadata import DefinedName
@@ -13,6 +15,9 @@ from ._print import (
     WorksheetPageMargins,
     PageSetupProperties,
 )
+
+if TYPE_CHECKING:
+    from ._workbook import Workbook
 
 
 @dataclass
@@ -72,32 +77,33 @@ class CustomPropertyList(list):
     """A list of custom document properties, keyed by ``name`` for convenience."""
 
     @property
-    def names(self):
+    def names(self) -> list[str]:
         return [item.name for item in self]
 
 
 class DefinedNameList:
     """A list/dict hybrid of :class:`DefinedName` entries."""
 
-    def __init__(self, workbook=None, definitions=None):
+    def __init__(self, workbook: Workbook | None = None,
+                 definitions: Iterable[DefinedName] | None = None) -> None:
         self._workbook = workbook
         self._items: list[DefinedName] = []
         for definition in definitions or []:
             self.add(definition, stage=False)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[DefinedName]:
         return iter(self._items)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._items)
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self._items)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"DefinedNameList({self._items!r})"
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int | str) -> DefinedName:
         if isinstance(key, int) and not isinstance(key, bool):
             return self._items[key]
         if isinstance(key, str):
@@ -111,21 +117,21 @@ class DefinedNameList:
             raise KeyError(key)
         raise TypeError("defined name keys must be a name or an index")
 
-    def __contains__(self, key):
+    def __contains__(self, key: object) -> bool:
         try:
-            self[key]
+            self[key]  # type: ignore[index]  # any other key is simply absent
         except (KeyError, TypeError):
             return False
         return True
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: DefinedName) -> None:
         self.add(value)
 
     @property
-    def names(self):
+    def names(self) -> list[str]:
         return [definition.name for definition in self._items]
 
-    def add(self, definition, *, stage: bool = True):
+    def add(self, definition: DefinedName, *, stage: bool = True) -> None:
         if not isinstance(definition, DefinedName):
             raise TypeError("defined names must be DefinedName instances")
         self._items = [
@@ -142,7 +148,7 @@ class DefinedNameList:
 
     append = add
 
-    def remove(self, name, scope=None):
+    def remove(self, name: str, scope: str | None = None) -> DefinedName:
         if not isinstance(name, str):
             raise TypeError("defined name must be a string")
         folded = name.casefold()
@@ -302,12 +308,12 @@ class AutoFilter:
     filterColumn: list[FilterColumn] = field(default_factory=list)
     sortState: SortState | None = None
 
-    def add_filter_column(self, col_id, vals, blank=False):
+    def add_filter_column(self, col_id: int, vals: Iterable[Any] | None, blank: bool = False) -> None:
         self.filterColumn.append(
             FilterColumn(colId=col_id, vals=list(vals or []), blank=bool(blank))
         )
 
-    def add_sort_condition(self, ref, descending=False):
+    def add_sort_condition(self, ref: str, descending: bool = False) -> None:
         if self.sortState is None:
             self.sortState = SortState(ref=self.ref)
         self.sortState.sortCondition.append(

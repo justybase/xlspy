@@ -1,12 +1,14 @@
 """Row and column dimension objects and their holder."""
 
 from __future__ import annotations
+from collections.abc import Callable
+from typing import Any
 from ..refs import column_label
 from ._coords import _coerce_column, _coerce_row
 
 
 class Dimension:
-    def __init__(self, index: str | int):
+    def __init__(self, index: str | int) -> None:
         self.index = index
         self.min: int | None = None
         self.max: int | None = None
@@ -32,7 +34,7 @@ class Dimension:
         return self.outlineLevel
 
     @outline_level.setter
-    def outline_level(self, value: int):
+    def outline_level(self, value: int) -> None:
         self.outlineLevel = value
 
 
@@ -44,28 +46,29 @@ class RowDimension(Dimension):
     pass
 
 
-class DimensionHolder(dict):
-    def __init__(self, factory, transform):
+class DimensionHolder(dict[Any, Any]):
+    def __init__(self, factory: Callable[[Any], Dimension], transform: Callable[[Any], Any]) -> None:
         super().__init__()
         self._factory = factory
         self._transform = transform
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: Any) -> Any:
         key = self._transform(key)
         if key not in self:
             super().__setitem__(key, self._factory(key))
         return super().__getitem__(key)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: Any, value: Any) -> None:
         super().__setitem__(self._transform(key), value)
 
-    def get(self, key, default=None):
+    def get(self, key: Any, default: Any = None) -> Any:
         return super().get(self._transform(key), default)
 
-    def __contains__(self, key):
+    def __contains__(self, key: object) -> bool:
         return super().__contains__(self._transform(key))
 
-    def group(self, start, end=None, outline_level: int = 1, hidden: bool = False):
+    def group(self, start: int | str, end: int | str | None = None, outline_level: int = 1,
+              hidden: bool = False) -> None:
         """Group consecutive rows or columns, as openpyxl does."""
         if end is None:
             end = start

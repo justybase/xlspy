@@ -1,9 +1,8 @@
 from __future__ import annotations
-import io
 from typing import Any
 from collections.abc import Iterable
 from . import _zip_threads as _zip_threads, chart_parts as chart_parts
-from ._output import PackageZip as PackageZip, StagedWriter as StagedWriter
+from ._output import PackageZip as PackageZip, StagedWriter as StagedWriter, WriteTarget as WriteTarget
 from ._writer_common import FilterData as FilterData, WriterFrontEnd as WriterFrontEnd, reject_unknown_arguments
 from .doc_properties import DocumentPropertiesMixin as DocumentPropertiesMixin
 from ._text import check_cell_text as check_cell_text, xstring_escape as xstring_escape
@@ -141,8 +140,8 @@ from ._xlsx_writer_sheet_xml import (
 
 
 class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetXmlMixin, WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
-    def __init__(self, file: str | io.IOBase, compression_level: int = 3, use_shared_strings: bool = True,
-                 spool_max_bytes: int = DEFAULT_SPOOL_BYTES, **unknown: object):
+    def __init__(self, file: WriteTarget, compression_level: int = 3, use_shared_strings: bool = True,
+                 spool_max_bytes: int = DEFAULT_SPOOL_BYTES, **unknown: object) -> None:
         reject_unknown_arguments(type(self).__name__, unknown)
         self._file = file
         self._worksheet_data: list[tuple[str, Iterable[list[Any]] | None, bool]] = []
@@ -242,7 +241,7 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
         DefinedName(name, "0", scope)
         self._defined_names.pop((name.casefold(), scope), None)
 
-    def _staging_bytes(self):
+    def _staging_bytes(self) -> int:
         # File-object targets are staged under the same in-memory limit as the rows.
         return self._spool_max_bytes
 
@@ -290,7 +289,7 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
             self._format_registry[fmt_string] = numfmt_id
         return numfmt_id
 
-    def _normalize_cf_rules(self, conditional_formats):
+    def _normalize_cf_rules(self, conditional_formats: Any) -> list[Any]:
         if not conditional_formats:
             return []
         for rule in conditional_formats:

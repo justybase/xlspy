@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 
 from .styles import Style
 
@@ -52,13 +53,13 @@ class F:
     ISO_DATETIME = 'yyyy-mm-dd"T"hh:mm:ss'
 
 
-def _is_formatted_cell(cell):
+def _is_formatted_cell(cell: Any) -> bool:
     """A ``(value, format string)`` or ``(value, Style)`` cell."""
     return (isinstance(cell, tuple) and len(cell) == 2
             and isinstance(cell[1], (str, Style)))
 
 
-def _unwrap_cell(cell):
+def _unwrap_cell(cell: Any) -> Any:
     if _is_formatted_cell(cell):
         return cell[0]
     return cell

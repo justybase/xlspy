@@ -162,6 +162,16 @@ Migration from 0.10:
 
 ### Changed
 
+- Type annotations: every public class and function exported from `xlspy` and `xlspy.workbook` is fully
+  annotated (a test guards this), so mypy and IDEs check calls into the library. Writers, `Workbook.save`,
+  `save_workbook`, `to_xlsx` and `to_xlsb` accept `str`, any `os.PathLike` (such as `pathlib.Path`) or a binary
+  file object; `to_xlsx`/`to_xlsb` return the target they were given. `Worksheet.iter_rows`/`iter_cols` are
+  typed by `values_only` (cells or values). `ReadOnlyWorksheet.max_row`/`max_column` are `int | None`, as they
+  are `None` until the sheet is sized.
+- Internal: mypy requires annotations on every def by default (`disallow_untyped_defs`), and also runs with
+  `warn_return_any` and `no_implicit_reexport`. The modules still to annotate are listed in `pyproject.toml`
+  (68 of 131). The writer mixins are typed through one host class per writer, so attributes and methods shared
+  between mixins have real types instead of `Any`.
 - Internal: 18 private helpers that nothing called are removed (leftovers of the module split and older code paths).
 - `__version__` is read from the installed package metadata, so `pyproject.toml` is the only place the version is
   set. A source tree that was never installed reports `0+unknown`.

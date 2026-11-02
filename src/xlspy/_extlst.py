@@ -4,6 +4,7 @@ The URIs and element names come from a workbook saved by Excel itself, so the
 writer and Excel agree byte for byte on what an extension means.
 """
 from __future__ import annotations
+from collections.abc import Iterable
 
 X14 = "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
 X15 = "http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"
@@ -29,9 +30,9 @@ def ext(uri: str, body: str, *namespaces: tuple[str, str]) -> str:
     return f'<ext uri="{uri}"{decl}>{body}</ext>'
 
 
-def ext_list(exts) -> str:
+def ext_list(exts: Iterable[str | None]) -> str:
     """The ``extLst`` element holding ``exts``, or nothing when there are none."""
-    exts = [item for item in exts if item]
-    if not exts:
+    parts = [item for item in exts if item]
+    if not parts:
         return ""
-    return f"<extLst>{''.join(exts)}</extLst>"
+    return f"<extLst>{''.join(parts)}</extLst>"

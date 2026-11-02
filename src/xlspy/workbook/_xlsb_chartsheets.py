@@ -6,6 +6,7 @@ part is a short binary stream (as Excel writes it) and the sheet is listed in
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import struct
 
@@ -16,6 +17,10 @@ from ..biff_utils import build_record
 from ..refs import column_label
 from ._chartsheets import _CHART_TYPE, _DRAWING_TYPE, _DRAWING_XML, _set_rels, pending_chartsheets, source_title
 from ._objects import _Package
+
+if TYPE_CHECKING:
+    from ..xlsb_updater import XlsbUpdater
+    from ._workbook import Workbook
 
 _XLSB_CHARTSHEET_TYPE = "application/vnd.ms-excel.chartsheet"
 # A chartsheet as Excel writes it: properties, one view, page setup, margins,
@@ -37,7 +42,7 @@ _SHEET = b"".join((
 ))
 
 
-def add_chartsheets_xlsb(updater, workbook) -> None:
+def add_chartsheets_xlsb(updater: XlsbUpdater, workbook: Workbook) -> None:
     """Write the workbook's new chartsheets into the updater's package."""
     sheets = pending_chartsheets(workbook)
     if not sheets:

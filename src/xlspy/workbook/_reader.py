@@ -10,7 +10,8 @@ import os
 import posixpath
 import re
 import zipfile
-from typing import Any, overload
+from typing import Any, Literal, NoReturn, overload
+from collections.abc import Iterable, Iterator
 
 from .._untrusted import SafeZipFile
 from xml.etree import ElementTree as ET
@@ -1147,7 +1148,7 @@ class ReadOnlyCell:
 
     __slots__ = ("row", "column", "value", "number_format")
 
-    def __init__(self, row: int, column: int, value, number_format="General"):
+    def __init__(self, row: int, column: int, value: Any, number_format: str = "General") -> None:
         self.row = row
         self.column = column
         self.value = value
@@ -1203,8 +1204,8 @@ class ReadOnlyWorksheet(Worksheet):
     ``max_column`` are None and rows are as wide as their last cell.
     """
 
-    def __init__(self, workbook, title: str, *, reader: ExcelReader, data_only: bool,
-                 index: int | None = None):
+    def __init__(self, workbook: Workbook, title: str, *, reader: ExcelReader, data_only: bool,
+                 index: int | None = None) -> None:
         super().__init__(workbook, title, index=index)
         self._reader = reader
         self._data_only = data_only
@@ -1226,11 +1227,11 @@ class ReadOnlyWorksheet(Worksheet):
         return self._min_column
 
     @property
-    def max_row(self):
+    def max_row(self) -> int | None:  # type: ignore[override]  # None until sized, as openpyxl
         return self._max_row
 
     @property
-    def max_column(self):
+    def max_column(self) -> int | None:  # type: ignore[override]  # None until sized, as openpyxl
         return self._max_column
 
     @property
@@ -1253,7 +1254,7 @@ class ReadOnlyWorksheet(Worksheet):
                 max_column = max(max_column, cells[-1][0] + 1)
         self._max_row, self._max_column = max_row or 1, max_column or 1
 
-    def reset_dimensions(self):
+    def reset_dimensions(self) -> None:
         """Ignore a wrong stored dimension, as openpyxl's reset_dimensions()."""
         self._max_row = self._max_column = None  # type: ignore[assignment]  # unknown until the bounds are read
 
@@ -1264,7 +1265,8 @@ class ReadOnlyWorksheet(Worksheet):
         from .._xlsx_read import iter_xlsx_indexed_rows as iter_xlsx_rows
         return iter_xlsx_rows(self._reader, self.title, self._data_only)
 
-    def _cells_by_row(self, min_col, min_row, max_col, max_row, values_only):
+    def _cells_by_row(self, min_col: int, min_row: int, max_col: int | None, max_row: int | None,
+                      values_only: bool) -> Iterator[tuple[Any, ...]]:
         filler = None if values_only else EMPTY_CELL
         empty_row = (filler,) * (max_col + 1 - min_col) if max_col is not None else ()
         counter = min_row
@@ -1298,27 +1300,38 @@ class ReadOnlyWorksheet(Worksheet):
                 row[column - min_col] = value if values_only else ReadOnlyCell(row_number, column, value)
         return tuple(row)
 
-    def iter_rows(self, min_row=None, max_row=None, min_col=None, max_col=None,
-                  values_only: bool = False):
+    @overload
+    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | str | None = None,
+                  max_col: int | str | None = None, values_only: Literal[False] = False) -> Iterator[tuple[Any, ...]]: ...
+    @overload
+    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | str | None = None,
+                  max_col: int | str | None = None, *, values_only: Literal[True]) -> Iterator[tuple[Any, ...]]: ...
+    @overload
+    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | str | None = None,
+                  max_col: int | str | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]: ...
+    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | str | None = None,
+                  max_col: int | str | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]:
         min_col = _coerce_column(min_col) if min_col else 1
         min_row = int(min_row) if min_row else 1
         max_col = (_coerce_column(max_col) if max_col else None) or self._max_column
         max_row = int(max_row) if max_row else self._max_row
         return self._cells_by_row(min_col, min_row, max_col, max_row, values_only)
 
-    def iter_cols(self, *args, **kwargs):
+    def iter_cols(self, *args: Any, **kwargs: Any) -> NoReturn:
         raise AttributeError("iter_cols is not available in read-only mode")
 
-    def cell(self, row, column, value=None):
+    def cell(self, row: int, column: int | str,  # type: ignore[override]  # read-only cells
+             value: Any = None) -> ReadOnlyCell | EmptyCell:
         if value is not None:
             raise AttributeError("read-only worksheets cannot be modified")
         column = _coerce_column(column)
         for cells in self._cells_by_row(column, int(row), column, int(row), False):
             if cells:
-                return cells[0]
+                first: ReadOnlyCell | EmptyCell = cells[0]
+                return first
         return EMPTY_CELL
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str | int) -> Any:
         if isinstance(key, int):
             return next(self.iter_rows(min_row=key, max_row=key), ())
         if isinstance(key, str) and ":" not in key:
@@ -1327,14 +1340,14 @@ class ReadOnlyWorksheet(Worksheet):
         c1, r1, c2, r2 = parse_cell_range(key)
         return tuple(self.iter_rows(min_row=r1 + 1, max_row=r2 + 1, min_col=c1 + 1, max_col=c2 + 1))
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: Any) -> NoReturn:
         raise AttributeError("read-only worksheets cannot be modified")
 
-    def append(self, iterable):
+    def append(self, iterable: Iterable[Any]) -> NoReturn:
         raise AttributeError("read-only worksheets cannot be modified")
 
 
-def load_workbook(filename, *, read_only: bool = False, data_only: bool = False,
+def load_workbook(filename: str | os.PathLike[str], *, read_only: bool = False, data_only: bool = False,
                   keep_vba: bool = False, rich_text: bool = False,
                   keep_links: bool = True) -> Workbook:
     """Load an XLSX/XLSM workbook, or stream an XLSB/XLSX with ``read_only``.

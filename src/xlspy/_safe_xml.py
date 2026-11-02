@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from typing import Any, BinaryIO
+from typing import IO, Any
 
 __all__ = ["fromstring", "iterparse", "harden_expat"]
 
@@ -81,7 +81,7 @@ class _PrologGuard:
     once the root element is found.
     """
 
-    def __init__(self, stream: BinaryIO):
+    def __init__(self, stream: IO[bytes]):
         self._stream = stream
         self._head = b""
         self._decided = False
@@ -101,7 +101,7 @@ class _PrologGuard:
         return data
 
 
-def iterparse(stream: BinaryIO, events=None):
+def iterparse(stream: IO[bytes], events=None):
     """``ElementTree.iterparse`` over a binary stream, refusing a DTD."""
     return ET.iterparse(_PrologGuard(stream), events=events)
 

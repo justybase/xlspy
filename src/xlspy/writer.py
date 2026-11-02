@@ -2,7 +2,6 @@ from __future__ import annotations
 from .exceptions import UnsupportedFeatureError as UnsupportedFeatureError
 from typing import Any
 from collections.abc import Iterable
-import io
 from ._accel import encode_xlsb_row as encode_xlsb_row, encode_xlsb_row_inline as encode_xlsb_row_inline
 from ._widths import estimate_column_widths as estimate_column_widths, file_width as file_width
 from .formats import DEFAULT_DATE_FORMAT as DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT as DEFAULT_DATETIME_FORMAT, _is_formatted_cell as _is_formatted_cell, _unwrap_cell as _unwrap_cell
@@ -51,7 +50,7 @@ from ._xlsb_style_records import (
 from ._xlsb_print import FIT_TO_PAGE_BIT as FIT_TO_PAGE_BIT, FIT_TO_PAGE_BYTE as FIT_TO_PAGE_BYTE, print_records as print_records
 from ._xlsb_validation import validations_bin as validations_bin
 from ._xlsb_cf import FORMULA_RULES as FORMULA_RULES, dxf_payload as dxf_payload, dxfs_bin as dxfs_bin, rule_bin as rule_bin
-from ._output import StagedWriter as StagedWriter
+from ._output import StagedWriter as StagedWriter, WriteTarget as WriteTarget
 from .doc_properties import DocumentPropertiesMixin as DocumentPropertiesMixin
 from .rich_text import CellRichText as CellRichText, InlineFont as InlineFont, TextBlock as TextBlock
 from ._text import check_cell_text as check_cell_text
@@ -154,8 +153,8 @@ from ._xlsb_writer_strings import (
 
 
 class XlsbWriter(_XlsbStylesMixin, _XlsbPartsMixin, _XlsbSheetMixin, _XlsbViewsMixin, _XlsbBinMixin, _XlsbStringsMixin, WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
-    def __init__(self, file: str | io.IOBase, compression_level: int = 3,
-                 use_shared_strings: bool = True, **unknown: object):
+    def __init__(self, file: WriteTarget, compression_level: int = 3,
+                 use_shared_strings: bool = True, **unknown: object) -> None:
         reject_unknown_arguments(type(self).__name__, unknown)
         self._file = file
         self._use_shared_strings = use_shared_strings

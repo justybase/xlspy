@@ -11,6 +11,7 @@ are dropped.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 from .exceptions import UnsupportedFeatureError
@@ -218,7 +219,7 @@ class XlsbSheetsMixin:
             self._chartsheets.discard(old)
             self._chartsheets.add(new)
 
-    def reorder_sheets(self, order) -> None:
+    def reorder_sheets(self, order: Iterable[str]) -> None:
         """Put the sheets in ``order`` (every sheet name, once)."""
         order = list(order)
         if sorted(order) != sorted(self._sheets):

@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import tempfile
+from typing import TYPE_CHECKING
 
 from ..utils.datetime import time_to_days, timedelta_to_days
 from .._metadata import SheetProtection as MetadataProtection
@@ -20,6 +21,9 @@ from ._loaded import save_loaded
 from ._objects import _as_excel_table
 from ._print import print_settings_for
 from ._model import Workbook, Worksheet, WriteOnlyWorksheet
+
+if TYPE_CHECKING:
+    from .._output import WriteTarget
 
 
 
@@ -265,7 +269,7 @@ def _save_loaded_to_path(workbook: Workbook, filename) -> None:
             shutil.copyfileobj(source, filename)
 
 
-def save_workbook(workbook: Workbook, filename) -> None:
+def save_workbook(workbook: Workbook, filename: WriteTarget) -> None:
     if not workbook._sheets:
         workbook.create_sheet("Sheet")
     if workbook._loaded:

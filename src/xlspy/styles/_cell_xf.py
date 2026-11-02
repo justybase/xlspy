@@ -32,7 +32,7 @@ def _xf_for_style_format(style: Style, overlay: str | Style, register_style: Cal
     return xf_index
 
 
-def _record_cell_xf(fmt_xf: dict, keep: list, base_xf, overlay, xf_index: int) -> None:
+def _record_cell_xf(fmt_xf: dict, keep: list, base_xf: Any, overlay: Any, xf_index: int) -> None:
     """Record the xf of a ``(value, format)`` or ``(value, Style)`` cell for
     the native row encoders: keyed by the format or the Style's ``id()``, paired
     with the cell's range-style xf when it has one. ``keep`` holds every
@@ -68,7 +68,8 @@ def _date_cell_xf(fmt_xf: dict[Any, int], xf_styles: dict[int, Style], register_
     return result
 
 
-def _style_ids_for_row(row_styles, row_length: int, register_style, cache: dict):
+def _style_ids_for_row(row_styles: dict[int, Style] | None, row_length: int,
+                       register_style: Callable[[Style], Any], cache: dict) -> Any:
     """Convert a shared row-style map once per distinct row-style pattern."""
     if not row_styles:
         return None

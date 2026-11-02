@@ -13,6 +13,7 @@ XLSX updater write it as ``<r>`` runs; XlsbWriter as a rich shared string
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Iterable
 from typing import Any
 from ._metadata import local_name as _local
 from ._safe_xml import fromstring as safe_fromstring
@@ -103,28 +104,28 @@ class TextBlock:
         return self.text
 
 
-class CellRichText(list):
+class CellRichText(list["str | TextBlock"]):
     """A cell value made of plain strings and ``TextBlock`` runs."""
 
-    def __init__(self, *args):
+    def __init__(self, *args: Any) -> None:
         parts = args[0] if len(args) == 1 and isinstance(args[0], (list, tuple)) else args
         super().__init__()
         for part in parts:
             self.append(part)
 
-    def append(self, part) -> None:
+    def append(self, part: str | TextBlock) -> None:
         if not isinstance(part, (str, TextBlock)):
             raise TypeError("CellRichText parts must be str or TextBlock")
         super().append(part)
 
-    def extend(self, parts) -> None:
+    def extend(self, parts: Iterable[str | TextBlock]) -> None:
         for part in parts:
             self.append(part)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "".join(str(part) for part in self)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"CellRichText({list.__repr__(self)})"
 
     def as_list(self) -> list[str]:

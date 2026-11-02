@@ -1,7 +1,9 @@
 """Worksheet lists: conditional formatting, tables and data validations."""
 
 from __future__ import annotations
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING
 from ..styles import (
     CellIsRule,
     ColorScaleRule,
@@ -11,6 +13,9 @@ from ..styles import (
     IconSetRule,
 )
 from ._coords import _normalize_sqref
+
+if TYPE_CHECKING:
+    from ._properties import AutoFilter, SortState
 
 
 _CF_RULES = (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule, *EXTRA_CF_RULES)
@@ -85,14 +90,14 @@ class ConditionalFormattingList:
 class TableColumn:
     def __init__(
         self,
-        id=None,
-        name=None,
-        totalsRowFunction=None,
-        totalsRowLabel=None,
-        calculatedColumnFormula=None,
-        totalsRowFormula=None,
-        xmlColumnPr=None,
-    ):
+        id: int | None = None,
+        name: str | None = None,
+        totalsRowFunction: str | None = None,
+        totalsRowLabel: str | None = None,
+        calculatedColumnFormula: str | None = None,
+        totalsRowFormula: str | None = None,
+        xmlColumnPr: object = None,
+    ) -> None:
         self.id = id
         self.name = name
         self.totalsRowFunction = totalsRowFunction
@@ -105,12 +110,12 @@ class TableColumn:
 class TableStyleInfo:
     def __init__(
         self,
-        name=None,
-        showFirstColumn=None,
-        showLastColumn=None,
-        showRowStripes=None,
-        showColumnStripes=None,
-    ):
+        name: str | None = None,
+        showFirstColumn: bool | None = None,
+        showLastColumn: bool | None = None,
+        showRowStripes: bool | None = None,
+        showColumnStripes: bool | None = None,
+    ) -> None:
         self.name = name
         self.showFirstColumn = showFirstColumn
         self.showLastColumn = showLastColumn
@@ -121,23 +126,23 @@ class TableStyleInfo:
 class Table:
     def __init__(
         self,
-        id=1,
-        displayName=None,
-        ref=None,
-        name=None,
-        comment=None,
-        tableType=None,
-        headerRowCount=1,
-        insertRow=None,
-        insertRowShift=None,
-        totalsRowCount=None,
-        totalsRowShown=None,
-        published=None,
-        autoFilter=None,
-        sortState=None,
-        tableColumns=(),
-        tableStyleInfo=None,
-    ):
+        id: int = 1,
+        displayName: str | None = None,
+        ref: str | None = None,
+        name: str | None = None,
+        comment: str | None = None,
+        tableType: str | None = None,
+        headerRowCount: int = 1,
+        insertRow: bool | None = None,
+        insertRowShift: bool | None = None,
+        totalsRowCount: int | None = None,
+        totalsRowShown: bool | None = None,
+        published: bool | None = None,
+        autoFilter: AutoFilter | None = None,
+        sortState: SortState | None = None,
+        tableColumns: Iterable[TableColumn] = (),
+        tableStyleInfo: TableStyleInfo | None = None,
+    ) -> None:
         self.id = id
         self.displayName = displayName
         self.ref = ref
@@ -156,23 +161,23 @@ class Table:
         self.tableStyleInfo = tableStyleInfo
 
     @property
-    def display_name(self):
+    def display_name(self) -> str | None:
         return self.displayName
 
     @property
-    def header_row(self):
+    def header_row(self) -> bool:
         return bool(self.headerRowCount)
 
     @property
-    def totals_row(self):
+    def totals_row(self) -> bool:
         return bool(self.totalsRowCount)
 
     @property
-    def columns(self):
+    def columns(self) -> list[str | None]:
         return [column.name for column in self.tableColumns]
 
     @property
-    def style_name(self):
+    def style_name(self) -> str | None:
         return None if self.tableStyleInfo is None else self.tableStyleInfo.name
 
 

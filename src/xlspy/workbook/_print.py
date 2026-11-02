@@ -6,11 +6,15 @@ sheet's values into the writers' ``PrintSettings``.
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING, Any
 
 from dataclasses import dataclass, fields
 
 from ..printing import PageMargins as _WriterMargins
 from ..printing import PrintSettings
+
+if TYPE_CHECKING:
+    from ._worksheet import Worksheet
 
 
 @dataclass
@@ -80,7 +84,7 @@ class HeaderFooterItem:
     parts, each with a ``text`` in Excel's header codes (``&P`` page number,
     ``&N`` page count, ``&D`` date, ``&&`` a literal ampersand)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.left = _HeaderFooterPart()
         self.center = _HeaderFooterPart()
         self.right = _HeaderFooterPart()
@@ -118,7 +122,7 @@ class HeaderFooterItem:
 class HeaderFooter:
     """``ws.HeaderFooter``: odd/even/first page headers and footers."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.differentFirst = None
         self.differentOddEven = None
         self.scaleWithDoc = None
@@ -131,13 +135,13 @@ class HeaderFooter:
         self.firstFooter = HeaderFooterItem()
 
 
-def print_settings_for(sheet) -> PrintSettings | None:
+def print_settings_for(sheet: Worksheet) -> PrintSettings | None:
     """The sheet's ``PrintSettings``, or None when nothing was set."""
     setup = sheet.page_setup
     fit = bool(sheet.sheet_properties.pageSetUpPr.fitToPage)
     margins = sheet.page_margins
     options = sheet.print_options
-    values = {
+    values: dict[str, Any] = {
         "orientation": setup.orientation,
         "paper_size": setup.paperSize,
         "margins": None if margins == WorksheetPageMargins() else _WriterMargins(

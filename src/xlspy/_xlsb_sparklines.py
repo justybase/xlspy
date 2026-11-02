@@ -16,6 +16,8 @@ flags, the location as an sqref and the data as a PtgArea3d formula.
 """
 
 from __future__ import annotations
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import struct
 
@@ -23,6 +25,9 @@ from ._xlsb_formulas import encode_reference
 from .biff_utils import build_record
 from .refs import parse_cell_range
 from .sparklines import SparklineGroup, _argb, _expand
+
+if TYPE_CHECKING:
+    from ._xlsb_formulas import FormulaContext
 
 _FRT_BEGIN, _FRT_END = 0x23, 0x24
 _FRT_SPARKLINES = 0x0E02  # the product version Excel 2010 writes for this block
@@ -45,7 +50,7 @@ def _sparkline_color_record(value: str, name: str) -> bytes:
     return b"\x05\xff\x00\x00" + rgb + b"\xff"
 
 
-def _sparkline_axis_code(value, bits) -> tuple[int, float]:
+def _sparkline_axis_code(value: str | float | None, bits: Mapping[str | None, int]) -> tuple[int, float]:
     if isinstance(value, str) or value is None:
         return bits[value], 0.0
     return 0, float(value)
@@ -82,7 +87,7 @@ def _unquote(sheet: str) -> str:
     return sheet
 
 
-def _sparkline_payload(cell: str, formula: str, context) -> bytes:
+def _sparkline_payload(cell: str, formula: str, context: FormulaContext) -> bytes:
     column, row, _, _ = parse_cell_range(cell)
     sheet, _, ref = formula.rpartition("!")
     rgce = encode_reference(ref, _unquote(sheet), context, "R", (0, 0), False)
@@ -92,7 +97,7 @@ def _sparkline_payload(cell: str, formula: str, context) -> bytes:
             + struct.pack("<IIII", 1, 0x02, len(rgce), 0) + rgce)
 
 
-def sparklines_bin(groups: list[SparklineGroup], sheet_name: str, context) -> bytes:
+def sparklines_bin(groups: list[SparklineGroup], sheet_name: str, context: FormulaContext) -> bytes:
     """The worksheet FRT block for ``groups``, or ``b""`` when there are none.
 
     ``context`` is the workbook's ``FormulaContext``: the data ranges become

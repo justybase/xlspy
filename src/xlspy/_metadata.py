@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, fields
 import re
 from xml.etree import ElementTree as ET
@@ -203,7 +204,7 @@ class DefinedName:
             raise TypeError("comment must be a string or None")
         object.__setattr__(self, "formula", self.formula.removeprefix("="))
 
-    def to_xml(self, sheets) -> str:
+    def to_xml(self, sheets: Collection[str]) -> str:
         scope = ""
         if self.scope is not None:
             if self.scope not in sheets:
@@ -265,7 +266,7 @@ class SheetProtection:
             return self.hashed_password
         return None if self.password is None else password_hash(self.password)
 
-    def to_xml(self):
+    def to_xml(self) -> str:
         if not self.enabled:
             return ""
         password = "" if self.password_hash is None else f' password="{self.password_hash}"'
@@ -284,7 +285,7 @@ class WorkbookProtection:
     def __post_init__(self):
         _validate_protection(self)
 
-    def to_xml(self):
+    def to_xml(self) -> str:
         if not self.lock_structure:
             return ""
         password = "" if self.password is None else f' workbookPassword="{password_hash(self.password)}"'

@@ -7,6 +7,7 @@ exception module, which has no imports of its own, so any reader can depend on i
 """
 
 from __future__ import annotations
+from typing import IO, Any, Literal
 
 import zipfile
 
@@ -42,7 +43,8 @@ class SafeZipFile(zipfile.ZipFile):
     about its size is cut off there and fails its CRC check.
     """
 
-    def __init__(self, file, mode="r", *args, **kwargs):
+    def __init__(self, file: Any, mode: Literal["r", "w", "x", "a"] = "r", *args: Any,
+                 **kwargs: Any) -> None:
         # Report a non-ZIP input as InvalidFileError, which is also a BadZipFile.
         try:
             super().__init__(file, mode, *args, **kwargs)
@@ -57,7 +59,8 @@ class SafeZipFile(zipfile.ZipFile):
                     f"{MAX_PACKAGE_BYTES}-byte limit"
                 )
 
-    def open(self, name, mode="r", pwd=None, *, force_zip64=False):
+    def open(self, name: str | zipfile.ZipInfo, mode: Literal["r", "w"] = "r",
+             pwd: bytes | None = None, *, force_zip64: bool = False) -> IO[bytes]:
         if mode == "r":
             info = name if isinstance(name, zipfile.ZipInfo) else self.getinfo(name)
             if info.file_size > MAX_PART_BYTES:

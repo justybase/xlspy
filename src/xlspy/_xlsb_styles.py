@@ -8,11 +8,12 @@ their blocks of the original part, which otherwise stays byte for byte.
 """
 
 from __future__ import annotations
+from collections.abc import Sequence
 
 from .exceptions import UnsupportedFeatureError
 import struct
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ._xlsb_metadata import read_wide
 from ._xlsb_style_records import (
@@ -50,6 +51,9 @@ from .styles import (
     fill_key_for,
 )
 from .workbook._styles import XlsxStyleTable, _Xf
+
+if TYPE_CHECKING:
+    from .styles import DifferentialStyle
 
 _FONT, _FMT, _FILL, _BORDER, _XF, _STYLE = 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30
 _DXF = 0x1FB
@@ -103,7 +107,7 @@ def _font(payload: bytes) -> Font:
     scheme = payload[20]
     name, _ = read_wide(payload, 21)
 
-    def flag(bit):
+    def flag(bit: int) -> bool | None:
         return True if flags & bit else None
 
     return Font(
@@ -317,7 +321,7 @@ class XlsbStyleTable(XlsxStyleTable):
             self._rebuild_indexes()
 
     def _style_for(self, xf: _Xf) -> Style:
-        def component(values, index):
+        def component(values: Sequence[Any], index: int) -> Any:
             return values[index] if 0 <= index < len(values) else None
 
         number_format = self.num_formats.get(xf.num_fmt_id)
@@ -381,7 +385,7 @@ class XlsbStyleTable(XlsxStyleTable):
     def to_bytes(self) -> bytes:
         raise UnsupportedFeatureError("an XLSB style sheet is saved with to_bin()")
 
-    def dxf_id(self, dxf) -> int:
+    def dxf_id(self, dxf: DifferentialStyle) -> int:
         """The index of a conditional format's differential style; a style
         the file does not hold yet is added once."""
         from ._xlsb_cf import dxf_payload

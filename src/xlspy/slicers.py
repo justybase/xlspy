@@ -14,6 +14,7 @@ Only table slicers are written; pivot slicers and timelines are not supported.
 """
 
 from __future__ import annotations
+from typing import Any
 
 from dataclasses import dataclass
 import re
@@ -53,7 +54,7 @@ class Slicer:
     name: str | None = None
     columns: int = 1
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         for field_name in ("table", "column"):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value:
@@ -86,7 +87,7 @@ class Slicer:
         return "Slicer_" + re.sub(r"\W", "_", self.column)
 
 
-def normalize_slicers(slicers, tables, used_names: set[str], used_caches: set[str],
+def normalize_slicers(slicers: Any, tables: Any, used_names: set[str], used_caches: set[str],
                       used_targets: set[tuple[str, str]]) -> list[Slicer]:
     """Validate slicers against this sheet's tables and the names already in the workbook.
 

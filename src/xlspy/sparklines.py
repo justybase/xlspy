@@ -14,6 +14,7 @@ from the sheet the group is written to.
 """
 
 from __future__ import annotations
+from typing import Any
 
 from dataclasses import dataclass
 import re
@@ -73,7 +74,7 @@ class SparklineGroup:
     axis_min: float | str | None = None
     axis_max: float | str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.kind not in _KIND_TYPES:
             raise ValueError(f"sparkline kind must be one of {sorted(_KIND_TYPES)}, got {self.kind!r}")
         if self.empty_cells not in _EMPTY_CELLS:
@@ -131,7 +132,7 @@ def _expand(group: SparklineGroup, sheet_name: str) -> list[tuple[str, str]]:
     )
 
 
-def normalize_sparklines(sparklines) -> list[SparklineGroup]:
+def normalize_sparklines(sparklines: Any) -> list[SparklineGroup]:
     """Validate the groups, including their location and data shapes, before any row is written."""
     if not sparklines:
         return []

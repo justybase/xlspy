@@ -35,7 +35,7 @@ class Hyperlink:
     text: str | None = None
     tooltip: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.target, str) or not self.target:
             raise TypeError("hyperlink target must be a non-empty string")
         if len(self.target) > MAX_TARGET_LENGTH:

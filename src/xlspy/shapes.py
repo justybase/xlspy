@@ -7,6 +7,7 @@ the value shown until Excel recalculates, so give the formatted value there.
 """
 
 from __future__ import annotations
+from typing import Any
 
 from dataclasses import dataclass
 import re
@@ -57,7 +58,7 @@ class Shape:
     link_cell: str | None = None
     name: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.anchor, str):
             raise TypeError("shape anchor must be an A1 cell such as 'B2'")
         first_col, first_row, last_col, last_row = parse_cell_range(self.anchor)
@@ -96,7 +97,7 @@ class Shape:
             check_xml_text(self.name, "shape name")
 
 
-def normalize_shapes(shapes) -> list[Shape]:
+def normalize_shapes(shapes: Any) -> list[Shape]:
     """Validate the shapes of one sheet; raises before any part is written."""
     if not shapes:
         return []

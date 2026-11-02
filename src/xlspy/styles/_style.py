@@ -36,7 +36,7 @@ class Style:
     alignment: Alignment | None = None
     protection: Protection | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         fill = self.fill
         if fill is not None:
             if type(fill).__name__ == "GradientFill" and not isinstance(
@@ -98,7 +98,7 @@ class DifferentialStyle:
     alignment: Alignment | None = None
     protection: Protection | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.font is not None and not isinstance(self.font, Font):
             raise TypeError("font must be a Font or None")
         if self.fill is not None:

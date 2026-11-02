@@ -28,7 +28,7 @@ def rename_sheet_references(formula: str, old: str, new: str) -> str:
     """
     folded = old.casefold()
 
-    def replace(match):
+    def replace(match: re.Match[str]) -> str:
         if match.group(1) is not None:
             return match.group(0)
         prefix = match.group(2)

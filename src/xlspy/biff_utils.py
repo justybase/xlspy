@@ -78,7 +78,7 @@ def iter_records(data: bytes) -> Iterator[Biff12Record]:
         offset = data_end
 
 
-def iter_record_payloads(data: bytes):
+def iter_record_payloads(data: bytes) -> Iterator[tuple[int, bytes]]:
     """Yield ``(record_id, payload)`` for every BIFF12 record in a byte buffer.
 
     The same records and errors as ``iter_records``, without the per-record
@@ -138,7 +138,7 @@ def _read_vlq_stream(stream: BinaryIO, offset: int) -> tuple[int | None, int]:
             raise ValueError("Truncated BIFF12 variable-length integer")
 
 
-def iter_records_stream(stream: BinaryIO):
+def iter_records_stream(stream: BinaryIO) -> Iterator[tuple[Biff12Record, bytes]]:
     """Yield BIFF12 records from a seekable binary stream.
 
     The record payload is yielded as the second item.  Only one record is

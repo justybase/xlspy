@@ -7,7 +7,7 @@ writer's own encoder; the sheet lists its parts in ``BrtBeginListParts``.
 from __future__ import annotations
 
 import struct
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from .._xlsb_metadata import read_wide, replace_records, wide_string
 from ..biff_utils import build_record, iter_record_payloads
@@ -17,13 +17,17 @@ from .._xlsx_edit import _bytes
 from ._objects import _Package, _as_excel_table, _overlaps, _rels_path, pending_objects
 from ._xlsb_sheet_meta import LIST_PART, read_table_part
 
+if TYPE_CHECKING:
+    from ..xlsb_updater import XlsbUpdater
+    from ._worksheet import Worksheet
+
 BEGIN_LIST_PARTS = 0x294
 END_LIST_PARTS = 0x296
 _TABLE_TYPE = "application/vnd.ms-excel.table"
 _AFTER_LIST_PARTS = (0x25, 0x82)
 
 
-def _header_row(sheet, table) -> list:
+def _header_row(sheet: Worksheet, table: Any) -> list:
     """The values of the table's header row, indexed by column."""
     from ..refs import parse_cell_range
 
@@ -35,7 +39,7 @@ def _header_row(sheet, table) -> list:
     return row
 
 
-def add_tables(updater, sheet) -> None:
+def add_tables(updater: XlsbUpdater, sheet: Worksheet) -> None:
     added = pending_objects(sheet)["tables"]
     if not added:
         return

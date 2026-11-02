@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .exceptions import UnsupportedFeatureError
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 import datetime
 from decimal import Decimal
 import math
@@ -62,6 +62,9 @@ class XlsbEditMixin(XlsxEditMixin):
     _shared_strings_data: bytes | None
 
     if TYPE_CHECKING:
+        from .data_validation import DataValidation
+        from .hyperlinks import Hyperlink
+
         # Provided by XlsbUpdater; the attributes it shares with XlsxEditMixin are
         # declared there.
         _shared_strings_loaded: bool
@@ -203,7 +206,7 @@ class XlsbEditMixin(XlsxEditMixin):
         data = replace_records(data, {SHEET_PROTECTION, SHEET_PROTECTION_ISO}, sheet_protection_bin(protection), before=(0xA1, 0xB1, 0x1CD, 0x1EE, 0x1DC, 0x226, 0x227, 0x294, 0x82))
         self._apply_parts({path: data})
 
-    def set_merged_cells(self, sheet_name: str, ranges) -> None:
+    def set_merged_cells(self, sheet_name: str, ranges: Iterable[str]) -> None:
         """Replace the sheet's merged ranges with ``ranges`` (A1 range strings)."""
         from .writer import XlsbWriter
 
@@ -220,7 +223,8 @@ class XlsbEditMixin(XlsxEditMixin):
             return
         self._apply_parts({path: replace_records(data, _MERGE_RECORDS, block, before=_AFTER_MERGES)})
 
-    def set_hyperlinks(self, sheet_name: str, links) -> None:
+    def set_hyperlinks(self, sheet_name: str,  # type: ignore[override]  # XLSB replaces every link
+                       links: Mapping[str, Hyperlink]) -> None:
         """Replace all of the sheet's hyperlinks with ``links`` ({cell: Hyperlink}).
 
         External targets reuse the sheet's hyperlink relationships, new ones get
@@ -282,7 +286,7 @@ class XlsbEditMixin(XlsxEditMixin):
             )
         self._apply_parts(parts)
 
-    def set_data_validations(self, sheet_name: str, rules) -> None:
+    def set_data_validations(self, sheet_name: str, rules: Sequence[DataValidation]) -> None:
         """Replace the sheet's data validation rules with ``rules``."""
         from ._xlsb_validation import BRT_BEGIN_DVALS, BRT_DVAL, BRT_END_DVALS, validations_bin
         from .data_validation import DataValidation
@@ -303,7 +307,9 @@ class XlsbEditMixin(XlsxEditMixin):
             'xl/workbook.bin': context.write_workbook(original_workbook),
         })
 
-    def set_conditional_formats(self, sheet_name: str, formats, dxf_id, links=None) -> None:
+    def set_conditional_formats(self, sheet_name: str, formats: Iterable[tuple[str, bool | None, list[Any]]],
+                                dxf_id: Callable[[Any], int],
+                                links: Mapping[int, bytes] | None = None) -> None:
         """Replace the sheet's conditional formats with ``formats``, an
         iterable of ``(sqref, pivot, rules)``; ``dxf_id(dxf)`` returns the
         index of a rule's differential style in the style sheet. ``links`` maps

@@ -6,7 +6,7 @@ import copy
 import zipfile
 from dataclasses import replace
 import datetime as _datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from ..formulas import Formula
 from .._metadata import DefinedName
 from ..refs import check_sheet_name
@@ -19,6 +19,9 @@ from ._coords import MultiCellRange
 from ._properties import BookView, CalcProperties, CustomPropertyList, DefinedNameList, DocumentProperties, WorkbookSecurity
 from ._worksheet import Chartsheet, Worksheet, WriteOnlyWorksheet
 
+if TYPE_CHECKING:
+    from .._output import WriteTarget
+
 
 class Workbook:
     # Set by the loaders and the XLSB saver; a workbook built in memory has none of them.
@@ -26,7 +29,7 @@ class Workbook:
     _xlsb_styles_path: Any
     _loaded_defined_names: Any
 
-    def __init__(self, write_only: bool = False, iso_dates: bool = False):
+    def __init__(self, write_only: bool = False, iso_dates: bool = False) -> None:
         self.write_only = bool(write_only)
         self.iso_dates = bool(iso_dates)
         self._sheets: list[Worksheet] = []
@@ -59,14 +62,14 @@ class Workbook:
         if not self.write_only:
             self.create_sheet("Sheet")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Workbook {self.sheetnames!r}>"
 
     @property
     def sheetnames(self) -> list[str]:
         return [sheet.title for sheet in self._sheets]
 
-    def _check_title(self, title: str, sheet=None) -> None:
+    def _check_title(self, title: str, sheet: Worksheet | Chartsheet | None = None) -> None:
         """Raise unless ``title`` can name ``sheet`` (default: a new sheet).
 
         Excel's naming rules apply, and no other worksheet or chartsheet may
@@ -83,7 +86,7 @@ class Workbook:
         return self._read_only
 
     @read_only.setter
-    def read_only(self, value: bool):
+    def read_only(self, value: bool) -> None:
         self._read_only = bool(value)
 
     @property
@@ -101,7 +104,7 @@ class Workbook:
         return self._sheets[self._active_index]
 
     @active.setter
-    def active(self, value):
+    def active(self, value: int | Worksheet) -> None:
         if isinstance(value, int) and not isinstance(value, bool):
             self._active_index = value
         elif value in self._sheets:
@@ -109,7 +112,7 @@ class Workbook:
         else:
             raise ValueError("active must be a sheet index or Worksheet")
 
-    def __getitem__(self, key) -> Worksheet:
+    def __getitem__(self, key: int | str) -> Worksheet:
         if isinstance(key, int) and not isinstance(key, bool):
             return self._sheets[key]
         for sheet in self._sheets:
@@ -177,7 +180,7 @@ class Workbook:
         if active is not None:
             self._active_index = self._sheets.index(active)
 
-    def remove(self, worksheet: Worksheet):
+    def remove(self, worksheet: Worksheet) -> None:
         if worksheet not in self._sheets:
             raise ValueError("worksheet is not part of this workbook")
         self._sheets.remove(worksheet)
@@ -226,12 +229,12 @@ class Workbook:
         return self._properties
 
     @properties.setter
-    def properties(self, value: DocumentProperties):
+    def properties(self, value: DocumentProperties) -> None:
         if not isinstance(value, DocumentProperties):
             raise TypeError("properties must be DocumentProperties")
         self._properties = value
 
-    def add_named_style(self, style) -> None:
+    def add_named_style(self, style: NamedStyle) -> None:
         if not isinstance(style, NamedStyle):
             raise TypeError("style must be a NamedStyle")
         self._styles.add_named_style(style)
@@ -244,14 +247,14 @@ class Workbook:
             self._defined_names = DefinedNameList(self, self._defined_names)
         return self._defined_names
 
-    def _rename_sheet(self, sheet: Worksheet, title: str):
+    def _rename_sheet(self, sheet: Worksheet, title: str) -> None:
         """Point formulas, validations, conditional formats, internal links and
         defined names at the new title, as Excel does (loaded charts: on save)."""
         from ..formula.sheets import rename_sheet_references
 
         old = sheet.title
 
-        def renamed(text):
+        def renamed(text: Any) -> Any:
             if not isinstance(text, str) or "!" not in text:
                 return text
             return rename_sheet_references(text, old, title)
@@ -296,13 +299,13 @@ class Workbook:
         if self._loaded:
             self._mark_loaded = True
 
-    def save(self, filename):
+    def save(self, filename: WriteTarget) -> None:
         if self._read_only:
             raise ValueError("a read-only workbook cannot be saved")
         from ._writer import save_workbook
         save_workbook(self, filename)
 
-    def close(self):
+    def close(self) -> None:
         if self._updater is not None:
             self._updater.close()
             self._updater = None

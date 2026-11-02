@@ -53,7 +53,7 @@ _RK_INT_UPPER = 536870911
 class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
     """Replace the data region of sheets in an existing XLSB file."""
 
-    def __init__(self, path: str | os.PathLike[str]):
+    def __init__(self, path: str | os.PathLike[str]) -> None:
         self._package = ZipPackage(path)
         if self._package.has("xl/workbook.xml"):
             raise ValueError("The input is XLSX; use XlsxUpdater")
@@ -876,7 +876,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
 
 
 class _RowsRegion:
-    def __init__(self, rows_start: int, rows_end: int, auto_filter_ranges: list[int]):
+    def __init__(self, rows_start: int, rows_end: int, auto_filter_ranges: list[int]) -> None:
         self.rows_start = rows_start
         self.rows_end = rows_end
         self.auto_filter_ranges = auto_filter_ranges

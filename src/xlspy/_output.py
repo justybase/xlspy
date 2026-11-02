@@ -22,10 +22,14 @@ import secrets
 import shutil
 import tempfile
 import zipfile
-from typing import TYPE_CHECKING, Any
+from types import TracebackType
+from typing import IO, TYPE_CHECKING, Any, Literal, Self, TypeAlias
 
 from . import _zip_threads
 from ._metadata import WorkbookProtection
+
+# Where a writer saves: a path, or a binary file object it writes the finished package to.
+WriteTarget: TypeAlias = "str | os.PathLike[str] | IO[bytes]"
 
 DEFAULT_STAGING_BYTES = 8 << 20
 _COPY_CHUNK = 1 << 20
@@ -185,7 +189,7 @@ class StagedWriter:
     def _staging_bytes(self):
         """In-memory size of the staging spool for file-object targets."""
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         if self._zf is None:
             output = StagedOutput(self._file, self._staging_bytes())
             try:
@@ -197,7 +201,8 @@ class StagedWriter:
             self._output = output
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None,
+                 exc_tb: TracebackType | None) -> Literal[False]:
         publish = exc_type is None
         try:
             if publish and self._zf is not None and not self._saved:
@@ -219,7 +224,7 @@ class StagedWriter:
         if self._saved:
             raise RuntimeError("the workbook was already saved")
 
-    def save(self):
+    def save(self) -> None:
         """Write the workbook parts. The file is published when the writer closes."""
         self._require_writable()
         try:
@@ -229,7 +234,7 @@ class StagedWriter:
             raise
         self._saved = True
 
-    def close(self):
+    def close(self) -> None:
         """Close the writer, publishing the workbook if ``save()`` succeeded."""
         self._finish(publish=True)
 

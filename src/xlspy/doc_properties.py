@@ -7,11 +7,12 @@ properties, ``docProps/custom.xml``. The parts are written only after
 """
 
 from __future__ import annotations
+from typing import Any
 
 import datetime as _datetime
 import math
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape
 
 if TYPE_CHECKING:
@@ -44,7 +45,7 @@ _APP_FIELDS = {"manager": "Manager", "company": "Company"}
 _MAX_CUSTOM_NAME = 255
 
 
-def _check_doc_text(name: str, value) -> str:
+def _check_doc_text(name: str, value: Any) -> str:
     if not isinstance(value, str):
         raise TypeError(f"{name} must be a str")
     if _NOT_XML.search(value):
@@ -61,7 +62,7 @@ def _utc(value: _datetime.datetime, name: str) -> str:
     return value.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _custom_value(name: str, value) -> str:
+def _custom_value(name: str, value: Any) -> str:
     if isinstance(value, bool):
         return f"<vt:bool>{'true' if value else 'false'}</vt:bool>"
     if isinstance(value, int):
