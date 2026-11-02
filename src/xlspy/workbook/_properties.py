@@ -6,8 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 import datetime as _datetime
 from ..printing import PageMargins as PublicPageMargins
-from .._metadata import DefinedName
-from .._metadata import SheetProtection as PublicSheetProtection
+from .._metadata import DefinedName, SheetProtection as PublicSheetProtection, password_hash
 from ..styles import (
     Color,
 )
@@ -385,14 +384,12 @@ class WorksheetProtection:
     def __setattr__(self, name, value):
         # As in openpyxl, a password set directly is stored as its legacy hash.
         if name == "password" and value is not None:
-            from .._metadata import password_hash
 
             value = password_hash(value)
         object.__setattr__(self, name, value)
 
     def set_password(self, value: str | None = "", already_hashed: bool = False) -> None:
         if value is not None and not already_hashed:
-            from .._metadata import password_hash
 
             value = password_hash(value)
         object.__setattr__(self, "password", value)

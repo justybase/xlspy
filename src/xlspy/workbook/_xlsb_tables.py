@@ -17,6 +17,7 @@ from ..writer import XlsbWriter
 from .._xlsx_edit import _bytes
 from ._objects import _Package, _as_excel_table, _overlaps, _rels_path, pending_objects
 from ._xlsb_sheet_meta import LIST_PART, read_table_part
+from ..refs import parse_cell_range
 
 if TYPE_CHECKING:
     from ..xlsb_updater import XlsbUpdater
@@ -30,7 +31,6 @@ _AFTER_LIST_PARTS = (0x25, 0x82)
 
 def _header_row(sheet: Worksheet, table: Any) -> list:
     """The values of the table's header row, indexed by column."""
-    from ..refs import parse_cell_range
 
     first_col, first_row, last_col, _ = parse_cell_range(table.ref)
     row: list = [None] * (last_col + 1)

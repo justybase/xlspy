@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
+from ..formats import _unwrap_cell
 from ..hyperlinks import Hyperlink
 from ..refs import column_label, parse_cell_range
 from ._attrs import _TABLE_NAME_RE, _is_reference_like
@@ -127,7 +128,6 @@ def capture_table_headers(rows, tables, store: dict):
     for row_idx, row in enumerate(rows):
         header_tables = by_row.get(row_idx)
         if header_tables is not None:
-            from ..formats import _unwrap_cell  # formats imports this module
 
             # A (value, format) or (value, Style) header is its value.
             cells = [_unwrap_cell(cell) for cell in row]

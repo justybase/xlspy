@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from .._metadata import CT
 from ._objects import _Package
+from ._chartsheets import _set_rels
 
 if TYPE_CHECKING:
     from ..xlsx_updater import XlsxUpdater
@@ -43,7 +44,6 @@ def set_package_kind(updater: XlsxUpdater, extension: str,
         rid = package.add_rel(rels, "xl/workbook.xml", "vbaProject", _VBA_PART)
         # add_rel builds officeDocument relationship types; the VBA one is Microsoft's.
         next(node for node in rels if node.get("Id") == rid).set("Type", _VBA_REL)
-        from ._chartsheets import _set_rels
 
         _set_rels(package, "xl/workbook.xml", rels)
     package.commit()

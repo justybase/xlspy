@@ -11,6 +11,7 @@ from ._xlsb_style_records import _BRT_FILL as _BRT_FILL
 from ._xlsb_style_records import _BRT_FMT as _BRT_FMT
 from ._xlsb_style_records import _BRT_FONT as _BRT_FONT
 from ._xlsb_style_records import _BRT_XF as _BRT_XF
+from ._xlsb_metadata import wide_string
 
 
 _REL_PIVOT_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable"
@@ -47,7 +48,6 @@ def _hlink_payload(row: int, col: int, link: Hyperlink, rid: str | None) -> byte
     and display text as wide strings ('' when absent). The layout matches a
     file saved by Excel: an external link names its relationship and displays
     its URL; an internal link has no relationship and repeats its location."""
-    from ._xlsb_metadata import wide_string
     if link.is_internal:
         relationship, location, display = "", link.location, link.location
     else:

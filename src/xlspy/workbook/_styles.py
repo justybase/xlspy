@@ -14,7 +14,7 @@ from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
-from .._metadata import MAIN, local_name as _local, qname
+from .._metadata import MAIN, local_name as _local, qname, serialize_like
 from ..styles.numbers import BUILTIN_FORMATS as _BUILTIN_FORMATS
 from ..styles import (
     Alignment,
@@ -40,6 +40,7 @@ from ..styles import (
     split_style,
 )
 from ..xlsx_writer import _alignment_xml, _format_number, _protection_xml
+import copy
 
 # ECMA-376 / openpyxl's built-in number formats.  Only the codes that are
 # useful to callers are listed; unknown built-ins fall back to "General".
@@ -47,9 +48,6 @@ from ..xlsx_writer import _alignment_xml, _format_number, _protection_xml
 # It used to be a second, shorter copy here that lacked ids 41-44 (accounting
 # formats), so a loaded cell with one read as "General" and lost the format on save.
 BUILTIN_NUM_FORMATS: dict[int, str] = dict(_BUILTIN_FORMATS)
-
-
-
 
 
 def _flag(node: ET.Element | None, name: str = "val") -> bool | None:
@@ -977,7 +975,6 @@ class XlsxStyleTable:
         source = getattr(self, "_source", None)
         if source is not None:
             # Keep Excel's prefixes: mc:Ignorable names them.
-            from .._metadata import serialize_like
             return serialize_like(root, source)
         ET.register_namespace("", MAIN)
         return cast(bytes, ET.tostring(root, encoding="utf-8", xml_declaration=True))
@@ -1032,7 +1029,6 @@ class XlsxStyleTable:
         return self.dxfs[index]
 
     def clone(self) -> XlsxStyleTable:
-        import copy
         clone = XlsxStyleTable()
         clone._root = copy.deepcopy(self._root)
         clone.fonts = list(self.fonts)

@@ -7,12 +7,11 @@ import zipfile
 
 from ._untrusted import SafeZipFile, check_column_span
 from enum import IntEnum
-from typing import Any
+from typing import Any, TYPE_CHECKING, Literal
 from collections.abc import Generator
 from types import TracebackType
-from typing import TYPE_CHECKING, Literal
 from xml.parsers.expat import ParserCreate
-from ._safe_xml import harden_expat
+from ._safe_xml import harden_expat, fromstring as safe_fromstring
 
 from ._errors import CellError
 from .biff_reader import BiffReader, CellType
@@ -22,7 +21,10 @@ from ._accel import HAVE_NATIVE, read_xlsb_worksheet as _accel_read_xlsb_workshe
 from ._accel import read_xlsb_shared_strings as _accel_read_sst
 from ._accel import read_xlsx_shared_strings as _accel_read_xlsx_sst
 from ._text import xstring_unescape
-from ._xlsb_formulas import ERRORS as _XLSB_ERRORS
+from ._xlsb_formulas import ERRORS as _XLSB_ERRORS, FormulaContext
+from ._xlsb_metadata import parse_comments
+from .comments import find_comment_parts, read_comments
+from ._metadata import read_defined_names, MAIN, namespace_of, relationship_namespace, relationship_kind
 
 if TYPE_CHECKING:
     from ._metadata import DefinedName
@@ -285,13 +287,10 @@ class ExcelReader:
     def get_comments(self, sheet_name: str) -> dict[str, Comment]:
         """Return classic note text and authors, without reading worksheet rows."""
         if self._is_xlsb:
-            from ._xlsb_metadata import parse_comments
-            from .comments import find_comment_parts
             rid = self._worksheet_name_to_id[sheet_name]
             path = self._resolve_path(self._worksheet_id_to_location[rid])
             _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
             return parse_comments(self._zip().read(parts['comments'][0]))[0] if 'comments' in parts else {}
-        from .comments import find_comment_parts, read_comments
         rid = self._worksheet_name_to_id[sheet_name]
         path = self._resolve_path(self._worksheet_id_to_location[rid])
         _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
@@ -300,9 +299,7 @@ class ExcelReader:
     def get_defined_names(self) -> list[DefinedName]:
         """Return global and worksheet-local user names (not built-in names)."""
         if self._is_xlsb:
-            from ._xlsb_formulas import FormulaContext
             return FormulaContext(self.get_sheet_names(), self._zip().read('xl/workbook.bin'), self.read_part).defined_names()
-        from ._metadata import read_defined_names
         return read_defined_names(self._zip().read("xl/workbook.xml"), self.get_sheet_names())
 
     def _open_xlsx(self, path: str) -> None:
@@ -343,8 +340,6 @@ class ExcelReader:
             self._fill_bin_shared_strings()
 
     def _parse_workbook_xml(self, content: str) -> None:
-        from ._safe_xml import fromstring as safe_fromstring
-        from ._metadata import MAIN, namespace_of, relationship_namespace
         root = safe_fromstring(content)
         main = namespace_of(root.tag) or MAIN  # Transitional or Strict
         rel = relationship_namespace(main)
@@ -375,7 +370,6 @@ class ExcelReader:
             rel_type = attrs.get('Type', '')
             r_id = attrs.get('Id', '')
 
-            from ._metadata import relationship_kind
             kind = relationship_kind(rel_type)
             if kind == 'worksheet':
                 self._worksheet_id_to_location[r_id] = target

@@ -21,17 +21,21 @@ from ._xlsb_metadata import (
     _XLSB_COMMENTS_TYPE, LEGACY_DRAWING, SHEET_PROTECTION, SHEET_PROTECTION_ISO,
     BOOK_PROTECTION, BOOK_PROTECTION_ISO, records, replace_records, parse_comments,
     comments_bin, wide_string, read_wide, sheet_protection_bin,
-    workbook_protection_bin, check_merged_refs,
+    workbook_protection_bin, check_merged_refs, request_recalculation,
 )
 from ._xlsb_formulas import FormulaContext, formula_cell
-from ._xlsx_edit import XlsxEditMixin
+from ._xlsx_edit import XlsxEditMixin, _HYPERLINK_TYPE as _HYPERLINK_TYPE
 from .biff_utils import build_record
 from .comments import Comment, V, VML_TYPE, comment_part_targets, find_comment_parts, normalize_comments, vml_xml, rels_path, resolve_part
 from .excel_dates import datetime_to_serial
 from .formulas import Formula
 from .refs import parse_cell_range
 from .updater_utils import unwrap_cell
-from ._xlsx_edit import _HYPERLINK_TYPE as _HYPERLINK_TYPE
+from .writer import XlsbWriter, _hlink_payload
+from .hyperlinks import Hyperlink
+from ._xlsb_validation import BRT_BEGIN_DVALS, BRT_DVAL, BRT_END_DVALS, validations_bin
+from .data_validation import DataValidation
+from ._xlsb_cf import conditional_formats_bin, insert_extension, without_conditional_formats
 
 
 _MERGE_RECORDS = frozenset({0xB0, 0xB1, 0xB2})
@@ -39,22 +43,6 @@ _MERGE_RECORDS = frozenset({0xB0, 0xB1, 0xB2})
 # order ([MS-XLSB] 2.1.7.62): a new block is inserted before the first one found.
 _BRT_AFTER_HYPERLINKS = (0x1DD, 0x1DC, 0x1DE, 0x1DF, 0x188, 0x18A, 0x226, 0x227, 0x294, 0x82)
 _AFTER_MERGES = (0x1CD, 0x23D, 0x1EE) + _BRT_AFTER_HYPERLINKS
-
-
-def request_recalculation(data):
-    chunks = []
-    for record, payload in records(data):
-        if record.record_id == 0x9D:
-            if len(payload) != 26:
-                raise ValueError("invalid XLSB calculation properties")
-            value = bytearray(payload)
-            struct.pack_into('<II', value, 0, 0, 1)
-            flags = struct.unpack_from('<H', value, 24)[0]
-            struct.pack_into('<H', value, 24, flags | 1 | 0x10)
-            chunks.append(build_record(0x9D, value))
-        else:
-            chunks.append(data[record.header_start:record.data_end])
-    return b''.join(chunks)
 
 
 class XlsbEditMixin(XlsxEditMixin):
@@ -208,7 +196,6 @@ class XlsbEditMixin(XlsxEditMixin):
 
     def set_merged_cells(self, sheet_name: str, ranges: Iterable[str]) -> None:
         """Replace the sheet's merged ranges with ``ranges`` (A1 range strings)."""
-        from .writer import XlsbWriter
 
         path, data = self._sheet_bin(sheet_name)
         refs = XlsbWriter._normalize_merges(list(ranges)) or []
@@ -230,8 +217,6 @@ class XlsbEditMixin(XlsxEditMixin):
         External targets reuse the sheet's hyperlink relationships, new ones get
         fresh ids and relationships no longer used are dropped.
         """
-        from .hyperlinks import Hyperlink
-        from .writer import _hlink_payload
 
         path, data = self._sheet_bin(sheet_name)
         entries = []
@@ -288,8 +273,6 @@ class XlsbEditMixin(XlsxEditMixin):
 
     def set_data_validations(self, sheet_name: str, rules: Sequence[DataValidation]) -> None:
         """Replace the sheet's data validation rules with ``rules``."""
-        from ._xlsb_validation import BRT_BEGIN_DVALS, BRT_DVAL, BRT_END_DVALS, validations_bin
-        from .data_validation import DataValidation
 
         rules = list(rules)
         for rule in rules:
@@ -315,7 +298,6 @@ class XlsbEditMixin(XlsxEditMixin):
         index of a rule's differential style in the style sheet. ``links`` maps
         ``id(rule)`` to the ``BrtCFRuleExt`` payload of a rule whose Excel 2010
         extension is kept as it is in the file."""
-        from ._xlsb_cf import conditional_formats_bin, insert_extension, without_conditional_formats
 
         path, data = self._sheet_bin(sheet_name)
         original_workbook = self._package.get('xl/workbook.bin')

@@ -9,7 +9,15 @@ from __future__ import annotations
 import re
 from xml.sax.saxutils import escape, unescape
 
-from .charts import LEGEND_POSITIONS
+
+# Legend positions and their DrawingML spelling (also exported by xlspy.charts).
+LEGEND_POSITIONS = {
+    "right": "r",
+    "left": "l",
+    "top": "t",
+    "bottom": "b",
+    "top_right": "tr",
+}
 
 _CHART_SPACE_ROOT = re.compile(r"<(?:(\w+):)?chartSpace\b")
 _AXES = ("catAx", "valAx", "dateAx", "serAx")

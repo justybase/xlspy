@@ -10,8 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from dataclasses import dataclass, fields
 
-from ..printing import PageMargins as _WriterMargins
-from ..printing import PrintSettings
+from ..printing import PageMargins as _WriterMargins, PrintSettings
 
 if TYPE_CHECKING:
     from ._worksheet import Worksheet

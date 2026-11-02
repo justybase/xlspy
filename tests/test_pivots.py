@@ -12,7 +12,7 @@ import openpyxl
 import pytest
 
 from xlspy import ExcelTable, PivotTable, PivotValue, XlsxWriter
-from xlspy.workbook._loaded import sheet_has_pivots
+from xlspy.updater_utils import sheet_has_pivots
 
 ROWS = [
     ["Region", "Product", "Quarter", "Sales", "Units"],

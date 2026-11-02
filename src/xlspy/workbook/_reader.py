@@ -72,6 +72,11 @@ from ._loaded import _meta_signature, _workbook_meta_signature
 from ._objects import mark_objects_saved, note_unread
 from ._print import print_settings_for
 from ._styles import XlsxStyleTable, _read_color
+from ..rich_text import rich_text_from_si, parse_rich_shared_strings
+from ._model import CustomProperty, CustomPropertyList
+from ._model import Pane
+from ..chart_reader import read_drawing, read_chartsheet
+from ._props import remember as _remember_properties
 
 _NS_DC = "http://purl.org/dc/elements/1.1/"
 _NS_DCTERMS = "http://purl.org/dc/terms/"
@@ -168,7 +173,6 @@ def _read_cell_value(cell: ET.Element, style, *, date_1904: bool, shared_strings
         if inline is None:
             return None
         if rich_text:
-            from ..rich_text import rich_text_from_si
 
             return rich_text_from_si(inline)
         return xstring_unescape("".join(node.text or "" for node in inline.iter(qname("t"))))
@@ -289,7 +293,6 @@ _NS_CUSTOM = "http://schemas.openxmlformats.org/officeDocument/2006/custom-prope
 
 
 def _read_custom_properties(package):
-    from ._model import CustomProperty, CustomPropertyList
 
     result = CustomPropertyList()
     if not package.has("docProps/custom.xml"):
@@ -949,7 +952,6 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                     if node.get(name) is not None:
                         setattr(view, name, int(node.get(name)))
             elif tag == "pane":
-                from ._model import Pane
 
                 pane = Pane(
                     xSplit=float(node.get("xSplit")) if node.get("xSplit") else None,
@@ -1074,7 +1076,6 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
     # Hyperlinks, table parts and drawings need the worksheet relationships.
     rels = _read_sheet_relationships(package, sheet_path)
     _read_table_parts(sheet, package, sheet_path, rels, table_parts)
-    from ..chart_reader import read_drawing
 
     for rel_target, _mode, kind in rels.values():
         if kind.endswith("/drawing"):
@@ -1397,7 +1398,6 @@ def load_workbook(filename: str | os.PathLike[str], *, read_only: bool = False, 
             # As openpyxl: the source package, from which a new workbook
             # saved as .xlsm takes its VBA project. A loaded workbook keeps
             # its own whether or not this is set.
-            import io
 
             with open(path, "rb") as source:
                 workbook.vba_archive = SafeZipFile(io.BytesIO(source.read()))
@@ -1478,7 +1478,6 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
     shared_strings: list = []
     if package.has("xl/sharedStrings.xml"):
         if rich_text:
-            from ..rich_text import parse_rich_shared_strings
 
             shared_strings = parse_rich_shared_strings(package.get("xl/sharedStrings.xml"))
         else:
@@ -1510,7 +1509,6 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
 
     if not workbook._sheets and not chartsheet_entries:
         raise ValueError("No worksheets were found in workbook.xml")
-    from ..chart_reader import read_chartsheet
 
     for index, (name, part, state) in enumerate(chartsheet_entries):
         chartsheet = Chartsheet(workbook, name, index=index)
@@ -1524,7 +1522,6 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
     else:
         workbook._active_index = min(max(active_tab, 0), len(workbook._sheets) - 1)
     workbook._loaded_active_index = workbook._active_index
-    from ._props import remember as _remember_properties
     _remember_properties(workbook)
     try:
         # localSheetId counts every <sheet>, including chartsheets.

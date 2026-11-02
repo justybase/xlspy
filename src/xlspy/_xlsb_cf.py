@@ -12,14 +12,20 @@ from __future__ import annotations
 import struct
 from typing import Any
 
-from ._xlsb_formulas import compile_formula
-from .biff_utils import build_record
-from .refs import parse_cell_range
+from ._xlsb_formulas import compile_formula, decode_formula, read_parsed
+from .biff_utils import build_record, iter_records
+from .refs import parse_cell_range, column_label
 from .styles import (
     CF_BLANK_RULES, CF_TEXT_RULES, CF_TIME_PERIOD_FORMULAS,
     AboveAverageRule, BlanksRule, CellIsRule, DifferentialStyle, DuplicateRule, FormulaRule,
     GradientFill, TextRule, TimePeriodRule, TopBottomRule, _color_key,
 )
+from .styles import Alignment, Border, Font, PatternFill, Protection, Side
+from ._xlsb_validation import _format_sqref as format_sqref
+from ._xlsb_metadata import read_wide
+from .styles import ColorScaleRule, DataBarRule, IconSetRule
+from .styles import FormatObject
+from ._xlsb_style_records import read_brt_color as color_at
 
 BRT_BEGIN_DXFS = 0x1F9
 BRT_END_DXFS = 0x1FA
@@ -267,9 +273,6 @@ def _decoded_text(data: bytes) -> str:
 
 def dxf_from_payload(payload: bytes) -> DifferentialStyle:
     """A ``DifferentialStyle`` from a BrtDXF payload (the XFProp list)."""
-    from ._xlsb_styles import _read_brt_color as color_at
-    from .styles import Alignment, Border, Font, PatternFill, Protection, Side
-
     count = struct.unpack_from("<H", payload, 4)[0]
     offset = 6
     # Keyword arguments for the style constructors below, so the values are mixed.
@@ -332,7 +335,6 @@ def dxf_from_payload(payload: bytes) -> DifferentialStyle:
 
 
 def _read_cf_sqref(payload: bytes, offset: int) -> str:
-    from ._xlsb_validation import _format_sqref as format_sqref
 
     count = struct.unpack_from("<I", payload, offset)[0]
     ranges = [struct.unpack_from("<IIII", payload, offset + 4 + 16 * index) for index in range(count)]
@@ -343,8 +345,6 @@ def cf_rule(sqref: str, payload: bytes, context, style_table):
     """A rule from a BrtBeginCFRule payload with formulas, or None for an
     unknown kind (color scales, data bars and icon sets are read by
     ``read_conditional_formats`` with their sub-records)."""
-    from ._xlsb_formulas import decode_formula, read_parsed
-    from ._xlsb_metadata import read_wide
 
     kind, template, dxf_id, priority, param = struct.unpack_from("<IIiII", payload, 0)
     flags = struct.unpack_from("<H", payload, 28)[0]
@@ -443,7 +443,6 @@ def read_conditional_formats(items, context, style_table, links=None):
 def rule_bin(rule, priority: int, dxf_id: int, context, letters) -> bytes:
     """BrtBeginCFRule with the rule's formulas (or its color scale, data bar
     or icon set records), and BrtEndCFRule."""
-    from .styles import ColorScaleRule, DataBarRule, IconSetRule
 
     first_col, first_row, _, _ = parse_cell_range(rule.sqref.split()[0])
     if isinstance(rule, (ColorScaleRule, DataBarRule, IconSetRule)):
@@ -541,7 +540,6 @@ def cfvo_bin(kind: str, value, context, origin, gte: bool = False) -> bytes:
 
 
 def _scale_records(rule, context, origin) -> bytes:
-    from .styles import ColorScaleRule, DataBarRule
 
     def threshold(item, default, gte=False):
         if item is None:
@@ -574,8 +572,6 @@ def _scale_records(rule, context, origin) -> bytes:
 
 
 def _read_cfvo(payload: bytes, context, origin):
-    from ._xlsb_formulas import decode_formula, read_parsed
-    from .styles import FormatObject
 
     code, number, _save_gte, _gte, size = struct.unpack_from("<Id3I", payload, 0)
     kind = _CFVO_NAMES[code]
@@ -589,9 +585,6 @@ def _read_cfvo(payload: bytes, context, origin):
 
 def _scale_rule(sqref, kind, priority, stop, parts, context):
     """A color scale, data bar or icon set from its sub-records."""
-    from ._xlsb_styles import _read_brt_color as color_at
-    from .styles import ColorScaleRule, DataBarRule, IconSetRule
-
     first_col, first_row, _, _ = parse_cell_range(sqref.split()[0])
     origin = (first_col, first_row)
     head = None
@@ -636,7 +629,6 @@ _FRT_CF = bytes.fromhex("020e0000")  # the FRT header Excel writes for condition
 
 
 def _letter(index: int) -> str:
-    from .refs import column_label
 
     return column_label(index)
 
@@ -692,7 +684,6 @@ def without_conditional_formats(data: bytes, keep=frozenset()):
     records, unless it belongs to a base rule whose ``BrtCFRuleExt`` payload is
     not in ``keep``: that rule is gone or changed, so its extension would
     describe something else."""
-    from .biff_utils import iter_records
 
     records = list(iter_records(data))
     kept, linked, groups = [], {}, []
@@ -736,7 +727,6 @@ def without_conditional_formats(data: bytes, keep=frozenset()):
 def insert_extension(data: bytes, groups) -> bytes:
     """``data`` with the extension ``groups`` before the trailing alternate
     content block and BrtEndSheet (rows carry the same block, so only the tail counts)."""
-    from .biff_utils import iter_records
 
     block = extension_block(groups)
     if not block:

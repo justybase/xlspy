@@ -21,6 +21,8 @@ from decimal import Decimal
 from ._scalars import numpy_value
 from .formulas import Formula
 from .hyperlinks import Hyperlink
+from .formats import _is_formatted_cell
+from .styles import merge_styles
 
 DEFAULT_WIDTH = 8.43
 MAX_WIDTH = 255.0
@@ -315,8 +317,6 @@ def estimate_column_widths(rows, max_cols: int, styles_at=None, filter_cells=())
     last_col)`` header spans whose cells carry a filter drop-down button.
     Row 1 is bold by default. Widths never go below Excel's default.
     """
-    from .formats import _is_formatted_cell
-    from .styles import merge_styles
 
     widths = [0.0] * max_cols
     cache: dict = {}

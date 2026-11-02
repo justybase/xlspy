@@ -15,12 +15,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any
+from .xlsx_updater import XlsxUpdater
+from .xlsb_updater import XlsbUpdater
 
 if TYPE_CHECKING:
     from ._xlsb_sheets import _Entry
     from .updater_utils import ZipPackage
-    from .xlsb_updater import XlsbUpdater
-    from .xlsx_updater import XlsxUpdater
 
 
 class PackageHandle:
@@ -79,13 +79,11 @@ class PackageHandle:
         return self._xlsb()._rewrite_sheet_list(workbook, entries, parts)
 
     def _xlsx(self) -> XlsxUpdater:
-        from .xlsx_updater import XlsxUpdater
         if not isinstance(self.updater, XlsxUpdater):
             raise TypeError("an XLSX package operation was used on an XLSB workbook")
         return self.updater
 
     def _xlsb(self) -> XlsbUpdater:
-        from .xlsb_updater import XlsbUpdater
         if not isinstance(self.updater, XlsbUpdater):
             raise TypeError("an XLSB package operation was used on an XLSX workbook")
         return self.updater

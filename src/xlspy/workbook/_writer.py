@@ -21,6 +21,10 @@ from ._loaded import save_loaded
 from ._objects import _as_excel_table
 from ._print import print_settings_for
 from ._model import Workbook, Worksheet, WriteOnlyWorksheet
+from ..hyperlinks import Hyperlink
+from ._chartsheets import add_chartsheets, check_chartsheets, pending_chartsheets
+from ._package_kind import set_package_kind
+from ..xlsx_updater import XlsxUpdater
 
 if TYPE_CHECKING:
     from .._output import WriteTarget
@@ -34,7 +38,6 @@ def _value_for_new(cell):
         return Formula(cell._formula)
     link = cell._hyperlink
     if link is not None:
-        from ..hyperlinks import Hyperlink
 
         text = cell._value if isinstance(cell._value, str) else link.text
         return Hyperlink(link.target, text=text, tooltip=link.tooltip)
@@ -213,8 +216,6 @@ def _save_new(workbook: Workbook, filename) -> None:
     extension = ""
     if isinstance(filename, (str, os.PathLike)):
         extension = os.fspath(filename).lower().rsplit(".", 1)[-1]
-    from ._chartsheets import add_chartsheets, check_chartsheets, pending_chartsheets
-    from ._package_kind import set_package_kind
 
     chartsheets = pending_chartsheets(workbook)
     if chartsheets:
@@ -227,7 +228,6 @@ def _save_new(workbook: Workbook, filename) -> None:
         with tempfile.TemporaryDirectory(prefix="xlspy-workbook-") as directory:
             temporary = os.path.join(directory, "workbook.xlsx")
             _write_new(workbook, temporary, XlsxWriter, "xlsx")
-            from ..xlsx_updater import XlsxUpdater
 
             updater = XlsxUpdater(temporary)
             try:

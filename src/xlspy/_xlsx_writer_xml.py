@@ -6,8 +6,7 @@ from dataclasses import dataclass, field
 from .printing import (
     PageMargins,
 )
-from ._xlsb_writer_consts import _REL_PIVOT_CACHE as _REL_PIVOT_CACHE
-from ._xlsb_writer_consts import _REL_PIVOT_TABLE as _REL_PIVOT_TABLE
+from ._xlsb_writer_consts import _REL_PIVOT_CACHE as _REL_PIVOT_CACHE, _REL_PIVOT_TABLE as _REL_PIVOT_TABLE
 
 
 _ATTR_ENTITIES = {'"': "&quot;"}

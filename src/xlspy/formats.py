@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any
 
-from .styles import Style
+from .styles._style import Style  # the module, not the package: styles imports this module
 
 # Formats of date and datetime cells written without one (XLSX and XLSB).
 DEFAULT_DATE_FORMAT = 'yyyy-mm-dd'

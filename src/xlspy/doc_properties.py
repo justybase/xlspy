@@ -7,12 +7,11 @@ properties, ``docProps/custom.xml``. The parts are written only after
 """
 
 from __future__ import annotations
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import datetime as _datetime
 import math
 import re
-from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape
 
 if TYPE_CHECKING:

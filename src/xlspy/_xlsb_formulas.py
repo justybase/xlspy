@@ -23,6 +23,7 @@ from .biff_utils import build_record
 from .excel_dates import datetime_to_serial
 from .formulas import _XLFN_FUNCTIONS, future_function_name
 from .refs import parse_cell_range, column_label, quote_sheet_name
+from ._safe_xml import fromstring as safe_fromstring
 
 NAME, BEGIN_EXTERNALS, END_EXTERNALS, SUP_SELF, EXTERN_SHEET = 0x27, 0x161, 0x162, 0x165, 0x16A
 SUP_BOOK_SRC, SUP_TABS = 0x163, 0x167
@@ -493,7 +494,6 @@ class FormulaContext:
         rels = parts('xl/_rels/workbook.bin.rels')
         targets = {}
         if rels:
-            from ._safe_xml import fromstring as safe_fromstring
 
             targets = {node.get('Id'): node.get('Target') for node in safe_fromstring(rels)}
         for rid in self.external_rids:

@@ -14,6 +14,7 @@ from typing import Any
 from collections.abc import Iterable, Sequence
 from ._updater_base import StyleFallback, _UpdaterBase
 from ._xlsb_edit import XlsbEditMixin
+from ._xlsb_table_part import parse_table_part
 from ._xlsb_sheets import XlsbSheetsMixin
 from .exceptions import UnsupportedFeatureError
 from .formulas import Formula
@@ -83,17 +84,14 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         return [name for name in self._sheets if name in self._chartsheets]
 
     def _read_table_header(self, table_part: bytes) -> TableHeader | None:
-        # Imported here: the workbook package imports the writers, which import this module's peers.
-        from .workbook._xlsb_sheet_meta import read_table_part
-
-        table = read_table_part(table_part)
+        table = parse_table_part(table_part)
         if table is None:
             return None
         return table_header(
-            table.displayName or "",
-            table.ref or "",
-            table.headerRowCount != 0,
-            [column.name or "" for column in table.tableColumns],
+            table.name or "",
+            table.ref,
+            table.header_rows != 0,
+            [column.name or "" for column in table.columns],
         )
 
     def replace_sheet_data(

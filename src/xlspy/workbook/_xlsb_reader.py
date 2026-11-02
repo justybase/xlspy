@@ -17,7 +17,7 @@ from itertools import chain as _chain
 from .._accel import xlsb_load_cells
 from .._errors import CellError
 from .._xlsb_read import cached_cell, formula_groups, formula_text, iter_xlsb_indexed_rows
-from .._xlsb_styles import XlsbStyleTable
+from ._xlsb_styles import XlsbStyleTable
 from .._xlsb_validation import dval_rule
 from ..biff_utils import iter_record_payloads
 from ..comments import rels_path
@@ -26,7 +26,7 @@ from ..hyperlinks import Hyperlink
 from ..reader import ExcelReader, _get_date_num_fmt_ids
 from ..refs import column_label, parse_cell_range
 from ..xlsb_updater import XlsbUpdater
-from ..chart_reader import read_drawing
+from ..chart_reader import read_drawing, read_chartsheet
 from ._objects import note_unread
 from ..updater_utils import resolve_zip_target
 from ._model import CELL_SLOTS, AutoFilter, Cell, DefinedNameList, NamedStyleList, Workbook, Worksheet
@@ -41,6 +41,7 @@ from ._xlsb_sheet_meta import (
     FILTER_RECORDS, LIST_PART, RECORDS as SHEET_RECORDS, ROW_FLAGS, ROW_HEADER,
     apply_sheet_records, read_filter_record, read_table_part, row_header,
 )
+from ._model import Chartsheet
 
 
 _CF_RECORDS = SCALE_RECORDS | {BRT_BEGIN_CONDITIONAL_FORMATTING, BRT_BEGIN_CF_RULE, _CF_RULE_EXT}
@@ -300,8 +301,6 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         active_name = all_names[min(updater.get_active_sheet(), len(all_names) - 1)]
         titles = [sheet.title for sheet in workbook._sheets]
         workbook._active_index = titles.index(active_name) if active_name in titles else 0
-        from ..chart_reader import read_chartsheet
-        from ._model import Chartsheet
 
         for index, name in enumerate(updater.get_chartsheet_names()):
             chartsheet = Chartsheet(workbook, name, index=index)

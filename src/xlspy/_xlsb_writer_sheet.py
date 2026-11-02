@@ -1,9 +1,8 @@
 """XlsbWriter sheet methods: write_sheet, the sheet loop and the dataframe entry point."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING
 from ._sheet_options import XLSB_OPTIONS, SheetOptions, resolve_sheet_options
 from . import chart_parts
 from .styles import (
@@ -34,9 +33,11 @@ from .data_validation import DataValidation, normalize_validations
 from .outline import build_outline
 from ._xlsb_writer_consts import _capture_cells
 from ._xlsb_writer_host import _XlsbWriterHost
+from .comments import normalize_comments
+from ._metadata import SheetProtection
+from ._dataframe_rows import dataframe_to_rows
 
 if TYPE_CHECKING:
-    from ._metadata import SheetProtection
     from .comments import Comment
     from .styles import Color
 
@@ -107,10 +108,8 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         merge_refs = self._normalize_merges(merges)
         comment_specs = {}
         if comments is not None:
-            from .comments import normalize_comments
             comment_specs = normalize_comments(comments, merges=merge_refs)
         if sheet_protection is not None:
-            from ._metadata import SheetProtection
             if not isinstance(sheet_protection, SheetProtection):
                 raise TypeError("sheet_protection must be SheetProtection")
         widths = self._normalize_widths(column_widths, "column_widths")
@@ -324,7 +323,6 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         formats:
             Optional ``{column_name: format_string}`` mapping (see ``xlspy.F``).
         """
-        from .dataframe import dataframe_to_rows
 
         self.write_sheet(
             dataframe_to_rows(df, include_index=include_index, na_rep=na_rep, formats=formats),

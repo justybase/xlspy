@@ -26,7 +26,7 @@ from ._xlsb_formulas import SUP_SELF, FormulaContext, parsed_formula
 from ._xlsb_metadata import read_wide, records, wide_string
 from .biff_utils import build_record
 from .refs import check_sheet_name
-from .updater_utils import renamed_chart_parts
+from .updater_utils import renamed_chart_parts, sheet_has_pivots, sheet_has_slicers
 
 if TYPE_CHECKING:
     from .updater_utils import ZipPackage
@@ -166,7 +166,6 @@ class XlsbSheetsMixin:
             raise KeyError(f"Worksheet not found: {name}")
         if len(self._sheets) == 1:
             raise ValueError("a workbook must keep at least one sheet")
-        from .workbook._loaded import sheet_has_pivots, sheet_has_slicers
 
         # As for XLSX: the slicer caches would be left pointing at a removed table.
         if sheet_has_slicers(self._package, path):

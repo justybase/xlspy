@@ -15,10 +15,13 @@ from .._xlsb_print import (
     BRT_END_COL_BREAKS, BRT_END_ROW_BREAKS, BRT_MARGINS, BRT_PAGE_SETUP,
     BRT_PRINT_OPTIONS, FIT_TO_PAGE_BIT, FIT_TO_PAGE_BYTE,
 )
-from .._xlsb_styles import _read_brt_color
+from .._xlsb_style_records import read_brt_color
 from ..refs import column_label
 from ._model import Break, ColBreak, Pane, RowBreak, Selection
 from ._xlsb_layout import FORMAT_INFO as FORMAT_INFO
+from ._model import FilterColumn
+from .._xlsb_table_part import parse_table_part
+from ._model import AutoFilter, Table, TableColumn, TableStyleInfo
 
 ROW_HEADER = 0x00
 COL_INFO = 0x3C
@@ -83,7 +86,7 @@ def _column_info(sheet, payload: bytes) -> None:
 
 def _read_sheet_properties(sheet, payload: bytes) -> None:
     properties = sheet.sheet_properties
-    color = _read_brt_color(payload, 3)
+    color = read_brt_color(payload, 3)
     if color is not None and not color.auto:
         properties.tabColor = color
     if payload[FIT_TO_PAGE_BYTE] & FIT_TO_PAGE_BIT:
@@ -201,7 +204,6 @@ FILTER_RECORDS = frozenset({0xA3, 0xA5, 0xA7})
 
 def read_filter_record(auto_filter, record_id: int, payload: bytes) -> None:
     """Filter columns with value lists ([MS-XLSB] 2.4.380 ff.); other filters stay in the file."""
-    from ._model import FilterColumn
 
     if auto_filter.ref is None:
         return
@@ -220,57 +222,28 @@ def read_filter_record(auto_filter, record_id: int, payload: bytes) -> None:
 
 
 LIST_PART = 0x295
-_BEGIN_LIST, _BEGIN_LIST_COL, _TABLE_STYLE_CLIENT, _BEGIN_AUTO_FILTER = 0x157, 0x15B, 0x201, 0xA1
-_TOTALS_FUNCTIONS = {
-    1: "average", 2: "count", 3: "countNums", 4: "max", 5: "min",
-    6: "sum", 7: "stdDev", 8: "var", 9: "custom",
-}
-
-
-def _range(r1: int, r2: int, c1: int, c2: int) -> str:
-    return f"{column_label(c1)}{r1 + 1}:{column_label(c2)}{r2 + 1}"
-
-
-def read_table_part(data: bytes):
+def read_table_part(data: bytes) -> Table | None:
     """A ``Table`` from an ``xl/tables/tableN.bin`` part ([MS-XLSB] 2.4.100 BrtBeginList)."""
-    from ..biff_utils import iter_record_payloads
-    from ._model import AutoFilter, Table, TableColumn, TableStyleInfo
-
-    table = None
-    for record_id, payload in iter_record_payloads(data):
-        if record_id == _BEGIN_LIST and table is None:
-            r1, r2, c1, c2, _kind, ident, header, totals, _flags = struct.unpack_from("<9I", payload, 0)
-            # Six dxf ids and the connection id precede the names.
-            name, offset = read_wide(payload, 36 + 24 + 4, nullable=True)
-            _display, offset = read_wide(payload, offset, nullable=True)
-            comment, offset = read_wide(payload, offset, nullable=True)
-            table = Table(
-                id=ident, displayName=name, ref=_range(r1, r2, c1, c2), name=name,
-                comment=comment or None, headerRowCount=header,
-                totalsRowCount=totals or None,
-            )
-        elif table is None:
-            continue
-        elif record_id == _BEGIN_AUTO_FILTER and table.autoFilter is None:
-            table.autoFilter = AutoFilter(_range(*struct.unpack_from("<4I", payload, 0)))
-        elif record_id == _BEGIN_LIST_COL:
-            ident, totals_function = struct.unpack_from("<II", payload, 0)
-            name, offset = read_wide(payload, 24, nullable=True)
-            caption, offset = read_wide(payload, offset, nullable=True)
-            label, offset = read_wide(payload, offset, nullable=True)
-            table.tableColumns.append(TableColumn(
-                id=ident, name=caption or name,
-                totalsRowFunction=_TOTALS_FUNCTIONS.get(totals_function),
-                totalsRowLabel=label or None,
-            ))
-        elif record_id == _TABLE_STYLE_CLIENT:
-            flags = struct.unpack_from("<H", payload, 0)[0]
-            style, _ = read_wide(payload, 2, nullable=True)
-            table.tableStyleInfo = TableStyleInfo(
-                name=style,
-                showFirstColumn=bool(flags & 0x01), showLastColumn=bool(flags & 0x02),
-                showRowStripes=bool(flags & 0x04), showColumnStripes=bool(flags & 0x08),
-            )
+    part = parse_table_part(data)
+    if part is None:
+        return None
+    table = Table(
+        id=part.id, displayName=part.name, ref=part.ref, name=part.name,
+        comment=part.comment, headerRowCount=part.header_rows, totalsRowCount=part.totals_rows,
+    )
+    if part.auto_filter_ref is not None:
+        table.autoFilter = AutoFilter(part.auto_filter_ref)
+    table.tableColumns = [
+        TableColumn(id=column.id, name=column.name, totalsRowFunction=column.totals_function,
+                    totalsRowLabel=column.totals_label)
+        for column in part.columns
+    ]
+    if part.style is not None:
+        table.tableStyleInfo = TableStyleInfo(
+            name=part.style.name,
+            showFirstColumn=part.style.first_column, showLastColumn=part.style.last_column,
+            showRowStripes=part.style.row_stripes, showColumnStripes=part.style.column_stripes,
+        )
     return table
 
 

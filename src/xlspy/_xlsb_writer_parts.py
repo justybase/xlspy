@@ -28,13 +28,15 @@ from .pivots import (
 )
 from ._xlsb_writer_consts import _ACUID_NAMESPACE, _BRT_AC_BEGIN, _BRT_AC_END, _BRT_BEGIN_AUTOFILTER, _BRT_BEGIN_CF, _BRT_BEGIN_LIST, _BRT_BEGIN_LIST_COL, _BRT_BEGIN_LIST_COLS, _BRT_BEGIN_LIST_PARTS, _BRT_END_AUTOFILTER, _BRT_END_CF, _BRT_END_LIST, _BRT_END_LIST_COL, _BRT_END_LIST_COLS, _BRT_END_LIST_PARTS, _BRT_FRT_BEGIN, _BRT_LIST_PART, _BRT_TABLE_STYLE_CLIENT, _REL_PIVOT_CACHE, _REL_PIVOT_TABLE
 from ._xlsb_writer_host import _XlsbWriterHost
+from .styles import ColorScaleRule, DataBarRule, DifferentialStyle, IconSetRule
+from ._xlsb_metadata import comments_bin
+from .comments import vml_xml
 
 
 class _XlsbPartsMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
     def _normalize_cf_rules(self, conditional_formats):
-        from .styles import ColorScaleRule, DataBarRule, DifferentialStyle, IconSetRule
         if not conditional_formats:
             return []
         for rule in conditional_formats:
@@ -171,7 +173,6 @@ class _XlsbPartsMixin(_XlsbWriterHost):
                         self._formula_context(), self._letters)
 
     def _cf_bin_grouped(self, rules) -> bytes:
-        from .styles import parse_cell_range
         # Group by sqref like XLSX, claim priorities in order.
         by_range: dict[str, list] = {}
         for rule in rules:
@@ -226,8 +227,6 @@ class _XlsbPartsMixin(_XlsbWriterHost):
             if sheet_index not in self._written_sheets:
                 self._write_empty_sheet(sheet_index)
         if self._sheet_comments:
-            from ._xlsb_metadata import comments_bin
-            from .comments import vml_xml
             for sheet_id, comments in self._sheet_comments.items():
                 self._zf.writestr(f'xl/comments/comment{sheet_id}.bin', comments_bin(comments))
                 self._zf.writestr(f'xl/drawings/commentsDrawing{sheet_id}.vml', vml_xml(comments))

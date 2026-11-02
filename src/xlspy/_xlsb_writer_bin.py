@@ -9,9 +9,8 @@ import struct
 from collections.abc import Iterable
 import io
 import itertools
-from ._accel import encode_xlsb_row, encode_xlsb_row_inline
+from ._accel import encode_xlsb_row, encode_xlsb_row_inline, xlsb_row_has_formatted as accel_row_has_formatted
 from ._widths import estimate_column_widths
-from ._accel import xlsb_row_has_formatted as accel_row_has_formatted
 from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell, _unwrap_cell
 from .excel_dates import datetime_to_serial
 from .styles import (
@@ -40,6 +39,8 @@ from .printing import PrintSettings
 from ._writer_common import FilterData
 from ._xlsb_writer_consts import _BRT_BEGIN_MERGE_CELLS, _BRT_DRAWING, _BRT_END_MERGE_CELLS, _BRT_HLINK, _BRT_MERGE_CELL, _hlink_payload
 from ._xlsb_writer_host import _XlsbWriterHost
+from ._xlsb_formulas import ArrayValue, formula_cell
+from ._xlsb_metadata import replace_records, sheet_protection_bin, wide_string
 
 
 class _XlsbBinMixin(_XlsbWriterHost):
@@ -251,7 +252,6 @@ class _XlsbBinMixin(_XlsbWriterHost):
 
             last_col = len(row) - 1 if row else 0
             if array_ranges:
-                from ._xlsb_formulas import ArrayValue
                 row = list(row)
                 for c1, r1, c2, r2 in array_ranges:
                     if r1 < row_idx <= r2:
@@ -382,11 +382,9 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 else:
                     # The native encoder hands rows with other objects to this path.
                     if isinstance(cell, Formula):
-                        from ._xlsb_formulas import formula_cell
                         buffer.write(formula_cell(cell, col_idx, xf_index if has_custom_fmt else 0,
                                                   self._formula_context(), sheet=self._worksheet_data[worksheet_index][0], row=row_idx))
                         if cell.array_ref is not None:
-                            from ._xlsb_formulas import ArrayValue
                             bounds = parse_cell_range(cell.array_ref)
                             c1, r1, c2, r2 = bounds
                             if any(not (c2 < a or c1 > c or r2 < b or r1 > d) for a, b, c, d in array_ranges):
@@ -409,7 +407,6 @@ class _XlsbBinMixin(_XlsbWriterHost):
                                                           self._formula_context(), sheet=self._worksheet_data[worksheet_index][0], row=row_idx))
                         continue
                     if array_ranges:
-                        from ._xlsb_formulas import ArrayValue, formula_cell
                         if isinstance(cell, ArrayValue):
                             buffer.write(formula_cell(cell, col_idx, xf_index if has_custom_fmt else 0,
                                                       self._formula_context(), sheet=self._worksheet_data[worksheet_index][0], row=row_idx))
@@ -431,7 +428,6 @@ class _XlsbBinMixin(_XlsbWriterHost):
         for trailing_row in range(last_written + 1, row_idx + 1):
             buffer.write(self._row_header_record(trailing_row, 0, None, False, 0, False))
         if array_ranges:
-            from ._xlsb_formulas import ArrayValue, formula_cell
             final_row = max(bounds[3] for bounds in array_ranges)
             for extra_row in range(row_idx + 1, final_row + 1):
                 active = [bounds for bounds in array_ranges if bounds[1] <= extra_row <= bounds[3]]
@@ -480,7 +476,6 @@ class _XlsbBinMixin(_XlsbWriterHost):
         if sheet_protection is None:
             buffer.write(self._sheet1Bytes[218:290])
         else:
-            from ._xlsb_metadata import replace_records, sheet_protection_bin
             buffer.write(replace_records(self._sheet1Bytes[218:290], {0x217}, sheet_protection_bin(sheet_protection), before=(0x217,)))
 
         last_row_idx = row_idx if row_idx > -1 else 0 
@@ -546,11 +541,9 @@ class _XlsbBinMixin(_XlsbWriterHost):
             ))
         if table_rel_ids:
             if comment_vml_rid is not None:
-                from ._xlsb_metadata import wide_string
                 buffer.write(build_record(0x227, wide_string(comment_vml_rid)))
             buffer.write(self._list_parts_bin(table_rel_ids))
         elif comment_vml_rid is not None:
-            from ._xlsb_metadata import wide_string
             buffer.write(build_record(0x227, wide_string(comment_vml_rid)))
         if sparklines:
             # Future-record blocks follow LISTPARTS, before the trailing uid block and BrtEndSheet.

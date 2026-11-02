@@ -74,6 +74,7 @@ from .styles import (
 )
 from ._xlsx_writer_xml import _EMPTY_ROW_STYLES, _FLUSH_BYTES, _REL_DRAWING, _REL_PIVOT_TABLE, _REL_WORKSHEET, _SheetBody, _Tee, _WIDTH_SAMPLE_ROWS, _format_number
 from ._xlsx_writer_host import _XlsxWriterHost
+from ._dataframe_rows import dataframe_to_rows
 
 
 class _XlsxSheetMixin(_XlsxWriterHost):
@@ -429,7 +430,6 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         formats:
             Optional ``{column_name: format_string}`` mapping (see ``xlspy.F``).
         """
-        from .dataframe import dataframe_to_rows
 
         self.write_sheet(
             dataframe_to_rows(df, include_index=include_index, na_rep=na_rep, formats=formats),

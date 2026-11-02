@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import datetime
 import re
-from ..excel_dates import MAC_EPOCH as MAC_EPOCH
-from ..excel_dates import WINDOWS_EPOCH as WINDOWS_EPOCH
+from ..excel_dates import MAC_EPOCH as MAC_EPOCH, WINDOWS_EPOCH as WINDOWS_EPOCH
 
 SECS_PER_DAY = 24 * 60 * 60
 

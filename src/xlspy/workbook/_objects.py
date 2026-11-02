@@ -26,9 +26,9 @@ from .._metadata import CT, MAIN, PKG_REL, REL, append_child, element_pattern, r
 from .._xlsx_edit import _attributes, _bytes, _required_match
 from ..refs import parse_cell_range
 from ._print import WorksheetPageMargins, print_settings_for
-from ..chart_reader import _A as _A
-from ..chart_reader import _C as _C
-from ..chart_reader import _XDR as _XDR
+from ..chart_reader import _A as _A, _C as _C, _XDR as _XDR
+from ..xlsx_writer import XlsxWriter
+from ..styles import ExcelTable
 
 _CONTENT = {
     "drawing": "application/vnd.openxmlformats-officedocument.drawing+xml",
@@ -91,7 +91,6 @@ def mark_objects_saved(sheet) -> None:
 
 def _scratch(sheet, objects, settings) -> dict[str, bytes]:
     """The parts of a workbook holding only this sheet and its new objects."""
-    from ..xlsx_writer import XlsxWriter
     from ._writer import _cell_values
 
     stream = io.BytesIO()
@@ -726,7 +725,6 @@ def object_signatures(sheet) -> dict[str, tuple]:
 
 
 def _as_excel_table(table):
-    from ..styles import ExcelTable
 
     if isinstance(table, ExcelTable):
         return table

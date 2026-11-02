@@ -19,6 +19,10 @@ import os as _os
 from typing import Any
 
 from .exceptions import InvalidFileError
+from xlspy._errors import CellError as _CellError
+from xlspy.styles import Style as _Style
+from xlspy.formulas import Formula as _Formula
+from xlspy.hyperlinks import Hyperlink as _Hyperlink
 
 _MODULE = "xlspy._rs_core"
 _MODES = ("auto", "rust", "python")
@@ -63,22 +67,18 @@ if _native is not None:
 def _register_types(module) -> None:
     """Hand the native module the xlspy classes it checks and builds."""
     if hasattr(module, "set_error_type"):
-        from xlspy._errors import CellError as _CellError
         module.set_error_type(_CellError)
     if hasattr(module, "set_invalid_file_type"):
         # Data errors the native readers raise are InvalidFileError (a ValueError).
         module.set_invalid_file_type(InvalidFileError)
     if hasattr(module, "set_style_type"):
         # (value, Style) cells: the native encoders and width scan recognise them.
-        from xlspy.styles import Style as _Style
         module.set_style_type(_Style)
     if hasattr(module, "set_formula_type"):
         # Formula cells: the native row encoder writes them (see xlsx_write.rs).
-        from xlspy.formulas import Formula as _Formula
         module.set_formula_type(_Formula)
     if hasattr(module, "set_hyperlink_type"):
         # Link cells: the native row encoder writes the text and returns the link.
-        from xlspy.hyperlinks import Hyperlink as _Hyperlink
         module.set_hyperlink_type(_Hyperlink)
 
 

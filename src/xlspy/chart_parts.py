@@ -37,11 +37,14 @@ from .charts import (
     DataLabels,
 )
 from .refs import parse_cell_range, quote_sheet_name
-from .shapes import shape_frame_xml
-from .slicers import slicer_frame_xml
-from .shapes import EMU_PER_PIXEL as EMU_PER_PIXEL
-from .slicers import _MC_NS as _MC_NS
+from .shapes import shape_frame_xml, EMU_PER_PIXEL as EMU_PER_PIXEL
+from .slicers import slicer_frame_xml, _MC_NS as _MC_NS
 from ._text import _attr as _attr
+from .excel_dates import datetime_to_serial
+from .formats import _unwrap_cell
+from .formulas import Formula
+from .hyperlinks import Hyperlink
+from .rich_text import CellRichText
 
 _CHART_AXES_XML = (
     "<catAx><axId val=\"10\"/><scaling><orientation val=\"minMax\"/></scaling>"
@@ -172,7 +175,6 @@ def _range_values(cells: dict | None, ref: str) -> list:
 
 def _chart_number_text(value) -> str:
     """Shortest plain-text literal for a cached chart number."""
-    from .excel_dates import datetime_to_serial
 
     if isinstance(value, bool):
         return "1" if value else "0"
@@ -191,10 +193,6 @@ def _cached_value(raw):
     A formula shows its cached result (``None`` when it has none), a hyperlink
     its label; ``(value, format)`` and ``(value, Style)`` show the value.
     """
-    from .formats import _unwrap_cell
-    from .formulas import Formula
-    from .hyperlinks import Hyperlink
-    from .rich_text import CellRichText
 
     value = _unwrap_cell(raw)
     if isinstance(value, Formula):

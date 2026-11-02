@@ -6,7 +6,7 @@ no attribute 'stop'). A colour string is a solid fill of that colour.
 """
 
 from xlspy.styles import NamedStyle, Style, fill_key_for
-from xlspy._xlsb_styles import XlsbStyleTable
+from xlspy.workbook._xlsb_styles import XlsbStyleTable
 from xlspy.workbook._styles import XlsxStyleTable
 
 

@@ -10,13 +10,14 @@ their blocks of the original part, which otherwise stays byte for byte.
 from __future__ import annotations
 from collections.abc import Sequence
 
-from .exceptions import UnsupportedFeatureError
+from ..exceptions import UnsupportedFeatureError
 import struct
 
 from typing import TYPE_CHECKING, Any
 
-from ._xlsb_metadata import read_wide
-from ._xlsb_style_records import (
+from .._xlsb_metadata import read_wide
+from .._xlsb_style_records import (
+    read_brt_color,
     _BORDER_BYTES,
     _FONT_SCHEME,
     _HORIZONTAL_BYTES,
@@ -29,11 +30,10 @@ from ._xlsb_style_records import (
     numfmt_record,
     xf_record,
 )
-from .biff_utils import build_record, iter_records
-from .styles import (
+from ..biff_utils import build_record, iter_records
+from ..styles import (
     Alignment,
     Border,
-    Color,
     Font,
     GradientFill,
     NamedStyle,
@@ -50,10 +50,12 @@ from .styles import (
     _protection_key_from,
     fill_key_for,
 )
-from .workbook._styles import XlsxStyleTable, _Xf
+from ._styles import XlsxStyleTable, _Xf
+from .._xlsb_cf import dxf_from_payload, dxf_payload
+from ..writer import XlsbWriter
 
 if TYPE_CHECKING:
-    from .styles import DifferentialStyle
+    from ..styles import DifferentialStyle
 
 _FONT, _FMT, _FILL, _BORDER, _XF, _STYLE = 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30
 _DXF = 0x1FB
@@ -77,33 +79,13 @@ _BIFF_BORDER_NAMES = {value: name for name, value in _BORDER_BYTES.items() if na
 _BIFF_HORIZONTAL_NAMES = {value: name for name, value in _HORIZONTAL_BYTES.items() if name not in (None, "general")}
 _BIFF_VERTICAL_NAMES = {value: name for name, value in _VERTICAL_BYTES.items() if name not in (None, "bottom")}
 # System foreground/background colors: what Excel stores for "no color".
-_SYSTEM_COLORS = (64, 65)
 _GRADIENT = 0x28
-
-
-def _read_brt_color(data: bytes, offset: int, *, default_system: bool = False) -> Color | None:
-    """A BrtColor ([MS-XLSB] 2.4.334); all zero bytes mean no color."""
-    raw = data[offset:offset + 8]
-    if len(raw) < 8 or not any(raw):
-        return None
-    kind = raw[0] >> 1
-    if kind == 0:
-        return Color(auto=True)
-    if kind == 1:
-        if default_system and raw[1] in _SYSTEM_COLORS:
-            return None
-        return Color(indexed=raw[1])
-    if kind == 2:
-        red, green, blue, alpha = raw[4:8]
-        return Color(rgb=f"{alpha:02X}{red:02X}{green:02X}{blue:02X}")
-    tint = struct.unpack_from("<h", raw, 2)[0]
-    return Color(theme=raw[1], tint=tint / 32767 if tint else None)
 
 
 def _font(payload: bytes) -> Font:
     height, flags, weight, baseline = struct.unpack_from("<HHHH", payload, 0)
     underline, family, charset = payload[8], payload[9], payload[10]
-    color = _read_brt_color(payload, 12)
+    color = read_brt_color(payload, 12)
     scheme = payload[20]
     name, _ = read_wide(payload, 21)
 
@@ -141,7 +123,7 @@ def _fill(payload: bytes) -> PatternFill | GradientFill:
         for _ in range(count):
             if offset + 16 > len(payload):
                 break
-            color = _read_brt_color(payload, offset)
+            color = read_brt_color(payload, offset)
             position = struct.unpack_from("<d", payload, offset + 8)[0]
             if color is not None:
                 stops.append(Stop(color=color, position=position))
@@ -163,8 +145,8 @@ def _fill(payload: bytes) -> PatternFill | GradientFill:
         return PatternFill(fill_type="none")
     return PatternFill(
         fill_type=fill_type,
-        start_color=_read_brt_color(payload, 4, default_system=True),
-        end_color=_read_brt_color(payload, 12, default_system=True),
+        start_color=read_brt_color(payload, 4, default_system=True),
+        end_color=read_brt_color(payload, 12, default_system=True),
     )
 
 
@@ -174,7 +156,7 @@ def _border(payload: bytes) -> Border:
     for index in range(5):
         offset = 1 + index * 10
         style = _BIFF_BORDER_NAMES.get(payload[offset])
-        color = _read_brt_color(payload, offset + 2, default_system=True) if style else None
+        color = read_brt_color(payload, offset + 2, default_system=True) if style else None
         sides.append(Side(style=style, color=color) if style else None)
     top, bottom, left, right, diagonal_side = sides
     return Border(
@@ -291,7 +273,6 @@ class XlsbStyleTable(XlsxStyleTable):
                 elif block == _BEGIN_STYLE_XFS:
                     style_xfs.append(_xf(payload))
             elif kind == _DXF:
-                from ._xlsb_cf import dxf_from_payload
 
                 try:
                     self.dxfs.append(dxf_from_payload(payload))
@@ -336,7 +317,6 @@ class XlsbStyleTable(XlsxStyleTable):
 
     # -- editing ------------------------------------------------------
     def add(self, style: Style) -> int:
-        from .writer import XlsbWriter
 
         XlsbWriter._reject_rich_style(style)
         return super().add(style)
@@ -388,7 +368,6 @@ class XlsbStyleTable(XlsxStyleTable):
     def dxf_id(self, dxf: DifferentialStyle) -> int:
         """The index of a conditional format's differential style; a style
         the file does not hold yet is added once."""
-        from ._xlsb_cf import dxf_payload
 
         if dxf is None:
             return -1

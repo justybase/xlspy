@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
 from .chart_reader import _REL as _REL
+from ._xlsb_metadata import read_wide, records
+from ._xlsb_formulas import external_sheet_names
 
 _PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
 _MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -63,7 +65,6 @@ def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
     relationships = _read_link_relationships(package, book)
     order: list[str] = []
     if binary:
-        from ._xlsb_metadata import read_wide, records
 
         for record, payload in records(package.get(book)):
             if record.record_id == 0x163:
@@ -95,7 +96,6 @@ def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
 def _target_rid(package, part: str, binary: bool) -> str | None:
     data = package.get(part)
     if binary:
-        from ._xlsb_metadata import read_wide, records
 
         for record, payload in records(data):
             if record.record_id == 0x168:  # BrtSupBookSrc of the part
@@ -112,7 +112,6 @@ def _target_rid(package, part: str, binary: bool) -> str | None:
 def _sheet_names(package, part: str, binary: bool) -> list[str]:
     data = package.get(part)
     if binary:
-        from ._xlsb_formulas import external_sheet_names
 
         return external_sheet_names(data)
     try:

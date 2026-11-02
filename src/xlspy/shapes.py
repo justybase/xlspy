@@ -14,9 +14,8 @@ import re
 import uuid
 import xml.sax.saxutils as saxutils
 
-from ._text import check_xml_text
+from ._text import check_xml_text, _attr as _attr
 from .refs import column_label, parse_cell_range
-from ._text import _attr as _attr
 
 EMU_PER_PIXEL = 9525
 _SHAPE_PRESETS = {"rect": "rect", "round": "roundRect", "ellipse": "ellipse", "textbox": "rect"}

@@ -15,8 +15,8 @@ from ..exceptions import UnsupportedFeatureError
 import re
 import struct
 
-from .._metadata import password_hash
-from .._xlsb_metadata import records, replace_records, wide_string
+from .._metadata import password_hash, DefinedName
+from .._xlsb_metadata import records, replace_records, wide_string, read_wide
 from .._xlsb_print import (
     BRT_BEGIN_COL_BREAKS, BRT_BEGIN_HEADER_FOOTER, BRT_BEGIN_ROW_BREAKS, BRT_BREAK,
     BRT_END_COL_BREAKS, BRT_END_HEADER_FOOTER, BRT_END_ROW_BREAKS, BRT_MARGINS,
@@ -24,10 +24,12 @@ from .._xlsb_print import (
 )
 from .._xlsb_style_records import color_payload
 from ..biff_utils import build_record
-from ..printing import _paper_code
-from ..refs import parse_cell_range
+from ..printing import _paper_code, print_area_name
+from ..refs import parse_cell_range, column_label, quote_sheet_name
 from ..styles import _color_key
 from ._loaded import _auto_filter_snapshot, _break_snapshot, _header_footer_snapshot, _snapshot
+from ._model import Selection
+from .._xlsb_formulas import decode_formula, _Name, parsed_formula, FormulaContext
 
 WS_PROP, WS_DIM = 0x93, 0x94
 BEGIN_VIEWS, END_VIEWS, BEGIN_VIEW, END_VIEW, PANE, SELECTION = 0x85, 0x86, 0x89, 0x8A, 0x97, 0x98
@@ -248,7 +250,6 @@ def _selection_records(view) -> bytes:
     selections = list(view.selection)
     if not selections:
         pane = view.pane.activePane if view.pane is not None and (view.pane.xSplit or view.pane.ySplit) else "topLeft"
-        from ._model import Selection
 
         selections = [Selection(pane=pane)]
     output = []
@@ -631,8 +632,6 @@ _HIDDEN = 0x01
 
 def builtin_names(context) -> dict[str, dict[str, str]]:
     """``{sheet title: {"_xlnm.Print_Area": formula, ...}}`` from a FormulaContext."""
-    from .._xlsb_formulas import decode_formula
-    from .._xlsb_metadata import read_wide
 
     result: dict[str, dict[str, str]] = {}
     for entry in context.names:
@@ -650,8 +649,6 @@ def builtin_names(context) -> dict[str, dict[str, str]]:
 
 def set_builtin_name(context, name: str, formula: str | None, scope: str, *, hidden=False) -> None:
     """Set (or with ``formula=None`` remove) a built-in sheet name such as Print_Area."""
-    from .._metadata import DefinedName
-    from .._xlsb_formulas import _Name
 
     for index, entry in enumerate(context.names):
         if (entry.flags & _BUILTIN and entry.name.casefold() == name.casefold()
@@ -669,7 +666,6 @@ def set_builtin_name(context, name: str, formula: str | None, scope: str, *, hid
 
 def _drop(context, index: int) -> None:
     # Formulas refer to names by position: the slot stays, renamed and hidden.
-    from .._xlsb_formulas import parsed_formula
 
     entry = context.names[index]
     placeholder = f"_xlspy_deleted_{index}_{len(context.names)}"
@@ -680,9 +676,6 @@ def _drop(context, index: int) -> None:
 
 def save_builtin_names(updater, sheet, groups) -> None:
     """Write the print area, print titles and filter range of ``sheet``."""
-    from .._xlsb_formulas import FormulaContext
-    from ..printing import print_area_name
-    from ..refs import column_label, quote_sheet_name
 
     if not {"print_names", "filter"} & set(groups):
         return

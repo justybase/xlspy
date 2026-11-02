@@ -14,8 +14,7 @@ import re
 from typing import Any
 
 from ..formulas import Formula
-from ..refs import column_label, parse_cell_range, shift_references as translate_formula
-from ..refs import _MAX_ROW as _MAX_ROW
+from ..refs import column_label, parse_cell_range, shift_references as translate_formula, _MAX_ROW as _MAX_ROW
 
 _MAX_COL = 16384
 _CELL_REF = re.compile(

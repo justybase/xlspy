@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 from ._text import check_xml_text
 from .refs import parse_cell_range
+from .chart_edit import LEGEND_POSITIONS as LEGEND_POSITIONS, get_axis_title, get_legend_position, get_series_titles, set_axis_title, set_chart_title, set_legend_position, set_series_color, set_series_title
 
 CHART_TYPES = frozenset({
     "area", "area3d", "bar", "bar3d", "barh", "bubble", "doughnut",
@@ -46,13 +47,6 @@ _RGB_RE = re.compile(r"[0-9A-Fa-f]{6}")
 MARKER_SYMBOLS = frozenset(
     {"circle", "square", "diamond", "triangle", "x", "star", "dot", "dash", "plus", "none"}
 )
-LEGEND_POSITIONS = {
-    "right": "r",
-    "left": "l",
-    "top": "t",
-    "bottom": "b",
-    "top_right": "tr",
-}
 # User-facing label positions and their DrawingML spelling.
 LABEL_POSITIONS = {
     "center": "ctr",
@@ -142,15 +136,11 @@ class LoadedChart:
         if name == "title" and getattr(self, "xml", b"") and hasattr(self, "_saved_xml"):
             if value is not None and not isinstance(value, str):
                 raise TypeError("chart title must be a string or None")
-            from .chart_edit import set_chart_title
-
             object.__setattr__(self, "xml", set_chart_title(self.xml, value or None))
         object.__setattr__(self, name, value)
 
     @property
     def x_axis_title(self) -> str | None:
-        from .chart_edit import get_axis_title
-
         return get_axis_title(self.xml, 0) if self.xml else None
 
     @x_axis_title.setter
@@ -159,8 +149,6 @@ class LoadedChart:
 
     @property
     def y_axis_title(self) -> str | None:
-        from .chart_edit import get_axis_title
-
         return get_axis_title(self.xml, 1) if self.xml else None
 
     @y_axis_title.setter
@@ -170,29 +158,21 @@ class LoadedChart:
     def _set_axis_title(self, index: int, value: str | None) -> None:
         if value is not None and not isinstance(value, str):
             raise TypeError("axis title must be a string or None")
-        from .chart_edit import set_axis_title
-
         self.xml = set_axis_title(self.xml, index, value or None)
 
     @property
     def series_titles(self) -> list[str | None]:
         """The literal title of each series (``None`` when it reads a cell)."""
-        from .chart_edit import get_series_titles
-
         return get_series_titles(self.xml) if self.xml else []
 
     def set_series_title(self, index: int, text: str) -> None:
         """Give series ``index`` a literal title."""
         if not isinstance(text, str):
             raise TypeError("series title must be a string")
-        from .chart_edit import set_series_title
-
         self.xml = set_series_title(self.xml, index, text)
 
     def set_series_color(self, index: int, color: str) -> None:
         """Fill series ``index`` (or draw its line) in ``color``, a ``'#RRGGBB'`` string."""
-        from .chart_edit import set_series_color
-
         rgb = _normalize_rgb(color, "series color")
         if rgb is None:
             # Writing "" produced <a:srgbClr val=""/>, which is not a colour.
@@ -201,14 +181,10 @@ class LoadedChart:
 
     @property
     def legend_position(self) -> str | None:
-        from .chart_edit import get_legend_position
-
         return get_legend_position(self.xml) if self.xml else None
 
     @legend_position.setter
     def legend_position(self, value: str | None) -> None:
-        from .chart_edit import set_legend_position
-
         self.xml = set_legend_position(self.xml, value)
 
 

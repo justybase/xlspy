@@ -13,7 +13,7 @@ import posixpath
 import re
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
-from xml.sax.saxutils import escape, quoteattr
+from xml.sax.saxutils import escape, quoteattr, unescape
 
 from ._sheet_data import sheet_data_match
 from ._metadata import (
@@ -30,6 +30,7 @@ from .formulas import Formula
 from .hyperlinks import Hyperlink
 from .refs import parse_cell_range, column_label
 from .updater_utils import unwrap_cell, replace_or_add_xml_attribute
+from .rich_text import CellRichText
 
 if TYPE_CHECKING:
     from .updater_utils import DiskStringIndex, ZipPackage
@@ -481,7 +482,6 @@ def _attributes(fragment):
     # Attribute values can contain escaped XML; ET resolves those consistently.
     attrs = {}
     for match in re.finditer(r'''([\w:.-]+)\s*=\s*("[^"]*"|'[^']*')''', opening[1]):
-        from xml.sax.saxutils import unescape
         attrs[match[1]] = unescape(match[2][1:-1], {"&quot;": '"', "&apos;": "'"})
     return attrs
 
@@ -512,7 +512,6 @@ def _cell_xml_value(value, date_1904, prefix):
             raise ValueError("numeric cell values must be finite")
         text = str(value) if isinstance(value, (int, Decimal)) else repr(float(value))
         return None, f'<{prefix}v>{text}</{prefix}v>'
-    from .rich_text import CellRichText
 
     if isinstance(value, CellRichText):
         runs = value.runs_xml(prefix)

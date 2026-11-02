@@ -7,6 +7,8 @@ byte-for-byte by ``ZipPackage``.
 
 from __future__ import annotations
 from .._package_handle import PackageHandle
+from ..comments import rels_path
+from ..updater_utils import sheet_has_pivots, sheet_has_slicers
 from ._coords import _in_sheet_order
 
 from ..exceptions import UnsupportedFeatureError
@@ -34,6 +36,8 @@ from ..updater_utils import (
 )
 from ._model import Workbook, Worksheet, _coordinate, _normalize_range
 from ._styles import XlsxStyleTable
+from ._chartsheets import check_chartsheets, add_chartsheets
+from ._props import save_properties
 
 _CONTENT_WORKSHEET = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
 
@@ -855,8 +859,8 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
     )
     package.set("[Content_Types].xml", _bytes(content_types))
 
-    rels_path = "xl/_rels/workbook.xml.rels"
-    rels = safe_fromstring(package.get(rels_path))
+    book_rels = "xl/_rels/workbook.xml.rels"
+    rels = safe_fromstring(package.get(book_rels))
     rid = _next_rel_id(rels)
     ET.SubElement(
         rels, f"{{{PKG_REL}}}Relationship",
@@ -866,7 +870,7 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
             "Target": path.removeprefix("xl/"),
         },
     )
-    package.set(rels_path, _bytes(rels))
+    package.set(book_rels, _bytes(rels))
 
     workbook_path = "xl/workbook.xml"
     workbook_xml = package.get(workbook_path).decode("utf-8")
@@ -902,26 +906,6 @@ def _remove_sheet_node(workbook_xml: str, name: str) -> tuple[str, str | None]:
     return workbook_xml, None
 
 
-def _sheet_relates_to(package, sheet_path: str | None, part_type: bytes) -> bool:
-    """True when the sheet part has a relationship of ``part_type``."""
-    if not sheet_path:
-        return False
-    rels_path = rels_path_for_part(sheet_path)
-    if rels_path not in package.names():
-        return False
-    return re.search(rb'Type="[^"]*/' + part_type + rb'"', package.get(rels_path)) is not None
-
-
-def sheet_has_slicers(package, sheet_path: str | None) -> bool:
-    """True when the sheet part relates to a table slicer."""
-    return _sheet_relates_to(package, sheet_path, b"slicer")
-
-
-def sheet_has_pivots(package, sheet_path: str | None) -> bool:
-    """True when the sheet part relates to a pivot table."""
-    return _sheet_relates_to(package, sheet_path, b"pivotTable")
-
-
 def remove_sheet(updater, workbook: Workbook, name: str) -> None:
     handle = PackageHandle(updater)
     package = handle.package
@@ -945,12 +929,12 @@ def remove_sheet(updater, workbook: Workbook, name: str) -> None:
     workbook_xml, rid = _remove_sheet_node(workbook_xml, name)
     package.set(workbook_path, workbook_xml.encode("utf-8"))
 
-    rels_path = "xl/_rels/workbook.xml.rels"
-    rels = safe_fromstring(package.get(rels_path))
+    book_rels = "xl/_rels/workbook.xml.rels"
+    rels = safe_fromstring(package.get(book_rels))
     for node in list(rels):
         if rid and node.get("Id") == rid:
             rels.remove(node)
-    package.set(rels_path, _bytes(rels))
+    package.set(book_rels, _bytes(rels))
 
     types = safe_fromstring(package.get("[Content_Types].xml"))
     for node in list(types):
@@ -960,13 +944,8 @@ def remove_sheet(updater, workbook: Workbook, name: str) -> None:
 
     if path:
         package.remove(path)
-        package.remove(rels_path_for_part(path))
+        package.remove(rels_path(path))
     handle.sheets.pop(name, None)
-
-
-def rels_path_for_part(part: str) -> str:
-    directory, filename = part.rsplit("/", 1)
-    return f"{directory}/_rels/{filename}.rels"
 
 
 def rename_sheet(updater, old: str, new: str) -> None:
@@ -1219,7 +1198,6 @@ def save_loaded(workbook: Workbook, filename) -> None:
     updater = workbook._updater
     if updater is None:
         raise ValueError("this workbook was not loaded from an XLSX package")
-    from ._chartsheets import check_chartsheets
 
     check_chartsheets(workbook)
     # Refusals first, before the package changes.
@@ -1351,8 +1329,6 @@ def save_loaded(workbook: Workbook, filename) -> None:
                 handle.package.set("xl/styles.xml", workbook._styles.to_bytes())
                 workbook._styles_dirty = False
             add_objects(updater, workbook, sheet, final_order)
-    from ._chartsheets import add_chartsheets
-    from ._props import save_properties
 
     add_chartsheets(updater, workbook)
     for chartsheet in workbook._chartsheets:

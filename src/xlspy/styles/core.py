@@ -10,7 +10,6 @@ writer serializes all of it; the XLSB writer currently supports the flat
 
 from __future__ import annotations
 
-
 # Chart and cell-reference models live in their own modules; they are
 # re-exported here so that ``xlspy.styles`` keeps its historical names.
 from ..charts import Chart as Chart, ChartSeries as ChartSeries  # re-exported: historical import path

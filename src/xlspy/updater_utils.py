@@ -29,13 +29,13 @@ from pathlib import Path
 from typing import IO, Any
 from collections.abc import Callable, Iterable, Sequence
 from xml.etree import ElementTree as ET
-from ._safe_xml import fromstring as safe_fromstring
+from ._safe_xml import fromstring as safe_fromstring, harden_expat
 from xml.parsers import expat
-from ._safe_xml import harden_expat
 from xml.sax import saxutils
 
 from ._text import check_cell_text, xstring_escape
 from .exceptions import UnsupportedFeatureError
+from .comments import rels_path
 from .refs import parse_cell_range
 
 
@@ -1018,3 +1018,23 @@ class ZipPackage:
                 indices[info.filename] = len(entries) - 1
         self._entries = entries
         self._indices = indices
+
+
+def _sheet_relates_to(package: ZipPackage, sheet_path: str | None, part_type: bytes) -> bool:
+    """True when the sheet part has a relationship of ``part_type``."""
+    if not sheet_path:
+        return False
+    rels = rels_path(sheet_path)
+    if rels not in package.names():
+        return False
+    return re.search(rb'Type="[^"]*/' + part_type + rb'"', package.get(rels)) is not None
+
+
+def sheet_has_slicers(package: ZipPackage, sheet_path: str | None) -> bool:
+    """True when the sheet part relates to a table slicer."""
+    return _sheet_relates_to(package, sheet_path, b"slicer")
+
+
+def sheet_has_pivots(package: ZipPackage, sheet_path: str | None) -> bool:
+    """True when the sheet part relates to a pivot table."""
+    return _sheet_relates_to(package, sheet_path, b"pivotTable")

@@ -2,7 +2,7 @@
 
 Each function encodes one ``split_style`` component key ([MS-XLSB] 2.4.311
 BrtBorder, 2.4.674 BrtFill, 2.4.683 BrtFont, 2.4.863 BrtXF, 2.4.334 BrtColor);
-``_xlsb_styles`` decodes the same records back into keys.
+``workbook/_xlsb_styles`` decodes the same records back into keys.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from typing import Any
 import struct
 
 from .biff_utils import build_record
+from .styles._attrs import Color
 
 _BRT_FONT = 0x002B
 _BRT_FMT = 0x002C
@@ -224,3 +225,25 @@ def xf_record(
     payload.extend(struct.pack('<H', flags))
     return build_record(_BRT_XF, bytes(payload))
 
+
+# System colors a gradient stop may name instead of leaving the color out.
+_SYSTEM_COLORS = (64, 65)
+
+
+def read_brt_color(data: bytes, offset: int, *, default_system: bool = False) -> Color | None:
+    """A BrtColor ([MS-XLSB] 2.4.334); all zero bytes mean no color."""
+    raw = data[offset:offset + 8]
+    if len(raw) < 8 or not any(raw):
+        return None
+    kind = raw[0] >> 1
+    if kind == 0:
+        return Color(auto=True)
+    if kind == 1:
+        if default_system and raw[1] in _SYSTEM_COLORS:
+            return None
+        return Color(indexed=raw[1])
+    if kind == 2:
+        red, green, blue, alpha = raw[4:8]
+        return Color(rgb=f"{alpha:02X}{red:02X}{green:02X}{blue:02X}")
+    tint = struct.unpack_from("<h", raw, 2)[0]
+    return Color(theme=raw[1], tint=tint / 32767 if tint else None)

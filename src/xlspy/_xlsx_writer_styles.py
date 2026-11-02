@@ -30,6 +30,7 @@ from .styles import (
 )
 from ._xlsx_writer_xml import _alignment_xml, _format_number, _protection_xml
 from ._xlsx_writer_host import _XlsxWriterHost
+from .styles import _coerce_color
 
 
 class _XlsxStylesMixin(_XlsxWriterHost):
@@ -578,7 +579,6 @@ class _XlsxStylesMixin(_XlsxWriterHost):
 
     @staticmethod
     def _dxf_color_argb(color) -> str:
-        from .styles import _coerce_color
         resolved = _coerce_color(color, "color")
         if resolved is None or resolved.rgb is None:
             raise ValueError("CF colorScale/dataBar colors must be RGB colors")

@@ -177,3 +177,20 @@ def check_merged_refs(data, refs, ranges=None):
         for col, row in coordinates:
             if c1 <= col <= c2 and r1 <= row <= r2 and (col, row) != (c1, r1):
                 raise ValueError("merged cells must use their top-left cell")
+
+
+def request_recalculation(data: bytes) -> bytes:
+    """``xl/workbook.bin`` with BrtCalcProp set so Excel recalculates every formula on open."""
+    chunks = []
+    for record, payload in records(data):
+        if record.record_id == 0x9D:
+            if len(payload) != 26:
+                raise ValueError("invalid XLSB calculation properties")
+            value = bytearray(payload)
+            struct.pack_into('<II', value, 0, 0, 1)
+            flags = struct.unpack_from('<H', value, 24)[0]
+            struct.pack_into('<H', value, 24, flags | 1 | 0x10)
+            chunks.append(build_record(0x9D, value))
+        else:
+            chunks.append(data[record.header_start:record.data_end])
+    return b''.join(chunks)
