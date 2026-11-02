@@ -629,7 +629,11 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             else:
                 xf_index = None
 
-            if isinstance(cell, Formula):
+            if cell is None:
+                # (None, format) or (None, Style): a formatted cell without a
+                # value, written like a blank with a range style.
+                buf.write(f'<c r="{self._letters[col_idx]}{row_idx + 1}" s="{xf_index}"/>')
+            elif isinstance(cell, Formula):
                 self._write_formula_cell(buf, cell, xf_index)
             elif isinstance(cell, str):
                 self._write_string_cell(buf, cell, row_idx == 0, xf_index)

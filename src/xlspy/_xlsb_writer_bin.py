@@ -563,7 +563,12 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 xf_index = 0
                 has_custom_fmt = False
 
-            if isinstance(cell, str):
+            if cell is None:
+                # (None, format) or (None, Style): a formatted cell without a
+                # value, written like a blank with a range style (BrtCellBlank).
+                buffer.write(b'\x01\x08')
+                buffer.write(struct.pack('<II', col_idx, xf_index))
+            elif isinstance(cell, str):
                 if has_custom_fmt:
                     self._write_str(buffer, cell, shared_strings_dict, shared_strings_append, row_idx, col_idx, xf_index)
                 else:

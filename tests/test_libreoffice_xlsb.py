@@ -71,7 +71,8 @@ def _rich_workbook(path, *, shared_strings=True):
         writer.write_sheet([[], [None, None], [None, None, "C3"], [], [None, None, None, None, 5]])
         writer.add_sheet("Styles")
         writer.write_sheet(
-            [["bold", "fill", "red", "border", "center", 0.5]],
+            # G1 and H1: formatted cells without a value.
+            [["bold", "fill", "red", "border", "center", 0.5, (None, "0.00"), (None, Style(bold=True))]],
             styles={
                 "A1": Style(bold=True, italic=True), "B1": Style(fill="#FFFF00"), "C1": Style(font_color="#FF0000"),
                 "D1": Style(border=Border(bottom=Side("thin", "FF000000"))),
@@ -252,6 +253,8 @@ def test_styles(book):
     assert sheet["D1"].border.bottom.style == "thin"
     assert sheet["E1"].alignment.horizontal == "center" and sheet["E1"].alignment.wrap_text
     assert sheet["F1"].number_format == "0.0%" and sheet["F1"].font.b
+    assert sheet["G1"].value is None and sheet["G1"].number_format == "0.00"
+    assert sheet["H1"].value is None and sheet["H1"].font.b
 
 
 def test_hyperlinks_and_rich_text(book):

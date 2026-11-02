@@ -453,6 +453,9 @@ Migration from 0.10:
   XLSX writer does for `<dimension>`. Speed and peak memory are unchanged.
   Read-only rows are now padded to the dimension's width, as for a file Excel
   saved; files from older versions still read as unsized.
+- `XlsxWriter` and `XlsbWriter` wrote a `(None, format)` or `(None, Style)` row entry as the
+  text "None". It is now a formatted cell without a value, written like a blank with a range
+  style: Excel, LibreOffice and openpyxl see an empty cell with the format or style.
 - A sheet added through the model and saved as `.xlsb` got a dimension
   stretched to A1 (`create_sheet("New")["D5"] = 1` gave `A1:D5`, Excel writes `D5`).
 - XLSB icon sets: `reverse` was written inverted, and `4Rating`/`5Rating`
