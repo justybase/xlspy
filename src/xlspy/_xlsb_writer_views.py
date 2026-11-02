@@ -5,7 +5,8 @@ import struct
 import io
 from ._widths import file_width
 from .biff_utils import build_record
-from ._xlsb_writer_consts import _BRT_BEGIN_COL_INFOS, _BRT_COL_INFO, _BRT_END_COL_INFOS, _BRT_PANE, _BRT_ROW_HDR, _BRT_SEL, _PANE_ACTIVE
+from ._xlsb_metadata import pane_record, selection_record
+from ._xlsb_writer_consts import _BRT_BEGIN_COL_INFOS, _BRT_COL_INFO, _BRT_END_COL_INFOS, _BRT_ROW_HDR, _PANE_ACTIVE
 from ._xlsb_writer_host import _XlsbWriterHost
 
 
@@ -66,10 +67,7 @@ class _XlsbViewsMixin(_XlsbWriterHost):
             # with the selection pane.
             active = _PANE_ACTIVE["bottomLeft"]
             frozen = 0x03
-        payload = struct.pack('<dd', float(split_col), float(split_row))
-        payload += struct.pack('<III', split_row, split_col, active)
-        payload += bytes((frozen,))
-        return build_record(_BRT_PANE, payload)
+        return pane_record(float(split_col), float(split_row), split_row, split_col, active, frozen)
 
     def _selection_record(self, freeze_panes: str) -> bytes:
         """Build a BrtSel record ([MS-XLSB] 2.4.781) matching ``freeze_panes``."""
@@ -84,10 +82,7 @@ class _XlsbViewsMixin(_XlsbWriterHost):
                 active = _PANE_ACTIVE["topRight"]
             else:
                 active = _PANE_ACTIVE["bottomLeft"]
-        payload = struct.pack('<IIII', active, split_row, split_col, 0)
-        payload += struct.pack('<I', 1)  # one range
-        payload += struct.pack('<IIII', split_row, split_row, split_col, split_col)
-        return build_record(_BRT_SEL, payload)
+        return selection_record(active, split_row, split_col, 0, [(split_row, split_row, split_col, split_col)])
 
     def _write_cols_width(
         self, buffer: io.BytesIO, start_col: int, end_col: int,

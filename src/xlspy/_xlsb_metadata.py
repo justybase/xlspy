@@ -9,7 +9,7 @@ import struct
 import uuid
 
 from ._metadata import password_hash
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 
 from .biff_utils import Biff12Record, build_record, iter_records, read_utf16
 from .comments import Comment
@@ -147,13 +147,19 @@ def comments_bin(changes, existing=None):
     return b"".join(output)
 
 
+def sheet_protection_record(password: int, flags: Sequence[int]) -> bytes:
+    """BrtSheetProtection: the legacy password hash and its 16 flags, from fLocked;
+    a flag of 1 means the action is locked."""
+    return build_record(SHEET_PROTECTION, struct.pack("<H16I", password, *flags))
+
+
 def sheet_protection_bin(protection):
     if not protection.enabled:
         return b""
     flags = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
              int(protection.select_locked_cells), 0, 0, 0, int(protection.select_unlocked_cells)]
     password = 0 if protection.password_hash is None else int(protection.password_hash, 16)
-    return build_record(SHEET_PROTECTION, struct.pack("<H16I", password, *flags))
+    return sheet_protection_record(password, flags)
 
 
 def workbook_protection_bin(protection):
@@ -194,3 +200,21 @@ def request_recalculation(data: bytes) -> bytes:
         else:
             chunks.append(data[record.header_start:record.data_end])
     return b''.join(chunks)
+
+
+BRT_PANE, BRT_SEL = 0x97, 0x98
+
+
+def pane_record(x_split: float, y_split: float, top_row: int, left_column: int, active_pane: int, flags: int) -> bytes:
+    """BrtPane ([MS-XLSB] 2.4.716): the split, the first visible cell of the bottom-right
+    pane, the active pane and the frozen flags."""
+    return build_record(BRT_PANE, struct.pack("<ddIII", x_split, y_split, top_row, left_column, active_pane)
+                        + bytes((flags,)))
+
+
+def selection_record(pane: int, row: int, column: int, cell_id: int,
+                     ranges: Sequence[tuple[int, int, int, int]]) -> bytes:
+    """BrtSel ([MS-XLSB] 2.4.781): the pane, the active cell and the selected
+    ranges as ``(first row, last row, first column, last column)``."""
+    return build_record(BRT_SEL, struct.pack("<IIIII", pane, row, column, cell_id, len(ranges))
+                        + b"".join(struct.pack("<IIII", *item) for item in ranges))

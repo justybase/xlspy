@@ -16,11 +16,13 @@ import re
 import struct
 
 from .._metadata import password_hash, DefinedName
-from .._xlsb_metadata import records, replace_records, wide_string, read_wide
+from .._xlsb_metadata import (
+    pane_record, read_wide, records, replace_records, selection_record, sheet_protection_record, wide_string,
+)
 from .._xlsb_print import (
     BRT_BEGIN_COL_BREAKS, BRT_BEGIN_HEADER_FOOTER, BRT_BEGIN_ROW_BREAKS, BRT_BREAK,
     BRT_END_COL_BREAKS, BRT_END_HEADER_FOOTER, BRT_END_ROW_BREAKS, BRT_MARGINS,
-    BRT_PAGE_SETUP, BRT_PRINT_OPTIONS,
+    BRT_PAGE_SETUP, BRT_PRINT_OPTIONS, breaks_block, header_footer_block, margins_record,
 )
 from .._xlsb_style_records import color_payload
 from ..biff_utils import build_record
@@ -240,10 +242,8 @@ def _pane_record(pane) -> bytes:
         return b""
     top, left = _parse_sync_ref(pane.topLeftCell) if pane.topLeftCell else (0, 0)
     state = {"frozen": 0x03, "frozenSplit": 0x01}.get(pane.state, 0x00)
-    return build_record(PANE, struct.pack(
-        "<ddIII", float(pane.xSplit or 0), float(pane.ySplit or 0), top, left,
-        _PANE_IDS.get(pane.activePane, 3),
-    ) + bytes((state,)))
+    return pane_record(float(pane.xSplit or 0), float(pane.ySplit or 0), top, left,
+                       _PANE_IDS.get(pane.activePane, 3), state)
 
 
 def _selection_records(view) -> bytes:
@@ -258,11 +258,9 @@ def _selection_records(view) -> bytes:
         ranges = []
         for part in (item.sqref or item.activeCell or "A1").split():
             c1, r1, c2, r2 = parse_cell_range(part)
-            ranges.append(struct.pack("<IIII", r1, r2, c1, c2))
-        output.append(build_record(SELECTION, struct.pack(
-            "<IIIII", _PANE_IDS.get(item.pane or "topLeft", 3), row, column,
-            item.activeCellId or 0, len(ranges),
-        ) + b"".join(ranges)))
+            ranges.append((r1, r2, c1, c2))
+        output.append(selection_record(_PANE_IDS.get(item.pane or "topLeft", 3), row, column,
+                                       item.activeCellId or 0, ranges))
     return b"".join(output)
 
 
@@ -332,7 +330,7 @@ def _protection_record(sheet) -> bytes:
     else:
         value = int(password_hash(password), 16)
     flags = [1] + [0 if getattr(protection, name) else 1 for name in _PROTECTION_FLAGS_NO_SHEET]
-    return build_record(SHEET_PROTECTION, struct.pack("<H16I", value, *flags))
+    return sheet_protection_record(value, flags)
 
 
 def _filter_block(sheet) -> bytes:
@@ -405,23 +403,13 @@ def _header_footer_block(sheet) -> bytes:
     )
     if not any(codes) and flags == 0x0C:
         return b""
-    payload = struct.pack("<H", flags) + b"".join(
-        b"\xff\xff\xff\xff" if code is None else wide_string(code) for code in codes
-    )
-    return build_record(BRT_BEGIN_HEADER_FOOTER, payload) + build_record(BRT_END_HEADER_FOOTER)
+    return header_footer_block(flags, codes)
 
 
 def _breaks_block(begin, end, container) -> bytes:
-    if not container.brk:
-        return b""
-    manual = sum(1 for item in container.brk if item.man)
-    return b"".join((
-        build_record(begin, struct.pack("<II", len(container.brk), manual)),
-        *(build_record(BRT_BREAK, struct.pack(
-            "<5I", item.id, item.min or 0, item.max or 0, 1 if item.man else 0, item.pt or 0,
-        )) for item in container.brk),
-        build_record(end),
-    ))
+    return breaks_block(begin, end, [
+        (item.id, item.min or 0, item.max or 0, bool(item.man), item.pt or 0) for item in container.brk
+    ])
 
 
 def _print_block(sheet, data: bytes) -> bytes:
@@ -439,10 +427,7 @@ def _print_block(sheet, data: bytes) -> bytes:
     margins = sheet.page_margins
     return b"".join((
         build_record(BRT_PRINT_OPTIONS, struct.pack("<H", flags)),
-        build_record(BRT_MARGINS, struct.pack(
-            "<6d", margins.left, margins.right, margins.top, margins.bottom,
-            margins.header, margins.footer,
-        )),
+        margins_record((margins.left, margins.right, margins.top, margins.bottom, margins.header, margins.footer)),
         _page_setup_record(sheet, _find(data, BRT_PAGE_SETUP)),
         _header_footer_block(sheet),
         _breaks_block(BRT_BEGIN_ROW_BREAKS, BRT_END_ROW_BREAKS, sheet.row_breaks),

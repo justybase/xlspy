@@ -5,7 +5,7 @@ from an XLSX file as XLSB, so both formats print alike.
 """
 
 from __future__ import annotations
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 import struct
 
@@ -56,22 +56,41 @@ def _xlsb_page_setup_record(settings: PrintSettings) -> bytes:
     return build_record(BRT_PAGE_SETUP, payload)
 
 
-def _header_footer_record(settings: PrintSettings) -> bytes:
-    if settings.header is None and settings.footer is None:
-        return b""
-    payload = struct.pack("<H", _HEADER_FOOTER_FLAGS) + _nullable_text(settings.header) + _nullable_text(settings.footer)
-    payload += _NULL_STRING * 4  # even and first-page headers and footers
+def header_footer_block(flags: int, texts: Sequence[str | None]) -> bytes:
+    """BrtBeginHeaderFooter/BrtEndHeaderFooter: the flags, then the odd, even and
+    first-page header and footer texts (None for none), in that order."""
+    payload = struct.pack("<H", flags) + b"".join(_nullable_text(text) for text in texts)
     return build_record(BRT_BEGIN_HEADER_FOOTER, payload) + build_record(BRT_END_HEADER_FOOTER)
 
 
-def _breaks(begin: int, end: int, breaks: Sequence[int] | None, last: int) -> bytes:
+def breaks_block(begin: int, end: int, breaks: Sequence[tuple[int, int, int, bool, int]]) -> bytes:
+    """A row or column break list: ``(index, first, last, manual, pivot)`` per BrtBrk."""
     if not breaks:
         return b""
-    parts = [build_record(begin, struct.pack("<II", len(breaks), len(breaks)))]
-    # BrtBrk: the row or column, the span it covers, fMan and fPivot.
-    parts.extend(build_record(BRT_BREAK, struct.pack("<5I", value, 0, last, 1, 0)) for value in breaks)
-    parts.append(build_record(end))
-    return b"".join(parts)
+    manual = sum(1 for item in breaks if item[3])
+    return b"".join((
+        build_record(begin, struct.pack("<II", len(breaks), manual)),
+        *(build_record(BRT_BREAK, struct.pack("<5I", index, first, last, 1 if man else 0, pivot))
+          for index, first, last, man, pivot in breaks),
+        build_record(end),
+    ))
+
+
+def margins_record(margins: Iterable[float]) -> bytes:
+    """BrtMargins: left, right, top, bottom, header and footer, in inches."""
+    return build_record(BRT_MARGINS, struct.pack("<6d", *margins))
+
+
+def _header_footer_record(settings: PrintSettings) -> bytes:
+    if settings.header is None and settings.footer is None:
+        return b""
+    # Even and first-page headers and footers are not written.
+    return header_footer_block(_HEADER_FOOTER_FLAGS, (settings.header, settings.footer, None, None, None, None))
+
+
+def _breaks(begin: int, end: int, breaks: Sequence[int] | None, last: int) -> bytes:
+    # Each break spans the whole sheet and is manual.
+    return breaks_block(begin, end, [(value, 0, last, True, 0) for value in breaks or ()])
 
 
 def print_records(settings: PrintSettings) -> bytes:
@@ -84,10 +103,7 @@ def print_records(settings: PrintSettings) -> bytes:
     margins = settings.margins or PageMargins()
     return b"".join((
         build_record(BRT_PRINT_OPTIONS, struct.pack("<H", options)),
-        build_record(BRT_MARGINS, struct.pack(
-            "<6d", margins.left, margins.right, margins.top, margins.bottom,
-            margins.header, margins.footer,
-        )),
+        margins_record((margins.left, margins.right, margins.top, margins.bottom, margins.header, margins.footer)),
         _xlsb_page_setup_record(settings),
         _header_footer_record(settings),
         _breaks(BRT_BEGIN_ROW_BREAKS, BRT_END_ROW_BREAKS, settings.row_breaks, 16383),
