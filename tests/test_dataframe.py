@@ -13,7 +13,6 @@ from decimal import Decimal
 import pytest
 
 from xlspy import (  # noqa: E402
-    ExcelReader,
     F,
     XlsbWriter,
     XlsxWriter,
@@ -22,6 +21,8 @@ from xlspy import (  # noqa: E402
     to_xlsx,
 )
 from conftest import PROJECT_TMP  # noqa: E402
+from helpers import read_rows
+from xlspy import Workbook
 
 EXAMPLES = [
     "dataframe_to_xlsx.py",
@@ -39,11 +40,6 @@ def _pd():
 
 def _pl():
     return pytest.importorskip("polars")
-
-
-def _read(path, sheet="Sheet1"):
-    with ExcelReader(path) as reader:
-        return reader.read_all(sheet)
 
 
 @pytest.fixture()
@@ -79,7 +75,7 @@ def test_shortcuts_roundtrip(tmp_dir, sample_df, ext, shortcut):
     assert returned == path
     assert os.path.exists(path)
 
-    rows = _read(path)
+    rows = read_rows(path)
     assert rows[0] == ["name", "age", "score", "active", "joined", "amount"]
     assert rows[1][0] == "Alice"
     assert rows[1][1] == 25
@@ -95,7 +91,7 @@ def test_missing_values_become_empty_cells(tmp_dir, sample_df, ext, shortcut):
     path = os.path.join(tmp_dir, f"missing.{ext}")
     shortcut(sample_df, path, formats={"joined": F.DATE_ISO})
 
-    rows = _read(path)
+    rows = read_rows(path)
     # row 2: name None, score NaN, joined NaT -> all empty
     assert rows[2][0] == "Bob"
     assert rows[2][2] is None
@@ -108,7 +104,7 @@ def test_na_rep_writes_placeholder(tmp_dir):
     pd = _pd()
     path = os.path.join(tmp_dir, "narep.xlsx")
     to_xlsx(pd.DataFrame({"a": [1, None, 3]}), path, na_rep="N/A")
-    rows = _read(path)
+    rows = read_rows(path)
     assert rows[1] == [1]
     assert rows[2] == ["N/A"]
     assert rows[3] == [3]
@@ -119,7 +115,7 @@ def test_include_index(tmp_dir):
     df = pd.DataFrame({"a": [1, 2]}, index=pd.Index([10, 20], name="id"))
     path = os.path.join(tmp_dir, "index.xlsx")
     to_xlsx(df, path, include_index=True)
-    rows = _read(path)
+    rows = read_rows(path)
     assert rows[0] == ["id", "a"]
     assert rows[1] == [10, 1]
     assert rows[2] == [20, 2]
@@ -133,7 +129,7 @@ def test_multiindex_columns_and_index(tmp_dir):
 
     path = os.path.join(tmp_dir, "multiindex.xlsx")
     to_xlsx(df, path, include_index=True)
-    rows = _read(path)
+    rows = read_rows(path)
     assert rows[0] == ["grp", "n", "A x", "A y", "B z"]
     assert rows[1] == ["g", 1, 1, 2, 3]
     assert rows[2] == ["h", 2, 4, 5, 6]
@@ -151,7 +147,7 @@ def test_numpy_scalar_types(tmp_dir):
     )
     path = os.path.join(tmp_dir, "numpy.xlsb")
     to_xlsb(df, path)
-    rows = _read(path)
+    rows = read_rows(path)
     assert [type(v).__name__ for v in rows[1]] == ["int", "float", "bool"]
     assert rows[1] == [1, 1.5, True]
     assert rows[2] == [2, 2.5, False]
@@ -171,7 +167,7 @@ def test_numpy_float_nan_in_object_column_is_empty(tmp_dir, ext, shortcut):
     )
     path = os.path.join(tmp_dir, f"np_nan.{ext}")
     shortcut(df, path)
-    rows = _read(path)
+    rows = read_rows(path)
     assert rows[1][0] == 1.0
     assert rows[2][0] is None
     assert rows[3][0] is None
@@ -187,7 +183,7 @@ def test_numpy_timedelta_becomes_day_fraction(tmp_dir):
     )
     path = os.path.join(tmp_dir, "np_dur.xlsx")
     to_xlsx(df, path)
-    rows = _read(path)
+    rows = read_rows(path)
     assert rows[1][0] == 0.5
 
 
@@ -206,7 +202,7 @@ def test_numpy_nat_with_format_is_empty(tmp_dir, ext, shortcut):
     )
     path = os.path.join(tmp_dir, f"np_nat.{ext}")
     shortcut(df, path, formats={"when": F.DATE_ISO, "dur": F.TIME_HH_MM})
-    rows = _read(path)
+    rows = read_rows(path)
     assert rows[1][0] is not None
     assert rows[2][0] is None
     assert rows[2][1] is None
@@ -217,7 +213,7 @@ def test_time_column_becomes_day_fraction(tmp_dir):
     df = pd.DataFrame({"t": [datetime.time(12, 0), datetime.time(6, 0)]})
     path = os.path.join(tmp_dir, "time.xlsx")
     to_xlsx(df, path)
-    rows = _read(path)
+    rows = read_rows(path)
     assert rows[1][0] == 0.5
     assert rows[2][0] == 0.25
 
@@ -245,7 +241,7 @@ def test_xlsb_format_reads_back_as_datetime(tmp_dir):
     df = pd.DataFrame({"when": [pd.Timestamp("2024-01-15 08:00")]})
     path = os.path.join(tmp_dir, "formats.xlsb")
     to_xlsb(df, path, formats={"when": F.DATETIME_SHORT})
-    rows = _read(path)
+    rows = read_rows(path)
     assert rows[1] == [datetime.datetime(2024, 1, 15, 8, 0)]
 
 
@@ -260,10 +256,10 @@ def test_writer_methods_multiple_sheets(tmp_dir, writer_cls, ext):
         writer.add_sheet("Raw")
         writer.write_sheet([["manual"], [42]])
 
-    data = _read(path, "Data")
+    data = read_rows(path, "Data")
     assert data[0] == ["a", "b"]
     assert data[1] == [1, "x"]
-    raw = _read(path, "Raw")
+    raw = read_rows(path, "Raw")
     assert raw[0] == ["manual"]
     assert raw[1] == [42]
 
@@ -273,7 +269,7 @@ def test_write_dataframe_creates_default_sheet(tmp_dir):
     path = os.path.join(tmp_dir, "default.xlsx")
     with XlsxWriter(path) as writer:
         writer.write_dataframe(pd.DataFrame({"a": [1]}))
-    assert _read(path, "Sheet1") == [["a"], [1]]
+    assert read_rows(path, "Sheet1") == [["a"], [1]]
 
 
 @pytest.mark.parametrize("ext,shortcut", [("xlsx", to_xlsx), ("xlsb", to_xlsb)])
@@ -287,7 +283,7 @@ def test_empty_dataframe_shapes_roundtrip(tmp_dir, ext, shortcut):
     for index, (frame, expected) in enumerate(cases):
         path = os.path.join(tmp_dir, f"empty_{index}.{ext}")
         shortcut(frame, path)
-        assert _read(path) == expected
+        assert read_rows(path) == expected
 
 
 @pytest.mark.parametrize("ext,shortcut", [("xlsx", to_xlsx), ("xlsb", to_xlsb)])
@@ -309,7 +305,7 @@ def test_dataframe_matches_write_sheet_rows(tmp_dir, ext, shortcut):
     with writer_cls(rows_path) as writer:
         writer.add_sheet("Sheet1")
         writer.write_sheet(rows)
-    assert _read(shortcut_path) == _read(rows_path)
+    assert read_rows(shortcut_path) == read_rows(rows_path)
 
 
 @pytest.mark.parametrize(
@@ -368,7 +364,7 @@ def test_polars_roundtrip(tmp_dir, ext, shortcut):
     path = os.path.join(tmp_dir, f"polars.{ext}")
     shortcut(df, path, formats={"joined": F.DATETIME_SHORT})
 
-    rows = _read(path)
+    rows = read_rows(path)
     assert rows[0] == ["name", "age", "score", "active", "joined"]
     assert rows[1] == ["Alice", 25, 1.5, True, datetime.datetime(2024, 1, 15, 10, 30)]
     assert rows[2][1] is None
@@ -380,7 +376,7 @@ def test_polars_duration_becomes_day_fraction(tmp_dir):
     df = pl.DataFrame({"dur": [datetime.timedelta(hours=12)]})
     path = os.path.join(tmp_dir, "duration.xlsx")
     to_xlsx(df, path)
-    rows = _read(path)
+    rows = read_rows(path)
     # 12 hours -> 0.5 of a day; apply F.TIME_HH_MM to display it as a clock time.
     assert rows[1][0] == 0.5
 
@@ -431,3 +427,22 @@ def test_example_script_runs(script, tmp_path):
     )
     assert result.returncode == 0, f"{script} failed:\n{result.stderr}"
     assert any(tmp_path.iterdir()), f"{script} produced no output files"
+
+
+def _save_plain(path):
+    workbook = Workbook()
+    workbook.active["A1"] = "x"
+    workbook.save(path)
+    workbook.close()
+    return path
+
+
+def test_to_xlsx_failure_keeps_existing_file(tmp_path):
+    path = tmp_path / "keep.xlsx"
+    _save_plain(path)
+    before = path.read_bytes()
+
+    with pytest.raises(Exception):
+        to_xlsx(object(), path)
+
+    assert path.read_bytes() == before

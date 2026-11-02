@@ -18,22 +18,16 @@ import pathlib
 
 import pytest
 
-from xlspy import ExcelReader, XlsxUpdater, XlsxWriter
+from xlspy import ExcelReader, XlsxUpdater
 
 from golden_data import SHEETS, encoded_sheets, writer_rows
+from helpers import write_workbook
 
 DATA_DIR = pathlib.Path(__file__).parent / "data"
 GOLDEN_FILES = sorted(
     path for path in DATA_DIR.glob("golden_*") if path.suffix in {".xlsx", ".xlsb"}
 )
 GOLDEN_IDS = [path.name for path in GOLDEN_FILES]
-
-
-def _write_xlsx(path, rows, sheet_name="Main"):
-    with XlsxWriter(str(path)) as writer:
-        writer.add_sheet(sheet_name)
-        writer.write_sheet(rows)
-    return path
 
 
 def _read_with_xlspy(path):
@@ -110,7 +104,7 @@ def test_golden_workbook_matches_sidecar(golden):
 
 
 def test_openpyxl_reads_our_writer_output(tmp_path):
-    path = _write_xlsx(tmp_path / "writers.xlsx", writer_rows())
+    path = write_workbook(tmp_path / "writers.xlsx", writer_rows(), sheet="Main")
     # The xlspy writer stores the exact IEEE double (no 15-digit rounding),
     # so no float overrides apply here.
     expected = {"Main": _decode_sheets(encoded_sheets({"Main": SHEETS["Main"]}, overrides=False))["Main"]}
@@ -119,13 +113,13 @@ def test_openpyxl_reads_our_writer_output(tmp_path):
 
 
 def test_readers_agree_on_our_writer_output(tmp_path):
-    path = _write_xlsx(tmp_path / "agree.xlsx", writer_rows())
+    path = write_workbook(tmp_path / "agree.xlsx", writer_rows(), sheet="Main")
     _assert_same_grid(_read_with_xlspy(path), _read_with_openpyxl(path), "xlspy vs openpyxl")
 
 
 @pytest.mark.parametrize("streaming", [False, True], ids=["regular", "streaming"])
 def test_openpyxl_reads_xlsx_updater_output(tmp_path, streaming):
-    source = _write_xlsx(tmp_path / "update.xlsx", [["name", "when"], ["old", 1]])
+    source = write_workbook(tmp_path / "update.xlsx", [["name", "when"], ["old", 1]], sheet="Main")
     replacement = [["early", dt.date(1900, 1, 1)], ["unicode ⚡", dt.datetime(2024, 1, 15, 10, 30)]]
 
     updater = XlsxUpdater(source)

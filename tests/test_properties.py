@@ -18,9 +18,10 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from xlspy import ExcelReader, XlsbWriter, XlsxWriter
+from xlspy import ExcelReader
 from xlspy import reader as xlspy_reader
 from xlspy.excel_dates import datetime_to_serial, serial_to_datetime
+from helpers import write_workbook
 
 SMOKE = settings(max_examples=50, deadline=None, derandomize=True)
 
@@ -55,14 +56,6 @@ def _rectangular_grids(draw):
             middle = draw(st.lists(_cells, min_size=width - 2, max_size=width - 2))
             rows.append([draw(_non_empty_cells), *middle, draw(_non_empty_cells)])
     return rows
-
-
-def _write(path, rows):
-    writer_cls = XlsbWriter if str(path).endswith(".xlsb") else XlsxWriter
-    with writer_cls(str(path)) as writer:
-        writer.add_sheet("Sheet1")
-        writer.write_sheet(rows)
-    return path
 
 
 def _read(path, force_python_xlsb=False):
@@ -116,14 +109,14 @@ def _assert_same_grid(actual, expected, label):
 @SMOKE
 @given(rows=_rectangular_grids())
 def test_xlsx_roundtrip(tmp_path_factory, rows):
-    path = _write(tmp_path_factory.mktemp("xlsx") / "grid.xlsx", rows)
+    path = write_workbook(tmp_path_factory.mktemp("xlsx") / "grid.xlsx", rows)
     _assert_same_grid(_read(path), rows, "xlsx roundtrip")
 
 
 @SMOKE
 @given(rows=_rectangular_grids())
 def test_xlsb_roundtrip(tmp_path_factory, rows):
-    path = _write(tmp_path_factory.mktemp("xlsb") / "grid.xlsb", rows)
+    path = write_workbook(tmp_path_factory.mktemp("xlsb") / "grid.xlsb", rows)
     _assert_same_grid(_read(path), rows, "xlsb roundtrip")
     if xlspy_reader.HAVE_NATIVE:
         _assert_same_grid(
@@ -135,8 +128,8 @@ def test_xlsb_roundtrip(tmp_path_factory, rows):
 @given(rows=_rectangular_grids())
 def test_xlsx_and_xlsb_writers_agree(tmp_path_factory, rows):
     directory = tmp_path_factory.mktemp("both")
-    xlsx_rows = _read(_write(directory / "grid.xlsx", rows))
-    xlsb_rows = _read(_write(directory / "grid.xlsb", rows))
+    xlsx_rows = _read(write_workbook(directory / "grid.xlsx", rows))
+    xlsb_rows = _read(write_workbook(directory / "grid.xlsb", rows))
     _assert_same_grid(xlsb_rows, xlsx_rows, "xlsx vs xlsb")
 
 

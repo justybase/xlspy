@@ -8,6 +8,8 @@ import pytest
 
 from xlspy import ExcelReader, Workbook, XlsbWriter, XlsxWriter, load_workbook
 from xlspy.workbook import _reader
+import time
+import xlspy
 
 ROW_TAG = re.compile(rb"<row\b[^>]*>")
 
@@ -96,3 +98,35 @@ def test_height_after_dense_rows_is_on_the_right_row(tmp_path, monkeypatch, fast
     assert loaded.row_dimensions[1].height is None
     assert loaded["B1"].value is None
     assert [loaded.cell(row=r, column=1).value for r in (1, 2, 3)] == ["a", "b", "c"]
+
+
+def test_widely_separated_cells_save_quickly(tmp_path):
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = "start"
+    ws["XFD1"] = "far right"
+    ws["A20000"] = "far down"
+
+    path = tmp_path / "sparse.xlsx"
+    started = time.perf_counter()
+    wb.save(path)
+    elapsed = time.perf_counter() - started
+
+    # The old dense loop built 20000 rows of 16384 entries each (about 330 M
+    # iterations); the bounded loop finishes in well under a second.
+    assert elapsed < 20
+
+    loaded = load_workbook(path).active
+    assert loaded["A1"].value == "start"
+    assert loaded["XFD1"].value == "far right"
+    assert loaded["A20000"].value == "far down"
+
+
+def test_styled_empty_cell_far_right_keeps_its_style(tmp_path):
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = "x"
+    ws["D1"].font = xlspy.Font(bold=True)
+    path = tmp_path / "styled.xlsx"
+    wb.save(path)
+    assert load_workbook(path).active["D1"].font.bold is True

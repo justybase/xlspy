@@ -3,6 +3,11 @@ import zipfile
 import pytest
 
 from xlspy import Chart, ChartSeries, ExcelReader, XlsbWriter, XlsxWriter
+from helpers import part_text
+from xlspy import Trendline
+from xlspy import Workbook
+from xml.etree import ElementTree as ET
+import re
 
 
 def _chart_parts(path):
@@ -258,3 +263,78 @@ def test_untitled_single_series_chart_keeps_the_automatic_title(tmp_path, writer
     # As Excel saves it: an empty title, shown as the series name.
     assert '<chart><title><overlay val="0"/></title><autoTitleDeleted val="0"/>' in single
     assert "<title>" not in double and '<autoTitleDeleted val="0"/>' in double
+
+
+def test_radar_chart_is_written_as_radar_not_pie(tmp_path):
+    path = tmp_path / "radar.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    for row in range(1, 6):
+        sheet.cell(row=row, column=2, value=row)
+    sheet.add_chart(Chart("radar", [ChartSeries("B1:B5")]), "E2")
+    workbook.save(path)
+    workbook.close()
+
+    chart = part_text(path, "xl/charts/chart1.xml")
+    assert "<radarChart>" in chart
+    assert "<radarStyle" in chart
+    assert "pieChart" not in chart
+
+
+@pytest.mark.parametrize("chart_type", [
+    "area3d", "bar3d", "bubble", "line3d", "pie3d",
+    "projected_pie", "stock", "surface", "surface3d",
+])
+def test_unsupported_chart_types_raise_instead_of_becoming_pie(chart_type):
+    with pytest.raises(ValueError):
+        Chart(chart_type, [ChartSeries("B1:B5")])
+
+
+CHART = "{http://schemas.openxmlformats.org/drawingml/2006/chart}"
+
+
+def parts(path):
+    with zipfile.ZipFile(path) as zf:
+        return {name: zf.read(name) for name in zf.namelist()}
+
+
+def xml_root(data: bytes):
+    return ET.fromstring(data)
+
+
+def _chart_formulas(root):
+    return [node.text for node in root.iter(f"{CHART}f")]
+
+
+@pytest.mark.parametrize("ext", ["xlsx", "xlsb"])
+def test_chart_formula_escapes_sheet_name(tmp_path, ext):
+    writer = XlsxWriter if ext == "xlsx" else XlsbWriter
+    path = tmp_path / f"amp.{ext}"
+    with writer(path) as wb:
+        wb.add_sheet("Q&A")
+        wb.write_sheet(
+            [["Q", "A", "B"], ["Q1", 10, 20], ["Q2", 30, 40]],
+            charts=[Chart("bar", [ChartSeries("B2:B3", title_cell="B1", categories="A2:A3")])],
+        )
+    chart = xml_root(parts(path)["xl/charts/chart1.xml"])  # raises if not well-formed
+    assert "'Q&A'!$B$2:$B$3" in _chart_formulas(chart)
+
+
+def test_radar_trendline_is_rejected():
+    with pytest.raises(ValueError, match="radar"):
+        Chart("radar", [ChartSeries("B2:B4", trendline=Trendline("linear"))])
+
+
+def test_chart_title_size_is_written_as_an_integer(tmp_path):
+    path = tmp_path / "size.xlsx"
+    with XlsxWriter(path) as wb:
+        wb.add_sheet("S")
+        wb.write_sheet([["a"], [1]], charts=[Chart("bar", [ChartSeries("A2")], title="T", title_size=12.345)])
+    chart = parts(path)["xl/charts/chart1.xml"].decode()
+    sizes = re.findall(r'sz="([^"]+)"', chart)
+    assert sizes and all(size.isdigit() for size in sizes)
+
+
+def test_control_character_in_chart_title_is_rejected():
+    with pytest.raises(ValueError, match="control character"):
+        Chart("bar", [ChartSeries("A2")], title="bad\x01title")

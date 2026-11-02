@@ -1,19 +1,14 @@
 """Shapes and text boxes (KPI cards) in the drawing of XLSX and XLSB output."""
 
 import xml.etree.ElementTree as ET
-import zipfile
 
 import pytest
 
 from xlspy import XlsbWriter, XlsxWriter
 from xlspy.shapes import Shape, normalize_shapes, shape_frame_xml
+from helpers import part_text
 
 ROWS = [["Metric", "Value"], ["Revenue", 1234]]
-
-
-def _drawing(path, name):
-    with zipfile.ZipFile(path) as archive:
-        return archive.read(name).decode("utf-8")
 
 
 def _wrap(fragment):
@@ -88,7 +83,7 @@ def test_xlsx_sheet_with_shapes_has_drawing(tmp_path):
     with XlsxWriter(path) as writer:
         writer.write_sheet(ROWS, shapes=[Shape(anchor="D2", width=180, height=90, fill="#F2F2F2",
                                                text="Revenue", link_cell="B2")])
-    drawing = _drawing(path, "xl/drawings/drawing1.xml")
+    drawing = part_text(path, "xl/drawings/drawing1.xml")
     assert 'textlink="$B$2"' in drawing
     assert 'name="Shape 1"' in drawing  # the first object on a sheet with no charts or pictures
 
@@ -98,7 +93,7 @@ def test_xlsb_sheet_with_shapes_has_drawing(tmp_path):
     with XlsbWriter(path) as writer:
         writer.add_sheet("Sheet1")
         writer.write_sheet(ROWS, shapes=[Shape(anchor="D2", text="Revenue")])
-    drawing = _drawing(path, "xl/drawings/drawing1.xml")
+    drawing = part_text(path, "xl/drawings/drawing1.xml")
     assert "<sp " in drawing
     assert "Revenue" in drawing
 
@@ -107,7 +102,7 @@ def test_shapes_on_one_sheet_get_unique_ids(tmp_path):
     path = tmp_path / "mixed.xlsx"
     with XlsxWriter(path) as writer:
         writer.write_sheet(ROWS, shapes=[Shape(anchor="D2"), Shape(anchor="D8")])
-    drawing = _drawing(path, "xl/drawings/drawing1.xml")
+    drawing = part_text(path, "xl/drawings/drawing1.xml")
     ids = [node.get("id") for node in ET.fromstring(drawing).iter(
         "{http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing}cNvPr")]
     assert len(ids) == len(set(ids))

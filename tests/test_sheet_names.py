@@ -4,6 +4,9 @@ import pytest
 
 from xlspy import Workbook
 from xlspy.formula.sheets import rename_sheet_references
+from xlspy import XlsbWriter
+from xlspy import XlsxWriter
+import openpyxl
 
 
 @pytest.mark.parametrize(
@@ -116,3 +119,66 @@ def test_renaming_a_sheet_updates_loaded_charts(tmp_path, extension):
     with zipfile.ZipFile(out) as archive:
         charts = [archive.read(name).decode() for name in archive.namelist() if name.startswith("xl/charts/chart")]
     assert charts and all("'Sales 2026'!$B$2:$B$3" in xml and "Data!" not in xml for xml in charts)
+
+
+@pytest.mark.parametrize("writer_cls", [XlsxWriter, XlsbWriter])
+@pytest.mark.parametrize(
+    "name,message",
+    [
+        ("", "1 to 31 characters"),
+        ("x" * 32, "1 to 31 characters"),
+        ("'x", "apostrophe"),
+        ("x'", "apostrophe"),
+        ("a:b", "forbids"),
+        ("a/b", "forbids"),
+        (r"a\b", "forbids"),
+        ("a?b", "forbids"),
+        ("a*b", "forbids"),
+        ("[a]", "forbids"),
+        ("History", "reserves"),
+        ("history", "reserves"),
+    ],
+)
+def test_sheet_names_excel_refuses_are_rejected(tmp_path, writer_cls, name, message):
+    with writer_cls(tmp_path / "names.bin") as writer:
+        with pytest.raises(ValueError, match=message):
+            writer.add_sheet(name)
+        writer.add_sheet("Ok")
+
+
+@pytest.mark.parametrize("writer_cls", [XlsxWriter, XlsbWriter])
+def test_duplicate_sheet_names_ignore_case(tmp_path, writer_cls):
+    with writer_cls(tmp_path / "dupes.bin") as writer:
+        writer.add_sheet("Data")
+        with pytest.raises(ValueError, match="duplicate sheet name"):
+            writer.add_sheet("DATA")
+
+
+@pytest.mark.parametrize("writer_cls", [XlsxWriter, XlsbWriter])
+def test_sheet_names_excel_accepts_are_kept(tmp_path, writer_cls):
+    names = ["it's", "x" * 31, "Q1 & Q2 <draft>", "Żółć", "History 2024", "a.b,c;d"]
+    with writer_cls(tmp_path / "ok.bin") as writer:
+        for name in names:
+            writer.add_sheet(name)
+            writer.write_sheet([[name]])
+
+
+def test_sheet_name_must_be_a_string(tmp_path):
+    with XlsxWriter(tmp_path / "x.xlsx") as writer:
+        with pytest.raises(TypeError, match="sheet name must be a string"):
+            writer.add_sheet(5)
+        writer.add_sheet("Ok")
+
+
+def test_sheet_name_with_double_quote_round_trips_in_xlsx(tmp_path):
+    path = tmp_path / "quote.xlsx"
+    with XlsxWriter(path) as wb:
+        wb.add_sheet('Say "hi"')
+        wb.write_sheet([["a"]])
+    assert openpyxl.load_workbook(path).sheetnames == ['Say "hi"']
+
+
+def test_sheet_name_with_control_character_is_rejected(tmp_path):
+    with pytest.raises(ValueError, match="control character"):
+        with XlsxWriter(tmp_path / "ctl.xlsx") as wb:
+            wb.add_sheet("ctl\x01x")

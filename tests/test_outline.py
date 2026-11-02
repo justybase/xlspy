@@ -7,6 +7,8 @@ import pytest
 from xlspy import ExcelReader, Group, XlsbWriter, XlsxWriter
 from xlspy.biff_utils import iter_records
 from xlspy.outline import MAX_LEVEL, build_outline
+from helpers import part_text
+import re
 
 
 ROWS = [[f"r{i}c{j}" for j in range(10)] for i in range(12)]
@@ -263,3 +265,142 @@ def test_to_xlsx_passes_groups_through(tmp_path):
     sheet = openpyxl.load_workbook(path).active
     assert sheet.row_dimensions[2].hidden is True
     assert sheet.row_dimensions[4].collapsed is True
+
+
+DATA = [["h"], [1], [2], [3]]
+
+
+def _xlsx_rows(path, part="xl/worksheets/sheet1.xml"):
+    """Map 1-based row number to the attribute string of its ``<row>``.
+
+    A ``<row>`` without ``r`` is the row after the previous one, as Excel reads it.
+    """
+    xml = part_text(path, part)
+    rows, number = {}, 0
+    for m in re.finditer(r"<row\b([^>]*?)/?>", xml):
+        attrs = m.group(1)
+        found = re.search(r'\br="(\d+)"', attrs)
+        number = int(found.group(1)) if found else number + 1
+        rows[number] = attrs
+    return rows
+
+
+def _xlsb_row_flags(path, part="xl/worksheets/sheet1.bin"):
+    """Map 0-based row index to the BrtRowHdr flags byte."""
+    with zipfile.ZipFile(path) as archive:
+        blob = archive.read(part)
+    records = list(iter_records(blob))
+    assert records[-1].data_end == len(blob), "sheet records must tile the buffer"
+    return {
+        struct.unpack_from("<I", blob, r.data_start)[0]: blob[r.data_start + 11]
+        for r in records if r.record_id == 0x0000
+    }
+
+
+def test_indices_from_lists_grouped_and_summary_rows_in_order():
+    outline = build_outline([Group(1, 3, True), Group(6, 8), Group(7, 7, True)], "row")
+
+    assert list(outline.indices_from(0)) == [1, 2, 3, 4, 6, 7, 8]
+    assert list(outline.indices_from(4)) == [4, 6, 7, 8]
+    assert list(outline.indices_from(9)) == []
+
+
+def test_group_on_the_last_row_has_no_summary_past_the_sheet():
+    outline = build_outline([Group(1048570, 1048575, True)], "row")
+
+    assert not outline.collapsed_at(1048576)
+    assert list(outline.indices_from(1048574)) == [1048574, 1048575]
+    columns = build_outline([Group("XFA", "XFD", True)], "column")
+    assert 16384 not in columns.indices()
+
+
+def test_xlsx_collapsed_group_ending_on_last_data_row_writes_summary_row(tmp_path):
+    path = tmp_path / "summary.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.write_sheet(DATA, row_groups=[Group(1, 3, collapsed=True)])
+
+    rows = _xlsx_rows(path)
+    for r in (2, 3, 4):
+        assert 'outlineLevel="1"' in rows[r] and 'hidden="1"' in rows[r]
+    assert 'collapsed="1"' in rows[5]
+    assert "outlineLevel" not in rows[5] and "hidden" not in rows[5]
+    sheet = openpyxl.load_workbook(path).active
+    assert sheet.row_dimensions[3].outline_level == 1
+    assert sheet.row_dimensions[3].hidden
+
+
+def test_xlsx_group_reaching_past_the_data_keeps_its_level(tmp_path):
+    path = tmp_path / "past.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.write_sheet(
+            DATA,
+            row_groups=[Group(2, 8), Group(5, 6, collapsed=True)],
+            row_heights={6: 30},
+        )
+
+    rows = _xlsx_rows(path)
+    # Group(2, 8) is open, so it has no summary row: rows stop at r9.
+    assert set(rows) == {1, 2, 3, 4, 5, 6, 7, 8, 9}
+    assert 'outlineLevel="1"' in rows[5]
+    assert 'outlineLevel="2"' in rows[6] and 'hidden="1"' in rows[6]
+    assert 'ht="30.0"' in rows[7] and 'outlineLevel="2"' in rows[7]
+    assert 'collapsed="1"' in rows[8] and 'outlineLevel="1"' in rows[8]
+    assert 'outlineLevel="1"' in rows[9] and 'collapsed="1"' not in rows[9]
+    # The dimension still covers only the cells that hold data.
+    assert '<dimension ref="A1:A4"/>' in part_text(path, "xl/worksheets/sheet1.xml")
+    sheet = openpyxl.load_workbook(path).active
+    assert sheet.max_row in (4, 9)
+    assert [c.value for c in sheet["A"][:4]] == ["h", 1, 2, 3]
+
+
+def test_xlsx_outline_only_sheet_without_data(tmp_path):
+    path = tmp_path / "empty.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.write_sheet([], row_groups=[Group(0, 1, collapsed=True)])
+
+    rows = _xlsx_rows(path)
+    assert sorted(rows) == [1, 2, 3]
+    assert 'collapsed="1"' in rows[3]
+    openpyxl.load_workbook(path)
+
+
+def test_xlsb_collapsed_group_ending_on_last_data_row_writes_summary_row(tmp_path):
+    path = tmp_path / "summary.xlsb"
+    with XlsbWriter(path) as writer:
+        writer.write_sheet(DATA, row_groups=[Group(1, 3, collapsed=True)])
+
+    flags = _xlsb_row_flags(path)
+    for row in (1, 2, 3):
+        assert flags[row] & 0x07 == 1 and flags[row] & 0x10
+    assert flags[4] == 0x08  # collapsed, level 0, visible
+
+    with ExcelReader(str(path)) as reader:
+        rows = [row for row in reader.get_rows("Sheet1") if any(cell not in (None, "") for cell in row)]
+    assert [row[0] for row in rows] == ["h", 1, 2, 3]
+
+
+def test_xlsb_group_reaching_past_the_data_keeps_its_level(tmp_path):
+    path = tmp_path / "past.xlsb"
+    with XlsbWriter(path) as writer:
+        writer.write_sheet(DATA, row_groups=[Group(2, 8), Group(5, 6, collapsed=True)])
+
+    flags = _xlsb_row_flags(path)
+    assert sorted(flags) == list(range(9))
+    assert flags[4] & 0x07 == 1
+    assert flags[5] & 0x07 == 2 and flags[5] & 0x10
+    assert flags[7] & 0x08 and flags[7] & 0x07 == 1
+    assert flags[8] == 0x01
+
+
+@pytest.mark.parametrize("writer_cls,suffix", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
+def test_large_group_past_data_is_streamed(tmp_path, writer_cls, suffix):
+    path = tmp_path / f"big.{suffix}"
+    with writer_cls(path) as writer:
+        writer.write_sheet(DATA, row_groups=[Group(1, 20000, collapsed=True)])
+    assert path.stat().st_size > 0
+    if suffix == "xlsx":
+        rows = _xlsx_rows(path)
+        assert len(rows) == 20002 and 'collapsed="1"' in rows[20002]
+    else:
+        flags = _xlsb_row_flags(path)
+        assert len(flags) == 20002 and flags[20001] == 0x08

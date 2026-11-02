@@ -13,6 +13,13 @@ import zipfile
 import pytest
 
 from xlspy import ExcelReader, ExcelTable, XlsbWriter, XlsxWriter
+from helpers import part_text
+from xlspy import Formula
+from xlspy import Hyperlink
+from xlspy import XlsbUpdater
+from xlspy import XlsxUpdater
+from xlspy import load_workbook
+from xlspy.exceptions import UnsupportedFeatureError
 
 WRITERS = [pytest.param(XlsxWriter, "xlsx", id="xlsx"), pytest.param(XlsbWriter, "xlsb", id="xlsb")]
 
@@ -104,3 +111,171 @@ def test_table_names_that_read_as_cell_references_are_refused(name):
 @pytest.mark.parametrize("name", ["Tbl", "Sales", "T1A", "XFE1", "A1048577", "Rows1", "Col_2", "_T1"])
 def test_ordinary_table_names_are_accepted(name):
     assert ExcelTable(name, "A1:B2").display_name == name
+
+
+openpyxl = pytest.importorskip("openpyxl")
+
+
+def _counting_rows(rows, consumed):
+    for row in rows:
+        consumed.append(row)
+        yield row
+
+
+@pytest.mark.parametrize("writer_cls,suffix", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
+def test_bad_table_header_fails_before_the_rest_is_read(tmp_path, writer_cls, suffix):
+    consumed = []
+    rows = _counting_rows([["Name", 7]] + [[f"r{i}", i] for i in range(10000)], consumed)
+    # The failed sheet aborts the writer, so leaving the block raises too.
+    with pytest.raises(RuntimeError, match="previous write failed"):
+        with writer_cls(tmp_path / f"bad.{suffix}") as writer:
+            with pytest.raises(ValueError, match="header cell B1 must hold text"):
+                writer.write_sheet(rows, tables=[ExcelTable("Tbl", "A1:B10001")])
+    assert len(consumed) == 1
+
+
+@pytest.mark.parametrize("writer_cls,suffix", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
+def test_mismatched_table_column_name_fails_at_header_row(tmp_path, writer_cls, suffix):
+    consumed = []
+    rows = _counting_rows([["intro"], ["Name", "Qty"]] + [["x", 1]] * 500, consumed)
+    with pytest.raises(RuntimeError, match="previous write failed"):
+        with writer_cls(tmp_path / f"bad.{suffix}") as writer:
+            with pytest.raises(ValueError, match="does not match"):
+                writer.write_sheet(rows, tables=[ExcelTable("Tbl", "A2:B502", columns=["Name", "Amount"])])
+    assert len(consumed) == 2
+
+
+def test_hyperlink_header_cell_names_the_table_column(tmp_path):
+    path = tmp_path / "link_header.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.write_sheet(
+            [[Hyperlink("https://example.com", text="Site"), "Visits"], ["a", 1], ["b", 2]],
+            tables=[ExcelTable("Traffic", "A1:B3")],
+        )
+
+    table = openpyxl.load_workbook(path).active.tables["Traffic"]
+    assert [column.name for column in table.tableColumns] == ["Site", "Visits"]
+
+
+def test_formula_header_cell_is_still_rejected(tmp_path):
+    with pytest.raises(RuntimeError, match="previous write failed"):
+        with XlsxWriter(tmp_path / "f.xlsx") as writer:
+            with pytest.raises(ValueError, match="must hold text"):
+                writer.write_sheet([[Formula('"A"'), "B"], [1, 2]], tables=[ExcelTable("Tbl", "A1:B2")])
+
+
+def test_table_over_the_whole_data_gets_no_sheet_autofilter(tmp_path):
+    path = tmp_path / "table.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.write_sheet(
+            [["k", "v"], ["a", 1], ["b", 2]],
+            tables=[ExcelTable("Full", "A1:B3")],
+            auto_filter=True,
+        )
+
+    assert "<autoFilter" not in part_text(path, "xl/worksheets/sheet1.xml")
+    assert "<autoFilter" in part_text(path, "xl/tables/table1.xml")
+
+
+def parts(path):
+    with zipfile.ZipFile(path) as zf:
+        return {name: zf.read(name) for name in zf.namelist()}
+
+
+@pytest.mark.parametrize("writer", [XlsxWriter, XlsbWriter])
+def test_table_names_differing_only_in_case_are_rejected(tmp_path, writer):
+    rows = [["h", "h2", None, "d1", "d2"], [1, 2, None, 3, 4], [5, 6, None, 7, 8]]
+    with pytest.raises(ValueError, match="Excel ignores case"):
+        with writer(tmp_path / "tables") as wb:
+            wb.add_sheet("S")
+            wb.write_sheet(
+                rows,
+                tables=[ExcelTable("Sales", "A1:B3"), ExcelTable("sales", "D1:E3")],
+            )
+
+
+FORMATS = pytest.mark.parametrize("suffix", ["xlsx", "xlsb"])
+
+
+STREAMING = pytest.mark.parametrize("streaming", [False, True])
+
+
+TABLE_ROWS = [["Name", "Qty"], ["a", 1], ["b", 2]]
+
+
+def _table_base(tmp_path, suffix, rows=TABLE_ROWS, ref="A1:B3"):
+    base = tmp_path / f"base.{suffix}"
+    writer = XlsxWriter if suffix == "xlsx" else XlsbWriter
+    with writer(base) as wb:
+        wb.add_sheet("S")
+        wb.write_sheet(rows, tables=[ExcelTable("Tbl", ref)])
+    return base
+
+
+def _updater(path, suffix):
+    return XlsxUpdater(path) if suffix == "xlsx" else XlsbUpdater(path)
+
+
+def _replace(updater, rows, streaming, headers=None):
+    if streaming:
+        updater.replace_sheet_data_stream("S", rows, headers=headers)
+    else:
+        updater.replace_sheet_data("S", rows, headers=headers)
+
+
+@FORMATS
+@STREAMING
+def test_table_header_mismatch_is_refused_and_package_unchanged(tmp_path, suffix, streaming):
+    base = _table_base(tmp_path, suffix)
+    before = parts(base)
+    updater = _updater(base, suffix)
+    with pytest.raises(UnsupportedFeatureError, match="header cell A1"):
+        _replace(updater, [["Nome", "Qty"], ["c", 3]], streaming)
+    out = tmp_path / f"out.{suffix}"
+    updater.save(out)
+    assert parts(out) == before
+
+
+@FORMATS
+@STREAMING
+def test_table_header_mismatch_with_headers_argument_is_refused(tmp_path, suffix, streaming):
+    base = _table_base(tmp_path, suffix)
+    updater = _updater(base, suffix)
+    with pytest.raises(UnsupportedFeatureError, match="header cell B1"):
+        _replace(updater, [["c", 3]], streaming, headers=["Name", "Amount"])
+
+
+@FORMATS
+@STREAMING
+def test_table_header_mismatch_in_the_middle_of_the_data_is_refused(tmp_path, suffix, streaming):
+    # The table's header is row 4; the new data changes it on the way down.
+    rows = [["intro", None], [None, None], [None, None], ["Name", "Qty"], ["c", 3]]
+    base = _table_base(tmp_path, suffix, rows=rows, ref="A4:B5")
+    updater = _updater(base, suffix)
+    new_rows = [["x"], ["y"], ["z"], ["Name", "Other"], ["c", 3]]
+    with pytest.raises(UnsupportedFeatureError, match="header cell B4"):
+        _replace(updater, new_rows, streaming)
+
+
+@FORMATS
+@STREAMING
+def test_data_too_short_to_reach_the_table_header_is_refused(tmp_path, suffix, streaming):
+    rows = [["intro", None], [None, None], [None, None], ["Name", "Qty"], ["c", 3]]
+    base = _table_base(tmp_path, suffix, rows=rows, ref="A4:B5")
+    updater = _updater(base, suffix)
+    with pytest.raises(UnsupportedFeatureError, match="header cell A4"):
+        _replace(updater, [["only", 1]], streaming)
+
+
+@FORMATS
+@STREAMING
+def test_matching_headers_are_accepted_ignoring_case_and_length(tmp_path, suffix, streaming):
+    base = _table_base(tmp_path, suffix)
+    out = tmp_path / f"out.{suffix}"
+    updater = _updater(base, suffix)
+    # Excel only needs the header cells to match; a shorter range is not corruption.
+    _replace(updater, [["NAME", "qty"], ["c", 3]], streaming)
+    updater.save(out)
+
+    sheet = load_workbook(out)["S"]
+    assert [sheet.cell(row=2, column=c).value for c in (1, 2)] == ["c", 3]

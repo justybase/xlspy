@@ -13,6 +13,7 @@ from xlspy._widths import (
     text_width,
 )
 from xlspy.biff_utils import iter_records
+from xlspy import load_workbook
 
 
 @pytest.mark.parametrize("value,number_format,expected", [
@@ -141,3 +142,15 @@ def test_table_header_gets_room_for_its_button(tmp_path):
     with_button = estimate_column_widths(rows, 2, filter_cells=[(0, 0, 1)])
     assert _xlsx_widths(path)[0] == pytest.approx(file_width(with_button[0]), abs=0.01)
     assert with_button[0] > estimate_column_widths(rows, 2)[0]
+
+
+def test_xlsb_autofilter_and_widths_cover_columns_past_the_first_rows(tmp_path):
+    rows = [["x", "x"] for _ in range(150)]
+    rows[120] = ["x"] * 6  # six columns, first seen after the first 100 rows
+    path = tmp_path / "wide.xlsb"
+    with XlsbWriter(path) as wb:
+        wb.add_sheet("S")
+        wb.write_sheet(rows, column_widths={5: 40}, auto_filter=True)
+    ws = load_workbook(path)["S"]
+    assert ws.auto_filter.ref == "A1:F150"
+    assert ws.column_dimensions["F"].width == pytest.approx(40)

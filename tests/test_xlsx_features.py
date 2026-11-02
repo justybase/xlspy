@@ -28,6 +28,7 @@ from xlspy import (
     Style,
     XlsxWriter,
 )
+from helpers import part_text
 
 openpyxl = pytest.importorskip("openpyxl")
 
@@ -62,11 +63,6 @@ def _jpeg_bytes(width, height):
 
 def _read(path, sheet="Sheet1"):
     return openpyxl.load_workbook(path)[sheet]
-
-
-def _zip_text(path, name):
-    with zipfile.ZipFile(path) as archive:
-        return archive.read(name).decode("utf-8")
 
 
 # ---------------------------------------------------------------- formulas
@@ -127,7 +123,7 @@ def test_strings_that_start_with_equals_stay_text(tmp_path):
     with XlsxWriter(path) as writer:
         writer.add_sheet("Sheet1")
         writer.write_sheet([["=SUM(A1:A3)", "=1+1"]])
-    assert "<f>" not in _zip_text(path, "xl/worksheets/sheet1.xml")
+    assert "<f>" not in part_text(path, "xl/worksheets/sheet1.xml")
     sheet = _read(path, "Sheet1")
     assert sheet["A1"].value == "=SUM(A1:A3)"
     assert sheet["A1"].data_type == "s"
@@ -148,9 +144,9 @@ def test_formulas_use_recalculation_and_escape_xml(tmp_path):
     with XlsxWriter(path) as writer:
         writer.add_sheet("Sheet1")
         writer.write_sheet([[Formula("IF(A1<0,\"<neg>\",A1&\"x\")")]])
-    sheet = _zip_text(path, "xl/worksheets/sheet1.xml")
+    sheet = part_text(path, "xl/worksheets/sheet1.xml")
     assert "<f>IF(A1&lt;0,&quot;&lt;neg&gt;&quot;" in sheet or "&lt;neg&gt;" in sheet
-    assert 'fullCalcOnLoad="1"' in _zip_text(path, "xl/workbook.xml")
+    assert 'fullCalcOnLoad="1"' in part_text(path, "xl/workbook.xml")
 
 
 def test_formula_in_table_and_array_formula(tmp_path):
@@ -164,7 +160,7 @@ def test_formula_in_table_and_array_formula(tmp_path):
         writer.add_sheet("Arrays")
         writer.write_sheet([[1, 2], [3, 4], [Formula("A1:A2*B1:B2", array_ref="C1:C2")]])
     assert _read(path, "Data")["C2"].value == "=A2*B2"
-    arrays = _zip_text(path, "xl/worksheets/sheet2.xml")
+    arrays = part_text(path, "xl/worksheets/sheet2.xml")
     assert '<f t="array" ref="C1:C2">A1:A2*B1:B2</f>' in arrays
 
 
@@ -310,7 +306,7 @@ def test_hyperlinks_external_internal_and_styled(tmp_path):
     assert sheet["B5"].font.bold is True
     assert sheet["B2"].font.underline == "single"
 
-    rels = _zip_text(path, "xl/worksheets/_rels/sheet1.xml.rels")
+    rels = part_text(path, "xl/worksheets/_rels/sheet1.xml.rels")
     assert 'TargetMode="External"' in rels
     assert "https://example.com/report?a=1&amp;b=2" in rels
 
@@ -375,11 +371,11 @@ def test_png_and_jpeg_images_with_sizes_and_charts(tmp_path):
     assert "xl/media/image1.png" in names
     assert "xl/media/image2.jpeg" in names
     assert "xl/media/image1.png" in names and names.count("xl/media/image1.png") == 1
-    rels = _zip_text(path, "xl/drawings/_rels/drawing1.xml.rels")
+    rels = part_text(path, "xl/drawings/_rels/drawing1.xml.rels")
     assert 'Target="../media/image1.png"' in rels
     assert 'Target="../media/image2.jpeg"' in rels
     assert 'Target="../charts/chart1.xml"' in rels
-    content_types = _zip_text(path, "[Content_Types].xml")
+    content_types = part_text(path, "[Content_Types].xml")
     assert 'Extension="png" ContentType="image/png"' in content_types
     assert 'Extension="jpeg" ContentType="image/jpeg"' in content_types
 
@@ -560,7 +556,7 @@ def test_scale_is_written_when_not_fitting(tmp_path):
     with XlsxWriter(path) as writer:
         writer.add_sheet("Sheet1")
         writer.write_sheet([["a"]], print_settings=PrintSettings(scale=80, paper_size="letter"))
-    xml = _zip_text(path, "xl/worksheets/sheet1.xml")
+    xml = part_text(path, "xl/worksheets/sheet1.xml")
     assert '<pageSetup paperSize="1" scale="80"/>' in xml
     assert "fitToPage" not in xml
 
@@ -629,7 +625,7 @@ def test_scatter_without_x_values_and_default_markers(tmp_path):
     with XlsxWriter(path) as writer:
         writer.add_sheet("Data")
         writer.write_sheet([["v"], [1], [4]], charts=[Chart("scatter", [ChartSeries("A2:A3")])])
-    xml = _zip_text(path, "xl/charts/chart1.xml")
+    xml = part_text(path, "xl/charts/chart1.xml")
     assert "<c:xVal>" not in xml and "<xVal>" not in xml
     assert '<scatterStyle val="lineMarker"/>' in xml
     assert '<symbol val="circle"/>' in xml
@@ -641,7 +637,7 @@ def test_axis_and_legend_defaults_stay_byte_compatible(tmp_path):
         writer.add_sheet("Data")
         writer.write_sheet([["a", "b"], ["x", 1]],
                            charts=[Chart("bar", [ChartSeries("B2:B2", categories="A2:A2")])])
-    xml = _zip_text(path, "xl/charts/chart1.xml")
+    xml = part_text(path, "xl/charts/chart1.xml")
     # The legend says explicitly that it does not overlay the plot area.
     assert "<legend><legendPos val=\"r\"/><overlay val=\"0\"/></legend>" in xml
     assert "<majorGridlines/>" in xml
@@ -665,7 +661,7 @@ def test_chart_text_and_number_settings_are_serialized(tmp_path):
                 legend=False,
             )],
         )
-    xml = _zip_text(path, "xl/charts/chart1.xml")
+    xml = part_text(path, "xl/charts/chart1.xml")
     assert '<numFmt formatCode="#,##0" sourceLinked="0"/>' in xml
     assert '<dLblPos val="t"/>' in xml
     assert 'sz="1600"' in xml

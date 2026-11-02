@@ -42,6 +42,7 @@ from xlspy import (
     Workbook,
     load_workbook,
 )
+from xlspy import ReadOnlyCell
 
 
 def _rgb(color):
@@ -708,3 +709,7 @@ def test_read_only_binary_files_written_by_xlspy_are_not_truncated(tmp_path):
         assert list(sheet.values) == [(1, 2, 0), (4, None, None), (None, None, None), (None, 9, None)]
     finally:
         workbook.close()
+
+
+def test_read_only_cell_is_exported():
+    assert ReadOnlyCell.__name__ == "ReadOnlyCell"

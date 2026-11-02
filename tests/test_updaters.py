@@ -8,6 +8,14 @@ from xlspy import ExcelReader, F, XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWrit
 from xlspy.biff_utils import build_record, iter_records, read_utf16
 
 from zip_utils import rewrite_workbook_members
+from xlspy import Workbook
+from xlspy import load_workbook
+from xlspy.exceptions import UnsupportedFeatureError
+from xlspy.formulas import Formula
+from xml.etree import ElementTree as ET
+import math
+import openpyxl
+import re
 
 
 def _write_xlsx(path, sheets, *, use_shared_strings=True):
@@ -527,3 +535,264 @@ def test_updater_rejects_wrong_sheet_and_style_option(tmp_path):
         updater.replace_sheet_data("Missing", [[1]])
     with pytest.raises(ValueError):
         updater.replace_sheet_data("Sheet1", [[1]], style_fallback="bad")
+
+
+def _first_cell(path):
+    workbook = load_workbook(path)
+    try:
+        return workbook.active["A1"].value
+    finally:
+        workbook.close()
+
+
+def _save_plain(path):
+    workbook = Workbook()
+    workbook.active["A1"] = "x"
+    workbook.save(path)
+    workbook.close()
+    return path
+
+
+def test_xlsx_updater_escapes_control_characters_and_round_trips(tmp_path):
+    path = _save_plain(tmp_path / "ctrl.xlsx")
+    updater = XlsxUpdater(path)
+    try:
+        updater.replace_sheet_data("Sheet", [["a\x01b"]])
+        path.write_bytes(updater.to_bytes())
+    finally:
+        updater.close()
+    with zipfile.ZipFile(path) as archive:
+        package = "".join(archive.read(name).decode("utf-8") for name in archive.namelist() if name.endswith(".xml"))
+    assert "\x01" not in package
+    assert "_x0001_" in package
+    assert _first_cell(path) == "a\x01b"
+
+
+def test_xlsx_updater_rejects_text_over_excel_limit(tmp_path):
+    path = _save_plain(tmp_path / "long.xlsx")
+    updater = XlsxUpdater(path)
+    try:
+        with pytest.raises(ValueError):
+            updater.replace_sheet_data("Sheet", [["x" * 40000]])
+    finally:
+        updater.close()
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+def test_xlsx_updater_rejects_non_finite_numbers(tmp_path, value):
+    path = _save_plain(tmp_path / "nan.xlsx")
+    updater = XlsxUpdater(path)
+    try:
+        with pytest.raises(ValueError):
+            updater.replace_sheet_data("Sheet", [[value]])
+    finally:
+        updater.close()
+
+
+def test_xlsb_updater_keeps_control_characters_and_rejects_nan(tmp_path):
+    path = tmp_path / "ctrl.xlsb"
+    workbook = Workbook()
+    workbook.active["A1"] = "x"
+    workbook.save(path)
+    workbook.close()
+
+    updater = XlsbUpdater(path)
+    try:
+        with pytest.raises(ValueError):
+            updater.replace_sheet_data("Sheet", [[math.nan]])
+        updater.replace_sheet_data("Sheet", [["a\x01b"]])
+        path.write_bytes(updater.to_bytes())
+    finally:
+        updater.close()
+    assert _first_cell(path) == "a\x01b"
+
+
+MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+
+def parts(path):
+    with zipfile.ZipFile(path) as zf:
+        return {name: zf.read(name) for name in zf.namelist()}
+
+
+def xml_root(data: bytes):
+    return ET.fromstring(data)
+
+
+def xlsb_records(data: bytes):
+    """Yield ``(record_id, payload)`` from a BIFF12 stream."""
+
+    def varint(i):
+        value = shift = 0
+        while True:
+            byte = data[i]
+            i += 1
+            value |= (byte & 0x7F) << shift
+            shift += 7
+            if not byte & 0x80:
+                return value, i
+
+    i = 0
+    while i < len(data):
+        record_id, i = varint(i)
+        size, i = varint(i)
+        yield record_id, data[i:i + size]
+        i += size
+
+
+def xlsb_sheet(path, number=1):
+    return parts(path)[f"xl/worksheets/sheet{number}.bin"]
+
+
+ROWS = [["h1", "h2", "h3"], [1, 2, 3], [4, 5, 6]]
+
+
+def _xlsb_base(tmp_path):
+    base = tmp_path / "base.xlsb"
+    with XlsbWriter(base) as wb:
+        wb.add_sheet("S")
+        wb.write_sheet(ROWS)
+    return base
+
+
+def _dimension_and_selection(data):
+    dimension = selection = None
+    for record_id, payload in xlsb_records(data):
+        if record_id == 0x94:
+            dimension = struct.unpack("<iiii", payload[:16])
+        if record_id == 0x98:
+            selection = payload
+    return dimension, selection
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_xlsb_replace_writes_dimension_and_leaves_selection(tmp_path, streaming):
+    base = _xlsb_base(tmp_path)
+    _, selection_before = _dimension_and_selection(xlsb_sheet(base))
+    new_rows = [[r * 10 + c for c in range(6)] for r in range(10)]
+    out = tmp_path / "out.xlsb"
+    updater = XlsbUpdater(base)
+    if streaming:
+        updater.replace_sheet_data_stream("S", new_rows)
+    else:
+        updater.replace_sheet_data("S", new_rows)
+    updater.save(out)
+
+    dimension, selection_after = _dimension_and_selection(xlsb_sheet(out))
+    assert dimension == (0, 9, 0, 5)
+    assert selection_after == selection_before
+
+
+CALC_CHAIN = (
+    b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    b'<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    b'<c r="B2" i="1"/><c r="B3" i="1"/></calcChain>'
+)
+
+
+def _with_calc_chain(source, target):
+    with zipfile.ZipFile(source) as zin, zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "xl/_rels/workbook.xml.rels":
+                data = data.replace(
+                    b"</Relationships>",
+                    b'<Relationship Id="rIdCalc" Type="http://schemas.openxmlformats.org/'
+                    b'officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/></Relationships>',
+                )
+            if item.filename == "[Content_Types].xml":
+                data = data.replace(
+                    b"</Types>",
+                    b'<Override PartName="/xl/calcChain.xml" ContentType="application/'
+                    b'vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/></Types>',
+                )
+            zout.writestr(item.filename, data)
+        zout.writestr("xl/calcChain.xml", CALC_CHAIN)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_replacing_formulas_drops_the_calc_chain(tmp_path, streaming):
+    base = tmp_path / "base.xlsx"
+    with XlsxWriter(base) as wb:
+        wb.add_sheet("S")
+        wb.write_sheet([["h1", "h2"], [1, Formula("A2*2")], [2, Formula("A3*2")]])
+    chained = tmp_path / "chained.xlsx"
+    _with_calc_chain(base, chained)
+
+    out = tmp_path / "out.xlsx"
+    updater = XlsxUpdater(chained)
+    if streaming:
+        updater.replace_sheet_data_stream("S", [["h1", "h2"], [5, 6]])
+    else:
+        updater.replace_sheet_data("S", [["h1", "h2"], [5, 6]])
+    updater.save(out)
+
+    package = parts(out)
+    assert "xl/calcChain.xml" not in package
+    assert b"calcChain" not in package["xl/_rels/workbook.xml.rels"]
+    assert b"<f>" not in package["xl/worksheets/sheet1.xml"]
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_xlsx_replace_writes_formula_with_cached_value(tmp_path, streaming):
+    base = tmp_path / "base.xlsx"
+    with XlsxWriter(base) as wb:
+        wb.add_sheet("S")
+        wb.write_sheet([["h1", "h2"], [1, 2]])
+    out = tmp_path / "out.xlsx"
+    updater = XlsxUpdater(base)
+    rows = [["h1", "h2"], [7, Formula("A2*3", value=21)], [8, Formula('"x"&"y"', value="xy")]]
+    if streaming:
+        updater.replace_sheet_data_stream("S", rows)
+    else:
+        updater.replace_sheet_data("S", rows)
+    updater.save(out)
+
+    formulas = openpyxl.load_workbook(out)["S"]
+    cached = openpyxl.load_workbook(out, data_only=True)["S"]
+    assert formulas["B2"].value == "=A2*3"
+    assert cached["B2"].value == 21
+    assert formulas["B3"].value == '="x"&"y"'
+    assert cached["B3"].value == "xy"
+
+
+def test_xlsb_replace_refuses_formulas_instead_of_writing_their_text(tmp_path):
+    base = _xlsb_base(tmp_path)
+    updater = XlsbUpdater(base)
+    with pytest.raises(UnsupportedFeatureError, match="update_cells"):
+        updater.replace_sheet_data("S", [["a", Formula("A1+1")]])
+
+
+def test_rows_of_a_self_closing_sheetdata_go_inside_it(tmp_path):
+    path = tmp_path / "blank.xlsx"
+    with XlsxWriter(path) as wb:
+        wb.add_sheet("Blank")  # never written: <sheetData/>
+    wb = load_workbook(path)
+    wb["Blank"].row_dimensions[2].height = 30
+    out = tmp_path / "blank_out.xlsx"
+    wb.save(out)
+    root = xml_root(parts(out)["xl/worksheets/sheet1.xml"])
+    sheet_data = root.find(f"{MAIN}sheetData")
+    assert [row.get("r") for row in sheet_data] == ["2"]
+
+
+def test_dimension_follows_sheetpr_when_the_updater_adds_it(tmp_path):
+    base = tmp_path / "base.xlsx"
+    with XlsxWriter(base) as wb:
+        wb.add_sheet("S")
+        wb.write_sheet([["a", "b"], [1, 2]], tab_color="#FF0000")
+    stripped = tmp_path / "no_dimension.xlsx"
+    with zipfile.ZipFile(base) as zin, zipfile.ZipFile(stripped, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "xl/worksheets/sheet1.xml":
+                data = re.sub(rb"<dimension[^>]*/>", b"", data)
+            zout.writestr(item.filename, data)
+
+    for method in ("replace_sheet_data", "replace_sheet_data_stream"):
+        out = tmp_path / f"{method}.xlsx"
+        updater = XlsxUpdater(stripped)
+        getattr(updater, method)("S", [["a", "b"], [3, 4]])
+        updater.save(out)
+        names = [child.tag.replace(MAIN, "") for child in xml_root(parts(out)["xl/worksheets/sheet1.xml"])]
+        assert names.index("sheetPr") < names.index("dimension") < names.index("sheetData"), method
