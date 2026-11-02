@@ -2,13 +2,72 @@
 
 [Home](../README.md) · [Usage guide](usage.md) · [Validation](validation.md)
 
-`xlspy` includes a **native extension** (`_rs_core`, Rust/PyO3) that accelerates XLSB read and write, the XLSX read and write paths and workbook-model loading. It is enabled by default. Set `XLSPY_ACCEL=python` (or the older `XLSPY_DISABLE_C_EXT=1`) to force the pure Python fallback.
+`xlspy` includes a **native extension** (`_rs_core`, Rust/PyO3) that accelerates XLSB read and write, the XLSX read and write paths and workbook-model loading. It is enabled by default. Set `XLSPY_ACCEL=python` to force the pure-Python fallback.
 
-**Historical note.** Every measurement on this page was taken before the Rust port (2026-10-31). In those runs the native path was the C extension (`_c_core`, built with setuptools). The rows are labelled "C extension" as they were recorded; in them, "C extension on" is the native path and "C extension off" is the pure-Python path. The C code was removed in commit `68d4f67`. The port's own comparison against C is in [Validation](validation.md#rust-port-of-the-native-extension-2026-10-31). The numbers have not been re-measured on the Rust module.
+The [current results](#current-results-rust-module-2026-11-02) were measured on the Rust module. The [historical results](#historical-results-c-extension-2026-10-19-to-2026-10-30) were taken before the Rust port, with the C extension it replaced; they are kept as recorded, including the macOS and WSL2 runs, which have not been repeated.
 
-This page reports the write and read benchmarks on three machines. All were measured on **2026-10-19** with the same scripts and parameters. Dataset: **50,000 × 50** (2.5 million cells), `mixed` layout, median of **three runs** per measurement.
+## Current results (Rust module, 2026-11-02)
 
-## Environments
+Windows 11 Pro (build 26300), AMD Ryzen 7 7840HS (16 logical CPUs, 31 GiB RAM), Python 3.14.2, xlspy at commit `333cc8a` (Q7 of the quality round), openpyxl 3.1.5, xlsxwriter 3.3.1, PyExcelerate 0.13.0. Output goes to NTFS.
+
+### Write
+
+50,000 × 50 (2.5 million cells), `mixed` dataset from a generator to a file, median of three interleaved runs, each in its own process ([`windows-2026-11-02-rust-write.json`](benchmark-results/windows-2026-11-02-rust-write.json)). Peak is the worker's peak working set; traced is a separate run's peak of Python allocations.
+
+| Writer | Format | Time | Peak | Traced | File |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| xlspy, inline strings | XLSB | **0.81 s** | 44.4 MB | 4.4 MB | 7.32 MiB |
+| xlspy, shared strings | XLSB | **1.01 s** | 115.0 MB | 63.0 MB | 8.10 MiB |
+| xlspy, inline strings | XLSX | **1.27 s** | 53.6 MB | 5.1 MB | 6.13 MiB |
+| xlspy, shared strings | XLSX | **1.45 s** | 107.3 MB | 57.0 MB | 7.11 MiB |
+| xlspy, inline strings, `XLSPY_ACCEL=python` | XLSB | 2.98 s | 43.9 MB | 2.6 MB | 7.32 MiB |
+| xlspy, shared strings, `XLSPY_ACCEL=python` | XLSB | 3.21 s | 100.7 MB | 56.2 MB | 8.10 MiB |
+| xlspy, inline strings, `XLSPY_ACCEL=python` | XLSX | 3.35 s | 46.4 MB | 4.8 MB | 6.13 MiB |
+| xlspy, shared strings, `XLSPY_ACCEL=python` | XLSX | 3.59 s | 99.2 MB | 57.0 MB | 7.11 MiB |
+| PyExcelerate | XLSX | 8.42 s | 281.2 MB | 218.5 MB | 12.31 MiB |
+| xlsxwriter (`constant_memory`) | XLSX | 10.17 s | 28.9 MB | 1.1 MB | 11.55 MiB |
+| openpyxl (`write_only`) | XLSX | 17.06 s | 40.5 MB | 1.0 MB | 11.71 MiB |
+
+- The native module writes **2.5–3.7×** faster than the pure-Python path; the gain is largest for XLSB with inline strings.
+- xlspy XLSB (inline) is **12.6×** faster than xlsxwriter and **21×** faster than openpyxl; xlspy XLSX (shared strings) is **7.0×** and **11.8×** faster.
+- Shared strings cost memory in proportion to the distinct texts (about 57–63 MB of Python allocations here); inline strings keep the writer near 45–55 MB whatever the row count.
+- The write times match the last C-extension run on the same machine (2026-10-30, below) within 0.03 s (0.81 s, 0.98 s, 1.28 s and 1.46 s then).
+
+### Read
+
+The 50,000 × 50 file each writer produced, read back right after writing (warm page cache), median of three runs of `examples/performance_test.py` ([`read-windows-2026-11-02-rust.log`](benchmark-results/read-windows-2026-11-02-rust.log); the log's note on the XLSX row was corrected afterwards: XLSX rows go through the native scanner).
+
+| Reader | Format | Time |
+| :--- | :--- | ---: |
+| xlspy `ExcelReader`, native | XLSB | **0.14 s** |
+| xlspy `ExcelReader`, native | XLSX | **0.73 s** |
+| xlspy `ExcelReader`, `XLSPY_ACCEL=python` | XLSB | 6.51 s |
+| openpyxl (`read_only`) | XLSX | 10.75 s |
+
+- Native XLSB reads are **46×** faster than the pure-Python path and **77×** faster than openpyxl reading the XLSX file. Native XLSX reads are **15×** faster than openpyxl.
+- Before the Rust port, the C extension read the same XLSB in 0.58 s and xlspy read the XLSX in 4.77 s (2026-10-19, below); the XLSB read path and the native XLSX scanner were reworked between those runs and this one.
+
+### Read modes and the workbook model
+
+`benchmarks/bench_io.py`, 50,000 × 20 (1 million cells), median of three runs, each in its own process ([`windows-2026-11-02-rust-io.json`](benchmark-results/windows-2026-11-02-rust-io.json)):
+
+| Case | XLSX | XLSB |
+| :--- | ---: | ---: |
+| `ExcelReader.get_rows()` (values, no styles) | 0.27 s | 0.05 s |
+| `load_workbook()` | 0.37 s | 0.23 s |
+| `load_workbook()`, every 10th row bold | 0.42 s | 0.27 s |
+| Save a loaded styled workbook after 1,000 value and style edits | — | 2.57 s |
+| Build the model and save it | 1.48 s | 1.41 s |
+| Write rows with `XlsxWriter` / `XlsbWriter` | 0.40 s | 0.31 s |
+
+- `load_workbook()` builds its `Cell` objects natively. It costs **1.4–1.6×** an `ExcelReader` pass for XLSX and **4.5–5.4×** for XLSB, whose plain read is much faster; `ExcelReader` creates no `Cell` objects, so use it when you only need values.
+- A loaded XLSB is saved by patching the binary worksheet in place: the time depends mostly on the size of the edited sheet, not on the number of edits.
+
+## Historical results (C extension, 2026-10-19 to 2026-10-30)
+
+These runs used the C extension (`_c_core`, removed in commit `68d4f67`). The rows are labelled as they were recorded: "C extension on" is the native path, "C extension off" the pure-Python path. The port's own comparison against C is in [Validation](validation.md#rust-port-of-the-native-extension-2026-10-31).
+
+### Environments
 
 | | Windows | macOS | WSL2 |
 | :--- | :--- | :--- | :--- |
@@ -20,9 +79,9 @@ This page reports the write and read benchmarks on three machines. All were meas
 
 The Python patch version differs on WSL2 (3.14.8 against 3.14.7). The difference is treated as negligible. The C extension was built with the default `setup.py` flags on each system. Both `setup.py` and the C extension have since been removed; the package is built with maturin.
 
-## Results
+### Results
 
-### Write time
+#### Write time
 
 Median wall time, 50,000 × 50, generator input, file output. Rows with the C extension on unless marked.
 
@@ -39,7 +98,7 @@ Median wall time, 50,000 × 50, generator input, file output. Rows with the C ex
 | openpyxl (`write_only`) | 16.59 s | 10.69 s | 14.30 s |
 | xlsxwriter (`constant_memory`) | 9.97 s | 6.59 s | 8.14 s |
 
-### Peak memory and file size
+#### Peak memory and file size
 
 Peak memory is the worker's peak resident memory, including the interpreter. File sizes are the output workbook.
 
@@ -54,14 +113,14 @@ Peak memory is the worker's peak resident memory, including the interpreter. Fil
 
 ¹ The WSL2 peak is not reported. Four writers show the same 47.9 MB, which points to a measurement artifact in the Linux peak reading (`ru_maxrss`), not to real memory use. The WSL2 peak needs re-measuring once the harness reads the value correctly.
 
-### Observations
+#### Observations
 
 - With the C extension on, xlspy is **1.6–2.5× faster** than with it off, on all three systems. The largest gain is for XLSB inline.
 - xlspy XLSX (shared strings) is **8–9× faster** than openpyxl `write_only` on the same machine.
 - The Mac mini M4 is about **1.5× faster** than the Windows machine on every writer.
 - WSL2 is 14–22% faster than Windows, but the two runs write to different filesystems (ext4 in WSL2, NTFS on Windows, APFS on macOS). This comparison does not isolate the operating system.
 
-### Read time
+#### Read time
 
 Median wall time to read the 50,000 × 50 workbook back. Each library reads the file written in the same run, right after writing.
 
@@ -80,14 +139,14 @@ Median wall time to read the 50,000 × 50 workbook back. Each library reads the 
   below). The XLSB rows were not measured again on macOS or WSL2, so the XLSB numbers
   in this table are older than the Windows results of the comparison.
 
-### Read modes and the workbook model
+#### Read modes and the workbook model
 
 `benchmarks/bench_io.py` compares the read modes described in
 [Read modes](usage.md#read-modes-which-one-to-use) on a 50,000 × 20 workbook
 (Windows, Python 3.14, C extension on, median of three runs, 2026-10-29,
-[`results-2026-10-29-sprint.json`](../benchmarks/results-2026-10-29-sprint.json);
+[`results-2026-10-29-sprint.json`](../benchmarks/history/results-2026-10-29-sprint.json);
 before the 0.11 sprint in brackets,
-[`results-write-final.json`](../benchmarks/results-write-final.json)):
+[`results-write-final.json`](../benchmarks/history/results-write-final.json)):
 
 | Case | XLSX | XLSB |
 | :--- | ---: | ---: |
@@ -112,9 +171,9 @@ before the 0.11 sprint in brackets,
 
 **Regression check** against `results-write-final.json` (`bench_io.py`, 50,000 × 20, 2026-10-27):
 every case ran at 0.90–0.99× of the baseline time, so no case is slower than before
-(full results: [`results-2026-10-27.json`](../benchmarks/results-2026-10-27.json)).
+(full results: [`results-2026-10-27.json`](../benchmarks/history/results-2026-10-27.json)).
 
-### Comparison with other Python libraries (2026-10-30)
+#### Comparison with other Python libraries (2026-10-30)
 
 Re-run of the writers and readers on one machine, with the Python libraries that
 read or write the same formats. Windows 11, AMD Ryzen 7 7840HS, Python 3.14.7,
@@ -124,10 +183,10 @@ numbers below are for the changed code.
 Library versions: openpyxl 3.1.5, xlsxwriter 3.2.9, PyExcelerate 0.13.0,
 python-calamine 0.9.0, fastexcel 0.21.0 with pyarrow 26.0.0, pyxlsb 1.0.10.
 Raw data: write, median of three runs, 50,000 × 50 (2.5 million cells):
-[`results-write-2026-10-30.json`](../benchmarks/results-write-2026-10-30.json),
-[`results-write-2026-10-30.csv`](../benchmarks/results-write-2026-10-30.csv);
+[`results-write-2026-10-30.json`](../benchmarks/history/results-write-2026-10-30.json),
+[`results-write-2026-10-30.csv`](../benchmarks/history/results-write-2026-10-30.csv);
 read, median of five runs:
-[`results-read-compare-2026-10-30-v2.json`](../benchmarks/results-read-compare-2026-10-30-v2.json).
+[`results-read-compare-2026-10-30-v2.json`](../benchmarks/history/results-read-compare-2026-10-30-v2.json).
 
 **Write**, time in seconds. The `mixed` dataset (the eight-type layout of
 `performance_test.py`) goes from a generator to a file. Peak is the writer's peak
@@ -248,13 +307,13 @@ against `Workbook.save()` in xlspy. pandas and polars call these readers and
 writers underneath and add their own overhead, so they were not measured
 separately.
 
-### Feature comparison
+## Feature comparison
 
 The table lists the API that each library exposes, checked against the installed
 versions. It is not a functional test suite. For the details and the list of gaps,
 see [openpyxl parity](openpyxl-parity.md).
 
-| Capability | xlspy 0.10.1 | openpyxl 3.1.5 | xlsxwriter 3.2.9 |
+| Capability | xlspy | openpyxl 3.1.5 | xlsxwriter 3.3.1 |
 | :--- | :---: | :---: | :---: |
 | Read XLSX | yes | yes | no |
 | Read XLSB | yes | no | no |
@@ -262,7 +321,7 @@ see [openpyxl parity](openpyxl-parity.md).
 | Write XLSB | yes | no | no |
 | Streaming write | yes | yes (`write_only`) | yes (`constant_memory`) |
 | Streaming read | yes (`ExcelReader`) | yes (`read_only`) | n/a |
-| Modify and save an existing file | yes (XLSX; XLSB partly) | yes | no |
+| Modify and save an existing file | yes (XLSX and XLSB ¹) | yes | no |
 | Cell styles (font, fill, border, number format) | yes | yes | yes |
 | Named styles | yes | yes | no |
 | Merged cells | yes | yes | yes |
@@ -277,13 +336,13 @@ see [openpyxl parity](openpyxl-parity.md).
 | Defined names | yes | yes | yes |
 | Freeze panes, autofilter, print area | yes | yes | yes |
 | Sheet protection | yes | yes | yes |
-| Sparklines | no | no | yes |
+| Sparklines | yes | no | yes |
 | Array formulas | yes (XLSX, `Formula(array_ref=...)`) | yes | yes |
 | Create `.xlsm` / VBA project | no (`ValueError`) | keeps `vba_archive` | yes (`add_vba_project`) |
-| Pivot tables | preserved only | preserved only | no |
-| Chartsheets | preserved, not loaded | yes | yes |
+| Pivot tables | written; loaded ones preserved | preserved only | no |
+| Chartsheets | yes | yes | yes |
 
-XLSB support in xlspy follows the limits in [Usage](usage.md#loaded-xlsx-and-xlsb-workbooks).
+¹ A loaded XLSB saves the edits listed in [Usage](usage.md#loaded-xlsx-and-xlsb-workbooks); the few it refuses raise an error at `save()`.
 Some style features are not written to XLSB, so check that page before you rely on a
 particular style in XLSB output.
 
@@ -303,6 +362,10 @@ Known limitations:
 - Read times are measured with a warm page cache, not after a cold start.
 
 ### Result files
+
+Current results (Rust module, Windows): [`windows-2026-11-02-rust-write.json`](benchmark-results/windows-2026-11-02-rust-write.json) (write), [`read-windows-2026-11-02-rust.log`](benchmark-results/read-windows-2026-11-02-rust.log) (read) and [`windows-2026-11-02-rust-io.json`](benchmark-results/windows-2026-11-02-rust-io.json) (read modes and model).
+
+Historical results (C extension):
 
 The write data for each system, with the environment, every run, and the medians, is in JSON. The read data is the full text output of three runs of `performance_test.py` per system:
 
@@ -325,17 +388,17 @@ python -c "from xlspy._accel import HAVE_NATIVE; assert HAVE_NATIVE"
 [`examples/write_benchmark.py`](../examples/write_benchmark.py) produced the tables above. It runs every measurement in a fresh worker process, repeats each writer three times by default, interleaves the writers, and reports medians:
 
 ```bash
-# The full comparison: all writers, native extension on and off (--c-ext), one tracemalloc run per writer
-python examples/write_benchmark.py --rows 50000 --cols 50 --iterations 3 --writers all --c-ext both --tracemalloc --output bench.json --csv bench.csv
+# The full comparison: all writers, native module on and off, one tracemalloc run per writer
+python examples/write_benchmark.py --rows 50000 --cols 50 --iterations 3 --writers all --native both --tracemalloc --output bench.json --csv bench.csv
 
 # Only some writers
-python examples/write_benchmark.py --writers xlsx-inline,xlsb-inline --c-ext both
+python examples/write_benchmark.py --writers xlsx-inline,xlsb-inline --native both
 
 # Another source tree, for before/after runs
 python examples/write_benchmark.py --src ../other-checkout/src --csv other.csv
 ```
 
-- **Writers**: `xlsx-shared`, `xlsx-inline`, `xlsb-shared`, `xlsb-inline` (xlspy, `--c-ext on|off|both`), `openpyxl` (`write_only=True`), and `xlsxwriter` (`constant_memory=True`). openpyxl and xlsxwriter are optional; missing ones are skipped. `--c-ext` now selects the native backend (the Rust module): `on` leaves it enabled, `off` sets `XLSPY_DISABLE_C_EXT=1`. The JSON field is still named `c_ext`.
+- **Writers**: `xlsx-shared`, `xlsx-inline`, `xlsb-shared`, `xlsb-inline` (xlspy, `--native on|off|both`; `off` sets `XLSPY_ACCEL=python`), `openpyxl` (`write_only=True`), `xlsxwriter` (`constant_memory=True`) and `pyexcelerate`. The other libraries are optional; missing ones are skipped. The JSON field is `native`.
 - **Data**: `--dataset mixed` (default) is the eight-type layout of `performance_test.py` and is deterministic. `--dataset random --seed N` is a seeded, text-heavy alternative. With `--input stream` (default), every writer consumes the same generator. With `--input list`, the rows are built before the clock starts.
 - **Metrics**: wall time, peak resident memory, output size, and, with `--tracemalloc`, a separate untimed run's Python allocation peak (memory the native extension allocates directly is not traced).
 - **Targets**: `--target file` (default) or `--target memory` (an `io.BytesIO`, xlspy writers only).
@@ -359,7 +422,7 @@ slower than `--max-slowdown` times its baseline:
 
 ```bash
 py -3.14 benchmarks/bench_io.py --out results.json
-py -3.14 benchmarks/bench_io.py --compare benchmarks/results-write-final.json --max-slowdown 1.2
+py -3.14 benchmarks/bench_io.py --compare docs/benchmark-results/windows-2026-11-02-rust-io.json --max-slowdown 1.03
 ```
 
 For correctness checks and platform test results, see [Validation](validation.md).

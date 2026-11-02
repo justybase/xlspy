@@ -366,7 +366,7 @@ def _run_job(args, writer, mode, tracemalloc, outdir):
 
 
 def _label(writer, mode):
-    return writer if mode is None else f"{writer} (C {mode})"
+    return writer if mode is None else f"{writer} ({'native' if mode == 'on' else 'python'})"
 
 
 def summarize(runs):

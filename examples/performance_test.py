@@ -344,7 +344,7 @@ if __name__ == "__main__":
     print("| Library | Format | Time | Notes |")
     print("|---------|--------|------|-------|")
     print(f"| **xlspy (native)** | XLSB | **{r_xlsb_c:.2f} s** | default, native module |")
-    print(f"| xlspy | XLSX | {r_xlsx:.2f} s | uses expat XML parser (C) |")
+    print(f"| xlspy | XLSX | {r_xlsx:.2f} s | native row scanner |")
     print(f"| xlspy (Python) | XLSB | {r_xlsb_py:.2f} s | pure Python fallback |")
     print(f"| openpyxl (read_only) | XLSX | {r_openpyxl:.2f} s | read-only mode |")
     print("=========================================")

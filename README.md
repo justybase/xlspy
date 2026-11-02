@@ -12,18 +12,17 @@ Style the result with charts, tables, formatting, and cell notes — all from Py
 
 ## Built for speed
 
-**2.5 million cells. Ready in seconds.**
+**2.5 million cells in under a second, as XLSB.**
 
-| XLSB with native acceleration | Windows | WSL2 |
-| :--- | ---: | ---: |
-| Write | **1.46 s** | **1.17 s** |
-| Read | **0.60 s** | **0.43 s** |
+| 50,000 × 50 cells, Windows | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
+| :--- | ---: | ---: | ---: | ---: |
+| Write | **0.81 s** | **1.27 s** | 10.17 s | 17.06 s |
+| Read | **0.14 s** | **0.73 s** | — | 10.75 s |
 
-Native acceleration delivered **over 10× faster XLSB reads** than xlspy's
-pure-Python fallback in both environments. Figures are medians of three runs
-on a 50,000 × 50 dataset (Windows: Python 3.14.6; WSL2: Python 3.14.4),
-measured with the C extension that the Rust (PyO3) module has since replaced;
-the Rust module is as fast or faster on the same paths.
+The native (Rust) module writes 2.5–3.7× and reads XLSB 46× faster than
+xlspy's pure-Python fallback. Medians of three runs on an AMD Ryzen 7 7840HS
+with Python 3.14 (2026-11-02); xlspy with inline strings, xlsxwriter with
+`constant_memory`, openpyxl with `write_only` and `read_only`.
 [See the full comparisons, hardware, and methodology →](docs/benchmarks.md)
 
 ## Made for the work behind the workbook
