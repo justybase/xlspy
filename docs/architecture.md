@@ -131,8 +131,11 @@ leaves the writer usable on both formats.
 
 **Corrupt input.** `exceptions.reading(path)` turns the decoders' own errors
 into `InvalidFileError` naming the file (`ExcelReader.open` and its row
-readers, `load_workbook`, the updater constructors). Low-level decoders raise
-`InvalidFileError` directly. A `KeyError` for an unknown sheet name is left as
+readers, `load_workbook`, the updater constructors), and so does a Rust panic:
+`_accel` registers the native module's `PanicException` with it. Those callers
+check their arguments before the block, so a `ValueError` inside it comes from
+the file. Low-level decoders raise `InvalidFileError` directly.
+`tests/test_native_fuzz.py` fails when the cause of an error is a panic. A `KeyError` for an unknown sheet name is left as
 it is. `ExcelReader` still stops quietly when an XLSB record is cut short at the
 end of a sheet, on both backends.
 

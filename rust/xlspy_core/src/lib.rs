@@ -26,6 +26,12 @@ mod xml_text;
 #[pymodule(gil_used = true)]
 fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__doc__", "Rust-optimized functions for xlspy")?;
+    // The type a Rust panic surfaces as (a BaseException), so that xlspy can
+    // report a panic in a reader as a corrupt file.
+    m.add(
+        "PanicException",
+        m.py().get_type::<pyo3::panic::PanicException>(),
+    )?;
     m.add_function(wrap_pyfunction!(types::set_error_type, m)?)?;
     m.add_function(wrap_pyfunction!(types::set_style_type, m)?)?;
     m.add_function(wrap_pyfunction!(types::set_formula_type, m)?)?;

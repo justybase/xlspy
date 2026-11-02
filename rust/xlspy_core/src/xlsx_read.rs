@@ -488,7 +488,10 @@ impl State {
         let Some(v) = xml_text::decode(c.v_or_empty()) else {
             return Ok(None);
         };
-        let m = self.model.as_ref().unwrap();
+        let m = self
+            .model
+            .as_ref()
+            .expect("model_* methods run only for a model load");
         let typed = matches!(c.t, Some(b"s" | b"b" | b"e" | b"d" | b"str" | b"inlineStr"));
         let (value, data_type) = if !typed {
             let value = if v.is_empty() {
@@ -571,7 +574,10 @@ impl State {
             return Ok(Some(()));
         }
         let data_type = data_type.clone_ref(py).into_bound(py).into_any();
-        let m = self.model.as_mut().unwrap();
+        let m = self
+            .model
+            .as_mut()
+            .expect("model_* methods run only for a model load");
         let column = match &m.column_numbers[col as usize] {
             Some(c) => c.bind(py).clone(),
             None => {
@@ -764,10 +770,12 @@ impl State {
         let Some(value) = self.value(py, &c)? else {
             return Ok(None);
         };
-        cells.unwrap().append(PyTuple::new(
-            py,
-            [col.into_pyobject(py)?.into_any(), value],
-        )?)?;
+        cells
+            .expect("a plain read passes its row list")
+            .append(PyTuple::new(
+                py,
+                [col.into_pyobject(py)?.into_any(), value],
+            )?)?;
         *pos = i;
         Ok(Some(()))
     }
@@ -820,7 +828,10 @@ impl State {
         {
             return Ok(None);
         }
-        let m = self.model.as_mut().unwrap();
+        let m = self
+            .model
+            .as_mut()
+            .expect("model_* methods run only for a model load");
         if body.is_some_and(|b| !m.data_only && memmem::find(b, b"<f").is_some()) {
             return Ok(None);
         }
@@ -830,7 +841,10 @@ impl State {
             Some(b) => self.parse_cells(py, b, None),
             None => Ok(Some(())),
         };
-        let m = self.model.as_mut().unwrap();
+        let m = self
+            .model
+            .as_mut()
+            .expect("model_* methods run only for a model load");
         let cells = std::mem::take(&mut m.row_cells);
         let parsed = parsed.and_then(|ok| {
             if ok.is_some() && !cells.is_empty() {

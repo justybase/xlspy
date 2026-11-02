@@ -48,10 +48,23 @@ class UnsupportedFeatureError(XlspyError, NotImplementedError):
 
 
 # What the XML parser, the text decoders and the record readers raise on bytes
-# they cannot read. KeyError is left out: a missing name is usually the caller's.
-_DECODE_ERRORS = (ParseError, ExpatError, UnicodeDecodeError, struct.error, IndexError, zlib.error, EOFError)
+# they cannot read. ValueError covers int()/float() of damaged attribute text and
+# the model refusing a damaged value: the callers check their own arguments
+# before the block starts, so inside it a ValueError comes from the file.
+# KeyError is left out: a missing sheet name is the caller's.
+_DECODE_ERRORS = (ParseError, ExpatError, ValueError, struct.error, IndexError, zlib.error, EOFError)
 
 _T = TypeVar("_T")
+
+# The native module's PanicException, registered by xlspy._accel when it loads
+# the module. A panic is a BaseException; in a reader it means data the native
+# code did not expect, so it is reported like any other undecodable input.
+_panic_types: tuple[type[BaseException], ...] = ()
+
+
+def _register_panic_type(panic_type: type[BaseException]) -> None:
+    global _panic_types
+    _panic_types = (panic_type,)
 
 
 def _invalid(path: str | os.PathLike[str], exc: BaseException) -> InvalidFileError:
@@ -63,12 +76,18 @@ def reading(path: str | os.PathLike[str]) -> Iterator[None]:
     """Report a decoding error raised inside the block as InvalidFileError."""
     try:
         yield
+    except InvalidFileError:
+        raise
     except _DECODE_ERRORS as exc:
         raise _invalid(path, exc) from exc
     except LookupError as exc:
         if isinstance(exc, KeyError):
             raise
         raise _invalid(path, exc) from exc  # an unknown text encoding
+    except BaseException as exc:
+        if isinstance(exc, _panic_types):
+            raise _invalid(path, exc) from exc
+        raise
 
 
 def reading_rows(path: str | os.PathLike[str], rows: Iterable[_T]) -> Iterator[_T]:

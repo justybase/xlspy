@@ -30,8 +30,8 @@ Migration from 0.10:
   `WorksheetPageMargins` (exported from `xlspy.workbook`); both assignments still accept the public classes.
 - Corrupt files raise `InvalidFileError` from `ExcelReader.open()` and its row readers, `load_workbook()` and the
   `XlsxUpdater`/`XlsbUpdater` constructors. It is a `ValueError`, so `except ValueError` still matches; code that
-  caught `ParseError` or `UnicodeDecodeError` must catch `InvalidFileError` instead. A missing sheet name is still a
-  `KeyError`. `ExcelReader` still stops quietly at an XLSB record cut short at the end of a sheet.
+  caught `ParseError` or `UnicodeDecodeError` must catch `InvalidFileError` instead. A panic in the native reader
+  (`PanicException`, a `BaseException`) is reported the same way. A missing sheet name is still a `KeyError`. `ExcelReader` still stops quietly at an XLSB record cut short at the end of a sheet.
 
 ### Added
 

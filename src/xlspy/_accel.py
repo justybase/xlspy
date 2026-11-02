@@ -18,7 +18,7 @@ import importlib as _importlib
 import os as _os
 from typing import Any
 
-from .exceptions import InvalidFileError
+from .exceptions import InvalidFileError, _register_panic_type
 from xlspy._errors import CellError as _CellError
 from xlspy.styles import Style as _Style
 from xlspy.formulas import Formula as _Formula
@@ -68,6 +68,9 @@ def _register_types(module) -> None:
     """Hand the native module the xlspy classes it checks and builds."""
     if hasattr(module, "set_error_type"):
         module.set_error_type(_CellError)
+    panic_type = getattr(module, "PanicException", None)
+    if panic_type is not None:
+        _register_panic_type(panic_type)
     if hasattr(module, "set_invalid_file_type"):
         # Data errors the native readers raise are InvalidFileError (a ValueError).
         module.set_invalid_file_type(InvalidFileError)

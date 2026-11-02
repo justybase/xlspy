@@ -709,7 +709,7 @@ pub fn xlsb_load_cells<'py>(
             };
             row = Some((key, dict));
         }
-        let (row_key, row_dict) = row.as_ref().unwrap();
+        let (row_key, row_dict) = row.as_ref().expect("the row dict was set just above");
         let col_obj = match &mut columns[column as usize] {
             Some(c) => &*c,
             slot @ None => &*slot.insert((column + 1).into_pyobject(py)?.into_any()),
@@ -753,4 +753,79 @@ pub fn xlsb_load_cells<'py>(
             data_end.into_pyobject(py)?.into_any(),
         ],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A record: varint id, varint length, body.
+    fn record(id: u8, body: &[u8]) -> Vec<u8> {
+        let mut out = vec![id, body.len() as u8];
+        out.extend_from_slice(body);
+        out
+    }
+
+    #[test]
+    fn next_record_walks_records_and_stops_at_a_truncated_header() {
+        let mut data = record(0x00, &[1, 0, 0, 0]);
+        data.extend(record(0x07, &[0; 12]));
+        data.push(0x80); // a header cut inside its id varint
+        let mut pos = 0;
+        let first = next_record(&data, &mut pos).unwrap();
+        assert_eq!((first.id, first.body, first.len), (0x00, 2, 4));
+        let second = next_record(&data, &mut pos).unwrap();
+        assert_eq!((second.id, second.len), (0x07, 12));
+        assert_eq!(pos, data.len() - 1);
+        assert!(next_record(&data, &mut pos).is_none());
+    }
+
+    #[test]
+    fn next_record_reports_a_body_that_overruns_the_data() {
+        // The length is kept as read; counts_for_layout and the cell readers check it.
+        let data = [0x07, 20, 0, 0];
+        let mut pos = 0;
+        let rec = next_record(&data, &mut pos).unwrap();
+        assert_eq!((rec.body, rec.len), (2, 20));
+        assert!(!counts_for_layout(&data, &rec));
+    }
+
+    #[test]
+    fn row_index_of_short_and_sentinel_bodies_is_minus_one() {
+        assert_eq!(row_index(&[1, 0], 0).unwrap(), -1);
+        assert_eq!(row_index(&[0xFF; 4], 0).unwrap(), -1);
+        assert_eq!(row_index(&[5, 0, 0, 0], 0).unwrap(), 5);
+        assert_eq!(
+            row_index(&XLSB_MAX_ROW_INDEX.to_le_bytes(), 0).unwrap(),
+            i64::from(XLSB_MAX_ROW_INDEX)
+        );
+    }
+
+    #[test]
+    fn error_codes_map_to_excel_text() {
+        assert_eq!(error_text(0x07), "#DIV/0!");
+        assert_eq!(error_text(0x2A), "#N/A");
+        assert_eq!(error_text(0x99), "#VALUE!");
+    }
+
+    #[test]
+    fn layout_counts_only_complete_cell_records() {
+        let check = |id: u8, body: &[u8]| {
+            let data = record(id, body);
+            let mut pos = 0;
+            let rec = next_record(&data, &mut pos).unwrap();
+            counts_for_layout(&data, &rec)
+        };
+        assert!(!check(0x05, &[0; 7])); // under the 8-byte column/style header
+        assert!(check(0x05, &[0; 16])); // BrtCellReal
+        assert!(!check(0x05, &[0; 15]));
+        assert!(check(0x04, &[0; 9])); // BrtCellBool
+        let mut text = vec![0; 8];
+        text.extend_from_slice(&2u32.to_le_bytes());
+        text.extend_from_slice(&[b'a', 0, b'b', 0]);
+        assert!(check(0x06, &text)); // BrtCellSt, two UTF-16 units
+        text.truncate(text.len() - 1);
+        assert!(!check(0x06, &text)); // the string overruns the record
+        assert!(check(0x01, &[0; 8])); // BrtCellBlank
+    }
 }

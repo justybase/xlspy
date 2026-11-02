@@ -553,3 +553,50 @@ pub fn encode_xlsx_row<'py>(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn escaped(s: &str) -> Option<String> {
+        let mut out = Vec::new();
+        write_escaped(&mut out, s.as_bytes()).then(|| String::from_utf8(out).unwrap())
+    }
+
+    #[test]
+    fn markup_characters_become_entities() {
+        assert_eq!(escaped("a<b & c>d").as_deref(), Some("a&lt;b &amp; c&gt;d"));
+        assert_eq!(
+            escaped("tab\tand\nnewline").as_deref(),
+            Some("tab\tand\nnewline")
+        );
+        assert_eq!(escaped("zażółć").as_deref(), Some("zażółć"));
+    }
+
+    #[test]
+    fn text_needing_an_xhhhh_escape_is_left_to_python() {
+        assert_eq!(escaped("bell\u{7}"), None);
+        assert_eq!(escaped("cr\r"), None);
+        assert_eq!(escaped("_x0041_"), None);
+        assert_eq!(escaped("\u{FFFE}"), None);
+        assert_eq!(escaped("\u{FFFF}"), None);
+        // Not of the _xHHHH_ form, so written as is.
+        assert_eq!(escaped("_x004G_").as_deref(), Some("_x004G_"));
+        assert_eq!(escaped("_x0041").as_deref(), Some("_x0041"));
+    }
+
+    #[test]
+    fn formula_text_escapes_markup_only() {
+        let mut out = Vec::new();
+        write_plain_escaped(&mut out, b"IF(A1<>\"_x0041_\",1,2)&\x07");
+        assert_eq!(out, b"IF(A1&lt;&gt;\"_x0041_\",1,2)&amp;\x07");
+    }
+
+    #[test]
+    fn value_cell_opens_with_its_style() {
+        let mut out = Vec::new();
+        open_value(&mut out, 0);
+        open_value(&mut out, 12);
+        assert_eq!(out, b"<c><v><c s=\"12\"><v>");
+    }
+}

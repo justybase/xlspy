@@ -13,8 +13,12 @@ from typing import Any, final
 
 from _typeshed import ReadableBuffer, SupportsRead
 
+class PanicException(BaseException):
+    """A panic in the Rust code (pyo3_runtime.PanicException)."""
+
 __all__ = [
     "__doc__",
+    "PanicException",
     "set_error_type",
     "set_style_type",
     "set_formula_type",

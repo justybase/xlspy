@@ -338,3 +338,24 @@ pub fn encode_xlsb_row_inline<'py>(
     )?;
     Ok(bytes.map(|b| PyBytes::new(py, &b)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cell_header_is_record_then_column_and_style() {
+        let mut buf = RowBuf { out: Vec::new() };
+        buf.cell([0x04, 0x09], 3, 7);
+        assert_eq!(buf.out, [0x04, 0x09, 3, 0, 0, 0, 7, 0, 0, 0]);
+    }
+
+    #[test]
+    fn double_is_a_brt_cell_real() {
+        let mut buf = RowBuf { out: Vec::new() };
+        buf.double(1, 0, 1.5);
+        assert_eq!(&buf.out[..2], &[0x05, 0x10]);
+        assert_eq!(&buf.out[2..10], &[1, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(f64::from_le_bytes(buf.out[10..18].try_into().unwrap()), 1.5);
+    }
+}

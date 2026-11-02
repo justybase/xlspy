@@ -14,11 +14,11 @@ from xml.parsers.expat import ExpatError
 
 import pytest
 
-from xlspy import ExcelReader, XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWriter, load_workbook
+from xlspy import ExcelReader, XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWriter, _accel, load_workbook
 from xlspy.exceptions import InvalidFileError
 
 ROWS = [["Name", "Value"], ["alpha", 1.5], ["beta", 2]]
-RAW_DECODER_ERRORS = (ParseError, ExpatError, UnicodeDecodeError, struct.error, IndexError, zlib.error, EOFError)
+RAW_DECODER_ERRORS = (ParseError, ExpatError, ValueError, struct.error, IndexError, zlib.error, EOFError)
 
 
 def _workbook(tmp_path: Path, kind: str) -> Path:
@@ -129,5 +129,27 @@ def test_no_raw_decoder_error_escapes(tmp_path: Path, kind: str) -> None:
                 pass
             except RAW_DECODER_ERRORS as exc:
                 pytest.fail(f"{read.__name__} on corrupt {part} (case {case}) raised {exc!r}")
-            except (KeyError, ValueError, TypeError):
-                pass  # damaged values the model refuses, or a sheet without its part
+            except (KeyError, TypeError):
+                pass  # a sheet listed without its part, or a damaged value of the wrong type
+
+
+@pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
+def test_a_panic_in_a_native_reader_is_an_invalid_file(tmp_path: Path, monkeypatch) -> None:
+    import xlspy._rs_core as native
+    from xlspy import reader as reader_module
+
+    def panic(*_args: object) -> None:
+        raise native.PanicException("index out of bounds")
+
+    monkeypatch.setattr(reader_module, "_accel_read_xlsb_worksheet", panic)
+    with pytest.raises(InvalidFileError, match="PanicException") as caught:
+        _read_rows(_workbook(tmp_path, "xlsb"))
+    assert isinstance(caught.value.__cause__, native.PanicException)
+
+
+def test_interrupts_pass_through(tmp_path: Path, monkeypatch) -> None:
+    from xlspy.exceptions import reading
+
+    with pytest.raises(KeyboardInterrupt):
+        with reading("book.xlsx"):
+            raise KeyboardInterrupt

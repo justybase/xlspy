@@ -1,10 +1,10 @@
 """Bounded mutation fuzzing of the native worksheet readers.
 
 Each case takes a small workbook written by xlspy, corrupts its worksheet part,
-and reads the result back through the native path. Corrupt input may be refused
-with an ordinary Python exception. It must never end the process (a Rust panic
-surfaces as ``PanicException``, a BaseException, and so fails the test) and must
-never take long. The run is deterministic per seed.
+and reads the result back through the native path. Corrupt input may be refused,
+and then only with InvalidFileError. It must never panic (ExcelReader reports a
+Rust panic as InvalidFileError, so the test looks at the cause) and must never
+take long. The run is deterministic per seed.
 
 ``XLSPY_FUZZ_ITERATIONS`` and ``XLSPY_FUZZ_SEED`` change the budget and the seed
 for deeper local runs.
@@ -18,6 +18,7 @@ import zipfile
 import pytest
 
 from xlspy import ExcelReader, XlsbWriter, XlsxWriter, _accel
+from xlspy.exceptions import InvalidFileError
 
 pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 
@@ -98,9 +99,9 @@ def test_mutated_worksheets_fail_cleanly(tmp_path, kind):
         started = time.perf_counter()
         try:
             _read_all(target)
-        except Exception:
-            # Corrupt input may be refused; only process-level failures are bugs here.
-            pass
+        except InvalidFileError as exc:
+            cause = type(exc.__cause__).__name__
+            assert cause != "PanicException", f"the native {kind} reader panicked: {exc}"
         slowest = max(slowest, time.perf_counter() - started)
 
     assert slowest < CASE_SECONDS, f"a corrupt {kind} worksheet took {slowest:.1f}s to read"
