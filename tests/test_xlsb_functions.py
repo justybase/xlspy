@@ -118,3 +118,14 @@ def test_streaming_reader_reads_the_cached_value_of_an_external_reference():
     with ExcelReader(str(EXTERNAL)) as reader:
         rows = list(reader.get_rows(reader.get_sheet_names()[0]))
     assert rows[0][0] == 7
+
+
+def test_a_formula_that_points_at_a_missing_group_is_an_invalid_file():
+    from xlspy import InvalidFileError
+    from xlspy._xlsb_read import formula_text
+
+    # PtgExp (0x01) naming a shared formula anchored at A1 that the sheet never defined.
+    ptg_exp = bytes((0x01,)) + (0).to_bytes(4, "little")
+    formula = len(ptg_exp).to_bytes(4, "little") + ptg_exp + (4).to_bytes(4, "little") + (0).to_bytes(4, "little")
+    with pytest.raises(InvalidFileError, match="group definition was not found"):
+        formula_text(formula, {}, None, "S", 0, 0)

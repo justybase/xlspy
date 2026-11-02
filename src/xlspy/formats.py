@@ -64,15 +64,3 @@ def _unwrap_cell(cell):
     return cell
 
 
-def _get_format(cell):
-    """The number format of a ``(value, format)`` cell, else ``None``."""
-    if _is_formatted_cell(cell) and isinstance(cell[1], str):
-        return cell[1]
-    return None
-
-
-def _get_cell_style(cell):
-    """The ``Style`` of a ``(value, Style)`` cell, else ``None``."""
-    if _is_formatted_cell(cell) and isinstance(cell[1], Style):
-        return cell[1]
-    return None

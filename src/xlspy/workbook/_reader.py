@@ -74,8 +74,6 @@ from ._styles import XlsxStyleTable, _read_color
 _NS_DC = "http://purl.org/dc/elements/1.1/"
 _NS_DCTERMS = "http://purl.org/dc/terms/"
 _NS_CP = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
-_NS_APP = "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
-
 
 
 def _element_xml(element) -> str:
@@ -85,13 +83,6 @@ def _element_xml(element) -> str:
         return ET.tostring(element, encoding="unicode")
     finally:
         element.tail = tail
-
-
-
-
-def _child_text(node, path: str) -> str | None:
-    found = node.find(path) if node is not None else None
-    return found.text if found is not None else None
 
 
 @overload
@@ -293,7 +284,6 @@ def _read_properties(package) -> DocumentProperties:
 
 
 _NS_CUSTOM = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
-_NS_VT = "http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"
 
 
 def _read_custom_properties(package):

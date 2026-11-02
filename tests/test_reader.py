@@ -583,3 +583,23 @@ def test_shared_strings_fast_path_matches_xml_parser():
         '<si><r><t xml:space="preserve">g\r\n</t></r><r><t>h</t></r></si></sst>'
     )
     assert xlspy_reader._parse_shared_strings_fast(content) == ["a\nb", "c\nd", "e\rf", "g\nh"]
+
+
+@pytest.mark.parametrize("ext,writer,part", [
+    ("xlsx", XlsxWriter, "xl/workbook.xml"),
+    ("xlsb", XlsbWriter, "xl/workbook.bin"),
+])
+def test_a_workbook_part_that_fails_to_parse_closes_the_archive(tmp_path, ext, writer, part):
+    good, bad = tmp_path / f"good.{ext}", tmp_path / f"bad.{ext}"
+    with writer(good) as book:
+        book.add_sheet("S")
+        book.write_sheet([[1]])
+    with zipfile.ZipFile(good) as source, zipfile.ZipFile(bad, "w") as target:
+        for info in source.infolist():
+            target.writestr(info, b"<broken" if info.filename == part else source.read(info))
+    reader = ExcelReader(str(bad))
+    with pytest.raises(Exception):
+        with reader:
+            pass
+    assert reader._archive is None
+    os.remove(bad)  # on Windows this fails while the archive is still open

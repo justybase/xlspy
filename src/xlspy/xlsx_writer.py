@@ -243,7 +243,6 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
         # File-object targets are staged under the same in-memory limit as the rows.
         return self._spool_max_bytes
 
-
     def _generate_column_letters(self) -> list[str]:
         letters = []
         for i in range(26):
@@ -305,9 +304,6 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
             if rule_dxf is not None and not isinstance(rule_dxf, DifferentialStyle):
                 raise TypeError("dxf must be a DifferentialStyle or None")
         return list(conditional_formats)
-
-    def _column_letter(self, index: int) -> str:
-        return self._letters[index]
 
     def _written_sheet_indexes(self) -> set[int]:
         return self._sheet_written

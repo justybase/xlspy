@@ -141,6 +141,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal: 18 private helpers that nothing called are removed (leftovers of the module split and older code paths).
 - `__version__` is read from the installed package metadata, so `pyproject.toml` is the only place the version is
   set. A source tree that was never installed reports `0+unknown`.
 - Tests that start Microsoft Excel (`test_excel_com_conformance.py`, the Excel checks in `test_comprehensive.py`) are
@@ -290,6 +291,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ExcelReader.open()` (and `with ExcelReader(path)`) closes the archive when the workbook part fails to parse.
+  Before, the ZIP file stayed open, and on Windows the file could not be deleted until the process ended.
+- **Breaking:** an XLSB cell formula that points at a shared or array formula the sheet does not define raises
+  `InvalidFileError` instead of `NotImplementedError`; a malformed reference to one raises `InvalidFileError`
+  (still a `ValueError`) instead of a plain `ValueError`. The file is damaged; nothing is unimplemented.
+- The openpyxl-compatible exceptions in `xlspy.utils.exceptions` (`CellCoordinatesException`, `SheetTitleException`
+  and the others) derive from `XlspyError`, so `except XlspyError` catches them.
+- The column-letter caches in `xlspy.utils.cell` are bounded (mixed-case names could grow them to ~140,000 entries).
 - The type stub `_rs_core.pyi` lists the `write_r` parameter of `encode_xlsx_row`; `stubtest` failed without it.
 - A named style whose fill is a colour string (`fill="00FF00"`) no longer raises `AttributeError` when it is written
   to XLSX or added to an XLSB workbook. A colour string is a solid fill of that colour.

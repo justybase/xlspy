@@ -12,7 +12,6 @@ from ._xlsb_style_records import (
     border_record,
     fill_record,
     font_record,
-    gradient_fill_record,
     xf_record,
 )
 from ._xlsb_cf import dxfs_bin
@@ -137,9 +136,6 @@ class _XlsbStylesMixin:
 
     def _xlsb_fill_record(self, fill_key: tuple) -> bytes:
         return fill_record(fill_key)
-
-    def _xlsb_gradient_fill_record(self, fill_key: tuple) -> bytes:
-        return gradient_fill_record(fill_key)
 
     def _xlsb_border_record(self, border_key: tuple) -> bytes:
         return border_record(border_key)

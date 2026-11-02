@@ -13,7 +13,6 @@ _ERROR_CODES = (
 _NUMBER_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?$")
 _MANTISSA_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)[Ee]")
 _OPERATORS = "+-*/^&=><"
-_OPERAND_END = set(',;}) +-*/^&=><%(')
 
 
 class TokenizerError(Exception):

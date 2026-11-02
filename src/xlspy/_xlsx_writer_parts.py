@@ -159,27 +159,8 @@ class _XlsxPartsMixin:
             with self._zf.open_threaded("xl/sharedStrings.xml") as sst_file:
                 self._write_shared_strings_xml(sst_file)
 
-    @staticmethod
-    def _quote_sheet_name(sheet_name: str) -> str:
-        return chart_parts.quote_sheet_name(sheet_name)
-
-    def _chart_ref(self, sheet_name: str, ref: str, *, absolute: bool = True) -> str:
-        return chart_parts.chart_ref(self._letters, sheet_name, ref, absolute=absolute)
-
-    def _chart_series_xml(self, series, sheet_name: str, index: int, chart_type: str) -> str:
-        return chart_parts.chart_series_xml(
-            self._letters, series, sheet_name, index, chart_type,
-        )
-
     def _chart_xml(self, chart, sheet_name: str) -> str:
         return chart_parts.chart_xml(self._letters, chart, sheet_name)
-
-    def _drawing_xml(self, charts: list, chart_ids: list[int]) -> str:
-        return chart_parts.drawing_xml(charts, chart_ids)
-
-    @staticmethod
-    def _drawing_rels_xml(chart_ids: list[int]) -> str:
-        return chart_parts.drawing_rels_xml(chart_ids)
 
     def _create_worksheet_rels(self, sheet_id: int) -> str:
         parts = []

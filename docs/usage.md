@@ -29,7 +29,7 @@ data = [
     ["Alice", 25, "New York", datetime.date.today()],
     ["Bob", 30, "London", Decimal(3.14)],
     ["Charlie", 35, "Paris", datetime.datetime.now()],
-    [True, False, None, datetime.datetime.utcnow()]
+    [True, False, None, datetime.datetime.now(datetime.UTC)]
 ]
 
 # Initialize writer with a specific compression level
@@ -57,7 +57,7 @@ data = [
     ["Alice", 25, "New York", datetime.date.today()],
     ["Bob", 30, "London", Decimal(3.14)],
     ["Charlie", 35, "Paris", datetime.datetime.now()],
-    [True, False, None, datetime.datetime.utcnow()]
+    [True, False, None, datetime.datetime.now(datetime.UTC)]
 ]
 
 # Initialize writer with a specific compression level

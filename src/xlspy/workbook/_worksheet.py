@@ -420,19 +420,6 @@ class Worksheet:
             cell.value = value
         return cell
 
-    def _set_cell(self, row: int, column: int, value=None, style_id: int = 0,
-                  *, mark: bool = False) -> Cell:
-        cell = Cell(self, row, column, style_id=style_id)
-        if value is not None:
-            cell.value = value
-            cell._dirty = False
-        self._cells.setdefault(row, {})[column] = cell
-        self._max_row = max(self._max_row, row)
-        self._max_column = max(self._max_column, column)
-        if mark:
-            cell._mark_dirty()
-        return cell
-
     def _set_cell_raw(self, row: int, column: int, value=None, style_id: int = 0,
                       data_type: str = "n", formula_text: str | None = None) -> Cell:
         # Loader hot path: bounds are checked inline and the cell is filled

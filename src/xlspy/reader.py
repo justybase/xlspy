@@ -197,13 +197,17 @@ class ExcelReader:
         self._styles_location = None
         self._date_1904 = False
 
-        ext = path.lower()
-        if ext.endswith('xlsb'):
-            self._is_xlsb = True
-            self._open_xlsb(path)
-        else:
-            self._is_xlsb = False
-            self._open_xlsx(path)
+        self._is_xlsb = path.lower().endswith('xlsb')
+        try:
+            if self._is_xlsb:
+                self._open_xlsb(path)
+            else:
+                self._open_xlsx(path)
+        except BaseException:
+            # A file that fails to parse must not keep the archive (and, on
+            # Windows, the file) open: `with` never reaches __exit__ here.
+            self.close()
+            raise
 
     def close(self):
         if self._archive is not None:
@@ -736,16 +740,6 @@ class ExcelReader:
                 yield [None] * columns_cnt_from_first_row
 
         reader.close()
-
-    @staticmethod
-    def _parse_column_reference(ref: str) -> int:
-        col = -1
-        for ch in ref:
-            if 'A' <= ch <= 'Z':
-                col = (col + 1) * 26 + (ord(ch) - ord('A'))
-            else:
-                break
-        return col
 
 
 class _MemoryStream:

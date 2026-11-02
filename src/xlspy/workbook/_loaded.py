@@ -34,11 +34,6 @@ from ._model import Workbook, Worksheet, _coordinate, _normalize_range
 from ._styles import XlsxStyleTable
 
 _CONTENT_WORKSHEET = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
-_CONTENT_COMMENTS = "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"
-_CONTENT_VML = "application/vnd.openxmlformats-officedocument.vmlDrawing"
-
-
-
 
 
 def _remove_attr(opening: str, name: str) -> str:
@@ -365,28 +360,6 @@ def _tab_color_xml(sheet: Worksheet, prefix: str) -> str:
     if key is None:
         return ""
     return f'<{prefix}tabColor {XlsxStyleTable._color_attrs(key)}/>'
-
-
-def _patch_tab_color(xml: str, sheet: Worksheet, prefix: str) -> str:
-    tab = _tab_color_xml(sheet, prefix)
-    match = element_pattern("sheetPr").search(xml)
-    if match is None:
-        if not tab:
-            return xml
-        fragment = f'<{prefix}sheetPr>{tab}</{prefix}sheetPr>'
-        return replace_element(
-            xml, "sheetPr", fragment,
-            before=("dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData"),
-        )
-    body = match[0]
-    body = element_pattern("tabColor").sub("", body)
-    if tab:
-        if body.endswith("/>"):
-            body = body[:-2] + ">" + tab + f"</{prefix}sheetPr>"
-        else:
-            closing = body.rfind("</")
-            body = body[:closing] + tab + body[closing:]
-    return xml[:match.start()] + body + xml[match.end():]
 
 
 def _merge_xml(sheet: Worksheet, prefix: str) -> str:
@@ -746,7 +719,6 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
 
     xml = _patch_cells(xml, patch_cell)
     updater._apply_parts({path: xml})
-
 
 
 def _value_for_save(cell, date_1904: bool):

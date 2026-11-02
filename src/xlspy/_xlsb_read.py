@@ -11,6 +11,7 @@ from ._xlsb_metadata import read_wide
 from .biff_reader import BiffReader
 from .biff_utils import iter_record_payloads, iter_records_stream
 from .excel_dates import serial_to_datetime
+from .exceptions import InvalidFileError
 
 
 def cached_cell(kind, payload, reader):
@@ -62,10 +63,10 @@ def formula_text(formula, groups, context, sheet_name, row, column):
     tokens, extra, _ = read_parsed(formula)
     if tokens[:1] == bytes((0x01,)):  # PtgExp: the cell belongs to a formula group
         if len(tokens) != 5 or len(extra) < 4:
-            raise ValueError("invalid XLSB shared/array formula reference")
+            raise InvalidFileError("invalid XLSB shared/array formula reference")
         source = (struct.unpack('<I', tokens[1:])[0], struct.unpack_from('<I', extra)[0])
         if source not in groups:
-            raise NotImplementedError("XLSB formula group definition was not found")
+            raise InvalidFileError("XLSB formula group definition was not found")
         group_kind, group_formula = groups[source]
         if group_kind == 0x1AA and (row, column) != source:
             return None

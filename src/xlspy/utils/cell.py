@@ -12,12 +12,16 @@ _ABS_RE = re.compile(
     r"^\$?([A-Za-z]{1,3})?\$?([1-9][0-9]*)?"
     r"(?::\$?([A-Za-z]{1,3})?\$?([1-9][0-9]*)?)?$"
 )
+# Room for every column (A..XFD is 16,384; the helpers accept up to ZZZ). Mixed-case
+# names would otherwise grow the letter cache to ~140,000 entries.
+_LETTER_CACHE_SIZE = 20_000
+
 _SHEET_RANGE_RE = re.compile(
     r"^(?:(?P<quoted>'(?:[^']|'')*')|(?P<notquoted>[^!]+))!(?P<cells>.+)$"
 )
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=_LETTER_CACHE_SIZE)
 def get_column_letter(col_idx: int) -> str:
     """Convert a 1-based column index to letters (1 -> A)."""
     if not 1 <= col_idx <= 18278:
@@ -29,7 +33,7 @@ def get_column_letter(col_idx: int) -> str:
     return "".join(reversed(letters))
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=_LETTER_CACHE_SIZE)
 def column_index_from_string(col: str) -> int:
     """Convert letters to a 1-based column index (A -> 1)."""
     error = f"'{col}' is not a valid column name. Column names are from A to ZZZ"
