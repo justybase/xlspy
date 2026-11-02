@@ -11,6 +11,8 @@ element-by-element reader.
 from __future__ import annotations
 
 import datetime as _datetime
+from collections.abc import Callable
+from typing import Any
 from .._safe_xml import fromstring as safe_fromstring
 
 from .. import _accel, _xlsx_read
@@ -87,6 +89,77 @@ def _load_rows_native(sheet, stream, raw, root_tag, head, style_table,
     )
 
 
+def _typed_value(kind: str, v: str | None, inline: str | None, rich_text: bool) -> tuple[str, Any]:
+    """The model data type and value of a cell of type inlineStr, b, e, str or d.
+    Raise _Fallback for text only the XML parser decodes (entities, carriage
+    returns) and for rich inline text."""
+    value: Any
+    if kind == "inlineStr":
+        data_type = "s"
+        if rich_text:
+            raise _Fallback
+        if inline is None:
+            value = None
+        else:
+            text_match = _xlsx_read._INLINE_T.fullmatch(inline)
+            if text_match is None or "&" in inline or "\r" in inline:
+                raise _Fallback
+            value = xstring_unescape(text_match.group(1))
+    elif kind == "b":
+        data_type = "b"
+        value = (v or "") == "1"
+    elif kind == "e":
+        data_type = "e"
+        if v and "&" in v:
+            raise _Fallback
+        value = v or ""
+    elif kind == "str":
+        data_type = "s"
+        if v and ("&" in v or "\r" in v):
+            raise _Fallback
+        value = xstring_unescape(v or "")
+    else:  # "d"
+        data_type = "d"
+        if v and "&" in v:
+            raise _Fallback
+        raw = v or ""
+        try:
+            value = _datetime.datetime.fromisoformat(raw) if raw else None
+        except ValueError:
+            value = raw
+    return data_type, value
+
+
+def _scan_rows(stream: Any, text: str, decoder: Any, fast_row: Callable[[str, str | None], None],
+               slow_row: Callable[[str], None]) -> str:
+    """Feed each <row> of the sheet data to ``fast_row``, or to ``slow_row`` when the
+    fast path gives up; return the decoded XML after </sheetData>."""
+    row_pattern = _xlsx_read._ROW
+    chunk_size = _xlsx_read._CHUNK
+    while True:
+        chunk = stream.read(chunk_size)
+        text += decoder.decode(chunk, not chunk)
+        pos = 0
+        for match in row_pattern.finditer(text):
+            pos = match.end()
+            try:
+                fast_row(match.group(1), match.group(2))
+            except _Fallback:
+                slow_row(match.group(0))
+        end = text.find("</sheetData>", pos)
+        if end >= 0:
+            tail = text[end + len("</sheetData>"):]
+            break
+        text = text[pos:]
+        if not chunk:
+            tail = ""
+            break
+    rest = stream.read()
+    if rest:
+        tail += decoder.decode(rest, True)
+    return tail
+
+
 def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
                data_only, date_1904, shared_strings, rich_text):
     columns: dict[str, int] = {}
@@ -98,9 +171,7 @@ def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
     attr_pattern = _xlsx_read._ATTR
     ref_pattern = _xlsx_read._REF
     column_index = _xlsx_read._column_index
-    inline_pattern = _xlsx_read._INLINE_T
     prefixed = _xlsx_read._PREFIXED
-    fromisoformat = _datetime.datetime.fromisoformat
     state = {"next_row": 1, "max_row": 0, "max_column": 0}
 
     def date_kind_of(style_id):
@@ -186,39 +257,8 @@ def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
                         value = raw
                     else:
                         value = shared_strings[index] if 0 <= index < strings_len else raw
-                elif kind == "inlineStr":
-                    data_type = "s"
-                    if rich_text:
-                        raise _Fallback
-                    if inline is None:
-                        value = None
-                    else:
-                        text_match = inline_pattern.fullmatch(inline)
-                        if text_match is None or "&" in inline or "\r" in inline:
-                            raise _Fallback
-                        value = xstring_unescape(text_match.group(1))
-                elif kind == "b":
-                    data_type = "b"
-                    value = (v or "") == "1"
-                elif kind == "e":
-                    data_type = "e"
-                    if v and "&" in v:
-                        raise _Fallback
-                    value = v or ""
-                elif kind == "str":
-                    data_type = "s"
-                    if v and ("&" in v or "\r" in v):
-                        raise _Fallback
-                    value = xstring_unescape(v or "")
-                else:  # "d"
-                    data_type = "d"
-                    if v and "&" in v:
-                        raise _Fallback
-                    raw = v or ""
-                    try:
-                        value = fromisoformat(raw) if raw else None
-                    except ValueError:
-                        value = raw
+                else:
+                    data_type, value = _typed_value(kind, v, inline, rich_text)
                 cells.append((row, col + 1, value, data_type, style_id))
             if matched != body.count("<c") or prefixed.search(body):
                 raise _Fallback
@@ -250,29 +290,7 @@ def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
         state["max_row"] = max(state["max_row"], row_max)
         state["max_column"] = max(state["max_column"], column_max)
 
-    row_pattern = _xlsx_read._ROW
-    chunk_size = _xlsx_read._CHUNK
-    while True:
-        chunk = stream.read(chunk_size)
-        text += decoder.decode(chunk, not chunk)
-        pos = 0
-        for match in row_pattern.finditer(text):
-            pos = match.end()
-            try:
-                fast_row(match.group(1), match.group(2))
-            except _Fallback:
-                slow_row(match.group(0))
-        end = text.find("</sheetData>", pos)
-        if end >= 0:
-            tail = text[end + len("</sheetData>"):]
-            break
-        text = text[pos:]
-        if not chunk:
-            tail = ""
-            break
-    rest = stream.read()
-    if rest:
-        tail += decoder.decode(rest, True)
+    tail = _scan_rows(stream, text, decoder, fast_row, slow_row)
     prefix = head[:head.rfind(b"<sheetData")]
     remainder = prefix + b"<sheetData/>" + tail.encode("utf-8")
     return state["max_row"], state["max_column"], remainder

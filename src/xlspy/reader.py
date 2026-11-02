@@ -588,23 +588,13 @@ class ExcelReader:
             if rows is not None:
                 yield from rows
                 return
+        yield from self._decode_rows_xlsb(raw)
 
-        stream = _MemoryStream(raw)
-        reader = BiffReader(stream)
-
-        # Track the first and the last Row record while scanning for the first
-        # cell.  Rows without any cell record are not visible to the cell-driven
-        # loop below, so the row records are the only source of truth for
-        # leading / trailing all-empty rows.
-        first_row_record_index = -1
-        last_row_record_index = -1
-        while not reader.read_cell:
-            if not reader.read_worksheet():
-                break
-            if reader.row_index != -1:
-                if first_row_record_index == -1:
-                    first_row_record_index = reader.row_index
-                last_row_record_index = reader.row_index
+    def _decode_rows_xlsb(self, raw: bytes) -> Generator[list[Any], None, None]:
+        """The Python path of _get_rows_xlsb: decode the worksheet records of
+        ``raw`` into rows, padding empty rows and columns with None."""
+        reader = BiffReader(_MemoryStream(raw))
+        first_row_record_index, last_row_record_index = _scan_to_first_cell(reader)
         if not reader.read_cell:
             reader.close()
             # A sheet with only all-empty rows (no cell records at all).
@@ -679,27 +669,20 @@ class ExcelReader:
                     elif reader.cell_type == CellType.doubleVal:
                         double_val = reader.double_val
                         style_index = reader.xf_index
-                        if style_index != 0 and style_index < len(self._styles_cell_xfs_array):
-                            num_fmt_id = self._styles_cell_xfs_array[style_index]['numFmtId']
-                            fmt_type = self._number_formats_type_dict.get(num_fmt_id, str)
-                            if fmt_type is datetime.datetime:
-                                inner_row[tmp_len] = _serial_to_datetime(double_val, self._date_1904)
-                            else:
-                                if double_val.is_integer():
-                                    inner_row[tmp_len] = int(double_val)
-                                else:
-                                    inner_row[tmp_len] = double_val
+                        if (
+                            style_index != 0 and style_index < len(self._styles_cell_xfs_array)
+                            and self._number_formats_type_dict.get(
+                                self._styles_cell_xfs_array[style_index]['numFmtId'], str,
+                            ) is datetime.datetime
+                        ):
+                            inner_row[tmp_len] = _serial_to_datetime(double_val, self._date_1904)
+                        elif double_val.is_integer():
+                            inner_row[tmp_len] = int(double_val)
                         else:
-                            if double_val.is_integer():
-                                inner_row[tmp_len] = int(double_val)
-                            else:
-                                inner_row[tmp_len] = double_val
+                            inner_row[tmp_len] = double_val
                     else:
                         inner_row[tmp_len] = None
 
-                # The result must be kept: at the end of the stream read_worksheet
-                # returns False and leaves read_cell set, so ignoring it repeats the
-                # same cell forever.
                 # The result must be kept: at the end of the stream read_worksheet
                 # returns False and leaves read_cell set, so ignoring it repeats the
                 # same cell forever.
@@ -744,6 +727,25 @@ class ExcelReader:
                 yield [None] * columns_cnt_from_first_row
 
         reader.close()
+
+
+def _scan_to_first_cell(reader: BiffReader) -> tuple[int, int]:
+    """Read up to the first cell record; return the indexes of the first and the
+    last Row record seen on the way (-1 when there was none).
+
+    Rows without any cell record are not visible to the cell-driven loop, so
+    the row records are the only source of truth for leading and trailing
+    all-empty rows."""
+    first_row_record_index = -1
+    last_row_record_index = -1
+    while not reader.read_cell:
+        if not reader.read_worksheet():
+            break
+        if reader.row_index != -1:
+            if first_row_record_index == -1:
+                first_row_record_index = reader.row_index
+            last_row_record_index = reader.row_index
+    return first_row_record_index, last_row_record_index
 
 
 class _MemoryStream:
