@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-02
+
 ### Breaking changes
 
 Migration from 0.10:
@@ -1146,7 +1148,8 @@ Migration from 0.10:
 
 Releases before 0.7.0 have no changelog entries; their history is in the git log.
 
-[Unreleased]: https://github.com/justybase/xlspy/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/justybase/xlspy/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/justybase/xlspy/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/justybase/xlspy/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/justybase/xlspy/compare/96e1efd47e29882578e74965014a3ea0fdf3a759...v0.10.0
 [0.9.2]: https://github.com/justybase/xlspy/compare/v0.9.1...96e1efd47e29882578e74965014a3ea0fdf3a759
