@@ -15,6 +15,7 @@ EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 
 NOT_RUN = {
     "benchmark.py": "needs a Netezza database",
+    "netezza_export.py": "needs a Netezza database",
     "performance_test.py": "a benchmark run of several minutes",
     "write_benchmark.py": "a benchmark run of several minutes",
     "business_dashboard.py": "test_business_dashboard_example.py runs it",

@@ -29,8 +29,8 @@ with Python 3.14 (2026-11-02); xlspy with inline strings, xlsxwriter with
 
 | Your workflow | What xlspy brings |
 | :--- | :--- |
-| **Export large datasets** | XLSB and XLSX output from a generator or database cursor, with bounded memory via `use_shared_strings=False`, and native (Rust) acceleration for supported read and write paths. A failed export publishes no partial workbook ([failure handling](docs/usage.md#failure-handling)). |
-| **Deliver polished reports** | Cell styles, number formats, formulas, dropdown validation, hyperlinks, images, print setup, charts (column, bar, line, area, pie, doughnut, scatter, stacked), tables, and conditional formatting. Both XLSX and XLSB support them; see the [feature support table](docs/usage.md#feature-support). |
+| **Export large datasets** | XLSB and XLSX output from a generator or database cursor, with bounded memory via `use_shared_strings=False`, and native (Rust) acceleration for supported read and write paths. A failed export publishes no partial workbook ([failure handling](docs/guide/writing.md#failure-handling)). |
+| **Deliver polished reports** | Cell styles, number formats, formulas, dropdown validation, hyperlinks, images, print setup, charts (column, bar, line, area, pie, doughnut, scatter, stacked), tables, and conditional formatting. Both XLSX and XLSB support them; see the [feature support table](docs/guide/objects.md#feature-support). |
 | **Work with DataFrames** | Export pandas or polars data directly to either format. |
 | **Refresh a familiar template** | Replace data in XLSB, XLSX, or XLSM while keeping workbook structure, styles, and unrelated sheets. |
 | **Connect a data pipeline** | Read rows as a generator and stream updates from a database cursor. |
@@ -70,25 +70,25 @@ with XlsxWriter("sales.xlsx") as workbook:
 ```
 
 For binary Excel output, use `XlsbWriter` and a `.xlsb` filename with the same
-API. Explore [formatting, charts, and tables](docs/usage.md#cell-styles-colors-fonts-alignment)
+API. Explore [formatting, charts, and tables](docs/guide/styling.md#cell-styles-colors-fonts-alignment)
 when your report needs more detail.
 
 ## Bring your data. Keep your workflow.
 
 **Already using pandas or polars?** Export with `to_xlsx(df, "report.xlsx")`
 or `to_xlsb(df, "report.xlsb")`.
-[See DataFrame examples →](docs/usage.md#writing-pandas--polars-dataframes-optional)
+[See DataFrame examples →](docs/guide/dataframes.md#writing-pandas--polars-dataframes-optional)
 
 **Have an Excel template?** Refresh its data with `XlsxUpdater`, `XlsbUpdater`,
 or `XlsmUpdater`. XLSM updates preserve the existing VBA project.
-[Update a workbook →](docs/usage.md#updating-an-existing-workbook)
+[Update a workbook →](docs/guide/updating.md#updating-an-existing-workbook)
 
 **Need to read the results?** Use `ExcelReader` for XLSB and XLSX, with the same
 API for both formats. It streams values without styles and is the fastest way in.
 For random access, formatting and edits, `load_workbook()` loads either format
 into an openpyxl-like model; styles are resolved only when you read them, so
 there is no flag to set.
-[Choose a read mode →](docs/usage.md#read-modes-which-one-to-use)
+[Choose a read mode →](docs/guide/reading.md#read-modes-which-one-to-use)
 
 ## Explore further
 

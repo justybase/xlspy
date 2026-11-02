@@ -103,7 +103,7 @@ available through `PYTHONPATH`; the library gained no runtime dependencies.
 Supported scope: classic XLSX/XLSB notes, XLSX/XLSM/XLSB template updates,
 scalar formula edits, user-defined names and legacy sheet/workbook protection.
 Threaded-comment editing, grouped-formula edits and reading note dimensions are
-not implemented. See the [usage guide](usage.md#comments-and-template-metadata-xlsxxlsb)
+not implemented. See the [usage guide](guide/objects.md#comments-and-template-metadata-xlsxxlsmxlsb)
 for the public APIs and limits.
 
 ## XLSB formula and metadata validation (2026-10-21)

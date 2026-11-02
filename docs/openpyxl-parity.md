@@ -178,7 +178,7 @@ gap is implemented the same test starts passing without changes.
 
 This table is the snapshot taken at xlspy 0.10.1, kept as the record of the
 plan. Its status column is historical: for what is supported now, see the
-implementation status above and the [feature support table](usage.md#feature-support).
+implementation status above and the [feature support table](guide/objects.md#feature-support).
 Pivot tables, sparklines, slicers and shapes were added after this snapshot.
 
 | ID | Area | xlspy 0.10.1 | target | Phase |

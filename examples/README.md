@@ -20,6 +20,7 @@ python examples/simple_usage.py
 | [`simple_usage_xlsx.py`](simple_usage_xlsx.py) | Minimal `XlsxWriter` example. |
 | [`format_demo.py`](format_demo.py) | All cell number/date/datetime formats from `xlspy.F`. |
 | [`update_existing.py`](update_existing.py) | Updating the data region of existing `.xlsx` / `.xlsm` / `.xlsb` workbooks. |
+| [`pivot_tables.py`](pivot_tables.py) | Pivot tables over a table written in the same `write_sheet` call; give a `.xlsb` path to write XLSB. |
 
 ## Reports and large exports (no extra dependencies)
 
@@ -29,6 +30,7 @@ python examples/simple_usage.py
 | [`xlsx_comments_and_templates.py`](xlsx_comments_and_templates.py) | Classic notes, sparse template edits, named ranges, sheet protection and reading formula text; `--out reviewed.xlsb` writes XLSB. |
 | [`xlsx_grouping.py`](xlsx_grouping.py) | Two-level row and column groups (`row_groups`, `column_groups`) with region subtotals and quarter columns; `--out grouping.xlsb` writes XLSB. |
 | [`xlsx_streaming_export.py`](xlsx_streaming_export.py) | Streams rows from a DB-API cursor (sqlite3 here) into XLSX or XLSB with `use_shared_strings=False` and reports the peak Python allocations. |
+| [`netezza_export.py`](netezza_export.py) | The same streaming export from a Netezza query (needs `nzpy-extended` and a server). |
 | [`business_dashboard.py`](business_dashboard.py) | A sales dashboard on one sheet: KPI cards linked to helper cells, bar, doughnut and combo charts, a table slicer that drives every figure, and sparklines. `--out dashboard.xlsb` writes the same dashboard as XLSB. |
 
 ## DataFrames (optional pandas / polars)
@@ -55,6 +57,6 @@ comparisons and the environment used to measure them.
 
 | Script | What it shows |
 |--------|---------------|
-| [`benchmark.py`](benchmark.py) | Timing/size comparison against `xlsxwriter`. |
+| [`benchmark.py`](benchmark.py) | Writes one Netezza query result with `XlsbWriter` and with `xlsxwriter` and compares time and file size. Needs a Netezza server (`NZ_DEV_*` variables); installs `nzpy-extended` with pip when it is missing. |
 | [`performance_test.py`](performance_test.py) | Larger write/read benchmark against `xlsxwriter` and `openpyxl`. |
-| [`write_benchmark.py`](write_benchmark.py) | Reproducible write benchmark: isolated processes, medians, peak memory, file size, JSON/CSV output; xlspy (C and Python), `openpyxl` and `xlsxwriter`. |
+| [`write_benchmark.py`](write_benchmark.py) | Reproducible write benchmark: isolated processes, medians, peak memory, file size, JSON/CSV output; xlspy (native and pure Python), `openpyxl`, `xlsxwriter` and PyExcelerate. Produced the tables in [Benchmarks](../docs/benchmarks.md). |

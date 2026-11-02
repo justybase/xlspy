@@ -142,7 +142,7 @@ Median wall time to read the 50,000 × 50 workbook back. Each library reads the 
 #### Read modes and the workbook model
 
 `benchmarks/bench_io.py` compares the read modes described in
-[Read modes](usage.md#read-modes-which-one-to-use) on a 50,000 × 20 workbook
+[Read modes](guide/reading.md#read-modes-which-one-to-use) on a 50,000 × 20 workbook
 (Windows, Python 3.14, C extension on, median of three runs, 2026-10-29,
 [`results-2026-10-29-sprint.json`](../benchmarks/history/results-2026-10-29-sprint.json);
 before the 0.11 sprint in brackets,
@@ -342,7 +342,7 @@ see [openpyxl parity](openpyxl-parity.md).
 | Pivot tables | written; loaded ones preserved | preserved only | no |
 | Chartsheets | yes | yes | yes |
 
-¹ A loaded XLSB saves the edits listed in [Usage](usage.md#loaded-xlsx-and-xlsb-workbooks); the few it refuses raise an error at `save()`.
+¹ A loaded XLSB saves the edits listed in [Usage](guide/model.md#loaded-xlsx-and-xlsb-workbooks); the few it refuses raise an error at `save()`.
 Some style features are not written to XLSB, so check that page before you rely on a
 particular style in XLSB output.
 
