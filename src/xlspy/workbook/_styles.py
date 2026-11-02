@@ -385,6 +385,8 @@ class XlsxStyleTable:
         self._numfmt_by_code: dict[str, int] = {}
         self._xf_index: dict[tuple, int] = {}
         self._next_numfmt_id = 164
+        # Cell.number_format memo: (style id, format) -> style id with that format.
+        self._number_format_ids: dict[tuple[int, str], int] = {}
         self._font_xml: list[str] = []
         self._fill_xml: list[str] = []
         self._border_xml: list[str] = []
@@ -978,7 +980,7 @@ class XlsxStyleTable:
             from .._metadata import serialize_like
             return serialize_like(root, source)
         ET.register_namespace("", MAIN)
-        return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+        return cast(bytes, ET.tostring(root, encoding="utf-8", xml_declaration=True))
 
     def append_dxfs(self, fragments: list[str]) -> list[int]:
         """Add differential formats; return the index of each in the table.

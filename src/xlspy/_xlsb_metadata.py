@@ -9,7 +9,9 @@ import struct
 import uuid
 
 from ._metadata import password_hash
-from .biff_utils import build_record, iter_records, read_utf16
+from collections.abc import Iterator
+
+from .biff_utils import Biff12Record, build_record, iter_records, read_utf16
 from .comments import Comment
 from .refs import parse_cell_range, column_label
 
@@ -22,7 +24,7 @@ SHEET_PROTECTION_ISO, BOOK_PROTECTION_ISO = 0x2A6, 0x2A5
 LEGACY_DRAWING = 0x227
 
 
-def wide_string(text):
+def wide_string(text: str) -> bytes:
     encoded = text.encode("utf-16le")
     return struct.pack("<I", len(encoded) // 2) + encoded
 
@@ -36,7 +38,7 @@ def read_wide(data, offset=0, *, nullable=False):
     return read_utf16(data, offset + 4, length)
 
 
-def records(data):
+def records(data: bytes) -> Iterator[tuple[Biff12Record, bytes]]:
     for record in iter_records(data):
         yield record, data[record.data_start:record.data_end]
 

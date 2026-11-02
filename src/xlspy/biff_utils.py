@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
+from collections.abc import Iterator
 from typing import BinaryIO
 
 
@@ -49,7 +50,7 @@ def vlq_bytes(value: int) -> bytes:
     return bytes(encoded)
 
 
-def iter_records(data: bytes):
+def iter_records(data: bytes) -> Iterator[Biff12Record]:
     """Yield all BIFF12 records in a byte buffer."""
 
     size = len(data)

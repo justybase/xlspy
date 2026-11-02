@@ -76,7 +76,7 @@ def shift_references(text: str, rows: int, cols: int) -> str:
     The result matches openpyxl's ``Translator`` for the same input.
     """
 
-    def replace(match: re.Match) -> str:
+    def replace(match: re.Match[str]) -> str:
         if match["cell"] is not None:
             return _shift_cell(match, rows, cols)
         if match["cols"] is not None:
@@ -88,7 +88,7 @@ def shift_references(text: str, rows: int, cols: int) -> str:
     return _FORMULA_TOKEN.sub(replace, text)
 
 
-def _shift_cell(match: re.Match, rows: int, cols: int) -> str:
+def _shift_cell(match: re.Match[str], rows: int, cols: int) -> str:
     column = _column_index(match["col"])
     row = int(match["row"]) - 1
     if column >= _MAX_COLUMN or row >= _MAX_ROW:

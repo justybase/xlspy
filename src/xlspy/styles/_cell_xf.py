@@ -1,12 +1,16 @@
 """Cell xf (style index) registration shared by the XLSX and XLSB writers."""
 
 from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
 from dataclasses import replace
 from ._ranges import merge_styles
 from ._style import Style
 
 
-def _xf_for_style_format(style: Style, overlay: str | Style, register_style, cache: dict) -> int:
+def _xf_for_style_format(style: Style, overlay: str | Style, register_style: Callable[[Style], int],
+                         cache: dict[tuple[object, ...], tuple[Style, str | Style, int]]) -> int:
     """XF of ``style`` with a cell's number format or ``Style`` on top,
     merged once per pair."""
     key: tuple[object, ...]
@@ -42,8 +46,8 @@ def _record_cell_xf(fmt_xf: dict, keep: list, base_xf, overlay, xf_index: int) -
             keep.append(overlay)
 
 
-def _date_cell_xf(fmt_xf: dict, xf_styles: dict, register_style, xf_index: int,
-                  date_format: str, is_datetime: bool) -> int:
+def _date_cell_xf(fmt_xf: dict[Any, int], xf_styles: dict[int, Style], register_style: Callable[[Style], int],
+                  xf_index: int, date_format: str, is_datetime: bool) -> int:
     """XF for a date cell whose style is ``xf_index``.
 
     A style with no number format gets ``date_format`` on top, so Excel does

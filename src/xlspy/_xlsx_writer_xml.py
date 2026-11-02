@@ -1,5 +1,6 @@
 """Module-level helpers of the XLSX writer: XML fragments, spool and flush constants."""
 
+from typing import IO, Protocol
 from dataclasses import dataclass, field
 from .printing import (
     PageMargins,
@@ -21,12 +22,16 @@ DEFAULT_SPOOL_BYTES = 1 << 20
 _EMPTY_ROW_STYLES: dict = {}
 
 
+class _ByteSink(Protocol):
+    def write(self, data: bytes, /) -> object: ...
+
+
 class _Tee:
     """Write the encoded rows to the spool and to the deflate segment."""
 
     __slots__ = ("_spool", "_segment")
 
-    def __init__(self, spool, segment):
+    def __init__(self, spool: IO[bytes], segment: _ByteSink):
         self._spool = spool
         self._segment = segment
 

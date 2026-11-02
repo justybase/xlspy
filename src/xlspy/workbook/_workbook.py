@@ -3,6 +3,7 @@
 from __future__ import annotations
 from ..exceptions import UnsupportedFeatureError
 import copy
+import zipfile
 from dataclasses import replace
 import datetime as _datetime
 from typing import Any
@@ -38,7 +39,7 @@ class Workbook:
         self._defined_names_dirty = False
         self.template = False
         self.epoch = _datetime.datetime(1899, 12, 30)
-        self.vba_archive = None
+        self.vba_archive: zipfile.ZipFile | None = None
         self.security = WorkbookSecurity()
         self.calculation = CalcProperties()
         self.views = [BookView()]

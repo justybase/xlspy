@@ -1394,7 +1394,7 @@ def load_workbook(filename, *, read_only: bool = False, data_only: bool = False,
         raise
 
 
-def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool):
+def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool) -> Workbook:
     package = updater._package
     workbook = Workbook()
     workbook._sheets.clear()

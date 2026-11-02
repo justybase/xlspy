@@ -13,7 +13,8 @@ from typing import cast
 from .._xlsb_metadata import replace_records, wide_string
 from ..biff_utils import build_record
 from ._drawings import new_drawing_objects
-from ._objects import _Sheet, _add_drawing, _bytes, _Package, _rels_path, _scratch, _sheet_rels
+from .._xlsx_edit import _bytes
+from ._objects import _Sheet, _add_drawing, _Package, _rels_path, _scratch, _sheet_rels
 from ._xlsb_layout import _AFTER_PRINT
 
 BRT_DRAWING = 0x226

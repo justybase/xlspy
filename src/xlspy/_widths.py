@@ -137,7 +137,7 @@ def _literal_text(part: str) -> str:
     return "".join(out)
 
 
-def _currency(match: re.Match) -> str:
+def _currency(match: re.Match[str]) -> str:
     inner = match.group(0)[1:-1]
     if inner.startswith("$"):
         return '"' + inner[1:].split("-", 1)[0] + '"'
@@ -152,7 +152,7 @@ def _is_date_format(section: str) -> bool:
 
 
 def _date_text(section: str) -> str:
-    def sample(match: re.Match) -> str:
+    def sample(match: re.Match[str]) -> str:
         token = match.group(0)
         if token.startswith("."):
             return "." + "0" * (len(token) - 1)

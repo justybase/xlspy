@@ -34,7 +34,7 @@ def _translate_array_ref(ref: str, rows: int, cols: int) -> str:
     """Shift the coordinates of a CSE array range with its anchor formula."""
     parse_cell_range(ref)
 
-    def cell(match: re.Match) -> str:
+    def cell(match: re.Match[str]) -> str:
         col = _column_number(match[2])
         row = int(match[4])
         if col is None:

@@ -8,6 +8,7 @@ or columns cannot be drawn by Excel, so they are rejected.
 
 from __future__ import annotations
 
+from collections.abc import Set as AbstractSet
 from bisect import bisect_right
 import heapq
 from dataclasses import dataclass
@@ -128,7 +129,7 @@ class OutlineIndex:
 
     __slots__ = ("_starts", "_levels", "_hidden", "_summaries", "max_level")
 
-    def __init__(self, starts, levels, hidden, summaries):
+    def __init__(self, starts: list[int], levels: list[int], hidden: list[bool], summaries: AbstractSet[int]):
         self._starts = starts
         self._levels = levels
         self._hidden = hidden

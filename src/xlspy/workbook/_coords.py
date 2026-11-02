@@ -67,19 +67,19 @@ class CellRange(str):
         return str.__new__(cls, normalized)
 
     @property
-    def min_col(self):
+    def min_col(self) -> int:
         return parse_cell_range(self)[0] + 1
 
     @property
-    def min_row(self):
+    def min_row(self) -> int:
         return parse_cell_range(self)[1] + 1
 
     @property
-    def max_col(self):
+    def max_col(self) -> int:
         return parse_cell_range(self)[2] + 1
 
     @property
-    def max_row(self):
+    def max_row(self) -> int:
         return parse_cell_range(self)[3] + 1
 
     def __contains__(self, item):
@@ -151,7 +151,7 @@ class CellRange(str):
             raise ValueError(f"Range {self} doesn't intersect {other}")
         return CellRange(f"{column_label(min_col - 1)}{min_row}:{column_label(max_col - 1)}{max_row}")
 
-    def isdisjoint(self, other) -> bool:
+    def isdisjoint(self, other: CellRange | str) -> bool:
         other = other if isinstance(other, CellRange) else CellRange(str(other))
         return (
             self.max_col < other.min_col
@@ -160,14 +160,14 @@ class CellRange(str):
             or other.max_row < self.min_row
         )
 
-    def issubset(self, other) -> bool:
+    def issubset(self, other: CellRange | str) -> bool:
         other = other if isinstance(other, CellRange) else CellRange(str(other))
         return (
             other.min_col <= self.min_col <= self.max_col <= other.max_col
             and other.min_row <= self.min_row <= self.max_row <= other.max_row
         )
 
-    def issuperset(self, other) -> bool:
+    def issuperset(self, other: CellRange | str) -> bool:
         other = other if isinstance(other, CellRange) else CellRange(str(other))
         return other.issubset(self)
 

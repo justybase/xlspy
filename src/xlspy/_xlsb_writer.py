@@ -30,7 +30,7 @@ class XlsbWriterMetadata(_XlsbWriterHost):
         if self._xlsb_formula_context is not None:
             self._xlsb_formula_context.remove_name(name, scope)
 
-    def _metadata_workbook(self, data):
+    def _metadata_workbook(self, data: bytes) -> bytes:
         if self._xlsb_formula_context is not None:
             from ._xlsb_edit import request_recalculation
             data = self._xlsb_formula_context.write_workbook(data)

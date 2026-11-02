@@ -13,7 +13,8 @@ from .._xlsb_metadata import read_wide, replace_records, wide_string
 from ..biff_utils import build_record, iter_record_payloads
 from ..styles.core import table_column_names
 from ..writer import XlsbWriter
-from ._objects import _Package, _as_excel_table, _bytes, _overlaps, _rels_path, pending_objects
+from .._xlsx_edit import _bytes
+from ._objects import _Package, _as_excel_table, _overlaps, _rels_path, pending_objects
 from ._xlsb_sheet_meta import LIST_PART, read_table_part
 
 BEGIN_LIST_PARTS = 0x294

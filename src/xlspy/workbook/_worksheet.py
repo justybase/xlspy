@@ -5,7 +5,7 @@ from ..exceptions import UnsupportedFeatureError
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
 import datetime as _datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from ..charts import Chart
 from ..comments import Comment
 from ..data_validation import DataValidation
@@ -28,6 +28,9 @@ from ._dimensions import ColumnDimension, DimensionHolder, RowDimension, _column
 from ._properties import AutoFilter, ColBreak, Pane, RowBreak, Selection, SheetFormatProperties, SheetProperties, SheetView, WorksheetProtection, _as_model_page_margins, _as_model_protection
 from ._tables import ConditionalFormattingList, DataValidationList, Table, TableList, _expect
 
+if TYPE_CHECKING:
+    from ._workbook import Workbook
+
 
 class Worksheet:
     ORIENTATION_PORTRAIT = "portrait"
@@ -43,7 +46,7 @@ class Worksheet:
     _reader: Any
     _saved_print_settings: Any
 
-    def __init__(self, workbook, title: str, *, index: int | None = None):
+    def __init__(self, workbook: Workbook, title: str, *, index: int | None = None):
         self._workbook = workbook
         self._title = title
         self._index = index
@@ -605,7 +608,7 @@ class Worksheet:
         styles = self._workbook._styles
         if styles.style_at(0).number_format not in (None, "General"):
             return {}
-        cache = getattr(styles, "_number_format_ids", None) or {}
+        cache = styles._number_format_ids
         found = {}
         for kind, fmt in ((_datetime.datetime, DEFAULT_DATETIME_FORMAT),
                           (_datetime.date, DEFAULT_DATE_FORMAT)):
@@ -710,7 +713,7 @@ class Worksheet:
 class WriteOnlyWorksheet(Worksheet):
     """Streaming-friendly sheet that stores rows rather than Cell objects."""
 
-    def __init__(self, workbook, title: str, *, index: int | None = None):
+    def __init__(self, workbook: Workbook, title: str, *, index: int | None = None):
         super().__init__(workbook, title, index=index)
         self._rows: list[list[Any]] = []
 
@@ -761,7 +764,7 @@ class Chartsheet:
     its title; by default the workbook's first worksheet).
     """
 
-    def __init__(self, workbook, title: str, index: int | None = None):
+    def __init__(self, workbook: Workbook, title: str, index: int | None = None):
         self._workbook = workbook
         self._title = title  # the caller checks the name
         self.sheet_state = "visible"

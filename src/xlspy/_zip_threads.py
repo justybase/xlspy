@@ -21,6 +21,7 @@ when that attribute is not there, and callers then write sequentially.
 
 from __future__ import annotations
 
+from typing import BinaryIO
 import shutil
 import zipfile
 import zlib
@@ -38,7 +39,7 @@ _BLOCK = 256 * 1024
 _MAX_PENDING = 8
 
 
-def new_deflater(level: int | None):
+def new_deflater(level: int | None) -> zlib._Compress:
     """The compressor ``zipfile`` would use for a deflated member."""
     return zlib.compressobj(
         zlib.Z_DEFAULT_COMPRESSION if level is None else level, zlib.DEFLATED, -15
@@ -119,7 +120,7 @@ class DeflateSegment(_Pipeline):
 class _Replay:
     """Compressor that returns precompressed bytes instead of compressing."""
 
-    def __init__(self, head: bytes, body, tail: bytes):
+    def __init__(self, head: bytes, body: BinaryIO, tail: bytes):
         self._head = head
         self._body = body
         self._tail = tail

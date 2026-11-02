@@ -114,7 +114,8 @@ class XlsbSheetsMixin:
         """Index of the sheet Excel shows when the workbook opens."""
         for record, payload in records(self._package.get("xl/workbook.bin")):
             if record.record_id == BOOK_VIEW and len(payload) >= 28:
-                return struct.unpack_from("<I", payload, 24)[0]
+                active: int = struct.unpack_from("<I", payload, 24)[0]
+                return active
         return 0
 
     def add_sheet(self, name: str, index: int | None = None, *, state: str = "visible") -> str:

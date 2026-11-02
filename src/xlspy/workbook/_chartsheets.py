@@ -8,12 +8,17 @@ with one chart. The chart reads its data from a worksheet (the chartsheet's
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from .. import chart_parts
 from .._metadata import REL
 from ..refs import column_label
 from ._objects import _Package
 from ..external_links import _MAIN as _MAIN
+
+if TYPE_CHECKING:
+    from ._workbook import Workbook
+    from ._worksheet import Chartsheet
 
 _CHARTSHEET_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.chartsheet+xml"
 _DRAWING_TYPE = "application/vnd.openxmlformats-officedocument.drawing+xml"
@@ -54,7 +59,7 @@ def check_chartsheets(workbook) -> None:
         source_title(workbook, sheet)
 
 
-def source_title(workbook, sheet) -> str:
+def source_title(workbook: Workbook, sheet: Chartsheet) -> str:
     source = sheet._source
     if source is None:
         if not workbook._sheets:
@@ -122,7 +127,8 @@ def _set_rels(package, owner, rels) -> None:
     from xml.etree import ElementTree as ET
 
     from .._metadata import PKG_REL
-    from ._objects import _bytes, _rels_path
+    from .._xlsx_edit import _bytes
+    from ._objects import _rels_path
 
     ET.register_namespace("", PKG_REL)
     package.set(_rels_path(owner), _bytes(rels))

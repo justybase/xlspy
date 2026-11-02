@@ -26,7 +26,7 @@ def days_to_time(value: datetime.timedelta) -> datetime.time:
     return datetime.time(hours, minutes, seconds, value.microseconds)
 
 
-def time_to_days(value) -> float:
+def time_to_days(value: datetime.time) -> float:
     return (
         value.hour * 3600
         + value.minute * 60

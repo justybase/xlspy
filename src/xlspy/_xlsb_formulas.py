@@ -178,7 +178,7 @@ def _is_relative(ref):
     return False
 
 
-def encode_reference(ref, sheet, context, operand, origin, name_formula, cell_relative=False):
+def encode_reference(ref, sheet, context, operand, origin, name_formula, cell_relative=False) -> bytes:
     kind = 0x20 if operand == 'R' else 0x60 if operand == 'A' else 0x40
     # Validation and conditional-format formulas store same-sheet references
     # with a relative part as offsets from the range's top-left cell
@@ -612,8 +612,8 @@ class FormulaContext:
             index += 1
         return [entry.raw for entry in self.names]
 
-    def defined_names(self):
-        result = []
+    def defined_names(self) -> list[DefinedName]:
+        result: list[DefinedName] = []
         for entry in self.names:
             if entry.flags & (0x20 | 0x20000) or entry.name.startswith('_xlspy_deleted_'):
                 continue

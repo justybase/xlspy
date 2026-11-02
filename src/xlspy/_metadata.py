@@ -103,7 +103,7 @@ def serialize_like(root, original) -> bytes:
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + output).encode("utf-8")
 
 
-def element_pattern(tag: str):
+def element_pattern(tag: str) -> re.Pattern[str]:
     return re.compile(
         rf"<(?P<prefix>[A-Za-z_][\w.-]*:)?{tag}\b[^>]*?"
         rf"(?:/>|>.*?</(?P=prefix){tag}\s*>|>.*?</{tag}\s*>)", re.DOTALL,

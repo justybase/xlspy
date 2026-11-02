@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import replace
 from functools import lru_cache
 import re
-from typing import Any
+from typing import Any, overload
 from collections.abc import Mapping
 from ..refs import _column_index, parse_cell_range
 from ._attrs import _coerce_color
@@ -157,6 +157,12 @@ def tab_color_key(tab_color):
     return _color_key(_coerce_color(tab_color, "tab_color"))
 
 
+@overload
+def merge_styles(base: Style, overlay: Style | None) -> Style: ...
+@overload
+def merge_styles(base: Style | None, overlay: Style) -> Style: ...
+@overload
+def merge_styles(base: None, overlay: None) -> None: ...
 def merge_styles(base: Style | None, overlay: Style | None) -> Style | None:
     if base is None:
         return overlay

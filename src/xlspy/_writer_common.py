@@ -90,7 +90,7 @@ class WriterFrontEnd:
             )
 
     def _claim_cf_priority(self, rule) -> int:
-        priority = rule.priority
+        priority: int = rule.priority
         if priority is None:
             while (
                 self._next_cf_priority in self._seen_cf_priorities

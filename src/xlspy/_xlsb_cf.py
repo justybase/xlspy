@@ -549,7 +549,7 @@ def _scale_records(rule, context, origin) -> bytes:
         return build_record(BRT_CFVO, cfvo_bin(item.type, item.value, context, origin, gte))
 
     if isinstance(rule, ColorScaleRule):
-        out = build_record(BRT_BEGIN_COLOR_SCALE)
+        out: bytes = build_record(BRT_BEGIN_COLOR_SCALE)
         out += threshold(rule.minimum, ("min", None))
         if rule.midpoint is not None:
             out += threshold(rule.midpoint, ("percentile", 50))

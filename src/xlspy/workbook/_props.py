@@ -6,6 +6,7 @@ core properties and ``docProps/custom.xml`` for user-defined ones.
 
 from __future__ import annotations
 
+from typing import cast
 import datetime as _datetime
 from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
@@ -71,8 +72,9 @@ def custom_xml(items) -> bytes:
     ).encode()
 
 
-def _serialize(root) -> bytes:
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+def _serialize(root: ET.Element) -> bytes:
+    # tostring returns bytes for a byte encoding; the stub types it as Any.
+    return cast(bytes, ET.tostring(root, encoding="utf-8", xml_declaration=True))
 
 
 def save_properties(updater, workbook) -> None:

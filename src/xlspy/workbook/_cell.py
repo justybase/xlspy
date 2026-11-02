@@ -5,7 +5,7 @@ from ..exceptions import UnsupportedFeatureError
 from dataclasses import replace
 import datetime as _datetime
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from ..comments import Comment
 from ..formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT
 from ..formulas import Formula
@@ -24,6 +24,9 @@ from ..styles import (
 )
 from ._coords import _coerce_column, _coerce_row, _coordinate
 
+if TYPE_CHECKING:
+    from ._worksheet import Worksheet
+
 
 _new_cell = object.__new__
 _CELL_TYPE_KINDS = {int: "n", float: "n", bool: "b", str: "s"}
@@ -36,7 +39,7 @@ class Cell:
         "_named_style",
     )
 
-    def __init__(self, sheet, row: int, column: int, value=None, style_id: int = 0):
+    def __init__(self, sheet: Worksheet, row: int, column: int, value=None, style_id: int = 0):
         self._sheet = sheet
         self._row = _coerce_row(row)
         self._column = _coerce_column(column)
@@ -275,9 +278,7 @@ class Cell:
             raise TypeError("number_format must be a string")
         workbook = self._sheet._workbook
         styles = workbook._styles
-        cache = getattr(styles, "_number_format_ids", None)
-        if cache is None:
-            cache = styles._number_format_ids = {}
+        cache = styles._number_format_ids
         key = (self._style_id, value)
         style_id = cache.get(key)
         if style_id is None:

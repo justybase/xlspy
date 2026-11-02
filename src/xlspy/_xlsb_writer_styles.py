@@ -1,5 +1,6 @@
 """XlsbWriter style methods: number formats, xf registration, styles.bin records."""
 
+import typing
 from .exceptions import UnsupportedFeatureError
 import struct
 from .styles import (
@@ -43,7 +44,7 @@ class _XlsbStylesMixin(_XlsbWriterHost):
         return xf_index
 
     @staticmethod
-    def _register_component(registry: dict, key, first_id: int) -> int:
+    def _register_component(registry: dict[typing.Any, int], key: typing.Any, first_id: int) -> int:
         """Return the record id for ``key``, adding it to ``registry`` if new."""
         if key is None:
             return 0

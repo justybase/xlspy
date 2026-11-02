@@ -60,7 +60,7 @@ def check_xml_text(value: str, what: str) -> None:
         raise ValueError(f"{what} contains a control character, which XML cannot hold")
 
 
-def _escape_match(match: re.Match) -> str:
+def _escape_match(match: re.Match[str]) -> str:
     return f"_x{ord(match.group()):04X}_"
 
 
@@ -79,7 +79,7 @@ def xstring_escape(text: str) -> str:
     return _XSTRING_SPECIAL.sub(_escape_match, text)
 
 
-def _unescape_match(match: re.Match) -> str:
+def _unescape_match(match: re.Match[str]) -> str:
     return chr(int(match.group(1), 16))
 
 
