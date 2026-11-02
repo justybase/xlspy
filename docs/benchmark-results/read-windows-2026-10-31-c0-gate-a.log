@@ -1,0 +1,10 @@
+xlspy ExcelReader, XLSX                       0.68 s (iqr 0.02)  50000 rows  2500000 cells  fallback 0 rows
+xlspy ExcelReader, XLSB                       0.10 s (iqr 0.01)  50000 rows  2500000 cells
+xlspy ExcelReader, xlsxwriter file            0.69 s (iqr 0.01)  50000 rows  2500000 cells  fallback 0 rows
+xlspy load_workbook, XLSX                     1.89 s (iqr 0.04)  50000 rows  2500000 cells  fallback 0 rows
+xlspy load_workbook, XLSB                     1.17 s (iqr 0.07)  50000 rows  2500000 cells
+xlspy ExcelReader, entities XLSX              6.49 s (iqr 0.08)  50000 rows  2500000 cells  fallback 50000 rows
+xlspy load_workbook, entities XLSX           11.02 s (iqr 0.11)  50000 rows  2500000 cells  fallback 50000 rows
+python-calamine, entities XLSX                1.63 s (iqr 0.02)  50000 rows  2500000 cells
+openpyxl read_only, entities XLSX            14.11 s (iqr 0.51)  50000 rows  2500000 cells
+WARNING: xlspy readers disagree on the values of xlspy_xlsx

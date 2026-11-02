@@ -1,0 +1,20 @@
+xlspy ExcelReader, XLSX                       0.64 s (iqr 0.01)  50000 rows  2500000 cells  fallback 0 rows
+xlspy ExcelReader, XLSB                       0.09 s (iqr 0.01)  50000 rows  2500000 cells
+xlspy ExcelReader, xlsxwriter file            0.67 s (iqr 0.00)  50000 rows  2500000 cells  fallback 0 rows
+xlspy load_workbook, XLSX                     1.81 s (iqr 0.07)  50000 rows  2500000 cells  fallback 0 rows
+xlspy load_workbook, XLSB                     1.54 s (iqr 0.10)  50000 rows  2500000 cells
+python-calamine, XLSX                         1.00 s (iqr 0.04)  50000 rows  2500000 cells
+python-calamine, XLSB                         0.41 s (iqr 0.02)  50000 rows  2500000 cells
+python-calamine, xlsxwriter file              1.19 s (iqr 0.02)  50000 rows  2500000 cells
+fastexcel, XLSX                               1.05 s (iqr 0.03)  50000 rows  2500000 cells
+fastexcel, XLSB                               0.66 s (iqr 0.02)  50000 rows  2500000 cells
+pyxlsb, XLSB                                  6.17 s (iqr 0.02)  50000 rows  2500000 cells
+openpyxl read_only, XLSX                      4.81 s (iqr 0.05)  50000 rows  2500000 cells
+openpyxl read_only, xlsxwriter file           7.75 s (iqr 0.14)  50000 rows  2500000 cells
+openpyxl load_workbook, XLSX                 11.74 s (iqr 0.12)  50000 rows  2500000 cells
+openpyxl load_workbook, xlsxwriter file      14.81 s (iqr 0.04)  50000 rows  2500000 cells
+xlspy ExcelReader, entities XLSX              6.22 s (iqr 0.03)  50000 rows  2500000 cells  fallback 50000 rows
+xlspy load_workbook, entities XLSX           10.46 s (iqr 0.06)  50000 rows  2500000 cells  fallback 50000 rows
+python-calamine, entities XLSX                1.59 s (iqr 0.01)  50000 rows  2500000 cells
+openpyxl read_only, entities XLSX            13.79 s (iqr 0.12)  50000 rows  2500000 cells
+WARNING: xlspy readers disagree on the values of xlspy_xlsx

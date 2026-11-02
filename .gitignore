@@ -31,6 +31,8 @@ htmlcov/
 .tox/
 /site/
 *.log
+# Benchmark logs the docs link to are records, not output.
+!docs/benchmark-results/*.log
 
 # Test and example output
 .pytest-tmp/

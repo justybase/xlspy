@@ -1,0 +1,4 @@
+regex       0.862 s  (iqr 0.009)
+native      0.141 s  (iqr 0.001)
+reader      0.155 s  (iqr 0.003)
+expat       1.619 s  (iqr 0.019)

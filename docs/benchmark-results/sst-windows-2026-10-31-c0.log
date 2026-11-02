@@ -1,0 +1,3 @@
+regex       0.849 s  (iqr 0.006)
+reader      0.860 s  (iqr 0.018)
+expat       1.594 s  (iqr 0.007)

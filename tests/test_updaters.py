@@ -14,7 +14,6 @@ from xlspy.exceptions import UnsupportedFeatureError
 from xlspy.formulas import Formula
 from xml.etree import ElementTree as ET
 import math
-import openpyxl
 import re
 
 
@@ -748,6 +747,8 @@ def test_xlsx_replace_writes_formula_with_cached_value(tmp_path, streaming):
         updater.replace_sheet_data("S", rows)
     updater.save(out)
 
+    # openpyxl reads it back; the wheel smoke job installs only the wheel and pytest.
+    openpyxl = pytest.importorskip("openpyxl")
     formulas = openpyxl.load_workbook(out)["S"]
     cached = openpyxl.load_workbook(out, data_only=True)["S"]
     assert formulas["B2"].value == "=A2*3"
