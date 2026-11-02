@@ -6,6 +6,7 @@ part is a short binary stream (as Excel writes it) and the sheet is listed in
 """
 
 from __future__ import annotations
+from .._package_handle import PackageHandle
 from typing import TYPE_CHECKING
 
 import struct
@@ -74,10 +75,11 @@ def add_chartsheets_xlsb(updater: XlsbUpdater, workbook: Workbook) -> None:
         tab_id += 1
         entries.append(_Entry(None, _STATES[sheet.sheet_state], tab_id, rid, sheet.title))
         added.append((sheet, part))
-    package.set("xl/workbook.bin", updater._rewrite_sheet_list(book, entries, {}))
+    handle = PackageHandle(updater)
+    package.set("xl/workbook.bin", handle.rewrite_sheet_list(book, entries, {}))
     _set_rels(package, "xl/workbook.bin", book_rels)
     package.commit()
     for sheet, part in added:
         sheet._part = part
-        updater._sheets[sheet.title] = part
-        updater._chartsheets.add(sheet.title)
+        handle.sheets[sheet.title] = part
+        handle.chartsheets.add(sheet.title)

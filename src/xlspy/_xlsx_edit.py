@@ -74,7 +74,7 @@ class XlsxEditMixin:
         # The package owns the write-back transaction (ZipPackage.apply_parts).
         self._package.apply_parts(parts, removed)
 
-    def _sheet_xml(self, sheet_name):
+    def _sheet_xml(self, sheet_name: str) -> tuple[str, str]:
         try:
             path = self._sheets[sheet_name]
         except KeyError as exc:

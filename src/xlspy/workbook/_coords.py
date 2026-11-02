@@ -39,6 +39,17 @@ def _coordinate(row: int, column: int) -> str:
     return f"{column_label(column - 1)}{row}"
 
 
+def _in_sheet_order(refs: Iterable[str]) -> list[str]:
+    """A1 cell references sorted by row, then column.
+
+    Pending edits are kept in sets; saving walks them in this order so the same
+    edits always produce the same bytes (string hashes vary between runs)."""
+    def position(ref: str) -> tuple[int, int]:
+        column, row, _, _ = parse_cell_range(ref)
+        return row, column
+    return sorted(refs, key=position)
+
+
 def _normalize_range(reference: str) -> str:
     if not isinstance(reference, str):
         raise TypeError("a range must be an A1 string")

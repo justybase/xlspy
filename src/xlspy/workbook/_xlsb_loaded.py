@@ -1,6 +1,8 @@
 """Save edits back into a loaded XLSB package."""
 
 from __future__ import annotations
+from .._package_handle import PackageHandle
+from ._coords import _in_sheet_order
 
 from ..exceptions import UnsupportedFeatureError
 import os
@@ -129,13 +131,14 @@ def _save_defined_names(workbook, updater, renamed) -> None:
     previous = getattr(workbook, "_loaded_defined_names", names)
     if names == previous:
         return
+    handle = PackageHandle(updater)
     for name, _formula, scope in previous - names:
         scope = renamed.get(scope, scope)
         # Names local to a removed sheet went with it.
-        if scope is None or scope in updater._sheets:
+        if scope is None or scope in handle.sheets:
             updater.remove_defined_name(name, scope)
     for item in workbook.defined_names:
-        if item.scope is None or item.scope in updater._sheets:
+        if item.scope is None or item.scope in handle.sheets:
             updater.set_defined_name(item)
     workbook._loaded_defined_names = names
 
@@ -147,17 +150,18 @@ def _save_cells(sheet, updater, everything: bool) -> None:
         cells = [cell for row in sheet._cells.values() for cell in row.values()]
     else:
         cells = [
-            cell for cell in (sheet._existing_cell(row, column) for row, column in list(sheet._dirty_cells))
+            cell for cell in (sheet._existing_cell(row, column) for row, column in sorted(sheet._dirty_cells))
             if cell is not None
         ]
+    handle = PackageHandle(updater)
     for cell in cells:
-        value = _value_for_save(cell, updater._date_1904)
+        value = _value_for_save(cell, handle.date_1904)
         if everything and value is None and not cell._style_id:
             continue
         updates[cell.coordinate] = value
         style_ids[cell.coordinate] = cell._style_id
     if not everything:
-        for ref in sheet._dirty_styles:
+        for ref in _in_sheet_order(sheet._dirty_styles):
             col, row, _, _ = parse_cell_range(ref)
             cell = sheet._existing_cell(row + 1, col + 1)
             if cell is not None:
@@ -170,11 +174,12 @@ def _save_sheet(sheet, updater) -> None:
     new = getattr(sheet, "_saved_layout", None) is None
     _save_cells(sheet, updater, new)
     groups = changed_groups(sheet)
+    handle = PackageHandle(updater)
     if groups - {"print_names"}:
-        path, data = updater._sheet_bin(sheet.title)
+        path, data = handle.sheet_bin(sheet.title)
         patched = patch_layout(data, sheet, groups)
         if patched != data:
-            updater._apply_parts({path: patched})
+            handle.apply_parts({path: patched})
     save_builtin_names(updater, sheet, groups)
     merges = sheet._merged_cells.ranges
     if merges if new else _merge_signature(sheet) != sheet._saved_merges:
@@ -224,7 +229,7 @@ def _save_sheet(sheet, updater) -> None:
         }
     else:
         comments = {}
-        for ref in sheet._dirty_comments:
+        for ref in _in_sheet_order(sheet._dirty_comments):
             col, row, _, _ = parse_cell_range(ref)
             cell = sheet._existing_cell(row + 1, col + 1)
             comments[ref] = cell.comment if cell is not None else None
@@ -257,8 +262,9 @@ def save_loaded_xlsb(workbook, filename) -> None:
     _props.save_properties(updater, workbook)
     # After the sheets: their conditional formats may add differential styles.
     styles = workbook._styles
+    handle = PackageHandle(updater)
     if styles.is_modified():
-        updater._package.set(workbook._xlsb_styles_path, styles.to_bin())
+        handle.package.set(workbook._xlsb_styles_path, styles.to_bin())
 
     if isinstance(filename, (str, os.PathLike)):
         updater.save(os.fspath(filename))

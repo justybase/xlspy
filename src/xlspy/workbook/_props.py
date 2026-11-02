@@ -5,6 +5,7 @@ core properties and ``docProps/custom.xml`` for user-defined ones.
 """
 
 from __future__ import annotations
+from .._package_handle import PackageHandle
 
 from typing import cast
 import datetime as _datetime
@@ -81,7 +82,8 @@ def save_properties(updater, workbook) -> None:
     """Write the properties when they changed since the workbook was loaded or saved."""
     if getattr(workbook, "_saved_properties", None) == signature(workbook):
         return
-    package = updater._package
+    handle = PackageHandle(updater)
+    package = handle.package
     types = safe_fromstring(package.get("[Content_Types].xml"))
     rels = safe_fromstring(package.get("_rels/.rels"))
     parts = {_CORE_PATH: core_xml(workbook.properties)}
@@ -115,5 +117,5 @@ def save_properties(updater, workbook) -> None:
     parts["[Content_Types].xml"] = _serialize(types)
     ET.register_namespace("", PKG_REL)
     parts["_rels/.rels"] = _serialize(rels)
-    updater._apply_parts(parts, removed)
+    handle.apply_parts(parts, removed)
     remember(workbook)

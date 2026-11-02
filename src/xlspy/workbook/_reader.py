@@ -1,6 +1,7 @@
 """Load XLSX/XLSM files into the openpyxl-like workbook model."""
 
 from __future__ import annotations
+from .._package_handle import PackageHandle
 
 import contextlib
 import datetime as _datetime
@@ -1408,7 +1409,8 @@ def load_workbook(filename: str | os.PathLike[str], *, read_only: bool = False, 
 
 
 def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool) -> Workbook:
-    package = updater._package
+    handle = PackageHandle(updater)
+    package = handle.package
     workbook = Workbook()
     workbook._sheets.clear()
     workbook._loaded = True
@@ -1494,7 +1496,7 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
             sheet,
             style_table,
             data_only=data_only,
-            date_1904=updater._date_1904,
+            date_1904=handle.date_1904,
             package=package,
             sheet_path=sheet_path,
             shared_strings=shared_strings,

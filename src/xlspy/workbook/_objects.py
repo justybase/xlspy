@@ -9,6 +9,7 @@ own objects stay: the new ones are added next to them.
 """
 
 from __future__ import annotations
+from .._package_handle import PackageHandle
 
 from ..exceptions import UnsupportedFeatureError
 import io
@@ -141,7 +142,8 @@ class _Package:
     """Pending part changes over the package of an updater."""
 
     def __init__(self, updater):
-        self.package = updater._package
+        handle = PackageHandle(updater)
+        self.package = handle.package
         self.parts: dict[str, bytes] = {}
         self.names = set(self.package.names())
         self.removed: set[str] = set()
@@ -822,7 +824,8 @@ def sync_objects(updater, workbook, sheet) -> None:
     }
     scratch = _scratch(sheet, objects, None)
     package = _Package(updater)
-    sheet_path = updater._sheets[sheet.title]
+    handle = PackageHandle(updater)
+    sheet_path = handle.sheets[sheet.title]
     host = _Sheet(package.require(sheet_path).decode("utf-8"))
     sheet_rels = package.rels(sheet_path)
 
@@ -860,7 +863,8 @@ def add_objects(updater, workbook, sheet, sheet_order: list[str]) -> None:
         return
 
     package = _Package(updater)
-    sheet_path = updater._sheets[sheet.title]
+    handle = PackageHandle(updater)
+    sheet_path = handle.sheets[sheet.title]
     host = _Sheet(package.require(sheet_path).decode("utf-8"))
     sheet_rels = package.rels(sheet_path)
     sheet_index = sheet_order.index(sheet.title)

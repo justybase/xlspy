@@ -71,7 +71,7 @@ class XlsbEditMixin(XlsxEditMixin):
 
         def _part_or_none(self, path: str) -> bytes | None: ...
 
-    def _sheet_bin(self, sheet_name):
+    def _sheet_bin(self, sheet_name: str) -> tuple[str, bytes]:
         try:
             path = self._sheets[sheet_name]
         except KeyError as exc:

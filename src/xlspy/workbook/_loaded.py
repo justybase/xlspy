@@ -6,6 +6,8 @@ byte-for-byte by ``ZipPackage``.
 """
 
 from __future__ import annotations
+from .._package_handle import PackageHandle
+from ._coords import _in_sheet_order
 
 from ..exceptions import UnsupportedFeatureError
 import datetime as _datetime
@@ -579,7 +581,8 @@ def _auto_filter_xml(sheet: Worksheet, prefix: str) -> str:
 
 
 def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
-    path, xml = updater._sheet_xml(name)
+    handle = PackageHandle(updater)
+    path, xml = handle.sheet_xml(name)
     prefix = tag_prefix(xml, "sheetData")
     xml = replace_element(
         xml, "sheetPr", _sheet_pr_xml(sheet, prefix),
@@ -652,7 +655,7 @@ def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
         xml, "ignoredErrors", ignored_errors_xml(sheet.ignored_errors, prefix),
         before=("smartTags", "drawing", "legacyDrawing", "tableParts", "extLst"),
     )
-    updater._apply_parts({path: xml})
+    handle.apply_parts({path: xml})
 
 
 def _patch_cells(xml: str, patch) -> str:
@@ -688,7 +691,7 @@ def _save_hyperlinks(updater, sheet: Worksheet, name: str) -> None:
     if not sheet._dirty_hyperlinks:
         return
     links = {}
-    for ref in sheet._dirty_hyperlinks:
+    for ref in _in_sheet_order(sheet._dirty_hyperlinks):
         col, row, _, _ = parse_cell_range(ref)
         cell = sheet._existing_cell(row + 1, col + 1)
         links[ref] = cell.hyperlink if cell is not None else None
@@ -698,7 +701,8 @@ def _save_hyperlinks(updater, sheet: Worksheet, name: str) -> None:
 def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
     if not styles:
         return
-    path, xml = updater._sheet_xml(name)
+    handle = PackageHandle(updater)
+    path, xml = handle.sheet_xml(name)
     existing: set[str] = set()
 
     def collect_ref(ref, cell_xml):
@@ -709,7 +713,7 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
     missing = [ref for ref in styles if ref not in existing]
     if missing:
         updater.update_cells(name, dict.fromkeys(missing))
-        path, xml = updater._sheet_xml(name)
+        path, xml = handle.sheet_xml(name)
 
     def patch_cell(ref, cell_xml):
         if ref not in styles:
@@ -718,7 +722,7 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
         return _set_attr(opening, "s", styles[ref]) + cell_xml[len(opening):]
 
     xml = _patch_cells(xml, patch_cell)
-    updater._apply_parts({path: xml})
+    handle.apply_parts({path: xml})
 
 
 def _value_for_save(cell, date_1904: bool):
@@ -838,9 +842,10 @@ def _insert_sheet_fragment(workbook_xml: str, fragment: str, index: int) -> str:
 
 
 def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None:
-    package = updater._package
+    handle = PackageHandle(updater)
+    package = handle.package
     path = _next_sheet_path(package)
-    xml = _sheet_xml(sheet, updater._date_1904)
+    xml = _sheet_xml(sheet, handle.date_1904)
     package.set(path, xml.encode("utf-8"))
 
     content_types = safe_fromstring(package.get("[Content_Types].xml"))
@@ -879,7 +884,7 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
     )
     workbook_xml = _insert_sheet_fragment(workbook_xml, fragment, index)
     package.set(workbook_path, workbook_xml.encode("utf-8"))
-    updater._sheets[sheet.title] = path
+    handle.sheets[sheet.title] = path
     sheet._path = path
     # Read back with getattr in _reorder_and_state; they are optional on Worksheet.
     sheet._rel_id = rid  # type: ignore[attr-defined]
@@ -918,8 +923,11 @@ def sheet_has_pivots(package, sheet_path: str | None) -> bool:
 
 
 def remove_sheet(updater, workbook: Workbook, name: str) -> None:
-    package = updater._package
-    path = updater._sheets.get(name)
+    handle = PackageHandle(updater)
+    package = handle.package
+    path = handle.sheets.get(name)
+    if path is None:
+        raise KeyError(f"Worksheet not found: {name}")
     # A slicer's cache lives in the workbook, outside the sheet: removing the sheet would
     # leave the cache pointing at a table that no longer exists, which Excel repairs away.
     if sheet_has_slicers(package, path):
@@ -953,7 +961,7 @@ def remove_sheet(updater, workbook: Workbook, name: str) -> None:
     if path:
         package.remove(path)
         package.remove(rels_path_for_part(path))
-    updater._sheets.pop(name, None)
+    handle.sheets.pop(name, None)
 
 
 def rels_path_for_part(part: str) -> str:
@@ -962,7 +970,8 @@ def rels_path_for_part(part: str) -> str:
 
 
 def rename_sheet(updater, old: str, new: str) -> None:
-    package = updater._package
+    handle = PackageHandle(updater)
+    package = handle.package
     workbook_path = "xl/workbook.xml"
     workbook_xml = package.get(workbook_path).decode("utf-8")
     for match in list(element_pattern("sheet").finditer(workbook_xml)):
@@ -991,14 +1000,15 @@ def rename_sheet(updater, old: str, new: str) -> None:
     for part, data in {**renamed_chart_parts(package, old, new),
                        **renamed_sparkline_parts(package, old, new)}.items():
         package.set(part, data)
-    path = updater._sheets.pop(old, None)
+    path = handle.sheets.pop(old, None)
     if path is not None:
-        updater._sheets[new] = path
+        handle.sheets[new] = path
 
 
 def _reorder_and_state(workbook: Workbook, updater) -> None:
     path = "xl/workbook.xml"
-    original = updater._package.get(path)
+    handle = PackageHandle(updater)
+    original = handle.package.get(path)
     root = safe_fromstring(original)
     sheets_parent = root.find(f"{{{MAIN}}}sheets")
     if sheets_parent is None:
@@ -1041,16 +1051,18 @@ def _reorder_and_state(workbook: Workbook, updater) -> None:
         # activeTab counts every sheet entry, including chartsheets.
         active = worksheet_nodes[min(workbook._active_index, len(worksheet_nodes) - 1)]
         view.set("activeTab", str(list(sheets_parent).index(active)))
-    updater._package.set(path, serialize_like(root, original))
+    handle.package.set(path, serialize_like(root, original))
 
 
 def _sheet_order(updater) -> list[str]:
-    root = safe_fromstring(updater._package.get("xl/workbook.xml"))
+    handle = PackageHandle(updater)
+    root = safe_fromstring(handle.package.get("xl/workbook.xml"))
     return [node.get("name", "") for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")]
 
 
 def _sheet_states(updater) -> dict[str, str]:
-    root = safe_fromstring(updater._package.get("xl/workbook.xml"))
+    handle = PackageHandle(updater)
+    root = safe_fromstring(handle.package.get("xl/workbook.xml"))
     return {
         node.get("name", ""): node.get("state", "visible")
         for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
@@ -1058,7 +1070,8 @@ def _sheet_states(updater) -> dict[str, str]:
 
 
 def _active_tab(updater) -> int:
-    root = safe_fromstring(updater._package.get("xl/workbook.xml"))
+    handle = PackageHandle(updater)
+    root = safe_fromstring(handle.package.get("xl/workbook.xml"))
     view = root.find(f"{{{MAIN}}}bookViews/{{{MAIN}}}workbookView")
     if view is None:
         return 0
@@ -1075,7 +1088,8 @@ def _remap_local_names(updater, before: list[str], renamed: dict[str, str]) -> N
     """
     after = _sheet_order(updater)
     path = "xl/workbook.xml"
-    xml = updater._package.get(path).decode("utf-8")
+    handle = PackageHandle(updater)
+    xml = handle.package.get(path).decode("utf-8")
 
     def remap(match):
         fragment = match[0]
@@ -1094,7 +1108,7 @@ def _remap_local_names(updater, before: list[str], renamed: dict[str, str]) -> N
     if not element_pattern("definedName").search(updated):
         updated = replace_element(updated, "definedNames", "")
     if updated != xml:
-        updater._package.set(path, updated.encode("utf-8"))
+        handle.package.set(path, updated.encode("utf-8"))
 
 
 def _workbook_meta_signature(workbook):
@@ -1178,8 +1192,9 @@ def _book_views_xml(workbook, prefix: str) -> str:
 
 def patch_workbook_metadata(updater, workbook: Workbook) -> None:
     path = "xl/workbook.xml"
-    xml = updater._package.get(path).decode("utf-8")
-    prefix = updater._tag_prefix(xml, "sheets")
+    handle = PackageHandle(updater)
+    xml = handle.package.get(path).decode("utf-8")
+    prefix = handle.tag_prefix(xml, "sheets")
     xml = replace_element(
         xml, "workbookProtection", _workbook_protection_xml(workbook, prefix),
         before=("bookViews", "sheets", "functionGroups", "externalReferences",
@@ -1197,7 +1212,7 @@ def patch_workbook_metadata(updater, workbook: Workbook) -> None:
                 "smartTagTypes", "webPublishing", "fileRecoveryPr",
                 "webPublishObjects", "extLst"),
     )
-    updater._package.set(path, xml.encode("utf-8"))
+    handle.package.set(path, xml.encode("utf-8"))
 
 
 def save_loaded(workbook: Workbook, filename) -> None:
@@ -1211,8 +1226,9 @@ def save_loaded(workbook: Workbook, filename) -> None:
     for sheet in workbook._sheets:
         check_removals(sheet)
         check_object_rewrites(sheet)
+    handle = PackageHandle(updater)
     if workbook._styles_dirty:
-        updater._package.set("xl/styles.xml", workbook._styles.to_bytes())
+        handle.package.set("xl/styles.xml", workbook._styles.to_bytes())
         workbook._styles_dirty = False
 
     if (
@@ -1240,20 +1256,20 @@ def save_loaded(workbook: Workbook, filename) -> None:
         # calcChain entries of a removed sheet make Excel repair the file.
         updates: dict[str, str | bytes] = {}
         removed_parts: list[str] = []
-        updater._recalculate(updates, removed_parts)
-        updater._apply_parts(updates, removed_parts)
+        handle.recalculate(updates, removed_parts)
+        handle.apply_parts(updates, removed_parts)
     workbook._loaded_worksheet_names -= {
         name for name in workbook._loaded_worksheet_names if name not in keep
     }
 
     added = set()
     for index, sheet in enumerate(workbook._sheets):
-        if sheet._original_title not in updater._sheets and sheet.title not in updater._sheets:
+        if sheet._original_title not in handle.sheets and sheet.title not in handle.sheets:
             add_sheet(updater, workbook, sheet, index)
             added.add(sheet.title)
         elif (
             sheet.title != sheet._original_title
-            and sheet._original_title in updater._sheets
+            and sheet._original_title in handle.sheets
         ):
             rename_sheet(updater, sheet._original_title, sheet.title)
 
@@ -1261,22 +1277,22 @@ def save_loaded(workbook: Workbook, filename) -> None:
         name = sheet.title
         if name not in added:
             updates = {}
-            for row, column in list(sheet._dirty_cells):
+            for row, column in sorted(sheet._dirty_cells):
                 cell = sheet._existing_cell(row, column)
                 if cell is None:
                     continue
-                updates[cell.coordinate] = _value_for_save(cell, updater._date_1904)
+                updates[cell.coordinate] = _value_for_save(cell, handle.date_1904)
             if updates:
                 updater.update_cells(name, updates)
             style_updates = {}
-            for ref in sheet._dirty_styles:
+            for ref in _in_sheet_order(sheet._dirty_styles):
                 col, row, _, _ = parse_cell_range(ref)
                 cell = sheet._existing_cell(row + 1, col + 1)
                 if cell is not None:
                     style_updates[ref] = cell._style_id
             if style_updates:
                 if workbook._styles_dirty:
-                    updater._package.set("xl/styles.xml", workbook._styles.to_bytes())
+                    handle.package.set("xl/styles.xml", workbook._styles.to_bytes())
                     workbook._styles_dirty = False
                 patch_cell_styles(updater, name, style_updates)
             if sheet._meta_signature is None or _meta_signature(sheet) != sheet._meta_signature:
@@ -1284,7 +1300,7 @@ def save_loaded(workbook: Workbook, filename) -> None:
                 sheet._meta_signature = _meta_signature(sheet)
             if sheet._dirty_comments:
                 comments = {}
-                for ref in sheet._dirty_comments:
+                for ref in _in_sheet_order(sheet._dirty_comments):
                     col, row, _, _ = parse_cell_range(ref)
                     cell = sheet._existing_cell(row + 1, col + 1)
                     comments[ref] = cell.comment if cell is not None else None
@@ -1293,7 +1309,7 @@ def save_loaded(workbook: Workbook, filename) -> None:
         else:
             if sheet._dirty_comments:
                 comments = {}
-                for ref in sheet._dirty_comments:
+                for ref in _in_sheet_order(sheet._dirty_comments):
                     col, row, _, _ = parse_cell_range(ref)
                     cell = sheet._existing_cell(row + 1, col + 1)
                     comments[ref] = cell.comment if cell is not None else None
@@ -1332,7 +1348,7 @@ def save_loaded(workbook: Workbook, filename) -> None:
         sync_objects(updater, workbook, sheet)
         if has_pending_objects(sheet):
             if workbook._styles_dirty:
-                updater._package.set("xl/styles.xml", workbook._styles.to_bytes())
+                handle.package.set("xl/styles.xml", workbook._styles.to_bytes())
                 workbook._styles_dirty = False
             add_objects(updater, workbook, sheet, final_order)
     from ._chartsheets import add_chartsheets

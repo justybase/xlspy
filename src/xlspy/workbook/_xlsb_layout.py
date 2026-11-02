@@ -9,6 +9,7 @@ is patched rather than rebuilt.
 """
 
 from __future__ import annotations
+from .._package_handle import PackageHandle
 
 from ..exceptions import UnsupportedFeatureError
 import re
@@ -685,8 +686,9 @@ def save_builtin_names(updater, sheet, groups) -> None:
 
     if not {"print_names", "filter"} & set(groups):
         return
-    original = updater._package.get("xl/workbook.bin")
-    context = FormulaContext(updater._sheets, original)
+    handle = PackageHandle(updater)
+    original = handle.package.get("xl/workbook.bin")
+    context = FormulaContext(handle.sheets, original)
     title = sheet.title
     quoted = quote_sheet_name(title)
     if "print_names" in groups:
@@ -707,4 +709,4 @@ def save_builtin_names(updater, sheet, groups) -> None:
         set_builtin_name(context, "_FilterDatabase", formula, title, hidden=True)
     updated = context.write_workbook(original)
     if updated != original:
-        updater._apply_parts({"xl/workbook.bin": updated})
+        handle.apply_parts({"xl/workbook.bin": updated})

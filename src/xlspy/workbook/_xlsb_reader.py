@@ -1,6 +1,7 @@
 """Load an XLSB file into the editable workbook model (values first)."""
 
 from __future__ import annotations
+from .._package_handle import PackageHandle
 
 from typing import Any
 
@@ -129,11 +130,12 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
     workbook._source_path = path
     workbook._format = "xlsb"
     workbook._loaded_worksheet_names = set()
+    handle = PackageHandle(updater)
     try:
         styles_path = reader._styles_location and reader._resolve_path(reader._styles_location)
         styles_bin = (
-            updater._package.get(styles_path)
-            if styles_path and updater._package.has(styles_path) else None
+            handle.package.get(styles_path)
+            if styles_path and handle.package.has(styles_path) else None
         )
         workbook._styles = XlsbStyleTable.from_bin(styles_bin)
         workbook._xlsb_styles_path = styles_path if styles_bin is not None else None
@@ -143,10 +145,10 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         for name in updater.get_worksheet_names():
             sheet = Worksheet(workbook, name)
             sheet._loaded = True
-            sheet._path = updater._sheets[name]
+            sheet._path = handle.sheets[name]
             sheet._cf_extensions = {}
             sheet._original_title = name
-            with updater._package.open_entry(sheet._path) as stream:
+            with handle.package.open_entry(sheet._path) as stream:
                 sheet_data = stream.read()
             span = _load_cells(sheet, reader, name, sheet_data, data_only)
             links = None
@@ -215,7 +217,7 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
                 target = None
                 if relationship:
                     if links is None:
-                        links = _external_links(updater._package, sheet._path)
+                        links = _external_links(handle.package, sheet._path)
                     target = links.get(relationship)
                 if target is None and location:
                     target = "#" + location
@@ -230,27 +232,27 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
                     cell = sheet._set_cell_raw(row + 1, column + 1, None)
                 cell._hyperlink = link
             apply_sheet_records(sheet, metadata)
-            relationships = _read_sheet_relationships(updater._package, sheet._path)
+            relationships = _read_sheet_relationships(handle.package, sheet._path)
             for target, _mode, kind in relationships.values():
                 if kind.endswith("/drawing"):
                     read_drawing(
-                        updater._package, sheet,
+                        handle.package, sheet,
                         resolve_zip_target(target, posixpath.dirname(sheet._path)),
                     )
             for rid in list_parts:
                 target = relationships.get(rid, (None,))[0]
                 part = target and resolve_zip_target(target, posixpath.dirname(sheet._path))
-                if part and updater._package.has(part):
+                if part and handle.package.has(part):
                     try:
-                        table = read_table_part(updater._package.get(part))
+                        table = read_table_part(handle.package.get(part))
                     except (struct.error, IndexError, TypeError, ValueError):
                         table = None
                     if table is not None:
                         sheet._tables.append(table)
             if (validations or conditional) and formula_context is None:
                 formula_context = FormulaContext(
-                    updater.get_sheet_names(), updater._package.get("xl/workbook.bin"),
-                    updater._part_or_none,
+                    updater.get_sheet_names(), handle.package.get("xl/workbook.bin"),
+                    handle.part_or_none,
                 )
             read = 0
             extensions: dict = {}
@@ -304,14 +306,14 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         for index, name in enumerate(updater.get_chartsheet_names()):
             chartsheet = Chartsheet(workbook, name, index=index)
             chartsheet.sheet_state = states.get(name, "visible")
-            chartsheet._part = updater._sheets[name]
-            read_chartsheet(updater._package, chartsheet._part, name, chartsheet)
+            chartsheet._part = handle.sheets[name]
+            read_chartsheet(handle.package, chartsheet._part, name, chartsheet)
             workbook._chartsheets.append(chartsheet)
         workbook._loaded_active_index = workbook._active_index
-        workbook._properties = _read_properties(updater._package)
-        workbook.custom_doc_props = _read_custom_properties(updater._package)
-        workbook.external_links = read_external_links(updater._package, binary=True)
-        print_names = builtin_names(FormulaContext(updater._sheets, updater._package.get("xl/workbook.bin")))
+        workbook._properties = _read_properties(handle.package)
+        workbook.custom_doc_props = _read_custom_properties(handle.package)
+        workbook.external_links = read_external_links(handle.package, binary=True)
+        print_names = builtin_names(FormulaContext(handle.sheets, handle.package.get("xl/workbook.bin")))
         for sheet in workbook._sheets:
             _read_print_names(sheet, print_names.get(sheet.title, {}))
             sheet._clear_dirty()

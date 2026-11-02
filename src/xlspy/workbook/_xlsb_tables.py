@@ -5,6 +5,7 @@ writer's own encoder; the sheet lists its parts in ``BrtBeginListParts``.
 """
 
 from __future__ import annotations
+from .._package_handle import PackageHandle
 
 import struct
 from typing import TYPE_CHECKING, Any, cast
@@ -44,7 +45,8 @@ def add_tables(updater: XlsbUpdater, sheet: Worksheet) -> None:
     if not added:
         return
     package = _Package(updater)
-    path = updater._sheets[sheet.title]
+    handle = PackageHandle(updater)
+    path = handle.sheets[sheet.title]
     rels = package.rels(path)
 
     existing = []

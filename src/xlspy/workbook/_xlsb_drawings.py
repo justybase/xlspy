@@ -6,6 +6,7 @@ sheet itself differs: it points at its drawing with a ``BrtDrawing`` record.
 """
 
 from __future__ import annotations
+from .._package_handle import PackageHandle
 
 import re
 from typing import TYPE_CHECKING, cast
@@ -42,7 +43,8 @@ def add_drawing_objects(updater: XlsbUpdater, sheet: Worksheet) -> None:
                "conditional_formatting": [], **added}
     scratch = _scratch(sheet, objects, None)
     package = _Package(updater)
-    path = updater._sheets[sheet.title]
+    handle = PackageHandle(updater)
+    path = handle.sheets[sheet.title]
     rels = package.rels(path)
     hook = _DrawingHook()
     host = cast(_Sheet, hook)  # only ``insert`` is used for a new drawing
