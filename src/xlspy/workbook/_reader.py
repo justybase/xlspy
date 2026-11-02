@@ -12,7 +12,7 @@ import posixpath
 import re
 import zipfile
 from typing import Any, Literal, NoReturn, overload
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 from .._untrusted import SafeZipFile
 from xml.etree import ElementTree as ET
@@ -105,6 +105,17 @@ def _bool_attr(node, name: str, default: bool | None = None) -> bool | None:
     if value is None:
         return default
     return value.lower() not in {"0", "false", "off"}
+
+
+def _int_attr(node: ET.Element, name: str) -> int | None:
+    value = node.get(name)
+    return None if value is None else int(value)
+
+
+def _float_attr(node: ET.Element, name: str) -> float | None:
+    """The attribute as a float; None when it is missing or empty."""
+    value = node.get(name)
+    return float(value) if value else None
 
 
 # Rows of an XLSX worksheet are loaded by regular expressions when possible
@@ -376,8 +387,8 @@ def _read_workbook_metadata(workbook: Workbook, root, package) -> None:
             "xWindow", "yWindow", "windowWidth", "windowHeight",
             "tabRatio", "firstSheet", "activeTab",
         ):
-            if node.get(name) is not None:
-                setattr(view, name, int(node.get(name)))
+            if (value := node.get(name)) is not None:
+                setattr(view, name, int(value))
         views.append(view)
     if views:
         workbook.views = views
@@ -776,6 +787,325 @@ def _load_row(sheet: Worksheet, node: ET.Element, next_row: int, style_table: Xl
     return row_number, max_row, max_column
 
 
+def _read_auto_filter(sheet: Worksheet, node: ET.Element) -> None:
+    ref = node.get("ref")
+    filter_ = AutoFilter(_normalize_range(ref) if ref else None)
+    for child in node.findall(qname("filterColumn")):
+        column = FilterColumn(
+            colId=int(child.get("colId", "0") or 0),
+            hiddenButton=_bool_attr(child, "hiddenButton", False),
+            showButton=_bool_attr(child, "showButton", True),
+        )
+        filters = child.find(qname("filters"))
+        if filters is not None:
+            column.vals = [
+                value
+                for item in filters.findall(qname("filter"))
+                if (value := item.get("val")) is not None
+            ]
+            column.blank = _bool_attr(filters, "blank", False)
+        # Any other criterion is kept verbatim: the model does not interpret it.
+        column.criteria = [
+            _element_xml(item) for item in child if item.tag != qname("filters")
+        ]
+        filter_.filterColumn.append(column)
+    sort = node.find(qname("sortState"))
+    if sort is not None:
+        state = SortState(
+            ref=sort.get("ref"),
+            columnSort=_bool_attr(sort, "columnSort", None),
+            caseSensitive=_bool_attr(sort, "caseSensitive", None),
+            sortMethod=sort.get("sortMethod"),
+        )
+        for condition in sort.findall(qname("sortCondition")):
+            dxf_id = condition.get("dxfId")
+            state.sortCondition.append(
+                SortCondition(
+                    ref=condition.get("ref"),
+                    descending=_bool_attr(condition, "descending", None),
+                    sortBy=condition.get("sortBy"),
+                    customList=condition.get("customList"),
+                    dxfId=int(dxf_id) if dxf_id is not None else None,
+                    iconSet=condition.get("iconSet"),
+                    iconId=_int_attr(condition, "iconId"),
+                )
+            )
+        filter_.sortState = state
+    sheet._auto_filter = filter_
+
+
+def _read_sheet_pr(sheet: Worksheet, node: ET.Element) -> None:
+    props = sheet.sheet_properties
+    tab = node.find(qname("tabColor"))
+    if tab is not None:
+        try:
+            props.tabColor = _read_color(tab)
+        except (TypeError, ValueError):
+            pass
+    for attr, field in (
+        ("codeName", "codeName"),
+        ("filterMode", "filterMode"),
+        ("published", "published"),
+        ("syncHorizontal", "syncHorizontal"),
+        ("syncRef", "syncRef"),
+        ("syncVertical", "syncVertical"),
+        ("transitionEvaluation", "transitionEvaluation"),
+        ("transitionEntry", "transitionEntry"),
+        ("enableFormatConditionsCalculation", "enableFormatConditionsCalculation"),
+    ):
+        if node.get(attr) is not None:
+            value = node.get(attr)
+            setattr(props, field, value if field in {"codeName", "syncRef"} else _bool_attr(node, attr, None))
+    outline = node.find(qname("outlinePr"))
+    if outline is not None:
+        for name in ("applyStyles", "summaryBelow", "summaryRight", "showOutlineSymbols"):
+            setattr(props.outlinePr, name, _bool_attr(outline, name, None))
+    setup = node.find(qname("pageSetUpPr"))
+    if setup is not None:
+        props.pageSetUpPr.fitToPage = _bool_attr(setup, "fitToPage", None)
+        if hasattr(props.pageSetUpPr, "autoPageBreaks"):
+            props.pageSetUpPr.autoPageBreaks = _bool_attr(setup, "autoPageBreaks", None)
+
+
+def _read_sheet_format(sheet: Worksheet, node: ET.Element) -> None:
+    fmt = sheet.sheet_format
+    for name in ("baseColWidth", "outlineLevelRow", "outlineLevelCol"):
+        if (value := node.get(name)) is not None:
+            setattr(fmt, name, int(value))
+    for name in ("defaultColWidth", "defaultRowHeight"):
+        if (value := node.get(name)) is not None:
+            setattr(fmt, name, float(value))
+    for name in ("customHeight", "zeroHeight", "thickTop", "thickBottom"):
+        if node.get(name) is not None:
+            setattr(fmt, name, _bool_attr(node, name, None))
+
+
+def _read_print_options(sheet: Worksheet, node: ET.Element) -> None:
+    options = sheet.print_options
+    for name in ("horizontalCentered", "verticalCentered", "headings", "gridLines", "gridLinesSet"):
+        if node.get(name) is not None:
+            setattr(options, name, _bool_attr(node, name, None))
+
+
+def _read_header_footer_flags(sheet: Worksheet, node: ET.Element) -> None:
+    footer = sheet.HeaderFooter
+    for name in ("differentFirst", "differentOddEven", "scaleWithDoc", "alignWithMargins"):
+        if node.get(name) is not None:
+            setattr(footer, name, _bool_attr(node, name, None))
+
+
+def _read_sheet_view(sheet: Worksheet, node: ET.Element) -> None:
+    view = sheet._sheet_view
+    for name in (
+        "showFormulas", "showGridLines", "showRowColHeaders", "showZeros",
+        "rightToLeft", "tabSelected", "showRuler", "showOutlineSymbols",
+        "defaultGridColor", "showWhiteSpace", "windowProtection",
+    ):
+        if node.get(name) is not None:
+            setattr(view, name, _bool_attr(node, name, None))
+    view.view = node.get("view")
+    view.topLeftCell = node.get("topLeftCell")
+    for name in ("colorId", "zoomScale", "zoomScaleNormal",
+                 "zoomScaleSheetLayoutView", "zoomScalePageLayoutView",
+                 "workbookViewId"):
+        if (value := node.get(name)) is not None:
+            setattr(view, name, int(value))
+
+
+def _read_pane(sheet: Worksheet, node: ET.Element) -> None:
+    pane = Pane(
+        xSplit=_float_attr(node, "xSplit"),
+        ySplit=_float_attr(node, "ySplit"),
+        topLeftCell=node.get("topLeftCell"),
+        activePane=node.get("activePane", "topLeft"),
+        state=node.get("state", "split"),
+    )
+    sheet._sheet_view.pane = pane
+    if pane.state == "frozen" and pane.topLeftCell:
+        sheet._freeze_panes = pane.topLeftCell
+
+
+def _read_selection(sheet: Worksheet, node: ET.Element) -> None:
+    sheet._sheet_view.selection.append(
+        Selection(
+            pane=node.get("pane"),
+            activeCell=node.get("activeCell", "A1"),
+            activeCellId=_int_attr(node, "activeCellId"),
+            sqref=node.get("sqref", "A1"),
+        )
+    )
+
+
+def _read_columns(sheet: Worksheet, node: ET.Element) -> None:
+    for col in node.findall(qname("col")):
+        minimum = int(col.get("min", "1"))
+        maximum = int(col.get("max", str(minimum)))
+        width = col.get("width")
+        hidden = col.get("hidden", "0").lower() in {"1", "true"}
+        outline = int(col.get("outlineLevel", "0") or 0)
+        collapsed = col.get("collapsed", "0").lower() in {"1", "true"}
+        for index in range(minimum, maximum + 1):
+            dimension = sheet.column_dimensions[column_label(index - 1)]
+            dimension.min = minimum
+            dimension.max = maximum
+            if width is not None:
+                dimension.width = float(width)
+            dimension.hidden = hidden
+            dimension.outlineLevel = outline
+            dimension.collapsed = collapsed
+            dimension.bestFit = _bool_attr(col, "bestFit", None)
+            dimension.autoSize = _bool_attr(col, "autoSize", None)
+            if (style := col.get("style")) is not None:
+                dimension.style = int(style)
+
+
+def _read_ignored_errors(sheet: Worksheet, node: ET.Element) -> None:
+    for item in node.findall(qname("ignoredError")):
+        sqref = item.get("sqref")
+        if not sqref:
+            continue
+        try:
+            sheet.ignored_errors.append(IgnoredError(
+                sqref,
+                **{name: _bool_attr(item, name, None) for name in IGNORED_ERROR_FLAGS},
+            ))
+        except ValueError:
+            continue  # a range this library cannot parse; the check stays as saved
+
+
+def _read_row_breaks(sheet: Worksheet, node: ET.Element) -> None:
+    sheet.row_breaks = RowBreak([
+        Break(
+            id=int(item.get("id", "0") or 0),
+            min=int(item.get("min", "0") or 0),
+            max=int(item.get("max", "16383") or 16383),
+            man=_bool_attr(item, "man", True),
+            pt=_int_attr(item, "pt"),
+        )
+        for item in node.findall(qname("brk"))
+    ])
+
+
+def _read_col_breaks(sheet: Worksheet, node: ET.Element) -> None:
+    sheet.col_breaks = ColBreak([
+        Break(
+            id=int(item.get("id", "0") or 0),
+            min=int(item.get("min", "0") or 0),
+            max=int(item.get("max", "1048575") or 1048575),
+            man=_bool_attr(item, "man", True),
+            pt=_int_attr(item, "pt"),
+        )
+        for item in node.findall(qname("brk"))
+    ])
+
+
+def _read_sheet_protection(sheet: Worksheet, node: ET.Element) -> None:
+    protection = sheet.protection
+    for name in (
+        "sheet", "objects", "scenarios", "formatCells", "formatRows",
+        "formatColumns", "insertColumns", "insertRows", "insertHyperlinks",
+        "deleteColumns", "deleteRows", "selectLockedCells", "sort",
+        "autoFilter", "pivotTables", "selectUnlockedCells",
+    ):
+        if node.get(name) is not None:
+            setattr(protection, name, _bool_attr(node, name, None))
+    protection.set_password(node.get("password"), already_hashed=True)
+    protection.algorithmName = node.get("algorithmName")
+    protection.saltValue = node.get("saltValue")
+    protection.hashValue = node.get("hashValue")
+    if (spin_count := node.get("spinCount")) is not None:
+        protection.spinCount = int(spin_count)
+
+
+def _read_page_margins(sheet: Worksheet, node: ET.Element) -> None:
+    for name in ("left", "right", "top", "bottom", "header", "footer"):
+        value = node.get(name)
+        if value is not None:
+            setattr(sheet.page_margins, name, float(value))
+
+
+def _settle_bounds(sheet: Worksheet, max_row: int, max_column: int) -> None:
+    """Set the sheet's size from the rows read, the dimension ref and the merged
+    ranges; a sheet with any content is at least one cell."""
+    sheet._max_row = max_row or sheet._max_row
+    sheet._max_column = max_column or sheet._max_column
+    for merged in sheet.merged_cells.ranges:
+        _, _, c2, r2 = parse_cell_range(merged)
+        sheet._max_row = max(sheet._max_row, r2 + 1)
+        sheet._max_column = max(sheet._max_column, c2 + 1)
+    if sheet._max_row or sheet._max_column:
+        sheet._max_row = max(sheet._max_row, 1)
+        sheet._max_column = max(sheet._max_column, 1)
+
+
+def _attach_hyperlinks(sheet: Worksheet, hyperlinks: list[dict], rels: dict) -> None:
+    """Give each linked cell its Hyperlink: an external target from the sheet
+    relationships, else the in-workbook location. Unreadable refs are skipped."""
+    for attrs in hyperlinks:
+        ref = attrs.get("ref")
+        if not ref:
+            continue
+        rid = attrs.get(f"{{{REL}}}id")
+        location = attrs.get("location")
+        target: str | None = None
+        if rid and rid in rels:
+            raw_target, mode, _kind = rels[rid]
+            if mode == "External":
+                target = raw_target
+        if target is None and location:
+            target = "#" + location
+        if target is None:
+            continue
+        try:
+            col, row, _, _ = parse_cell_range(ref.split()[0])
+            cell = sheet._existing_cell(row + 1, col + 1)
+            if cell is None:
+                cell = sheet._set_cell_raw(row + 1, col + 1, None)
+            cell._hyperlink = Hyperlink(
+                target,
+                text=attrs.get("display"),
+                tooltip=attrs.get("tooltip"),
+            )
+        except (TypeError, ValueError):
+            continue
+
+
+def _attach_comments(sheet: Worksheet, package: Any, sheet_path: str) -> None:
+    """Give each commented cell its classic note, stored in a sibling comments part."""
+    try:
+        _, _, parts = find_comment_parts(package.get, package.names(), sheet_path)
+        if "comments" in parts:
+            for ref, comment in read_comments(package.get(parts["comments"][0])).items():
+                col, row, _, _ = parse_cell_range(ref)
+                cell = sheet._existing_cell(row + 1, col + 1)
+                if cell is None:
+                    cell = sheet._set_cell_raw(row + 1, col + 1, None)
+                cell._comment = comment
+    except (KeyError, ValueError, ET.ParseError):
+        pass
+
+
+# The readers of the worksheet elements that need nothing but the sheet, by local tag.
+_ELEMENT_READERS: dict[str, Callable[[Worksheet, ET.Element], None]] = {
+    "autoFilter": _read_auto_filter,
+    "sheetPr": _read_sheet_pr,
+    "sheetFormatPr": _read_sheet_format,
+    "pageSetup": _read_page_setup,
+    "printOptions": _read_print_options,
+    "headerFooter": _read_header_footer_flags,
+    "sheetView": _read_sheet_view,
+    "pane": _read_pane,
+    "selection": _read_selection,
+    "cols": _read_columns,
+    "ignoredErrors": _read_ignored_errors,
+    "rowBreaks": _read_row_breaks,
+    "colBreaks": _read_col_breaks,
+    "dataValidations": _read_data_validations,
+    "sheetProtection": _read_sheet_protection,
+    "pageMargins": _read_page_margins,
+}
+
+
 def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                      *, data_only: bool, date_1904: bool, package,
                      sheet_path: str, shared_strings: list[str],
@@ -831,247 +1161,25 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                     sheet._merged_cells.add(_normalize_range(node.get("ref")))
                 except ValueError:
                     pass
-            elif tag == "autoFilter":
-                filter_ = AutoFilter(_normalize_range(node.get("ref")) if node.get("ref") else None)
-                for child in node.findall(qname("filterColumn")):
-                    column = FilterColumn(
-                        colId=int(child.get("colId", "0") or 0),
-                        hiddenButton=_bool_attr(child, "hiddenButton", False),
-                        showButton=_bool_attr(child, "showButton", True),
-                    )
-                    filters = child.find(qname("filters"))
-                    if filters is not None:
-                        column.vals = [
-                            item.get("val")
-                            for item in filters.findall(qname("filter"))
-                            if item.get("val") is not None
-                        ]
-                        column.blank = _bool_attr(filters, "blank", False)
-                    # Any other criterion is kept verbatim: the model does not interpret it.
-                    column.criteria = [
-                        _element_xml(item) for item in child if item.tag != qname("filters")
-                    ]
-                    filter_.filterColumn.append(column)
-                sort = node.find(qname("sortState"))
-                if sort is not None:
-                    state = SortState(
-                        ref=sort.get("ref"),
-                        columnSort=_bool_attr(sort, "columnSort", None),
-                        caseSensitive=_bool_attr(sort, "caseSensitive", None),
-                        sortMethod=sort.get("sortMethod"),
-                    )
-                    for condition in sort.findall(qname("sortCondition")):
-                        dxf_id = condition.get("dxfId")
-                        state.sortCondition.append(
-                            SortCondition(
-                                ref=condition.get("ref"),
-                                descending=_bool_attr(condition, "descending", None),
-                                sortBy=condition.get("sortBy"),
-                                customList=condition.get("customList"),
-                                dxfId=int(dxf_id) if dxf_id is not None else None,
-                                iconSet=condition.get("iconSet"),
-                                iconId=(
-                                    int(condition.get("iconId"))
-                                    if condition.get("iconId") is not None else None
-                                ),
-                            )
-                        )
-                    filter_.sortState = state
-                sheet._auto_filter = filter_
-            elif tag == "sheetPr":
-                props = sheet.sheet_properties
-                tab = node.find(qname("tabColor"))
-                if tab is not None:
-                    try:
-                        props.tabColor = _read_color(tab)
-                    except (TypeError, ValueError):
-                        pass
-                for attr, field in (
-                    ("codeName", "codeName"),
-                    ("filterMode", "filterMode"),
-                    ("published", "published"),
-                    ("syncHorizontal", "syncHorizontal"),
-                    ("syncRef", "syncRef"),
-                    ("syncVertical", "syncVertical"),
-                    ("transitionEvaluation", "transitionEvaluation"),
-                    ("transitionEntry", "transitionEntry"),
-                    ("enableFormatConditionsCalculation", "enableFormatConditionsCalculation"),
-                ):
-                    if node.get(attr) is not None:
-                        value = node.get(attr)
-                        setattr(props, field, value if field in {"codeName", "syncRef"} else _bool_attr(node, attr, None))
-                outline = node.find(qname("outlinePr"))
-                if outline is not None:
-                    for name in ("applyStyles", "summaryBelow", "summaryRight", "showOutlineSymbols"):
-                        setattr(props.outlinePr, name, _bool_attr(outline, name, None))
-                setup = node.find(qname("pageSetUpPr"))
-                if setup is not None:
-                    props.pageSetUpPr.fitToPage = _bool_attr(setup, "fitToPage", None)
-                    if hasattr(props.pageSetUpPr, "autoPageBreaks"):
-                        props.pageSetUpPr.autoPageBreaks = _bool_attr(setup, "autoPageBreaks", None)
-            elif tag == "sheetFormatPr":
-                fmt = sheet.sheet_format
-                for name in ("baseColWidth", "outlineLevelRow", "outlineLevelCol"):
-                    if node.get(name) is not None:
-                        setattr(fmt, name, int(node.get(name)))
-                for name in ("defaultColWidth", "defaultRowHeight"):
-                    if node.get(name) is not None:
-                        setattr(fmt, name, float(node.get(name)))
-                for name in ("customHeight", "zeroHeight", "thickTop", "thickBottom"):
-                    if node.get(name) is not None:
-                        setattr(fmt, name, _bool_attr(node, name, None))
-            elif tag == "pageSetup":
-                _read_page_setup(sheet, node)
-            elif tag == "printOptions":
-                options = sheet.print_options
-                for name in ("horizontalCentered", "verticalCentered", "headings", "gridLines", "gridLinesSet"):
-                    if node.get(name) is not None:
-                        setattr(options, name, _bool_attr(node, name, None))
-            elif tag == "headerFooter":
-                footer = sheet.HeaderFooter
-                for name in ("differentFirst", "differentOddEven", "scaleWithDoc", "alignWithMargins"):
-                    if node.get(name) is not None:
-                        setattr(footer, name, _bool_attr(node, name, None))
             elif tag in ("oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter") \
                     and len(stack) >= 2 and _local(stack[-2].tag) == "headerFooter":
                 getattr(sheet.HeaderFooter, tag).load_code(node.text)
-            elif tag == "sheetView":
-                view = sheet._sheet_view
-                for name in (
-                    "showFormulas", "showGridLines", "showRowColHeaders", "showZeros",
-                    "rightToLeft", "tabSelected", "showRuler", "showOutlineSymbols",
-                    "defaultGridColor", "showWhiteSpace", "windowProtection",
-                ):
-                    if node.get(name) is not None:
-                        setattr(view, name, _bool_attr(node, name, None))
-                view.view = node.get("view")
-                view.topLeftCell = node.get("topLeftCell")
-                for name in ("colorId", "zoomScale", "zoomScaleNormal",
-                             "zoomScaleSheetLayoutView", "zoomScalePageLayoutView",
-                             "workbookViewId"):
-                    if node.get(name) is not None:
-                        setattr(view, name, int(node.get(name)))
-            elif tag == "pane":
-
-                pane = Pane(
-                    xSplit=float(node.get("xSplit")) if node.get("xSplit") else None,
-                    ySplit=float(node.get("ySplit")) if node.get("ySplit") else None,
-                    topLeftCell=node.get("topLeftCell"),
-                    activePane=node.get("activePane", "topLeft"),
-                    state=node.get("state", "split"),
-                )
-                sheet._sheet_view.pane = pane
-                if pane.state == "frozen" and pane.topLeftCell:
-                    sheet._freeze_panes = pane.topLeftCell
-            elif tag == "selection":
-                sheet._sheet_view.selection.append(
-                    Selection(
-                        pane=node.get("pane"),
-                        activeCell=node.get("activeCell", "A1"),
-                        activeCellId=(
-                            int(node.get("activeCellId"))
-                            if node.get("activeCellId") is not None else None
-                        ),
-                        sqref=node.get("sqref", "A1"),
-                    )
-                )
-            elif tag == "cols":
-                for col in node.findall(qname("col")):
-                    minimum = int(col.get("min", "1"))
-                    maximum = int(col.get("max", str(minimum)))
-                    width = col.get("width")
-                    hidden = col.get("hidden", "0").lower() in {"1", "true"}
-                    outline = int(col.get("outlineLevel", "0") or 0)
-                    collapsed = col.get("collapsed", "0").lower() in {"1", "true"}
-                    for index in range(minimum, maximum + 1):
-                        dimension = sheet.column_dimensions[column_label(index - 1)]
-                        dimension.min = minimum
-                        dimension.max = maximum
-                        if width is not None:
-                            dimension.width = float(width)
-                        dimension.hidden = hidden
-                        dimension.outlineLevel = outline
-                        dimension.collapsed = collapsed
-                        dimension.bestFit = _bool_attr(col, "bestFit", None)
-                        dimension.autoSize = _bool_attr(col, "autoSize", None)
-                        if col.get("style") is not None:
-                            dimension.style = int(col.get("style"))
-            elif tag == "ignoredErrors":
-                for item in node.findall(qname("ignoredError")):
-                    if not item.get("sqref"):
-                        continue
-                    try:
-                        sheet.ignored_errors.append(IgnoredError(
-                            item.get("sqref"),
-                            **{name: _bool_attr(item, name, None) for name in IGNORED_ERROR_FLAGS},
-                        ))
-                    except ValueError:
-                        continue  # a range this library cannot parse; the check stays as saved
-            elif tag == "rowBreaks":
-                sheet.row_breaks = RowBreak([
-                    Break(
-                        id=int(item.get("id", "0") or 0),
-                        min=int(item.get("min", "0") or 0),
-                        max=int(item.get("max", "16383") or 16383),
-                        man=_bool_attr(item, "man", True),
-                        pt=int(item.get("pt")) if item.get("pt") is not None else None,
-                    )
-                    for item in node.findall(qname("brk"))
-                ])
-            elif tag == "colBreaks":
-                sheet.col_breaks = ColBreak([
-                    Break(
-                        id=int(item.get("id", "0") or 0),
-                        min=int(item.get("min", "0") or 0),
-                        max=int(item.get("max", "1048575") or 1048575),
-                        man=_bool_attr(item, "man", True),
-                        pt=int(item.get("pt")) if item.get("pt") is not None else None,
-                    )
-                    for item in node.findall(qname("brk"))
-                ])
             elif tag == "hyperlink":
                 hyperlinks.append(dict(node.attrib))
             elif tag == "tablePart":
                 rid = node.get(f"{{{REL}}}id")
                 if rid:
                     table_parts.append(rid)
-            elif tag == "dataValidations":
-                _read_data_validations(sheet, node)
             elif tag == "conditionalFormatting":
                 _read_conditional_formatting(sheet, node, style_table)
-            elif tag == "sheetProtection":
-                protection = sheet.protection
-                for name in (
-                    "sheet", "objects", "scenarios", "formatCells", "formatRows",
-                    "formatColumns", "insertColumns", "insertRows", "insertHyperlinks",
-                    "deleteColumns", "deleteRows", "selectLockedCells", "sort",
-                    "autoFilter", "pivotTables", "selectUnlockedCells",
-                ):
-                    if node.get(name) is not None:
-                        setattr(protection, name, _bool_attr(node, name, None))
-                protection.set_password(node.get("password"), already_hashed=True)
-                protection.algorithmName = node.get("algorithmName")
-                protection.saltValue = node.get("saltValue")
-                protection.hashValue = node.get("hashValue")
-                if node.get("spinCount") is not None:
-                    protection.spinCount = int(node.get("spinCount"))
-            elif tag == "pageMargins":
-                for name in ("left", "right", "top", "bottom", "header", "footer"):
-                    value = node.get(name)
-                    if value is not None:
-                        setattr(sheet.page_margins, name, float(value))
+            else:
+                reader = _ELEMENT_READERS.get(tag)
+                if reader is not None:
+                    reader(sheet, node)
             if stack:
                 stack.pop()
 
-    sheet._max_row = max_row or sheet._max_row
-    sheet._max_column = max_column or sheet._max_column
-    for merged in sheet.merged_cells.ranges:
-        _, _, c2, r2 = parse_cell_range(merged)
-        sheet._max_row = max(sheet._max_row, r2 + 1)
-        sheet._max_column = max(sheet._max_column, c2 + 1)
-    if sheet._max_row or sheet._max_column:
-        sheet._max_row = max(sheet._max_row, 1)
-        sheet._max_column = max(sheet._max_column, 1)
+    _settle_bounds(sheet, max_row, max_column)
 
     # Hyperlinks, table parts and drawings need the worksheet relationships.
     rels = _read_sheet_relationships(package, sheet_path)
@@ -1081,46 +1189,8 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
         if kind.endswith("/drawing"):
             drawing_part = resolve_zip_target(rel_target, posixpath.dirname(sheet_path))
             read_drawing(package, sheet, drawing_part)
-    for attrs in hyperlinks:
-        ref = attrs.get("ref")
-        if not ref:
-            continue
-        rid = attrs.get(f"{{{REL}}}id")
-        location = attrs.get("location")
-        target: str | None = None
-        if rid and rid in rels:
-            raw_target, mode, _kind = rels[rid]
-            if mode == "External":
-                target = raw_target
-        if target is None and location:
-            target = "#" + location
-        if target is None:
-            continue
-        try:
-            col, row, _, _ = parse_cell_range(ref.split()[0])
-            cell = sheet._existing_cell(row + 1, col + 1)
-            if cell is None:
-                cell = sheet._set_cell_raw(row + 1, col + 1, None)
-            cell._hyperlink = Hyperlink(
-                target,
-                text=attrs.get("display"),
-                tooltip=attrs.get("tooltip"),
-            )
-        except (TypeError, ValueError):
-            continue
-
-    # Classic notes are stored in a sibling comments part.
-    try:
-        _, _, parts = find_comment_parts(package.get, package.names(), sheet_path)
-        if "comments" in parts:
-            for ref, comment in read_comments(package.get(parts["comments"][0])).items():
-                col, row, _, _ = parse_cell_range(ref)
-                cell = sheet._existing_cell(row + 1, col + 1)
-                if cell is None:
-                    cell = sheet._set_cell_raw(row + 1, col + 1, None)
-                cell._comment = comment
-    except (KeyError, ValueError, ET.ParseError):
-        pass
+    _attach_hyperlinks(sheet, hyperlinks, rels)
+    _attach_comments(sheet, package, sheet_path)
 
 
 def _read_only_bounds(path: str, sheet_path: str) -> tuple[int, int, int, int] | None:
