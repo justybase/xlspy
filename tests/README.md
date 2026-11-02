@@ -29,8 +29,10 @@ unless `XLSPY_RUN_EXCEL_COM=1` is set; run them with `-p no:faulthandler`.
 
 ## Lint and type checks
 
-CI runs both. The mypy configuration in `pyproject.toml` checks every module in
-`src/xlspy` with no ignore list, so a new module must pass as well:
+CI runs both. mypy checks every module in `src/xlspy` with
+`disallow_untyped_defs`; the modules listed under `[[tool.mypy.overrides]]` in
+`pyproject.toml` may still have unannotated defs (their bodies are checked). A new
+module must be fully annotated:
 
 ```bash
 python -m pip install ruff mypy
@@ -45,10 +47,13 @@ to vary test order. Reproduce a particular order with a fixed seed:
 python -m pytest --randomly-seed=12345
 ```
 
-To measure coverage (the configured branch-coverage threshold is 84%):
+To measure coverage the way CI does, over both backends (the branch-coverage
+threshold, `fail_under` in `pyproject.toml`, is 89%):
 
 ```bash
-python -m pytest --cov
+python -m pytest --cov --cov-report=
+XLSPY_ACCEL=python python -m pytest --cov --cov-append --cov-report=
+python -m coverage report
 ```
 
 ## openpyxl compatibility harness
@@ -88,7 +93,8 @@ rebuild it with `python -m pip install -e '.[test]'` (or `maturin develop
 
 ```bash
 cd rust/xlspy_core
-cargo fmt --check && cargo clippy -- -D warnings && cargo test
+cargo fmt --check && cargo clippy --release --locked --all-targets -- -D warnings
+cargo test --release --locked
 cd ../..
 python -m pytest tests/test_native_*.py tests/test_xlsb_native_dates.py
 ```

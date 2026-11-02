@@ -95,10 +95,13 @@ there is no flag to set.
 | Resource | What you will find |
 | :--- | :--- |
 | [Usage guide](docs/usage.md) | Detailed examples, API options, and format support limits. |
+| [API reference](docs/api/index.md) | Every public class and function, generated from the docstrings. |
 | [Runnable examples](examples/README.md) | Scripts for reports, DataFrames, and workbook updates. |
 | [Benchmarks](docs/benchmarks.md) | Read and write comparisons, dataset details, and reproduction commands. |
 | [Validation](docs/validation.md) | Windows and WSL2 test results, compatibility checks, and known limitations. |
 | [Test suite](tests/README.md) | How to run tests and measure coverage. |
+| [Contributing](CONTRIBUTING.md) | Development setup, building the Rust module, checks and commit style. |
+| [Architecture](docs/architecture.md) | Which module does what, the layers, and the native module. |
 | [Changelog](CHANGELOG.md) | Releases, improvements, and fixes. |
 
 [MIT licensed](LICENSE) · [PyPI](https://pypi.org/project/xlspy/) · [Source and issues](https://github.com/justybase/xlspy)

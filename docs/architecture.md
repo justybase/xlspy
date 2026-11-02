@@ -146,6 +146,54 @@ XLSX worksheet reader (`_read_core_sheet` now reads elements through
 their per-cell loops. Each split kept the output byte for byte and the benchmarks
 within 3%. `formula/tokenizer._parse` stays one state machine.
 
+## The native module (Rust)
+
+`rust/xlspy_core` is a PyO3 crate built by maturin into `xlspy._rs_core`
+(`[tool.maturin]` in `pyproject.toml`). It replaced the C extension and keeps its
+behavior; the pure-Python code stays the reference and the fallback.
+
+**Dispatch.** Only `_accel.py` imports the module. `XLSPY_ACCEL` picks the backend
+(`auto` and `rust` load the module when it is built, `python` never does). At import
+`_accel` hands the module the xlspy classes it must recognize or create (`CellError`,
+`Style`, `Formula`, `Hyperlink`, `InvalidFileError`) and registers its
+`PanicException`. Each wrapper returns None when the native function is missing or
+cannot handle the input (an over-long string, a cell format not known yet), and the
+caller then runs the Python code. `ACCEL_BACKEND` records which functions are native.
+
+| Rust module | Does | Python counterpart |
+|---|---|---|
+| `xlsb_write.rs`, `cells.rs`, `sst.rs` | XLSB row records, shared strings | `_xlsb_writer_bin.py` |
+| `xlsx_write.rs`, `xml_text.rs` | XLSX `<row>` XML | `_xlsx_writer_sheet.py` |
+| `widths.rs` | column widths, the formatted-cell pre-scan | `_widths.py` |
+| `xlsb_read.rs` | `ExcelReader` XLSB rows | `biff_reader.py`, `reader.py` |
+| `xlsx_read.rs`, `xlsx_sst.rs` | `ExcelReader` XLSX rows and shared strings; `load_workbook` fast rows | `_xlsx_read.py`, `workbook/_fast_sheet.py` |
+| `model.rs` | `load_workbook` XLSB cells, created natively | `workbook/_xlsb_reader.py` |
+| `bytes.rs`, `numfmt.rs`, `dates.rs`, `text.rs`, `pyseq.rs`, `types.rs` | shared helpers | |
+
+**Parity.** The `test_native_*` tests run the same inputs through both backends and
+require equal results, and CI runs the whole suite a second time with
+`XLSPY_ACCEL=python`. Combined coverage counts both runs.
+
+**Errors.** Bad data in a file raises `InvalidFileError`. A Rust panic unwinds
+(`panic = "unwind"` in the release profile) into a `PanicException`, which the read
+entry points report as `InvalidFileError`; the fuzz tests fail if one ever escapes.
+
+**Unsafe code.** The module uses CPython's C API where PyO3 has no equivalent that
+is as fast. Every `unsafe` block carries a `// SAFETY:` comment, which the crate's
+lints enforce (`undocumented_unsafe_blocks`, `unsafe_op_in_unsafe_fn`).
+
+**The stub.** `src/xlspy/_rs_core.pyi` types the module. CI checks it against the
+built module with `python -m mypy.stubtest xlspy._rs_core`, and
+`tests/typing/stub_usage.py` checks the argument types it accepts and rejects.
+
+**Why not abi3.** One stable-ABI wheel per platform would replace one wheel per
+Python version, but the module relies on three things outside the limited API:
+`model.rs` creates cells with `tp_alloc` and writes their `__slots__` through member
+descriptor offsets; `text.rs` reads PEP 393 string data in place, so that strings
+with lone surrogates need no decoding; and the row walk uses the
+`PySequence_Fast` macros. Replacing them would cost speed on the hot paths, so the
+module stays version-specific until that cost is measured and accepted.
+
 ## Where to make a change
 
 - A new read feature: stage 3 (`workbook/_reader.py`) and, if it is a fast path,

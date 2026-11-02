@@ -1,4 +1,4 @@
-//! Workbook-model cells (`xlspy.workbook._model.Cell`) created natively.
+//! Workbook-model cells (`xlspy.workbook._cell.Cell`) created natively.
 //!
 //! The loaders fill the `__slots__` of each Cell directly, through the member
 //! descriptors the caller passes (`CELL_SLOTS`), exactly as the C extension
