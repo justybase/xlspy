@@ -161,7 +161,7 @@ def test_file_object_output_opens_in_excel(tmp_path, open_workbook, writer_cls, 
 ], ids=["xlsx-shared", "xlsx-inline", "xlsb-shared", "xlsb-inline"])
 def test_cell_text_reads_back_exactly_in_excel(tmp_path, open_workbook, writer_cls, ext, shared):
     path = tmp_path / f"text.{ext}"
-    with writer_cls(path, useSharedStrings=shared) as writer:
+    with writer_cls(path, use_shared_strings=shared) as writer:
         writer.add_sheet("T")
         writer.write_sheet([["header"], SPECIAL, AT_LIMIT])
     sheet = open_workbook(path).Worksheets("T")

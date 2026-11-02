@@ -65,7 +65,7 @@ def _span(item, kind: str) -> tuple[int, int, bool]:
     return first_index, last_index, collapsed
 
 
-def build_outline(groups, kind: str) -> Outline | None:
+def build_outline(groups, kind: str) -> OutlineIndex | None:
     """Validate ``groups`` and return their outline, or ``None`` when there are none.
 
     ``kind`` is ``"row"`` or ``"column"`` and only changes the bounds and the
@@ -120,10 +120,10 @@ def build_outline(groups, kind: str) -> Outline | None:
     summaries = frozenset(
         last + 1 for _, last, collapsed in spans if collapsed and last + 1 < _LIMITS[kind]
     )
-    return Outline(starts, levels, hidden, summaries)
+    return OutlineIndex(starts, levels, hidden, summaries)
 
 
-class Outline:
+class OutlineIndex:
     """Outline levels and flags for one axis, looked up by zero-based index."""
 
     __slots__ = ("_starts", "_levels", "_hidden", "_summaries", "max_level")

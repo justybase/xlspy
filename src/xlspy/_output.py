@@ -156,7 +156,7 @@ class StagedOutput:
 class StagedWriter:
     """The open/save/close lifecycle shared by ``XlsxWriter`` and ``XlsbWriter``.
 
-    A subclass sets ``_file``, ``_compressionLevel``, ``_zf = None``,
+    A subclass sets ``_file``, ``_compression_level``, ``_zf = None``,
     ``_output = None``, ``_aborted = False`` and ``_saved = False`` in its
     ``__init__``, writes its parts in ``_write_workbook_parts``, and sets
     ``_aborted`` when a sheet write fails part-way.
@@ -165,7 +165,7 @@ class StagedWriter:
     if TYPE_CHECKING:
         # Set by the subclass __init__ (see the class docstring).
         _file: Any
-        _compressionLevel: int
+        _compression_level: int
         _zf: PackageZip | None
         _output: StagedOutput | None
         _aborted: bool
@@ -189,7 +189,7 @@ class StagedWriter:
             output = StagedOutput(self._file, self._staging_bytes())
             try:
                 self._zf = PackageZip(output.stream, 'w', zipfile.ZIP_DEFLATED,
-                                           compresslevel=self._compressionLevel)
+                                           compresslevel=self._compression_level)
             except BaseException:
                 output.discard()
                 raise

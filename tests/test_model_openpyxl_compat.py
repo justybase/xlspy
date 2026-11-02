@@ -253,7 +253,7 @@ RICH = CellRichText("Total: ", TextBlock(InlineFont(b=True, color="C00000", sz=1
 @pytest.mark.parametrize("shared", [True, False])
 def test_rich_text_cells(tmp_path, shared):
     path = tmp_path / "rich.xlsx"
-    with XlsxWriter(path, useSharedStrings=shared) as writer:
+    with XlsxWriter(path, use_shared_strings=shared) as writer:
         writer.add_sheet("S")
         writer.write_sheet([["plain", RICH], [RICH, "Total: 1 234 EUR"]])
     sheet = openpyxl.load_workbook(path, rich_text=True)["S"]
@@ -287,7 +287,7 @@ def test_rich_text_escapes_are_written_once(tmp_path, shared):
     not escape them again."""
     rich = CellRichText("a\rb_x0041_", TextBlock(InlineFont(b=True), "c\x01"))
     path = tmp_path / "escaped.xlsx"
-    with XlsxWriter(path, useSharedStrings=shared) as writer:
+    with XlsxWriter(path, use_shared_strings=shared) as writer:
         writer.add_sheet("S")
         writer.write_sheet([["head"], [rich], ["d\re"]])
     loaded = load_workbook(path, rich_text=True)

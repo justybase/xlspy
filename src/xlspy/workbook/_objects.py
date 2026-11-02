@@ -24,7 +24,7 @@ from xml.sax.saxutils import quoteattr
 from .._metadata import CT, MAIN, PKG_REL, REL, append_child, element_pattern, replace_element
 from .._xlsx_edit import _attributes, _bytes, _required_match
 from ..refs import parse_cell_range
-from ._print import PageMargins, print_settings_for
+from ._print import WorksheetPageMargins, print_settings_for
 from ..chart_reader import _A as _A
 from ..chart_reader import _C as _C
 from ..chart_reader import _XDR as _XDR
@@ -487,9 +487,9 @@ def _clear_print_setup(package: _Package, sheet: _Sheet, sheet_index: int, clear
     if "margins" in cleared:
         host = sheet.find("pageMargins")
         if host is not None:
-            margins = PageMargins()
+            margins = WorksheetPageMargins()
             text = "".join(
-                f' {item.name}="{getattr(margins, item.name)}"' for item in fields(PageMargins)
+                f' {item.name}="{getattr(margins, item.name)}"' for item in fields(WorksheetPageMargins)
             )
             sheet.replace(host, f"<{sheet.prefix}pageMargins{text}/>")
     attributes = [attribute for name, attribute in _PAGE_SETUP_ATTRIBUTES.items() if name in cleared]

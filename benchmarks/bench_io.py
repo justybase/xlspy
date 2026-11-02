@@ -153,7 +153,7 @@ def _write_rows(path, kind, data, level=None):
     from xlspy import XlsbWriter, XlsxWriter
     start = time.perf_counter()
     if kind == "xlsx":
-        kwargs = {} if level is None else {"compressionLevel": level}
+        kwargs = {} if level is None else {"compression_level": level}
         with XlsxWriter(path, **kwargs) as writer:
             writer.add_sheet("S")
             writer.write_sheet(data)

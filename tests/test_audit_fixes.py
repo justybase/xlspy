@@ -279,7 +279,7 @@ def test_named_style_on_loaded_workbook_is_written(tmp_path):
 @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf, Decimal("NaN"), Decimal("Infinity")])
 def test_xlsx_writer_rejects_non_finite_numbers(tmp_path, value, use_shared_strings):
     with pytest.raises(ValueError, match="finite"):
-        with XlsxWriter(tmp_path / "bad.xlsx", useSharedStrings=use_shared_strings) as writer:
+        with XlsxWriter(tmp_path / "bad.xlsx", use_shared_strings=use_shared_strings) as writer:
             writer.add_sheet("S")
             writer.write_sheet([[1, value, "x"]])
 
@@ -288,7 +288,7 @@ def test_xlsx_writer_rejects_non_finite_numbers(tmp_path, value, use_shared_stri
 @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf, Decimal("NaN")])
 def test_xlsb_writer_rejects_non_finite_numbers(tmp_path, value, use_shared_strings):
     with pytest.raises(ValueError, match="finite"):
-        with XlsbWriter(tmp_path / "bad.xlsb", useSharedStrings=use_shared_strings) as writer:
+        with XlsbWriter(tmp_path / "bad.xlsb", use_shared_strings=use_shared_strings) as writer:
             writer.add_sheet("S")
             writer.write_sheet([[1, value, "x"]])
 

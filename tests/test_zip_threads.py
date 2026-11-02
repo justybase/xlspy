@@ -22,7 +22,7 @@ def _members(data: bytes) -> dict:
 
 def _write(cls, level, shared):
     target = io.BytesIO()
-    with cls(target, compressionLevel=level, useSharedStrings=shared) as writer:
+    with cls(target, compression_level=level, use_shared_strings=shared) as writer:
         writer.add_sheet("S")
         writer.write_sheet(_rows(), header_style=None, freeze_panes="B2")
         writer.add_sheet("Empty")

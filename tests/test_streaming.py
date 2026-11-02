@@ -143,7 +143,7 @@ def test_xlsx_inline_streaming_peak_memory_is_bounded(tmp_path):
     path = tmp_path / "bounded.xlsx"
     tracemalloc.start()
     try:
-        with XlsxWriter(path, useSharedStrings=False) as writer:
+        with XlsxWriter(path, use_shared_strings=False) as writer:
             writer.add_sheet("Stream")
             writer.write_sheet(OnePass(_rows()))
         _, peak = tracemalloc.get_traced_memory()
@@ -158,7 +158,7 @@ def test_xlsb_inline_streaming_peak_memory_is_bounded(tmp_path):
     path = tmp_path / "bounded.xlsb"
     tracemalloc.start()
     try:
-        with XlsbWriter(path, useSharedStrings=False) as writer:
+        with XlsbWriter(path, use_shared_strings=False) as writer:
             writer.add_sheet("Stream")
             writer.write_sheet(OnePass(_rows()))
         _, peak = tracemalloc.get_traced_memory()
@@ -265,7 +265,7 @@ def test_xlsb_inline_and_shared_strings_round_trip(tmp_path):
     data = [["Name", "Note"], ["Zażółć", "ünï"], ["", "x" * 300], ["Sum", None]]
     for shared in (True, False):
         path = tmp_path / f"strings_{shared}.xlsb"
-        with XlsbWriter(path, useSharedStrings=shared) as writer:
+        with XlsbWriter(path, use_shared_strings=shared) as writer:
             writer.add_sheet("Data")
             writer.write_sheet(data)
         with ExcelReader(str(path)) as reader:
@@ -275,7 +275,7 @@ def test_xlsb_inline_and_shared_strings_round_trip(tmp_path):
 def test_xlsb_inline_text_limit_is_enforced(tmp_path):
     path = tmp_path / "limit.xlsb"
     with pytest.raises(ValueError, match="32767"):
-        with XlsbWriter(path, useSharedStrings=False) as writer:
+        with XlsbWriter(path, use_shared_strings=False) as writer:
             writer.add_sheet("Data")
             writer.write_sheet([["x" * 32768]])
     assert not path.exists()
@@ -336,7 +336,7 @@ def test_xlsb_inline_counts_supplementary_characters_as_two_units(tmp_path):
     # a count in code points would still round-trip here but corrupt the cell in Excel.
     text = "\U0001D11E" + "x" * 3
     path = tmp_path / "astral.xlsb"
-    with XlsbWriter(path, useSharedStrings=False) as writer:
+    with XlsbWriter(path, use_shared_strings=False) as writer:
         writer.add_sheet("Data")
         writer.write_sheet([[text, "after"]])
     with zipfile.ZipFile(path) as archive:
@@ -355,13 +355,13 @@ def test_xlsb_inline_text_limit_counts_utf16_units(tmp_path):
     # 16383 astral characters are 32766 units (allowed); 16384 are 32768 (refused).
     ok = "\U0001D11E" * 16383
     path = tmp_path / "limit_ok.xlsb"
-    with XlsbWriter(path, useSharedStrings=False) as writer:
+    with XlsbWriter(path, use_shared_strings=False) as writer:
         writer.add_sheet("Data")
         writer.write_sheet([[ok]])
     with ExcelReader(str(path)) as reader:
         assert list(reader.get_rows("Data")) == [[ok]]
     with pytest.raises(ValueError, match="32767"):
-        with XlsbWriter(tmp_path / "limit_bad.xlsb", useSharedStrings=False) as writer:
+        with XlsbWriter(tmp_path / "limit_bad.xlsb", use_shared_strings=False) as writer:
             writer.add_sheet("Data")
             writer.write_sheet([["\U0001D11E" * 16384]])
 
@@ -369,7 +369,7 @@ def test_xlsb_inline_text_limit_counts_utf16_units(tmp_path):
 def test_xlsb_inline_lone_surrogate_is_refused(tmp_path):
     path = tmp_path / "surrogate.xlsb"
     with pytest.raises(UnicodeEncodeError):
-        with XlsbWriter(path, useSharedStrings=False) as writer:
+        with XlsbWriter(path, use_shared_strings=False) as writer:
             writer.add_sheet("Data")
             writer.write_sheet([["bad\ud800"]])
     assert not path.exists()
@@ -403,7 +403,7 @@ rows = [
     [Odd(), "x" * 300, 7],
 ]
 print("native_row=" + str(_accel.encode_xlsb_row_inline(["a"], 0) is not None))
-with XlsbWriter(sys.argv[1], useSharedStrings=False) as writer:
+with XlsbWriter(sys.argv[1], use_shared_strings=False) as writer:
     writer.add_sheet("Data")
     writer.write_sheet(rows)
 '''

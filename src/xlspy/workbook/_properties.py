@@ -10,7 +10,7 @@ from ..styles import (
     Color,
 )
 from ._print import (
-    PageMargins,
+    WorksheetPageMargins,
     PageSetupProperties,
 )
 
@@ -353,7 +353,7 @@ class ColBreak(RowBreak):
 
 
 @dataclass
-class SheetProtection:
+class WorksheetProtection:
     sheet: bool = False
     objects: bool = False
     scenarios: bool = False
@@ -401,35 +401,35 @@ class SheetProtection:
         return self.sheet
 
 
-def _as_model_protection(value) -> "SheetProtection":
-    """Return the model SheetProtection for ``ws.protection`` assignments.
+def _as_model_protection(value) -> "WorksheetProtection":
+    """Return the model WorksheetProtection for ``ws.protection`` assignments.
 
     Accepts the model class (openpyxl-style fields) or the public
     ``xlspy.SheetProtection`` (``enabled``, ``select_*_cells`` meaning "allowed").
     The public class is converted here so the model always holds one type.
     """
     if value is None:
-        return SheetProtection()
-    if isinstance(value, SheetProtection):
+        return WorksheetProtection()
+    if isinstance(value, WorksheetProtection):
         return value
     if isinstance(value, PublicSheetProtection):
-        model = SheetProtection(sheet=value.enabled, objects=value.enabled, scenarios=value.enabled,
-                                selectLockedCells=not value.select_locked_cells,
-                                selectUnlockedCells=not value.select_unlocked_cells)
+        model = WorksheetProtection(sheet=value.enabled, objects=value.enabled, scenarios=value.enabled,
+                                    selectLockedCells=not value.select_locked_cells,
+                                    selectUnlockedCells=not value.select_unlocked_cells)
         if value.password_hash is not None:
             model.set_password(value.password_hash, already_hashed=True)
         return model
-    raise TypeError("protection must be a xlspy SheetProtection, a SheetProtection or None")
+    raise TypeError("protection must be an xlspy.SheetProtection, a WorksheetProtection or None")
 
 
-def _as_model_page_margins(value) -> "PageMargins":
-    """Return the model PageMargins for ``ws.page_margins`` (mutable holder)."""
-    if isinstance(value, PageMargins):
+def _as_model_page_margins(value) -> "WorksheetPageMargins":
+    """Return the model WorksheetPageMargins for ``ws.page_margins`` (mutable holder)."""
+    if isinstance(value, WorksheetPageMargins):
         return value
     if isinstance(value, PublicPageMargins):
-        return PageMargins(**{name: getattr(value, name) for name in
-                              ("left", "right", "top", "bottom", "header", "footer")})
-    raise TypeError("page_margins must be a xlspy PageMargins or PageMargins")
+        return WorksheetPageMargins(**{name: getattr(value, name) for name in
+                                       ("left", "right", "top", "bottom", "header", "footer")})
+    raise TypeError("page_margins must be an xlspy.PageMargins or a WorksheetPageMargins")
 
 
 @dataclass

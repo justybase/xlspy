@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+Migration from 0.10:
+
+| Before | Now |
+| :--- | :--- |
+| `XlsxWriter(path, compressionLevel=6, useSharedStrings=False)` | `XlsxWriter(path, compression_level=6, use_shared_strings=False)` (same for `XlsbWriter`, `to_xlsx`, `to_xlsb`) |
+| `XLSPY_DISABLE_C_EXT=1` | `XLSPY_ACCEL=python` |
+| `xlspy._accel.HAVE_C_EXT` | `xlspy._accel.HAVE_NATIVE` |
+| type of `ws.protection` / `ws.page_margins`: `SheetProtection` / `PageMargins` from `xlspy.workbook._model` | `xlspy.workbook.WorksheetProtection` / `xlspy.workbook.WorksheetPageMargins` |
+| `xlspy.outline.Outline` (the writer's outline index) | `xlspy.outline.OutlineIndex` |
+| XLSB formula pointing at a missing formula group: `NotImplementedError` | `InvalidFileError` |
+
+- The old writer keywords raise `TypeError` that names the new one (`argument 'compressionLevel' was renamed to
+  'compression_level'`). Positional arguments are unchanged.
+- Each name now means one class. `xlspy.SheetProtection` and `xlspy.PageMargins` are the writer settings, as
+  before; the openpyxl-shaped objects behind `ws.protection` and `ws.page_margins` were also called
+  `SheetProtection` and `PageMargins`, and `xlspy.SheetProtection(select_locked_cells=True)` means the opposite of
+  the openpyxl-style `selectLockedCells=True`. The model classes are now `WorksheetProtection` and
+  `WorksheetPageMargins` (exported from `xlspy.workbook`); both assignments still accept the public classes.
+
 ### Added
 
 - Python 3.11 and 3.15 support: `requires-python = ">=3.11"`, CI and wheels for 3.11–3.15.

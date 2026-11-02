@@ -75,7 +75,7 @@ from .sparklines import normalize_sparklines as normalize_sparklines
 from .printing import PrintSettings as PrintSettings, normalize_print_settings as normalize_print_settings
 from .data_validation import DataValidation as DataValidation, normalize_validations as normalize_validations
 from .outline import build_outline as build_outline
-from ._writer_common import FilterData as FilterData, WriterFrontEnd as WriterFrontEnd
+from ._writer_common import FilterData as FilterData, WriterFrontEnd as WriterFrontEnd, reject_unknown_arguments
 from ._xlsb_writer_consts import (
     _REL_PIVOT_TABLE as _REL_PIVOT_TABLE,
     _REL_PIVOT_CACHE as _REL_PIVOT_CACHE,
@@ -152,10 +152,11 @@ from ._xlsb_writer_strings import (
 
 
 class XlsbWriter(_XlsbStylesMixin, _XlsbPartsMixin, _XlsbSheetMixin, _XlsbViewsMixin, _XlsbBinMixin, _XlsbStringsMixin, WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
-    def __init__(self, file: str | io.IOBase, compressionLevel:int = 3,
-                 useSharedStrings: bool = True):
+    def __init__(self, file: str | io.IOBase, compression_level: int = 3,
+                 use_shared_strings: bool = True, **unknown: object):
+        reject_unknown_arguments(type(self).__name__, unknown)
         self._file = file
-        self._useSharedStrings = useSharedStrings
+        self._use_shared_strings = use_shared_strings
         self._aborted = False
         self._saved = False
         self._output = None  # StagedOutput while open
@@ -168,8 +169,8 @@ class XlsbWriter(_XlsbStylesMixin, _XlsbPartsMixin, _XlsbSheetMixin, _XlsbViewsM
         # Rich entries are tuples, which only the Python SST writer encodes.
         self._sst_has_rich = False
         self._filtered_data_list: list[FilterData] = []
-        self._sheetCnt = 1
-        self._compressionLevel = compressionLevel
+        self._sheet_number = 1
+        self._compression_level = compression_level
         # The package being written; set by open() and typed loosely because the
         # threaded ZipFile in _zip_threads adds methods that zipfile.ZipFile lacks.
         self._zf: Any = None

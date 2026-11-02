@@ -41,7 +41,7 @@ class PageSetup:
 
 
 @dataclass
-class PageMargins:
+class WorksheetPageMargins:
     """``ws.page_margins`` in inches (openpyxl's defaults)."""
 
     left: float = 0.7
@@ -140,8 +140,8 @@ def print_settings_for(sheet) -> PrintSettings | None:
     values = {
         "orientation": setup.orientation,
         "paper_size": setup.paperSize,
-        "margins": None if margins == PageMargins() else _WriterMargins(
-            **{item.name: getattr(margins, item.name) for item in fields(PageMargins)}
+        "margins": None if margins == WorksheetPageMargins() else _WriterMargins(
+            **{item.name: getattr(margins, item.name) for item in fields(WorksheetPageMargins)}
         ),
         "print_area": sheet.print_area,
         "repeat_rows": sheet.print_title_rows,

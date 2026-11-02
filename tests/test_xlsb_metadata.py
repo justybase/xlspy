@@ -34,7 +34,7 @@ def make_binary(path, **options):
 @pytest.mark.parametrize('shared',[True,False])
 def test_notes_binary_roundtrip(tmp_path,shared):
     path=tmp_path/'notes.xlsb'
-    with XlsbWriter(path,useSharedStrings=shared) as writer:
+    with XlsbWriter(path,use_shared_strings=shared) as writer:
         writer.add_sheet('Data')
         writer.write_sheet([[1]],comments={'A1':Comment('Zażółć <&>\n_x0041_\rline','Jan'), 'D9':Comment('empty','Ola')})
     with ExcelReader(str(path)) as reader:
@@ -227,7 +227,7 @@ def test_later_wider_binary_rows_not_truncated(tmp_path,force_python,monkeypatch
 
 def test_streamed_binary_rows_are_incremental(tmp_path,monkeypatch):
     path=tmp_path/'stream.xlsb'
-    with XlsbWriter(path,useSharedStrings=False) as writer:
+    with XlsbWriter(path,use_shared_strings=False) as writer:
         writer.write_sheet(([i,'x'*100] for i in range(10000)))
     with ExcelReader(str(path)) as reader:
         original=reader._archive.open

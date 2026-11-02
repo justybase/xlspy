@@ -17,8 +17,8 @@ import xlspy
 from xlspy import _untrusted
 from xlspy._metadata import password_hash
 from xlspy.workbook import Workbook, load_workbook
-from xlspy.workbook._model import PageMargins as ModelPageMargins
-from xlspy.workbook._model import SheetProtection as ModelSheetProtection
+from xlspy.workbook import WorksheetPageMargins as ModelPageMargins
+from xlspy.workbook import WorksheetProtection as ModelSheetProtection
 
 
 def test_public_sheet_protection_saves_and_reloads(tmp_path):

@@ -62,12 +62,12 @@ class _XlsbBinMixin:
         _shared_strings: Any
         _shared_strings_dict: Any
         _sheet1Bytes: Any
-        _sheetCnt: Any
+        _sheet_number: Any
         _sst_all_count: Any
         _sst_unique_count: Any
         _style_format_xf: Any
         _style_xf_map: Any
-        _useSharedStrings: Any
+        _use_shared_strings: Any
         _worksheet_data: Any
         _write_cols_width: Any
         _write_rich_str: Any
@@ -110,7 +110,7 @@ class _XlsbBinMixin:
         buffer.write(head)
         # First flag byte of BrtBeginWsView: fDspGrid (0x04), fDspRwCol,
         # fDspZeros, fSelected (0x40, first sheet only) and fDspRuler.
-        view_flags = 0xDC if self._sheetCnt == 1 else 0x9C
+        view_flags = 0xDC if self._sheet_number == 1 else 0x9C
         headers, zeros, right_to_left = view
         if not show_grid_lines:
             view_flags &= ~0x04
@@ -121,7 +121,7 @@ class _XlsbBinMixin:
         if right_to_left:
             view_flags |= 0x20  # fRightToLeft
         buffer.write(bytes((view_flags,)))
-        self._sheetCnt += 1
+        self._sheet_number += 1
 
         view_tail = self._sheet1Bytes[55:84]
         if zoom is not None:
@@ -260,7 +260,7 @@ class _XlsbBinMixin:
                         outline_level, outline_collapsed,
                     )
                 cell_data = None
-                if self._useSharedStrings:
+                if self._use_shared_strings:
                     c_result = encode_xlsb_row(
                         row, self._shared_strings_dict, self._shared_strings,
                         self._sst_unique_count, self._sst_all_count, row_idx,

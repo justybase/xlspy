@@ -36,6 +36,8 @@ from ._model import (
     Workbook,
     WorkbookSecurity,
     Worksheet,
+    WorksheetPageMargins,
+    WorksheetProtection,
     WriteOnlyCell,
     WriteOnlyWorksheet,
 )
@@ -75,6 +77,8 @@ __all__ = [
     "Workbook",
     "WorkbookSecurity",
     "Worksheet",
+    "WorksheetPageMargins",
+    "WorksheetProtection",
     "WriteOnlyCell",
     "WriteOnlyWorksheet",
     "XlsxStyleTable",

@@ -61,7 +61,7 @@ class _XlsxPartsMixin:
         _sst_all_count: Any
         _sst_unique_count: Any
         _tables_xml: Any
-        _useSharedStrings: Any
+        _use_shared_strings: Any
         _workbook_protection: Any
         _workbook_rel_base: Any
         _worksheet_data: Any
@@ -155,7 +155,7 @@ class _XlsxPartsMixin:
         self._zf.writestr("xl/_rels/workbook.xml.rels", self._create_workbook_rels())
         self._write_doc_props()
 
-        if self._useSharedStrings and self._shared_strings:
+        if self._use_shared_strings and self._shared_strings:
             with self._zf.open_threaded("xl/sharedStrings.xml") as sst_file:
                 self._write_shared_strings_xml(sst_file)
 
@@ -206,7 +206,7 @@ class _XlsxPartsMixin:
         )
         if self._sheet_comments:
             comment_parts += '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
-        if self._useSharedStrings and self._shared_strings:
+        if self._use_shared_strings and self._shared_strings:
             shared_strings_part = '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
         slicer_parts = "".join(
             f'<Override PartName="/{path}" ContentType="{content_type}"/>'
@@ -253,7 +253,7 @@ class _XlsxPartsMixin:
         style_rid = self._sheet_count + 1
         relationships.append(f'<Relationship Id="rId{style_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>')
         
-        if self._useSharedStrings and self._shared_strings:
+        if self._use_shared_strings and self._shared_strings:
             shared_strings_rid = self._sheet_count + 2
             relationships.append(f'<Relationship Id="rId{shared_strings_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>')
 

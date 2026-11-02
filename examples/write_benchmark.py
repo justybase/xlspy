@@ -172,8 +172,8 @@ def _write(writer, path, rows):
         cls = XlsxWriter if fmt == "xlsx" else XlsbWriter
         # Shared strings are the default; passing the option only for inline
         # mode also lets older versions (whose XlsbWriter lacks it) run shared.
-        options = {} if storage == "shared" else {"useSharedStrings": False}
-        with cls(path, compressionLevel=COMPRESSION_LEVEL, **options) as workbook:
+        options = {} if storage == "shared" else {"use_shared_strings": False}
+        with cls(path, compression_level=COMPRESSION_LEVEL, **options) as workbook:
             workbook.add_sheet("Bench")
             workbook.write_sheet(rows)
     elif writer == "openpyxl":

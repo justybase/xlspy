@@ -83,7 +83,7 @@ def test_rich_text_matches_xlsx_in_excel(tmp_path, open_workbook):
         (XlsxWriter, 'xlsx', True), (XlsbWriter, 'xlsb', True), (XlsbWriter, 'xlsb', False),
     ):
         path = tmp_path / f'rich_{int(shared)}.{suffix}'
-        with writer_class(path, useSharedStrings=shared) as writer:
+        with writer_class(path, use_shared_strings=shared) as writer:
             writer.add_sheet('Text')
             writer.write_sheet(RICH_ROWS)
         facts[(suffix, shared)] = _rich_facts(open_workbook(path).Worksheets('Text'))

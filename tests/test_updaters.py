@@ -11,7 +11,7 @@ from zip_utils import rewrite_workbook_members
 
 
 def _write_xlsx(path, sheets, *, use_shared_strings=True):
-    with XlsxWriter(path, useSharedStrings=use_shared_strings) as writer:
+    with XlsxWriter(path, use_shared_strings=use_shared_strings) as writer:
         for name, rows in sheets:
             writer.add_sheet(name)
             writer.write_sheet(rows)

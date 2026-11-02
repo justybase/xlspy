@@ -43,7 +43,7 @@ def _write_workbook(path: Path, binary: bool, *, shared_strings: bool = True) ->
             writer.add_sheet("Keep")
             writer.write_sheet([["untouched", 9]])
     else:
-        with XlsxWriter(path, useSharedStrings=shared_strings) as writer:
+        with XlsxWriter(path, use_shared_strings=shared_strings) as writer:
             writer.add_sheet("Data")
             writer.write_sheet(
                 [

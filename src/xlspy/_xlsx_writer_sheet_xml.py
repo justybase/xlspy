@@ -40,7 +40,7 @@ class _XlsxSheetXmlMixin:
         _slicer_part_files: Any
         _table_info: Any
         _tables_xml: Any
-        _useSharedStrings: Any
+        _use_shared_strings: Any
 
     def _table_xml(self, table: ExcelTable, table_id: int, names: list[str]) -> str:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
@@ -133,7 +133,7 @@ class _XlsxSheetXmlMixin:
     def _workbook_rel_base(self) -> int:
         """Relationship count before the slicer caches: sheets, styles, strings, theme."""
         count = self._sheet_count + 1
-        if self._useSharedStrings and self._shared_strings:
+        if self._use_shared_strings and self._shared_strings:
             count += 1
         if self._sheet_drawings:
             count += 1

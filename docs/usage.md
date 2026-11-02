@@ -33,7 +33,7 @@ data = [
 ]
 
 # Initialize writer with a specific compression level
-with XlsbWriter("output.xlsb", compressionLevel=6) as writer:
+with XlsbWriter("output.xlsb", compression_level=6) as writer:
     # Add a visible sheet
     writer.add_sheet("Visible Sheet")
     writer.write_sheet(data)
@@ -61,7 +61,7 @@ data = [
 ]
 
 # Initialize writer with a specific compression level
-with XlsxWriter("output.xlsx", compressionLevel=6) as writer:
+with XlsxWriter("output.xlsx", compression_level=6) as writer:
     # Add a visible sheet
     writer.add_sheet("Visible Sheet")
     writer.write_sheet(data)
@@ -871,7 +871,7 @@ Shapes and charts can share a sheet, and their drawing ids are kept unique.
 
 `CellRichText` puts several fonts in one cell (both writers, the workbook
 model and XLSX updates). `XlsbWriter` stores it in the shared-string table, as
-Excel does, also with `useSharedStrings=False`. The classes follow openpyxl:
+Excel does, also with `use_shared_strings=False`. The classes follow openpyxl:
 
 ```python
 from xlspy import CellRichText, InlineFont, TextBlock
@@ -947,14 +947,14 @@ of the same data stay byte-for-byte identical. The workbook model saves
   bounded by the spool setting and the 100-row width sample, not by the row count.
 - **XLSB** writes each row to the archive as it is produced.
 - **Shared strings** (the default) keep one table of every distinct string in
-  memory until save. For high-cardinality exports pass `useSharedStrings=False`:
+  memory until save. For high-cardinality exports pass `use_shared_strings=False`:
   text is then stored inline in each cell, so memory no longer grows with the
   number of distinct strings. Files are somewhat larger. The native extension encodes
   inline XLSB rows too; rows it cannot handle (formatted cells, or text it
   refuses) go to the Python encoder (see the benchmarks).
 
 ```python
-with XlsbWriter("sales.xlsb", useSharedStrings=False) as writer:
+with XlsbWriter("sales.xlsb", use_shared_strings=False) as writer:
     writer.add_sheet("Sales")
     writer.write_sheet(cursor_rows(cursor))      # a generator over a DB cursor
 ```
@@ -1051,7 +1051,7 @@ report.
 | Conditional format styles (`DifferentialStyle`) | Yes | Yes, except gradient fills, diagonal borders, vertical alignment and rare font options (`TypeError`) |
 | Sheet zoom (`zoom`) | Yes | Yes |
 | Streaming: one-pass input, spooled rows | Yes | Yes (rows written as produced) |
-| Inline strings (`useSharedStrings=False`) | Yes | Yes (native row encoder; Python fallback) |
+| Inline strings (`use_shared_strings=False`) | Yes | Yes (native row encoder; Python fallback) |
 | Chart caches from streamed rows | n/a (no caches) | Yes (only chart cells are kept) |
 | Chart formatting (`gap_width`, `hole_size`, `fill`, `border`, `plot_fill`, `font_size`, `font_color`) | Yes | Yes |
 | Shapes and text boxes (`Shape`, `link_cell` KPI cards) | Yes | Yes |

@@ -87,7 +87,7 @@ def test_xlsx_c_encoder_applies_range_styles_to_cell_kinds(tmp_path, use_shared_
         pytest.skip("requires the optional native encoder")
     openpyxl = pytest.importorskip("openpyxl")
     path = tmp_path / f"styled-fast-path-{use_shared_strings}.xlsx"
-    with XlsxWriter(path, useSharedStrings=use_shared_strings) as writer:
+    with XlsxWriter(path, use_shared_strings=use_shared_strings) as writer:
         writer.add_sheet("Data")
         writer.write_sheet(
             [

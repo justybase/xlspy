@@ -41,7 +41,7 @@ from ..styles import (
 from . import _shift as _shift
 from ._print import (
     HeaderFooter as HeaderFooter,
-    PageMargins as PageMargins,
+    WorksheetPageMargins as WorksheetPageMargins,
     PageSetup as PageSetup,
     PageSetupProperties as PageSetupProperties,
     PrintOptions as PrintOptions,
@@ -77,7 +77,7 @@ from ._properties import (
     Break as Break,
     RowBreak as RowBreak,
     ColBreak as ColBreak,
-    SheetProtection as SheetProtection,
+    WorksheetProtection as WorksheetProtection,
     _as_model_protection as _as_model_protection,
     _as_model_page_margins as _as_model_page_margins,
     CustomProperty as CustomProperty,

@@ -49,7 +49,7 @@ def test_native_rows_match_python_rows(tmp_path, monkeypatch, cls, suffix, share
                 patch.setattr(_xlsb_writer_bin, "encode_xlsb_row", none)
                 patch.setattr(_xlsb_writer_bin, "encode_xlsb_row_inline", none)
             path = tmp_path / f"{native}.{suffix}"
-            with cls(path, useSharedStrings=shared) as book:
+            with cls(path, use_shared_strings=shared) as book:
                 book.add_sheet("S")
                 book.write_sheet(rows)
             outputs.append(_sheet(path))

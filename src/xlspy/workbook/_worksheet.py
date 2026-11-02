@@ -18,14 +18,14 @@ from ..styles import (
 from . import _shift
 from ._print import (
     HeaderFooter,
-    PageMargins,
+    WorksheetPageMargins,
     PageSetup,
     PrintOptions,
 )
 from ._cell import Cell, MergedCell, WriteOnlyCell, _CELL_TYPE_KINDS, _new_cell
 from ._coords import MultiCellRange, _CELL_RE, _coerce_column, _coerce_row, _coordinate, _normalize_range
 from ._dimensions import ColumnDimension, DimensionHolder, RowDimension, _column_key, _row_key
-from ._properties import AutoFilter, ColBreak, Pane, RowBreak, Selection, SheetFormatProperties, SheetProperties, SheetProtection, SheetView, _as_model_page_margins, _as_model_protection
+from ._properties import AutoFilter, ColBreak, Pane, RowBreak, Selection, SheetFormatProperties, SheetProperties, SheetView, WorksheetProtection, _as_model_page_margins, _as_model_protection
 from ._tables import ConditionalFormattingList, DataValidationList, Table, TableList, _expect
 
 
@@ -83,11 +83,11 @@ class Worksheet:
         self._saved_print_settings = None
         self._print_settings = None
         self.page_setup = PageSetup()
-        self.page_margins = PageMargins()
+        self.page_margins = WorksheetPageMargins()
         self.print_options = PrintOptions()
         self.HeaderFooter = HeaderFooter()
         self.sheet_format = SheetFormatProperties()
-        self.protection = SheetProtection()
+        self.protection = WorksheetProtection()
         self.row_breaks = RowBreak()
         self.col_breaks = ColBreak()
         self.ignored_errors: list = []
@@ -220,7 +220,7 @@ class Worksheet:
         self._mark_dirty("sheet_view")
 
     @property
-    def protection(self) -> SheetProtection:
+    def protection(self) -> WorksheetProtection:
         return self._protection
 
     @protection.setter
@@ -228,7 +228,7 @@ class Worksheet:
         self._protection = _as_model_protection(value)
 
     @property
-    def page_margins(self) -> PageMargins:
+    def page_margins(self) -> WorksheetPageMargins:
         return self._page_margins
 
     @page_margins.setter

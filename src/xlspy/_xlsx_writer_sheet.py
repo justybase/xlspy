@@ -133,7 +133,7 @@ class _XlsxSheetMixin:
         _style_format_xf: Any
         _style_xf_map: Any
         _table_names: Any
-        _useSharedStrings: Any
+        _use_shared_strings: Any
         _worksheet_data: Any
         _xf_styles: Any
         _zf: Any
@@ -538,7 +538,7 @@ class _XlsxSheetMixin:
         text = io.StringIO()  # one Python-written row at a time, encoded once
         row_style_ids_cache: dict[Any, Any] = {}
         ss_dict, ss_list = self._shared_strings_dict, self._shared_strings
-        use_sst, fmt_xf = self._useSharedStrings, self._fmt_xf
+        use_sst, fmt_xf = self._use_shared_strings, self._fmt_xf
         # Style id of the built-in link style, 0 until a link registers it. Only the
         # Python row path registers styles, so the lookup is repeated after those rows.
         link_xf = self._style_xf_map.get(HYPERLINK_STYLE, 0)
@@ -843,7 +843,7 @@ class _XlsxSheetMixin:
             style_ref = f' s="{xf_index}"'
         else:
             style_ref = ' s="3"' if is_header else ''
-        if not self._useSharedStrings:
+        if not self._use_shared_strings:
             buffer.write(f'<c t="inlineStr"{style_ref}><is>{runs}</is></c>')
             return
         # Rich entries share the table with plain strings; a tuple key never
@@ -860,7 +860,7 @@ class _XlsxSheetMixin:
 
     def _write_string_cell(self, buffer: io.StringIO, cell_value: str, is_header: bool = False, xf_index: int | None = None):
         check_cell_text(cell_value)
-        if self._useSharedStrings:
+        if self._use_shared_strings:
             self._sst_all_count += 1
             if cell_value not in self._shared_strings_dict:
                 string_index = self._sst_unique_count

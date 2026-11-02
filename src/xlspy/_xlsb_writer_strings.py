@@ -24,7 +24,7 @@ class _XlsbStringsMixin:
         _register_component: Any
         _sst_all_count: Any
         _sst_unique_count: Any
-        _useSharedStrings: Any
+        _use_shared_strings: Any
 
     @staticmethod
     def _write_inline_str(buffer, text: str, col_idx: int, style_ref: int):
@@ -93,7 +93,7 @@ class _XlsbStringsMixin:
             return
         style_ref = style_override if style_override is not None else (3 if row_idx == 0 else 0)
         # Rich text always goes to the shared-string table, also with
-        # useSharedStrings=False: Excel saves it there too, and the in-cell
+        # use_shared_strings=False: Excel saves it there too, and the in-cell
         # BrtCellRString is a record readers rarely know. A tuple key never
         # equals a str, so the same text plain and formatted stays two entries.
         key = ("rich", text, runs)
@@ -109,7 +109,7 @@ class _XlsbStringsMixin:
         buffer.write(struct.pack('<III', col_idx, style_ref, string_index))
 
     def _write_str(self, buffer, cell, shared_strings_dict, shared_strings_append, row_idx, col_idx, style_override=None):
-        if not self._useSharedStrings:
+        if not self._use_shared_strings:
             style_ref = style_override if style_override is not None else (3 if row_idx == 0 else 0)
             self._write_inline_str(buffer, cell, col_idx, style_ref)
             return

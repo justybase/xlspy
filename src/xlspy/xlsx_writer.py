@@ -2,7 +2,7 @@ import io
 from typing import Any, Iterable, Tuple
 from . import _zip_threads as _zip_threads, chart_parts as chart_parts
 from ._output import PackageZip as PackageZip, StagedWriter as StagedWriter
-from ._writer_common import FilterData as FilterData, WriterFrontEnd as WriterFrontEnd
+from ._writer_common import FilterData as FilterData, WriterFrontEnd as WriterFrontEnd, reject_unknown_arguments
 from .doc_properties import DocumentPropertiesMixin as DocumentPropertiesMixin
 from ._text import check_cell_text as check_cell_text, xstring_escape as xstring_escape
 from .charts import Chart as Chart
@@ -139,8 +139,9 @@ from ._xlsx_writer_sheet_xml import (
 
 
 class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetXmlMixin, WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
-    def __init__(self, file: str | io.IOBase, compressionLevel: int = 3, useSharedStrings: bool = True,
-                 spool_max_bytes: int = DEFAULT_SPOOL_BYTES):
+    def __init__(self, file: str | io.IOBase, compression_level: int = 3, use_shared_strings: bool = True,
+                 spool_max_bytes: int = DEFAULT_SPOOL_BYTES, **unknown: object):
+        reject_unknown_arguments(type(self).__name__, unknown)
         self._file = file
         self._worksheet_data: list[Tuple[str, Iterable[list[Any]] | None, bool]] = []
         self._shared_strings: list[str | tuple[str, str]] = []
@@ -149,9 +150,9 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
         self._sst_unique_count = 0
         self._sst_all_count = 0
         self._filtered_data_list: list[FilterData] = []
-        self._sheetCnt = 1
-        self._compressionLevel = compressionLevel
-        self._useSharedStrings = useSharedStrings
+        self._sheet_number = 1
+        self._compression_level = compression_level
+        self._use_shared_strings = use_shared_strings
         self._spool_max_bytes = spool_max_bytes
         self._zf: PackageZip = None  # type: ignore[assignment]  # set when the workbook opens
         self._output = None  # StagedOutput while open

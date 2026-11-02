@@ -32,7 +32,7 @@ EXPECTED_ROW = ["updated", 9, True, 1.5, datetime.datetime(2025, 1, 2, 0, 0), No
 
 
 def _write_xlsx(path, *, use_shared_strings=True, sheets=2):
-    with XlsxWriter(path, useSharedStrings=use_shared_strings) as writer:
+    with XlsxWriter(path, use_shared_strings=use_shared_strings) as writer:
         for index in range(sheets):
             writer.add_sheet(f"Sheet{index + 1}")
             writer.write_sheet([HEADERS, *ROWS])

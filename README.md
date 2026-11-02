@@ -30,7 +30,7 @@ the Rust module is as fast or faster on the same paths.
 
 | Your workflow | What xlspy brings |
 | :--- | :--- |
-| **Export large datasets** | XLSB and XLSX output from a generator or database cursor, with bounded memory via `useSharedStrings=False`, and native (Rust) acceleration for supported read and write paths. A failed export publishes no partial workbook ([failure handling](docs/usage.md#failure-handling)). |
+| **Export large datasets** | XLSB and XLSX output from a generator or database cursor, with bounded memory via `use_shared_strings=False`, and native (Rust) acceleration for supported read and write paths. A failed export publishes no partial workbook ([failure handling](docs/usage.md#failure-handling)). |
 | **Deliver polished reports** | Cell styles, number formats, formulas, dropdown validation, hyperlinks, images, print setup, charts (column, bar, line, area, pie, doughnut, scatter, stacked), tables, and conditional formatting. Both XLSX and XLSB support them; see the [feature support table](docs/usage.md#feature-support). |
 | **Work with DataFrames** | Export pandas or polars data directly to either format. |
 | **Refresh a familiar template** | Replace data in XLSB, XLSX, or XLSM while keeping workbook structure, styles, and unrelated sheets. |

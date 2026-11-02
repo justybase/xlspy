@@ -47,7 +47,7 @@ def _package(rows, shared, native=True):
     )
     with patch:
         buffer = io.BytesIO()
-        with XlsxWriter(buffer, useSharedStrings=shared) as writer:
+        with XlsxWriter(buffer, use_shared_strings=shared) as writer:
             writer.add_sheet("T")
             writer.write_sheet(rows)
     with zipfile.ZipFile(io.BytesIO(buffer.getvalue())) as archive:

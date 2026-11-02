@@ -47,7 +47,7 @@ def encoder(request, monkeypatch):
 
 def _write(writer_cls, shared, rows, **options):
     buffer = io.BytesIO()
-    with writer_cls(buffer, useSharedStrings=shared) as writer:
+    with writer_cls(buffer, use_shared_strings=shared) as writer:
         writer.add_sheet("T")
         writer.write_sheet(rows, **options)
     return buffer.getvalue()
@@ -63,7 +63,7 @@ def _read(data, ext, tmp_path):
 def _assert_rejected(writer_cls, shared, rows, error=ValueError, match="32767", **options):
     buffer = io.BytesIO()
     with pytest.raises(error, match=match):
-        with writer_cls(buffer, useSharedStrings=shared) as writer:
+        with writer_cls(buffer, use_shared_strings=shared) as writer:
             writer.add_sheet("T")
             writer.write_sheet(rows, **options)
     assert buffer.getvalue() == b"", "a rejected workbook must not be published"
@@ -137,7 +137,7 @@ def test_dataframe_export_is_checked(writer_cls, ext, shared):
     frame = pandas.DataFrame({"name": ["ok", "z" * (LIMIT + 1)], "qty": [1, 2]})
     buffer = io.BytesIO()
     with pytest.raises(ValueError, match="32767"):
-        with writer_cls(buffer, useSharedStrings=shared) as writer:
+        with writer_cls(buffer, use_shared_strings=shared) as writer:
             writer.write_dataframe(frame)
     assert buffer.getvalue() == b""
 

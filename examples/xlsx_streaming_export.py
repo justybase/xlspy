@@ -1,7 +1,7 @@
 """Stream a large SQL result to XLSX (or XLSB) with bounded memory.
 
 The rows come straight from a DB-API cursor, one at a time. Nothing is
-collected into a list, and with ``useSharedStrings=False`` the text stays in
+collected into a list, and with ``use_shared_strings=False`` the text stays in
 the cells, so no shared-string table grows with the export.
 
 This script uses the standard-library ``sqlite3`` module and builds its own
@@ -45,7 +45,7 @@ def cursor_rows(cursor):
 def export(connection, path, use_xlsb=False):
     cursor = connection.execute("SELECT id, customer, amount, sold_on FROM sales ORDER BY id")
     writer_class = XlsbWriter if use_xlsb else XlsxWriter
-    with writer_class(path, useSharedStrings=False) as writer:
+    with writer_class(path, use_shared_strings=False) as writer:
         writer.add_sheet("Sales")
         writer.write_sheet(cursor_rows(cursor), freeze_panes="A2", auto_filter=True)
     return path

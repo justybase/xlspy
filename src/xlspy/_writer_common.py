@@ -18,6 +18,20 @@ from .styles import (
 CF_RULES = (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule, *EXTRA_CF_RULES)
 
 
+# Writer keywords renamed to snake_case; the old spelling gets a pointer, not just "unexpected".
+RENAMED_WRITER_ARGUMENTS = {"compressionLevel": "compression_level", "useSharedStrings": "use_shared_strings"}
+
+
+def reject_unknown_arguments(owner: str, extra: Mapping[str, object]) -> None:
+    """Raise TypeError for keywords ``owner`` does not take, naming the new
+    spelling of a renamed one."""
+    for name in extra:
+        new = RENAMED_WRITER_ARGUMENTS.get(name)
+        if new is not None:
+            raise TypeError(f"{owner}() argument {name!r} was renamed to {new!r}")
+        raise TypeError(f"{owner}() got an unexpected keyword argument {name!r}")
+
+
 @dataclass
 class FilterData:
     sheet_index: int = 0
