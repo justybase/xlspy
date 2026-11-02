@@ -2,6 +2,8 @@ from __future__ import annotations
 import struct
 from enum import IntEnum
 
+from .exceptions import InvalidFileError
+
 # Last zero-based row Excel can hold. Row 0xFFFFFFFF reads as -1, the same as
 # a row record too short to hold an index.
 MAX_ROW_INDEX = 1048575
@@ -248,7 +250,7 @@ class BiffReader:
                 # A row past Excel's last would be padded with billions of
                 # empty rows by the readers, so the record is corrupt.
                 if not -1 <= self.row_index <= MAX_ROW_INDEX:
-                    raise ValueError(
+                    raise InvalidFileError(
                         f"XLSB row record has row index {self.row_index & 0xFFFFFFFF}, "
                         f"past the last row ({MAX_ROW_INDEX})"
                     )

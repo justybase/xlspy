@@ -16,7 +16,7 @@ from ._updater_base import StyleFallback, _UpdaterBase
 from ._xlsb_edit import XlsbEditMixin
 from ._xlsb_table_part import parse_table_part
 from ._xlsb_sheets import XlsbSheetsMixin
-from .exceptions import UnsupportedFeatureError
+from .exceptions import InvalidFileError, UnsupportedFeatureError, reading
 from .formulas import Formula
 
 from .biff_utils import (
@@ -59,10 +59,15 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         if self._package.has("xl/workbook.xml"):
             raise ValueError("The input is XLSX; use XlsxUpdater")
         if not self._package.has("xl/workbook.bin"):
-            raise ValueError("XLSB workbook.bin was not found")
+            raise InvalidFileError("XLSB workbook.bin was not found")
 
-        self._date_1904 = self._load_date_system()
-        self._sheets = self._load_sheet_structure()
+        try:
+            with reading(path):
+                self._date_1904 = self._load_date_system()
+                self._sheets = self._load_sheet_structure()
+        except BaseException:
+            self._package.close()
+            raise
         self._shared_strings_loaded = False
         self._shared_strings_data: bytes | None = None
         self._shared_strings_values: list[str] = []
@@ -355,7 +360,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             )
             target = relationships.get(relationship_id)
             if target is None:
-                raise ValueError(f"Relationship {relationship_id!r} for sheet is missing")
+                raise InvalidFileError(f"Relationship {relationship_id!r} for sheet is missing")
             sheet_path = resolve_zip_target(target, "xl")
             if not self._package.has(sheet_path):
                 raise ValueError(f"Worksheet part was not found: {sheet_path}")
@@ -364,7 +369,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                 self._chartsheets.add(sheet_name)
 
         if not sheets:
-            raise ValueError("No worksheets were found in workbook.bin")
+            raise InvalidFileError("No worksheets were found in workbook.bin")
         return sheets
 
     def _load_date_system(self) -> bool:

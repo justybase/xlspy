@@ -16,6 +16,7 @@ from collections.abc import Callable, Iterable, Iterator
 
 from .._untrusted import SafeZipFile
 from xml.etree import ElementTree as ET
+from ..exceptions import reading
 from .._safe_xml import fromstring as safe_fromstring, iterparse as safe_iterparse
 
 from .._metadata import MAIN, REL, local_name as _local, qname, read_defined_names
@@ -1428,6 +1429,13 @@ def load_workbook(filename: str | os.PathLike[str], *, read_only: bool = False, 
     This function adds coordinates, styles, merges, dimensions and editing.
     """
     path = os.fspath(filename)
+    with reading(path):
+        return _load_workbook(path, read_only=read_only, data_only=data_only, keep_vba=keep_vba,
+                              rich_text=rich_text, keep_links=keep_links)
+
+
+def _load_workbook(path: str, *, read_only: bool, data_only: bool, keep_vba: bool, rich_text: bool,
+                   keep_links: bool) -> Workbook:
     lower = path.lower()
     if read_only:
         reader = ExcelReader(path)

@@ -130,7 +130,7 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
                 else:
                     column = struct.unpack_from('<I', payload)[0]
                 if not 0 <= column < 16384:
-                    raise ValueError("XLSB column exceeds Excel limits")
+                    raise InvalidFileError("XLSB column exceeds Excel limits")
                 previous_column = column
                 value, formula, style = cached_cell(kind, payload, reader)
                 cells.append((column, value, formula, style))

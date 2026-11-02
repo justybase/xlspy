@@ -19,6 +19,7 @@ Migration from 0.10:
 | type of `ws.protection` / `ws.page_margins`: `SheetProtection` / `PageMargins` from `xlspy.workbook._model` | `xlspy.workbook.WorksheetProtection` / `xlspy.workbook.WorksheetPageMargins` |
 | `xlspy.outline.Outline` (the writer's outline index) | `xlspy.outline.OutlineIndex` |
 | XLSB formula pointing at a missing formula group: `NotImplementedError` | `InvalidFileError` |
+| a corrupt part: `xml.etree.ElementTree.ParseError`, `ExpatError`, `UnicodeDecodeError`, `struct.error`, `IndexError` or a plain `ValueError`, depending on the path | `InvalidFileError` (the original error is its `__cause__`) |
 
 - The old writer keywords raise `TypeError` that names the new one (`argument 'compressionLevel' was renamed to
   'compression_level'`). Positional arguments are unchanged.
@@ -27,6 +28,10 @@ Migration from 0.10:
   `SheetProtection` and `PageMargins`, and `xlspy.SheetProtection(select_locked_cells=True)` means the opposite of
   the openpyxl-style `selectLockedCells=True`. The model classes are now `WorksheetProtection` and
   `WorksheetPageMargins` (exported from `xlspy.workbook`); both assignments still accept the public classes.
+- Corrupt files raise `InvalidFileError` from `ExcelReader.open()` and its row readers, `load_workbook()` and the
+  `XlsxUpdater`/`XlsbUpdater` constructors. It is a `ValueError`, so `except ValueError` still matches; code that
+  caught `ParseError` or `UnicodeDecodeError` must catch `InvalidFileError` instead. A missing sheet name is still a
+  `KeyError`. `ExcelReader` still stops quietly at an XLSB record cut short at the end of a sheet.
 
 ### Added
 

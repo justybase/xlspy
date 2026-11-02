@@ -6,6 +6,7 @@ import re
 import zipfile
 
 from ._untrusted import SafeZipFile, check_column_span
+from .exceptions import InvalidFileError, reading, reading_rows
 from enum import IntEnum
 from typing import Any, TYPE_CHECKING, Literal
 from collections.abc import Generator
@@ -191,6 +192,8 @@ class ExcelReader:
         self._styles_location: str | None = None
         self._date_1904 = False
         self._path: str | None = None if path is None else os.fspath(path)
+        # The file last opened, named in InvalidFileError messages.
+        self._opened_path = self._path or ""
         self.use_memory_stream_for_xlsb = use_memory_stream_for_xlsb
 
     def open(self, path: str | os.PathLike[str]) -> None:
@@ -198,6 +201,7 @@ class ExcelReader:
         # accumulate worksheet/style/shared-string state from the previous file.
         path = os.fspath(path)
         self.close()
+        self._opened_path = path
         self._worksheet_id_to_name = {}
         self._worksheet_name_to_id = {}
         self._worksheet_id_to_location = {}
@@ -210,10 +214,11 @@ class ExcelReader:
 
         self._is_xlsb = path.lower().endswith('xlsb')
         try:
-            if self._is_xlsb:
-                self._open_xlsb(path)
-            else:
-                self._open_xlsx(path)
+            with reading(path):
+                if self._is_xlsb:
+                    self._open_xlsb(path)
+                else:
+                    self._open_xlsx(path)
         except BaseException:
             # A file that fails to parse must not keep the archive (and, on
             # Windows, the file) open: `with` never reaches __exit__ here.
@@ -272,6 +277,7 @@ class ExcelReader:
                 rows = self._get_rows_xlsb(sheet_name)
         else:
             rows = self._get_rows_xlsx(sheet_name, data_only=data_only)
+        rows = reading_rows(self._opened_path, rows)
         if self._errors == "legacy":
             yield from rows
         else:
@@ -571,7 +577,9 @@ class ExcelReader:
 
     def _get_rows_xlsb(self, sheet_name: str) -> Generator[list[Any], None, None]:
         r_id = self._worksheet_name_to_id[sheet_name]
-        location = self._worksheet_id_to_location[r_id]
+        location = self._worksheet_id_to_location.get(r_id)
+        if location is None:
+            raise InvalidFileError(f"sheet {sheet_name!r} has no worksheet part")
         entry_path = self._resolve_path(location)
 
         with self._zip().open(entry_path) as f:

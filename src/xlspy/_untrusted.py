@@ -27,9 +27,9 @@ MAX_PACKAGE_BYTES = 4 << 30
 
 
 def check_column_span(first_column: int, last_column: int) -> None:
-    """Raise ValueError when columns ``first_column``..``last_column`` span more than Excel's width."""
+    """Raise InvalidFileError when columns ``first_column``..``last_column`` span more than Excel's width."""
     if last_column - first_column >= MAX_COLUMNS:
-        raise ValueError(
+        raise InvalidFileError(
             f"row spans columns {first_column}..{last_column}, wider than the "
             f"{MAX_COLUMNS} columns a worksheet can hold"
         )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .exceptions import UnsupportedFeatureError
+from .exceptions import InvalidFileError, UnsupportedFeatureError, reading
 import datetime as _datetime
 import math
 import mmap
@@ -77,7 +77,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         if self._package.has("xl/workbook.bin"):
             raise ValueError("The input is XLSB; use XlsbUpdater")
         if not self._package.has("xl/workbook.xml"):
-            raise ValueError("XLSX workbook.xml was not found")
+            raise InvalidFileError("XLSX workbook.xml was not found")
         if b"http://purl.oclc.org/ooxml/spreadsheetml/main" in self._package.get("xl/workbook.xml")[:4096]:
             # Edits write Transitional markup, which a Strict package must not mix.
             self._package.close()
@@ -86,8 +86,13 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                 "(ExcelReader, load_workbook(read_only=True)); save as a regular .xlsx to edit"
             )
 
-        self._date_1904 = self._load_date_system()
-        self._sheets = self._load_sheet_structure()
+        try:
+            with reading(path):
+                self._date_1904 = self._load_date_system()
+                self._sheets = self._load_sheet_structure()
+        except BaseException:
+            self._package.close()
+            raise
         self._shared_strings_loaded = False
         self._shared_strings_values: list[str] = []
         self._shared_string_indices: dict[str, int] = {}

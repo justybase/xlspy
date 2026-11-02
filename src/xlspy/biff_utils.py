@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from collections.abc import Iterator
 from typing import BinaryIO
 
+from .exceptions import InvalidFileError
+
 
 @dataclass(frozen=True)
 class Biff12Record:
@@ -33,8 +35,8 @@ def read_vlq(data: bytes, offset: int) -> tuple[int, int]:
             return value, position
         shift += 7
         if shift > 63:
-            raise ValueError("BIFF12 variable-length integer is too long")
-    raise ValueError("Truncated BIFF12 variable-length integer")
+            raise InvalidFileError("BIFF12 variable-length integer is too long")
+    raise InvalidFileError("Truncated BIFF12 variable-length integer")
 
 
 def vlq_bytes(value: int) -> bytes:
@@ -70,7 +72,7 @@ def iter_records(data: bytes) -> Iterator[Biff12Record]:
             length, data_start = read_vlq(data, offset)
         data_end = data_start + length
         if data_end > size:
-            raise ValueError(
+            raise InvalidFileError(
                 f"Truncated BIFF12 record 0x{record_id:x}: "
                 f"expected {length} bytes, only {size - data_start} available"
             )
@@ -94,7 +96,7 @@ def iter_record_payloads(data: bytes) -> Iterator[tuple[int, bytes]]:
             shift = 0
             while True:
                 if offset >= size:
-                    raise ValueError("Truncated BIFF12 variable-length integer")
+                    raise InvalidFileError("Truncated BIFF12 variable-length integer")
                 byte = data[offset]
                 offset += 1
                 value |= (byte & 0x7F) << shift
@@ -102,12 +104,12 @@ def iter_record_payloads(data: bytes) -> Iterator[tuple[int, bytes]]:
                     break
                 shift += 7
                 if shift > 63:
-                    raise ValueError("BIFF12 variable-length integer is too long")
+                    raise InvalidFileError("BIFF12 variable-length integer is too long")
             values.append(value)
         record_id, length = values
         end = offset + length
         if end > size:
-            raise ValueError(
+            raise InvalidFileError(
                 f"Truncated BIFF12 record 0x{record_id:x}: "
                 f"expected {length} bytes, only {size - offset} available"
             )
@@ -132,10 +134,10 @@ def _read_vlq_stream(stream: BinaryIO, offset: int) -> tuple[int | None, int]:
             return value, position
         shift += 7
         if shift > 63:
-            raise ValueError("BIFF12 variable-length integer is too long")
+            raise InvalidFileError("BIFF12 variable-length integer is too long")
         first = stream.read(1)
         if not first:
-            raise ValueError("Truncated BIFF12 variable-length integer")
+            raise InvalidFileError("Truncated BIFF12 variable-length integer")
 
 
 def iter_records_stream(stream: BinaryIO) -> Iterator[tuple[Biff12Record, bytes]]:
@@ -153,10 +155,10 @@ def iter_records_stream(stream: BinaryIO) -> Iterator[tuple[Biff12Record, bytes]
             return
         length, data_start = _read_vlq_stream(stream, offset)
         if length is None:
-            raise ValueError("Truncated BIFF12 record length")
+            raise InvalidFileError("Truncated BIFF12 record length")
         payload = stream.read(length)
         if len(payload) != length:
-            raise ValueError(
+            raise InvalidFileError(
                 f"Truncated BIFF12 record 0x{record_id:x}: "
                 f"expected {length} bytes, only {len(payload)} available"
             )
@@ -179,7 +181,7 @@ def read_utf16(data: bytes, offset: int, character_count: int) -> tuple[str, int
 
     end = offset + character_count * 2
     if end > len(data):
-        raise ValueError("Truncated BIFF12 UTF-16 string")
+        raise InvalidFileError("Truncated BIFF12 UTF-16 string")
     return data[offset:end].decode("utf-16le", errors="surrogatepass"), end
 
 
@@ -205,20 +207,20 @@ def parse_shared_strings_bin(data: bytes) -> SharedStringsBin:
         payload = data[record.data_start : record.data_end]
         if record.record_id == 0x9F:
             if len(payload) < 8:
-                raise ValueError("Malformed XLSB shared-string header")
+                raise InvalidFileError("Malformed XLSB shared-string header")
             total_count, unique_count = struct.unpack_from("<II", payload, 0)
             begin_offset = record.header_start
         elif record.record_id == 0x13:
             if len(payload) < 5:
-                raise ValueError("Malformed XLSB shared-string item")
+                raise InvalidFileError("Malformed XLSB shared-string item")
             character_count = struct.unpack_from("<I", payload, 1)[0]
             string, string_end = read_utf16(payload, 5, character_count)
             if string_end > len(payload):
-                raise ValueError("Malformed XLSB shared-string item length")
+                raise InvalidFileError("Malformed XLSB shared-string item length")
             values.append(string)
         elif record.record_id == 0xA0:
             end_offset = record.header_start
 
     if begin_offset is None:
-        raise ValueError("XLSB shared-string header was not found")
+        raise InvalidFileError("XLSB shared-string header was not found")
     return SharedStringsBin(values, total_count, unique_count, begin_offset, end_offset)
