@@ -170,6 +170,9 @@ Migration from 0.10:
 
 ### Changed
 
+- `ws.tables` also works like openpyxl's name-keyed `TableList`: `del ws.tables["Sales"]`, `get`, `keys`,
+  `values` and `items()` (`(name, ref)` pairs). Iterating still gives the tables. Tables added as `ExcelTable` are
+  now found by name too.
 - Type annotations: every public class and function exported from `xlspy` and `xlspy.workbook` is fully
   annotated (a test guards this), so mypy and IDEs check calls into the library. Writers, `Workbook.save`,
   `save_workbook`, `to_xlsx` and `to_xlsb` accept `str`, any `os.PathLike` (such as `pathlib.Path`) or a binary

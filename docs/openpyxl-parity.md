@@ -261,7 +261,7 @@ Pivot tables, sparklines, slicers and shapes were added after this snapshot.
 | G5 | `print_area` is a string | accept string or list |
 | G6 | `Cell.style` rejects names | add `NamedStyle` in phase 3 |
 | G7 | `Workbook.defined_names` is a list | hybrid list/dict keyed by name |
-| G8 | `Worksheet.tables` is a list | hybrid list/dict keyed by name |
+| G8 | `Worksheet.tables` is a list | hybrid list/dict keyed by name: `[name]`, `in`, `del`, `get`, `keys`, `values`, `items`; iterating gives tables, not names |
 | G9 | no `Worksheet.sheet_format` | add in phase 2 |
 | G10 | partial `Worksheet.page_setup` | add in phase 2 |
 

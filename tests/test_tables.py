@@ -279,3 +279,55 @@ def test_matching_headers_are_accepted_ignoring_case_and_length(tmp_path, suffix
 
     sheet = load_workbook(out)["S"]
     assert [sheet.cell(row=2, column=c).value for c in (1, 2)] == ["c", 3]
+
+
+# -- ws.tables: openpyxl's name-keyed operations ---------------------------------
+
+def _sheet_with_tables(tmp_path):
+    from xlspy import Workbook
+    from xlspy.workbook import Table
+
+    wb = Workbook()
+    ws = wb.active
+    for row in [["Name", "Qty", "", "Code"], ["a", 1, None, "x"], ["b", 2, None, "y"]]:
+        ws.append(row)
+    ws.add_table(Table(displayName="Sales", ref="A1:B3"))
+    ws.add_table(ExcelTable("Codes", "D1:D3"))
+    path = tmp_path / "tables.xlsx"
+    wb.save(path)
+    return path
+
+
+def test_tables_work_like_openpyxls_name_keyed_list(tmp_path):
+    wb = load_workbook(_sheet_with_tables(tmp_path))
+    tables = wb.active.tables
+    assert tables.keys() == ["Sales", "Codes"]
+    assert tables.items() == [("Sales", "A1:B3"), ("Codes", "D1:D3")]
+    assert tables["Codes"] is tables.values()[1] is tables.get("Codes")
+    assert tables.get("Missing") is None and "Missing" not in tables
+    assert tables[0] is tables["Sales"]  # an int index still works like a list
+    with pytest.raises(KeyError):
+        del tables["Missing"]
+    wb.close()
+
+
+def test_writer_tables_are_found_by_name():
+    from xlspy import Workbook
+
+    ws = Workbook().active
+    ws.append(["Code"])
+    ws.add_table(ExcelTable("Codes", "A1:A2"))
+    assert "Codes" in ws.tables and ws.tables.keys() == ["Codes"]
+    ws.tables.remove("Codes")
+    assert not ws.tables
+
+
+def test_deleting_a_table_by_name_is_saved(tmp_path):
+    wb = load_workbook(_sheet_with_tables(tmp_path))
+    del wb.active.tables["Sales"]
+    out = tmp_path / "out.xlsx"
+    wb.save(out)
+    wb.close()
+    wb = load_workbook(out)
+    assert wb.active.tables.keys() == ["Codes"]
+    wb.close()

@@ -194,37 +194,69 @@ class Table:
 
 
 class TableList(list):
-    """A list of tables that also accepts a table name as a lookup key."""
+    """The tables of a worksheet: a list that also works like openpyxl's name-keyed dict.
+
+    Iterating gives the tables themselves (openpyxl iterates the names; use
+    ``keys()`` for those). ``tables["Sales"]``, ``"Sales" in tables``,
+    ``del tables["Sales"]``, ``get``, ``keys``, ``values`` and ``items`` take or
+    give table names as openpyxl does; an int index still works like a list.
+    """
+
+    @staticmethod
+    def _names(table: object) -> set[object]:
+        # A Table has displayName and name; the writers' ExcelTable has display_name.
+        return {getattr(table, attr, None) for attr in ("displayName", "name", "display_name")}
+
+    @staticmethod
+    def _name(table: object) -> str:
+        return next(name for attr in ("displayName", "display_name", "name")
+                    if isinstance(name := getattr(table, attr, None), str))
+
+    def _index(self, name: str) -> int:
+        for index, table in enumerate(self):
+            if name in self._names(table):
+                return index
+        raise KeyError(name)
 
     def __getitem__(self, key):
-        if isinstance(key, int) and not isinstance(key, bool):
-            return super().__getitem__(key)
-        for table in self:
-            if key in {getattr(table, "displayName", None), getattr(table, "name", None)}:
-                return table
-        raise KeyError(key)
-
-    def __contains__(self, key):
         if isinstance(key, str):
-            return any(
-                key in {getattr(table, "displayName", None), getattr(table, "name", None)}
-                for table in self
-            )
+            return super().__getitem__(self._index(key))
+        return super().__getitem__(key)
+
+    def __delitem__(self, key) -> None:
+        super().__delitem__(self._index(key) if isinstance(key, str) else key)
+
+    def __contains__(self, key: object) -> bool:
+        if isinstance(key, str):
+            return any(key in self._names(table) for table in self)
         return super().__contains__(key)
 
+    def get(self, name: str, default: object = None) -> object:
+        """The table called ``name``, or ``default`` when there is none."""
+        return self[name] if name in self else default
+
+    def keys(self) -> list[str]:
+        """The table names, in order."""
+        return [self._name(table) for table in self]
+
+    def values(self) -> list[object]:
+        """The tables, in order."""
+        return list(self)
+
+    def items(self) -> list[tuple[str, str]]:
+        """``(name, ref)`` for each table, as openpyxl's ``TableList.items()``."""
+        return [(name, table.ref) for name, table in zip(self.keys(), self)]
+
     def add(self, table) -> None:
+        """Add a table (the same as ``append``)."""
         self.append(table)
 
     def remove(self, table_or_name) -> None:
+        """Remove a table, given as the object or its name; raises KeyError for an unknown name."""
         if isinstance(table_or_name, str):
-            for table in list(self):
-                if table_or_name in {
-                    getattr(table, "displayName", None), getattr(table, "name", None)
-                }:
-                    super().remove(table)
-                    return
-            raise KeyError(table_or_name)
-        super().remove(table_or_name)
+            del self[table_or_name]
+        else:
+            super().remove(table_or_name)
 
 
 class DataValidationList(list):
