@@ -1,6 +1,6 @@
 """Small, format-neutral helpers used by the existing-file updaters.
 
-The readers and writers in :mod:`xlspy` deliberately have very different
+The readers and writers in ``xlspy`` deliberately have very different
 implementations for XML and BIFF12.  The updater layer only needs a few
 shared operations: materialising a row iterable, manipulating ZIP packages,
 and generating safe XML text.
@@ -588,7 +588,7 @@ class TableHeader:
 def table_header(
     display_name: str, ref: str, has_header_row: bool, column_names: Sequence[str]
 ) -> TableHeader | None:
-    """Build a :class:`TableHeader`, or ``None`` for a table with no usable header."""
+    """Build a ``TableHeader``, or ``None`` for a table with no usable header."""
 
     if not has_header_row or not column_names:
         return None
@@ -669,8 +669,8 @@ class TableHeaderGuard:
 
     Excel repairs a table whose header cells do not hold its column names, so a
     replacement must keep those cells equal (ignoring case, as the writers do).
-    Call :meth:`check_row` for each new row, zero-based, before it is written,
-    and :meth:`finish` once all rows are seen: a header row the new data never
+    Call ``check_row`` for each new row, zero-based, before it is written,
+    and ``finish`` once all rows are seen: a header row the new data never
     reaches is empty, which is a mismatch too.  Nothing is written before the
     check, so a failure leaves the package unchanged.
     """

@@ -234,9 +234,11 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
         self._defined_names[(definition.name.casefold(), definition.scope)] = definition
 
     def get_defined_names(self) -> list[DefinedName]:
+        """The defined names set so far."""
         return list(self._defined_names.values())
 
     def remove_defined_name(self, name: str, scope: str | None = None) -> None:
+        """Remove a defined name; with ``scope``, the one local to that sheet."""
         self._require_writable()
         DefinedName(name, "0", scope)
         self._defined_names.pop((name.casefold(), scope), None)

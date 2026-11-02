@@ -212,40 +212,52 @@ class DataValidation:
 
     @property
     def ooxml_type(self) -> str:
+        """The OOXML name of ``type``."""
         return VALIDATION_TYPES[self.type]
 
     # openpyxl-compatible attribute names, kept alongside the snake_case API.
     @property
     def allowBlank(self) -> bool:
+        """openpyxl's name for ``allow_blank``."""
         return self.allow_blank
 
     @property
     def showDropDown(self) -> bool:
+        """openpyxl's raw OOXML flag: True *hides* the in-cell list.
+
+        It is the inverse of ``show_dropdown``.
+        """
         # OOXML spells the flag inversely; openpyxl exposes the raw flag.
         return not self.show_dropdown
 
     @property
     def showErrorMessage(self) -> bool:
+        """openpyxl's name for ``show_error_message``."""
         return self.show_error_message
 
     @property
     def showInputMessage(self) -> bool:
+        """openpyxl's name for ``show_input_message``."""
         return self.show_input_message
 
     @property
     def errorStyle(self) -> str:
+        """openpyxl's name for ``error_style``."""
         return self.error_style
 
     @property
     def errorTitle(self) -> str | None:
+        """openpyxl's name for ``error_title``."""
         return self.error_title
 
     @property
     def promptTitle(self) -> str | None:
+        """openpyxl's name for ``prompt_title``."""
         return self.prompt_title
 
     @property
     def imeMode(self) -> str | None:
+        """openpyxl's name for ``ime_mode``."""
         return self.ime_mode
 
 

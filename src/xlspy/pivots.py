@@ -166,6 +166,7 @@ class PivotValue:
 
     @property
     def caption(self) -> str:
+        """The field caption: ``name``, or the function and field, such as ``"Sum of Sales"``."""
         if self.name is not None:
             return self.name
         return f"{_FUNCTION_LABELS[self.function]} {self.field}"
@@ -320,6 +321,7 @@ class PivotTable:
 
     @property
     def table_name(self) -> str:
+        """The name of the source table."""
         return self.source if isinstance(self.source, str) else self.source.display_name
 
 

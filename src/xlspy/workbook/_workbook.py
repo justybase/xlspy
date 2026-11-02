@@ -24,6 +24,12 @@ if TYPE_CHECKING:
 
 
 class Workbook:
+    """An Excel workbook in memory, with openpyxl's interface.
+
+    ``Workbook()`` starts with one empty sheet; ``load_workbook`` opens a file.
+    ``save`` writes a new workbook as XLSB or XLSX/XLSM by the file extension,
+    and a loaded workbook in the format it was loaded from.
+    """
     # Set by the loaders and the XLSB saver; a workbook built in memory has none of them.
     _updater: Any
     _xlsb_styles_path: Any
@@ -67,6 +73,7 @@ class Workbook:
 
     @property
     def sheetnames(self) -> list[str]:
+        """The worksheet names, in order."""
         return [sheet.title for sheet in self._sheets]
 
     def _check_title(self, title: str, sheet: Worksheet | Chartsheet | None = None) -> None:
@@ -83,6 +90,7 @@ class Workbook:
 
     @property
     def read_only(self) -> bool:
+        """True for a workbook loaded with ``read_only=True``, which cannot be saved."""
         return self._read_only
 
     @read_only.setter
@@ -91,14 +99,17 @@ class Workbook:
 
     @property
     def worksheets(self) -> list[Worksheet]:
+        """The worksheets, in order (a new list)."""
         return list(self._sheets)
 
     @property
     def chartsheets(self) -> list[Chartsheet]:
+        """The chartsheets, in order (a new list)."""
         return list(self._chartsheets)
 
     @property
     def active(self) -> Worksheet:
+        """The active worksheet; set it with a worksheet or its index."""
         if not self._sheets:
             self.create_sheet()
         return self._sheets[self._active_index]
@@ -121,12 +132,18 @@ class Workbook:
         raise KeyError(f"Worksheet {key!r} does not exist")
 
     def get_sheet_by_name(self, name: str) -> Worksheet:
+        """Return the worksheet called ``name``; the same as ``wb[name]``."""
         return self[name]
 
     def index(self, worksheet: Worksheet) -> int:
+        """Return the 0-based position of ``worksheet``."""
         return self._sheets.index(worksheet)
 
     def create_sheet(self, title: str | None = None, index: int | None = None) -> Worksheet:
+        """Add a worksheet and return it.
+
+        Without a title it is named ``SheetN``; without an index it is added last.
+        """
         if len(self._sheets) >= 1 and title is None:
             title = f"Sheet{len(self._sheets) + 1}"
         elif title is None:
@@ -181,6 +198,7 @@ class Workbook:
             self._active_index = self._sheets.index(active)
 
     def remove(self, worksheet: Worksheet) -> None:
+        """Remove ``worksheet`` from the workbook."""
         if worksheet not in self._sheets:
             raise ValueError("worksheet is not part of this workbook")
         self._sheets.remove(worksheet)
@@ -190,6 +208,12 @@ class Workbook:
             self._mark_loaded = True
 
     def copy_worksheet(self, from_worksheet: Worksheet) -> Worksheet:
+        """Copy a worksheet to a new sheet named after it, and return the copy.
+
+        Cells with their styles, notes and links, merged ranges, row and column sizes,
+        the view, filter and page settings are copied. Charts, images, tables, data
+        validations and conditional formats are not.
+        """
         if self.write_only:
             raise TypeError("copy_worksheet is not available in write-only mode")
         title = from_worksheet.title
@@ -226,6 +250,7 @@ class Workbook:
 
     @property
     def properties(self) -> DocumentProperties:
+        """The document properties: title, author, dates and so on."""
         return self._properties
 
     @properties.setter
@@ -235,6 +260,7 @@ class Workbook:
         self._properties = value
 
     def add_named_style(self, style: NamedStyle) -> None:
+        """Register a NamedStyle so that cells can use it by name."""
         if not isinstance(style, NamedStyle):
             raise TypeError("style must be a NamedStyle")
         self._styles.add_named_style(style)
@@ -243,6 +269,7 @@ class Workbook:
 
     @property
     def defined_names(self) -> DefinedNameList:
+        """The workbook's defined names."""
         if not isinstance(self._defined_names, DefinedNameList):
             self._defined_names = DefinedNameList(self, self._defined_names)
         return self._defined_names
@@ -300,12 +327,17 @@ class Workbook:
             self._mark_loaded = True
 
     def save(self, filename: WriteTarget) -> None:
+        """Write the workbook to ``filename``, a path or a writable binary file.
+
+        Raises ValueError for a workbook loaded with ``read_only=True``.
+        """
         if self._read_only:
             raise ValueError("a read-only workbook cannot be saved")
         from ._writer import save_workbook
         save_workbook(self, filename)
 
     def close(self) -> None:
+        """Release the files held by a loaded or read-only workbook."""
         if self._updater is not None:
             self._updater.close()
             self._updater = None

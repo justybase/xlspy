@@ -114,11 +114,13 @@ class CellRichText(list["str | TextBlock"]):
             self.append(part)
 
     def append(self, part: str | TextBlock) -> None:
+        """Add a part: a str or a TextBlock."""
         if not isinstance(part, (str, TextBlock)):
             raise TypeError("CellRichText parts must be str or TextBlock")
         super().append(part)
 
     def extend(self, parts: Iterable[str | TextBlock]) -> None:
+        """Add several parts."""
         for part in parts:
             self.append(part)
 
@@ -129,6 +131,7 @@ class CellRichText(list["str | TextBlock"]):
         return f"CellRichText({list.__repr__(self)})"
 
     def as_list(self) -> list[str]:
+        """The parts as plain strings, without their formatting."""
         return [str(part) for part in self]
 
     def runs_xml(self, prefix: str = "") -> str:

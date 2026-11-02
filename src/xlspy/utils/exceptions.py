@@ -1,6 +1,6 @@
 """Exceptions compatible with ``openpyxl.utils.exceptions``.
 
-The names match openpyxl; every class also derives from :class:`xlspy.XlspyError`.
+The names match openpyxl; every class also derives from ``xlspy.XlspyError``.
 """
 
 from __future__ import annotations

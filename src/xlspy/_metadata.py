@@ -217,6 +217,10 @@ class DefinedName:
         object.__setattr__(self, "formula", self.formula.removeprefix("="))
 
     def to_xml(self, sheets: Collection[str]) -> str:
+        """The ``<definedName>`` element.
+
+        ``sheets`` are the sheet names in order; a sheet scope becomes its position.
+        """
         scope = ""
         if self.scope is not None:
             if self.scope not in sheets:
@@ -274,11 +278,13 @@ class SheetProtection:
 
     @property
     def password_hash(self) -> str | None:
+        """The legacy hash of the password (or the hash given directly), or None."""
         if self.hashed_password is not None:
             return self.hashed_password
         return None if self.password is None else password_hash(self.password)
 
     def to_xml(self) -> str:
+        """The ``<sheetProtection>`` element, or an empty string when protection is off."""
         if not self.enabled:
             return ""
         password = "" if self.password_hash is None else f' password="{self.password_hash}"'
@@ -298,6 +304,9 @@ class WorkbookProtection:
         _validate_protection(self)
 
     def to_xml(self) -> str:
+        """The ``<workbookProtection>`` element, or an empty string when the structure
+        is not locked.
+        """
         if not self.lock_structure:
             return ""
         password = "" if self.password is None else f' workbookPassword="{password_hash(self.password)}"'

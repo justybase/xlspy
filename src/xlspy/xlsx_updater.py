@@ -237,7 +237,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
 
         The input iterable is consumed once.  Only the current row and bounded
         I/O buffers are kept in memory; the final workbook is written by
-        :meth:`save` without calling :meth:`to_bytes`.
+        ``save`` without calling ``to_bytes``.
         """
 
         if style_fallback not in ("inherit", "general"):
@@ -907,7 +907,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
     ) -> None:
         """Patch one worksheet using file-backed byte ranges.
 
-        The replacements intentionally mirror :meth:`_patch_sheet_xml`: all
+        The replacements intentionally mirror ``_patch_sheet_xml``: all
         bytes outside the data and range attributes are copied unchanged.
         """
 

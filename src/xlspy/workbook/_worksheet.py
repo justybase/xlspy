@@ -36,6 +36,11 @@ if TYPE_CHECKING:
 
 
 class Worksheet:
+    """A worksheet of a ``Workbook``, with openpyxl's interface.
+
+    Get one from ``wb.active``, ``wb["Name"]`` or ``Workbook.create_sheet``. Address cells
+    with ``ws["A1"]``, ``ws["A1:C3"]`` or ``cell``; add rows with ``append``.
+    """
     ORIENTATION_PORTRAIT = "portrait"
     ORIENTATION_LANDSCAPE = "landscape"
     PAPERSIZE_LETTER = 1
@@ -108,6 +113,11 @@ class Worksheet:
 
     @property
     def title(self) -> str:
+        """The sheet name.
+
+        Setting it renames the sheet and points formulas, validations, conditional
+        formats, internal links and defined names at the new name, as Excel does.
+        """
         return self._title
 
     @title.setter
@@ -120,6 +130,7 @@ class Worksheet:
 
     @property
     def sheet_state(self) -> str:
+        """``"visible"``, ``"hidden"`` or ``"veryHidden"``."""
         return self._sheet_state
 
     @sheet_state.setter
@@ -131,18 +142,31 @@ class Worksheet:
 
     @property
     def merged_cells(self) -> MultiCellRange:
+        """The merged ranges of the sheet."""
         return self._merged_cells
 
     @property
     def column_dimensions(self) -> DimensionHolder:
+        """Column widths, visibility and outline levels, keyed by column letter.
+
+        Looking up a column that has no entry creates one.
+        """
         return self._column_dimensions
 
     @property
     def row_dimensions(self) -> DimensionHolder:
+        """Row heights, visibility and outline levels, keyed by 1-based row number.
+
+        Looking up a row that has no entry creates one.
+        """
         return self._row_dimensions
 
     @property
     def freeze_panes(self) -> str | None:
+        """The top-left cell of the scrolling pane, or None.
+
+        ``"B2"`` freezes row 1 and column A.
+        """
         return self._freeze_panes
 
     @freeze_panes.setter
@@ -182,6 +206,7 @@ class Worksheet:
 
     @property
     def auto_filter(self) -> AutoFilter:
+        """The sheet's AutoFilter: its range, filter columns and sort state."""
         return self._auto_filter
 
     @auto_filter.setter
@@ -198,26 +223,31 @@ class Worksheet:
 
     @property
     def sheet_properties(self) -> SheetProperties:
+        """Sheet properties such as the tab colour and outline settings."""
         return self._sheet_properties
 
     @property
     def sheet_view(self) -> SheetView:
+        """The first sheet view: zoom, grid lines, selection and panes."""
         return self._sheet_view
 
     @property
     def active_cell(self) -> str | None:
+        """The active cell of the first selection, or None when the view has none."""
         if not self._sheet_view.selection:
             return None
         return self._sheet_view.selection[0].activeCell
 
     @property
     def selected_cell(self) -> str | None:
+        """The selected range of the first selection, or None when the view has none."""
         if not self._sheet_view.selection:
             return None
         return self._sheet_view.selection[0].sqref
 
     @property
     def show_gridlines(self) -> bool | None:
+        """Whether the sheet view shows grid lines; None leaves Excel's default."""
         return self._sheet_view.showGridLines
 
     @show_gridlines.setter
@@ -227,6 +257,7 @@ class Worksheet:
 
     @property
     def protection(self) -> WorksheetProtection:
+        """Sheet protection settings."""
         return self._protection
 
     @protection.setter
@@ -235,6 +266,7 @@ class Worksheet:
 
     @property
     def page_margins(self) -> WorksheetPageMargins:
+        """Page margins for printing, in inches."""
         return self._page_margins
 
     @page_margins.setter
@@ -243,88 +275,109 @@ class Worksheet:
 
     @property
     def max_row(self) -> int:
+        """The last row that holds a cell; 0 for an empty sheet."""
         return self._max_row
 
     @property
     def max_column(self) -> int:
+        """The last column that holds a cell; 0 for an empty sheet."""
         return self._max_column
 
     @property
     def min_row(self) -> int:
+        """Always 1: the used range is reported from A1, as openpyxl does for new sheets."""
         return 1
 
     @property
     def min_column(self) -> int:
+        """Always 1: the used range is reported from A1, as openpyxl does for new sheets."""
         return 1
 
     @property
     def dimensions(self) -> str:
+        """The used range from A1, such as ``"A1:D20"``; ``"A1:A1"`` for an empty sheet."""
         if self._max_row == 0 or self._max_column == 0:
             return "A1:A1"
         return f"A1:{_coordinate(self._max_row, self._max_column)}"
 
     def calculate_dimension(self, force: bool = False) -> str:
+        """Return ``dimensions``. ``force`` is accepted for openpyxl compatibility."""
         return self.dimensions
 
     @property
     def rows(self) -> Iterator[tuple[Cell, ...]]:
+        """The rows of the used range as tuples of cells (see ``iter_rows``)."""
         return self.iter_rows()
 
     @property
     def columns(self) -> Iterator[tuple[Cell, ...]]:
+        """The columns of the used range as tuples of cells (see ``iter_cols``)."""
         return self.iter_cols()
 
     @property
     def values(self) -> Iterator[tuple[Any, ...]]:
+        """The rows of the used range as tuples of values."""
         return self.iter_rows(values_only=True)
 
     @property
     def data_validations(self) -> DataValidationList:
+        """The sheet's data validation rules."""
         return self._data_validations
 
     @property
     def tables(self) -> TableList:
+        """The sheet's tables; a table name also works as a lookup key."""
         return self._tables
 
     @property
     def charts(self) -> list[Chart]:
+        """The charts on the sheet, new and loaded."""
         return self._charts
 
     @property
     def images(self) -> list[Image]:
+        """The images on the sheet."""
         return self._images
 
     @property
     def conditional_formatting(self) -> ConditionalFormattingList:
+        """The sheet's conditional formatting, grouped by range."""
         return self._conditional_formats
 
     # -- printing (openpyxl names) --------------------------------------
     @property
     def oddHeader(self) -> HeaderFooterItem:
+        """The header of odd pages (all pages unless odd and even pages differ)."""
         return self.HeaderFooter.oddHeader
 
     @property
     def oddFooter(self) -> HeaderFooterItem:
+        """The footer of odd pages (all pages unless odd and even pages differ)."""
         return self.HeaderFooter.oddFooter
 
     @property
     def evenHeader(self) -> HeaderFooterItem:
+        """The header of even pages, when odd and even pages differ."""
         return self.HeaderFooter.evenHeader
 
     @property
     def evenFooter(self) -> HeaderFooterItem:
+        """The footer of even pages, when odd and even pages differ."""
         return self.HeaderFooter.evenFooter
 
     @property
     def firstHeader(self) -> HeaderFooterItem:
+        """The header of the first page, when the first page differs."""
         return self.HeaderFooter.firstHeader
 
     @property
     def firstFooter(self) -> HeaderFooterItem:
+        """The footer of the first page, when the first page differs."""
         return self.HeaderFooter.firstFooter
 
     @property
     def print_area(self) -> str | None:
+        """The print area as a range string, or None."""
         return self._print_area
 
     @print_area.setter
@@ -387,12 +440,14 @@ class Worksheet:
 
     # -- objects (openpyxl names, xlspy types) ------------------------
     def add_chart(self, chart: Chart, anchor: str | None = None) -> None:
+        """Place ``chart`` on the sheet, at ``anchor`` (a cell such as ``"E2"``) when given."""
         _expect(chart, Chart, "chart", "an xlspy Chart")
         if anchor is not None:
             chart = replace(chart, anchor=anchor)
         self._charts.append(chart)
 
     def add_image(self, img: Image, anchor: str | None = None) -> None:
+        """Place ``img`` on the sheet, at ``anchor`` (a cell such as ``"E2"``) when given."""
         _expect(img, Image, "image", "an xlspy Image")
         if anchor is not None:
             # The bytes already read: a file object source is used up.
@@ -400,15 +455,23 @@ class Worksheet:
         self._images.append(img)
 
     def add_table(self, table: ExcelTable | Table) -> None:
+        """Add a table: an ``ExcelTable`` or an openpyxl-style ``Table``."""
         _expect(table, (ExcelTable, Table), "table", "an xlspy ExcelTable or Table")
         self._tables.append(table)
 
     def add_data_validation(self, data_validation: DataValidation) -> None:
+        """Add a data validation rule."""
         _expect(data_validation, DataValidation, "data_validation", "an xlspy DataValidation")
         self._data_validations.append(data_validation)
 
     # -- cells --------------------------------------------------------
     def cell(self, row: int, column: int | str, value: Any = None) -> Cell:
+        """Return the cell at ``row`` and ``column``, creating it when needed.
+
+        Both are 1-based; the column may also be a letter. A ``value`` other than None is
+        assigned to the cell. A cell inside a merged range, other than its top-left one,
+        is a read-only ``MergedCell``.
+        """
         row = _coerce_row(row)
         column = _coerce_column(column)
         if self._is_merged_subcell(row, column):
@@ -498,6 +561,11 @@ class Worksheet:
         raise TypeError("worksheet indices must be A1 references")
 
     def append(self, iterable: Iterable[Any]) -> int:
+        """Write a row after the last used row and return its row number.
+
+        ``iterable`` holds the values from column A on; a mapping places its values by
+        column letter or 1-based column number instead.
+        """
         if isinstance(iterable, Mapping):
             row = self._max_row + 1
             for key, value in iterable.items():
@@ -631,6 +699,10 @@ class Worksheet:
                   max_col: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]: ...
     def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | None = None,
                   max_col: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]:
+        """Yield the rows of a range as tuples of cells, or of values with ``values_only``.
+
+        Bounds are 1-based and inclusive; each one left out defaults to the used range.
+        """
         min_row = 1 if min_row is None else _coerce_row(min_row)
         max_row = self._max_row if max_row is None else _coerce_row(max_row)
         min_col = 1 if min_col is None else _coerce_column(min_col)
@@ -656,6 +728,10 @@ class Worksheet:
                   max_row: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]: ...
     def iter_cols(self, min_col: int | None = None, max_col: int | None = None, min_row: int | None = None,
                   max_row: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]:
+        """Yield the columns of a range as tuples of cells, or of values with ``values_only``.
+
+        Bounds are 1-based and inclusive; each one left out defaults to the used range.
+        """
         min_col = 1 if min_col is None else _coerce_column(min_col)
         max_col = self._max_column if max_col is None else _coerce_column(max_col)
         min_row = 1 if min_row is None else _coerce_row(min_row)
@@ -670,6 +746,7 @@ class Worksheet:
     def merge_cells(self, range_string: str | None = None, start_row: int | None = None,
                     start_column: int | None = None, end_row: int | None = None,
                     end_column: int | None = None) -> None:
+        """Merge a range, given as text such as ``"A1:B2"`` or as four 1-based boundaries."""
         if range_string is None:
             if start_row is None or start_column is None or end_row is None or end_column is None:
                 raise TypeError("merge_cells needs a range or all four boundaries")
@@ -687,6 +764,7 @@ class Worksheet:
     def unmerge_cells(self, range_string: str | None = None, start_row: int | None = None,
                       start_column: int | None = None, end_row: int | None = None,
                       end_column: int | None = None) -> None:
+        """Unmerge a range, given as text such as ``"A1:B2"`` or as four 1-based boundaries."""
         if range_string is None:
             if start_row is None or start_column is None or end_row is None or end_column is None:
                 raise TypeError("unmerge_cells needs a range or all four boundaries")
@@ -739,6 +817,10 @@ class WriteOnlyWorksheet(Worksheet):
         self._rows: list[list[Any]] = []
 
     def append(self, iterable: Iterable[Any]) -> int:
+        """Queue a row for writing and return its row number.
+
+        A mapping places its values by column letter or 1-based column number.
+        """
         if isinstance(iterable, Mapping):
             entries = []
             for key, value in iterable.items():
@@ -768,9 +850,11 @@ class WriteOnlyWorksheet(Worksheet):
         return self._max_row
 
     def cell(self, row: int, column: int | str, value: Any = None) -> Cell:
+        """Not available in write-only mode: raises ValueError. Use ``append``."""
         raise ValueError("cannot access a cell in a write-only worksheet; use append()")
 
     def iter_rows(self, *args: Any, **kwargs: Any) -> Iterator[tuple[Any, ...]]:
+        """Yield the queued rows as tuples of values; only ``values_only=True`` is supported."""
         for row in self._rows:
             if kwargs.get("values_only"):
                 yield tuple(row)
@@ -799,6 +883,7 @@ class Chartsheet:
 
     @property
     def title(self) -> str:
+        """The sheet name. A loaded chartsheet cannot be renamed."""
         return self._title
 
     @title.setter
@@ -812,9 +897,15 @@ class Chartsheet:
 
     @property
     def charts(self) -> list[Chart]:
+        """The chart of the sheet, as a list of at most one for a new chartsheet."""
         return self._charts
 
     def add_chart(self, chart: Chart, source: Worksheet | str | None = None) -> None:
+        """Set the chart of a new chartsheet.
+
+        A chartsheet holds one chart; it reads its ranges from ``source`` (a worksheet or its
+        title; by default the workbook's first worksheet).
+        """
         if self._part is None:
             _expect(chart, Chart, "chart", "an xlspy Chart")
             if self._charts:

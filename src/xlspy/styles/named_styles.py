@@ -9,6 +9,12 @@ if TYPE_CHECKING:
 
 
 class NamedStyle:
+    """A cell style with a name: font, fill, border, alignment, number format and
+    protection.
+
+    Register it with ``Workbook.add_named_style``, then assign its name to
+    ``cell.style``.
+    """
     def __init__(
         self,
         name: str = "Normal",
@@ -38,9 +44,11 @@ class NamedStyle:
 class NamedStyleList(list["str | NamedStyle"]):
     @property
     def names(self) -> list[str]:
+        """The style names, in order."""
         return [item if isinstance(item, str) else item.name for item in self]
 
     def add(self, style: str | NamedStyle) -> None:
+        """Add a style, replacing one with the same name."""
         name = style if isinstance(style, str) else style.name
         self[:] = [
             item for item in self

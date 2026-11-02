@@ -182,6 +182,7 @@ class PrintSettings:
 
     @property
     def fit_to_page(self) -> bool:
+        """True when a page count to fit the width or height to is set."""
         return self.fit_to_width is not None or self.fit_to_height is not None
 
 

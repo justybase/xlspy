@@ -1,0 +1,58 @@
+# The guide and the API reference. Build: pip install -e .[docs] && mkdocs build --strict
+site_name: xlspy
+site_description: Fast XLSB/XLSX reader and writer for Python
+repo_url: https://github.com/justybase/xlspy
+docs_dir: docs
+site_dir: site
+theme:
+  name: mkdocs
+
+nav:
+  - Guide:
+      - Overview: usage.md
+      - Writing workbooks: guide/writing.md
+      - Formatting and layout: guide/styling.md
+      - Formulas, charts and other objects: guide/objects.md
+      - pandas and polars DataFrames: guide/dataframes.md
+      - Updating existing workbooks: guide/updating.md
+      - Reading workbooks: guide/reading.md
+      - The workbook model: guide/model.md
+  - API reference:
+      - Overview: api/index.md
+      - Writing: api/writing.md
+      - Reading: api/reading.md
+      - Updating: api/updating.md
+      - Workbook model: api/model.md
+      - Styles and formatting: api/styles.md
+      - Charts and other objects: api/objects.md
+      - Errors: api/errors.md
+  - Architecture: architecture.md
+  - Benchmarks: benchmarks.md
+  - openpyxl parity: openpyxl-parity.md
+  - Validation: validation.md
+
+validation:
+  links:
+    # The pages link to README.md and examples/, outside docs_dir; on GitHub those
+    # links work. tests/test_docs_links.py checks every relative link and anchor.
+    not_found: info
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            filters: ["!^_"]
+            inherited_members: true
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            heading_level: 2

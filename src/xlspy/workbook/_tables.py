@@ -88,6 +88,7 @@ class ConditionalFormattingList:
 
 
 class TableColumn:
+    """A column of a ``Table``: its name and totals row settings."""
     def __init__(
         self,
         id: int | None = None,
@@ -108,6 +109,7 @@ class TableColumn:
 
 
 class TableStyleInfo:
+    """A table's style name and banding options."""
     def __init__(
         self,
         name: str | None = None,
@@ -124,6 +126,11 @@ class TableStyleInfo:
 
 
 class Table:
+    """An openpyxl-style table: a named range with a header row, columns and a style.
+
+    Add it with ``Worksheet.add_table``. ``ExcelTable`` is the equivalent for
+    the writers.
+    """
     def __init__(
         self,
         id: int = 1,
@@ -162,22 +169,27 @@ class Table:
 
     @property
     def display_name(self) -> str | None:
+        """The table name shown in Excel; the same as ``displayName``."""
         return self.displayName
 
     @property
     def header_row(self) -> bool:
+        """True when the table has a header row."""
         return bool(self.headerRowCount)
 
     @property
     def totals_row(self) -> bool:
+        """True when the table has a totals row."""
         return bool(self.totalsRowCount)
 
     @property
     def columns(self) -> list[str | None]:
+        """The column names."""
         return [column.name for column in self.tableColumns]
 
     @property
     def style_name(self) -> str | None:
+        """The table style name, or None."""
         return None if self.tableStyleInfo is None else self.tableStyleInfo.name
 
 

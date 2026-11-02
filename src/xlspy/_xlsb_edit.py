@@ -70,11 +70,13 @@ class XlsbEditMixin(XlsxEditMixin):
         return path, data
 
     def get_comments(self, sheet_name: str) -> dict[str, Comment]:
+        """The notes of a sheet, keyed by cell reference."""
         path, _ = self._sheet_bin(sheet_name)
         _, _, parts = find_comment_parts(self._package.get, self._package.names(), path)
         return parse_comments(self._package.get(parts['comments'][0]))[0] if 'comments' in parts else {}
 
     def set_comments(self, sheet_name: str, comments: Mapping[str, Comment | None]) -> None:
+        """Add or replace notes on a sheet, keyed by cell reference; None removes one."""
         path, data = self._sheet_bin(sheet_name)
         changes = normalize_comments(comments, allow_none=True)
         check_merged_refs(data, [ref for ref, value in changes.items() if value is not None])
@@ -161,9 +163,11 @@ class XlsbEditMixin(XlsxEditMixin):
         self._apply_parts(updates, removed)
 
     def get_defined_names(self) -> list[DefinedName]:
+        """The workbook's defined names."""
         return FormulaContext(self._sheets, self._package.get('xl/workbook.bin'), self._part_or_none).defined_names()
 
     def set_defined_name(self, definition: DefinedName) -> None:
+        """Add a defined name, replacing one with the same name and scope."""
         if not isinstance(definition, DefinedName):
             raise TypeError("definition must be DefinedName")
         if definition.scope is not None and definition.scope not in self._sheets:
@@ -177,6 +181,7 @@ class XlsbEditMixin(XlsxEditMixin):
         self._apply_parts(updates, removed)
 
     def remove_defined_name(self, name: str, scope: str | None = None) -> None:
+        """Remove a defined name; with ``scope``, the one local to that sheet."""
         if scope is not None and scope not in self._sheets:
             raise KeyError(f"Worksheet not found: {scope}")
         original = self._package.get('xl/workbook.bin')
@@ -188,6 +193,7 @@ class XlsbEditMixin(XlsxEditMixin):
         self._apply_parts(updates, removed)
 
     def set_sheet_protection(self, sheet_name: str, protection: SheetProtection) -> None:
+        """Set or replace the protection of a sheet."""
         if not isinstance(protection, SheetProtection):
             raise TypeError("protection must be SheetProtection")
         path, data = self._sheet_bin(sheet_name)
@@ -311,6 +317,7 @@ class XlsbEditMixin(XlsxEditMixin):
         self._apply_parts({path: data, 'xl/workbook.bin': context.write_workbook(original_workbook)})
 
     def set_workbook_protection(self, protection: WorkbookProtection) -> None:
+        """Set or replace the workbook protection."""
         if not isinstance(protection, WorkbookProtection):
             raise TypeError("protection must be WorkbookProtection")
         data = self._package.get('xl/workbook.bin')

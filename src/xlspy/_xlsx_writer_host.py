@@ -1,6 +1,6 @@
 """The XlsxWriter state and cross-mixin methods, typed once for all its mixins.
 
-Each XlsxWriter mixin derives from :class:`_XlsxWriterHost`, so mypy checks
+Each XlsxWriter mixin derives from ``_XlsxWriterHost``, so mypy checks
 the attributes a mixin reads against the types the writer sets, and every
 method a mixin calls on another one against that method's signature (a
 mismatch between a stub here and the implementation is an override error).

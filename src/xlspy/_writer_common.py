@@ -104,6 +104,10 @@ class WriterFrontEnd:
         def _normalize_cf_rules(self, conditional_formats: Any) -> list[Any]: ...
 
     def add_sheet(self, sheet_name: str, hidden: bool = False) -> None:
+        """Start a new sheet; the next ``write_sheet`` call fills it.
+
+        ``hidden=True`` hides the sheet.
+        """
         check_sheet_name(sheet_name, (name for name, _data, _hidden in self._worksheet_data))
         self._sheet_count += 1
         self._worksheet_data.append((sheet_name, iter([]), hidden))

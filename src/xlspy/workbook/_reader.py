@@ -1229,20 +1229,24 @@ class ReadOnlyCell:
 
     @property
     def coordinate(self) -> str:
+        """The cell reference, such as ``"C5"``."""
         return _coordinate(self.row, self.column)
 
     @property
     def column_letter(self) -> str:
+        """The column letter, such as ``"C"``."""
         return column_label(self.column - 1)
 
     @property
     def data_type(self) -> str:
+        """openpyxl's type code for the value; ``f`` for formula text."""
         if isinstance(self.value, str) and self.value.startswith("="):
             return "f"
         return Cell._type_for(self.value)
 
     @property
     def is_date(self) -> bool:
+        """True when the value is a date, datetime, time or timedelta."""
         return isinstance(self.value, (_datetime.date, _datetime.time, _datetime.timedelta))
 
     def __eq__(self, other):
@@ -1293,25 +1297,41 @@ class ReadOnlyWorksheet(Worksheet):
 
     @property
     def min_row(self) -> int:
+        """The first row of the sheet's dimension."""
         return self._min_row
 
     @property
     def min_column(self) -> int:
+        """The first column of the sheet's dimension."""
         return self._min_column
 
     @property
     def max_row(self) -> int | None:  # type: ignore[override]  # None until sized, as openpyxl
+        """The last row of the dimension stored in the file, or None when it stores none.
+
+        See ``calculate_dimension``.
+        """
         return self._max_row
 
     @property
     def max_column(self) -> int | None:  # type: ignore[override]  # None until sized, as openpyxl
+        """The last column of the dimension stored in the file, or None when it stores none.
+
+        See ``calculate_dimension``.
+        """
         return self._max_column
 
     @property
     def dimensions(self) -> str:
+        """The used range; raises ValueError when the file stores no dimension."""
         return self.calculate_dimension()
 
     def calculate_dimension(self, force: bool = False) -> str:
+        """Return the used range.
+
+        A sheet whose file stores no dimension raises ValueError, unless ``force=True``
+        scans its rows to find the range.
+        """
         if not (self._max_row and self._max_column):
             if not force:
                 raise ValueError("Worksheet is unsized, use calculate_dimension(force=True)")
@@ -1384,6 +1404,11 @@ class ReadOnlyWorksheet(Worksheet):
                   max_col: int | str | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]: ...
     def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | str | None = None,
                   max_col: int | str | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]:
+        """Stream the rows of a range as tuples of read-only cells, or of values with
+        ``values_only``.
+
+        Rows missing from the file come back empty.
+        """
         min_col = _coerce_column(min_col) if min_col else 1
         min_row = int(min_row) if min_row else 1
         max_col = (_coerce_column(max_col) if max_col else None) or self._max_column
@@ -1391,10 +1416,15 @@ class ReadOnlyWorksheet(Worksheet):
         return self._cells_by_row(min_col, min_row, max_col, max_row, values_only)
 
     def iter_cols(self, *args: Any, **kwargs: Any) -> NoReturn:
+        """Not available in read-only mode: raises AttributeError."""
         raise AttributeError("iter_cols is not available in read-only mode")
 
     def cell(self, row: int, column: int | str,  # type: ignore[override]  # read-only cells
              value: Any = None) -> ReadOnlyCell | EmptyCell:
+        """Return the read-only cell at ``row`` and ``column``, or an empty cell.
+
+        Each call scans the sheet; use ``iter_rows`` to read many cells.
+        """
         if value is not None:
             raise AttributeError("read-only worksheets cannot be modified")
         column = _coerce_column(column)
@@ -1417,6 +1447,7 @@ class ReadOnlyWorksheet(Worksheet):
         raise AttributeError("read-only worksheets cannot be modified")
 
     def append(self, iterable: Iterable[Any]) -> NoReturn:
+        """Not available: read-only worksheets cannot be modified."""
         raise AttributeError("read-only worksheets cannot be modified")
 
 

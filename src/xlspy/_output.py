@@ -181,6 +181,7 @@ class StagedWriter:
     _workbook_protection: WorkbookProtection | None
 
     def set_workbook_protection(self, protection: WorkbookProtection) -> None:
+        """Lock the workbook structure, with a password when one is given."""
         self._require_writable()
         if not isinstance(protection, WorkbookProtection):
             raise TypeError("protection must be WorkbookProtection")

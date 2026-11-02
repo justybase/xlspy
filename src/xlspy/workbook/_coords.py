@@ -79,18 +79,22 @@ class CellRange(str):
 
     @property
     def min_col(self) -> int:
+        """The first column, 1-based."""
         return parse_cell_range(self)[0] + 1
 
     @property
     def min_row(self) -> int:
+        """The first row, 1-based."""
         return parse_cell_range(self)[1] + 1
 
     @property
     def max_col(self) -> int:
+        """The last column, 1-based."""
         return parse_cell_range(self)[2] + 1
 
     @property
     def max_row(self) -> int:
+        """The last row, 1-based."""
         return parse_cell_range(self)[3] + 1
 
     def __contains__(self, item: object) -> bool:
@@ -107,20 +111,27 @@ class CellRange(str):
 
     @property
     def coord(self) -> str:
+        """The range as text, such as ``"A1:C3"``."""
         return str(self)
 
     @property
     def bounds(self) -> tuple[int, int, int, int]:
+        """``(min_col, min_row, max_col, max_row)``, 1-based."""
         return (self.min_col, self.min_row, self.max_col, self.max_row)
 
     @property
     def size(self) -> dict[str, int]:
+        """The size as ``{"columns": n, "rows": m}``."""
         return {
             "columns": self.max_col - self.min_col + 1,
             "rows": self.max_row - self.min_row + 1,
         }
 
     def shift(self, col_shift: int = 0, row_shift: int = 0) -> CellRange:
+        """Return the range moved right by ``col_shift`` and down by ``row_shift``.
+
+        Raises ValueError when the result leaves the worksheet.
+        """
         min_col = self.min_col + col_shift
         min_row = self.min_row + row_shift
         max_col = self.max_col + col_shift
@@ -132,6 +143,10 @@ class CellRange(str):
         return CellRange(f"{column_label(min_col - 1)}{min_row}:{column_label(max_col - 1)}{max_row}")
 
     def expand(self, right: int = 0, down: int = 0, left: int = 0, up: int = 0) -> CellRange:
+        """Return the range grown by the given number of cells on each side.
+
+        Raises ValueError when the result leaves the worksheet.
+        """
         min_col = self.min_col - left
         min_row = self.min_row - up
         max_col = self.max_col + right
@@ -141,9 +156,11 @@ class CellRange(str):
         return CellRange(f"{column_label(min_col - 1)}{min_row}:{column_label(max_col - 1)}{max_row}")
 
     def shrink(self, right: int = 0, bottom: int = 0, left: int = 0, top: int = 0) -> CellRange:
+        """Return the range made smaller by the given number of cells on each side."""
         return self.expand(right=-right, down=-bottom, left=-left, up=-top)
 
     def union(self, other: CellRange | str) -> CellRange:
+        """Return the smallest range that covers this range and ``other``."""
         other = other if isinstance(other, CellRange) else CellRange(str(other))
         return CellRange(
             f"{column_label(min(self.min_col, other.min_col) - 1)}"
@@ -153,6 +170,10 @@ class CellRange(str):
         )
 
     def intersection(self, other: CellRange | str) -> CellRange:
+        """Return the cells this range shares with ``other``.
+
+        Raises ValueError when the ranges do not overlap.
+        """
         other = other if isinstance(other, CellRange) else CellRange(str(other))
         min_col = max(self.min_col, other.min_col)
         min_row = max(self.min_row, other.min_row)
@@ -163,6 +184,7 @@ class CellRange(str):
         return CellRange(f"{column_label(min_col - 1)}{min_row}:{column_label(max_col - 1)}{max_row}")
 
     def isdisjoint(self, other: CellRange | str) -> bool:
+        """True when this range and ``other`` share no cell."""
         other = other if isinstance(other, CellRange) else CellRange(str(other))
         return (
             self.max_col < other.min_col
@@ -172,6 +194,7 @@ class CellRange(str):
         )
 
     def issubset(self, other: CellRange | str) -> bool:
+        """True when every cell of this range is in ``other``."""
         other = other if isinstance(other, CellRange) else CellRange(str(other))
         return (
             other.min_col <= self.min_col <= self.max_col <= other.max_col
@@ -179,11 +202,13 @@ class CellRange(str):
         )
 
     def issuperset(self, other: CellRange | str) -> bool:
+        """True when every cell of ``other`` is in this range."""
         other = other if isinstance(other, CellRange) else CellRange(str(other))
         return other.issubset(self)
 
 
 class MultiCellRange:
+    """Several cell ranges, such as a sheet's merged cells, in the order added."""
     def __init__(self, ranges: Iterable[str] | None = None) -> None:
         self.ranges: list[CellRange] = []
         if ranges is not None:
@@ -191,11 +216,13 @@ class MultiCellRange:
                 self.add(value)
 
     def add(self, value: str) -> None:
+        """Add a range unless it is already present."""
         cell_range = CellRange(value)
         if cell_range not in self.ranges:
             self.ranges.append(cell_range)
 
     def remove(self, value: str) -> None:
+        """Remove a range; raises ValueError when it is not present."""
         cell_range = CellRange(value)
         for index, existing in enumerate(self.ranges):
             if existing == cell_range:

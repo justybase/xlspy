@@ -1,13 +1,13 @@
 """Exceptions raised by xlspy.
 
-Every exception xlspy raises on purpose derives from :class:`XlspyError`, so
+Every exception xlspy raises on purpose derives from ``XlspyError``, so
 ``except XlspyError`` catches all of them. The classes also keep the built-in
 type that earlier versions raised, so existing ``except ValueError`` or
 ``except NotImplementedError`` clauses still match:
 
-- :class:`InvalidFileError`: the file is not a readable Excel package. It is a
+- ``InvalidFileError``: the file is not a readable Excel package. It is a
   ``ValueError`` and a ``zipfile.BadZipFile``.
-- :class:`UnsupportedFeatureError`: the workbook uses, or the call asks for, a
+- ``UnsupportedFeatureError``: the workbook uses, or the call asks for, a
   feature xlspy does not implement. It is a ``NotImplementedError``.
 
 Other errors (bad arguments, out-of-range values) still use the built-in

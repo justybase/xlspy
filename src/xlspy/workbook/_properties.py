@@ -77,11 +77,12 @@ class CustomPropertyList(list):
 
     @property
     def names(self) -> list[str]:
+        """The property names."""
         return [item.name for item in self]
 
 
 class DefinedNameList:
-    """A list/dict hybrid of :class:`DefinedName` entries."""
+    """A list/dict hybrid of ``DefinedName`` entries."""
 
     def __init__(self, workbook: Workbook | None = None,
                  definitions: Iterable[DefinedName] | None = None) -> None:
@@ -128,9 +129,11 @@ class DefinedNameList:
 
     @property
     def names(self) -> list[str]:
+        """The defined names, in order."""
         return [definition.name for definition in self._items]
 
     def add(self, definition: DefinedName, *, stage: bool = True) -> None:
+        """Add a defined name, replacing one with the same name and scope."""
         if not isinstance(definition, DefinedName):
             raise TypeError("defined names must be DefinedName instances")
         self._items = [
@@ -148,6 +151,10 @@ class DefinedNameList:
     append = add
 
     def remove(self, name: str, scope: str | None = None) -> DefinedName:
+        """Remove a defined name and return it.
+
+        Without ``scope`` the first entry with the name goes. Raises KeyError when absent.
+        """
         if not isinstance(name, str):
             raise TypeError("defined name must be a string")
         folded = name.casefold()
@@ -308,11 +315,16 @@ class AutoFilter:
     sortState: SortState | None = None
 
     def add_filter_column(self, col_id: int, vals: Iterable[Any] | None, blank: bool = False) -> None:
+        """Filter column ``col_id`` (0-based within the filter range) to ``vals``.
+
+        ``blank=True`` also shows blank cells.
+        """
         self.filterColumn.append(
             FilterColumn(colId=col_id, vals=list(vals or []), blank=bool(blank))
         )
 
     def add_sort_condition(self, ref: str, descending: bool = False) -> None:
+        """Sort by the cells of ``ref``, descending when asked."""
         if self.sortState is None:
             self.sortState = SortState(ref=self.ref)
         self.sortState.sortCondition.append(
@@ -389,15 +401,18 @@ class WorksheetProtection:
         object.__setattr__(self, name, value)
 
     def set_password(self, value: str | None = "", already_hashed: bool = False) -> None:
+        """Set the password, stored as its legacy hash unless ``already_hashed``."""
         if value is not None and not already_hashed:
 
             value = password_hash(value)
         object.__setattr__(self, "password", value)
 
     def enable(self) -> None:
+        """Turn sheet protection on."""
         self.sheet = True
 
     def disable(self) -> None:
+        """Turn sheet protection off."""
         self.sheet = False
 
     def __bool__(self) -> bool:

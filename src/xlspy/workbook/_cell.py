@@ -33,6 +33,11 @@ _CELL_TYPE_KINDS = {int: "n", float: "n", bool: "b", str: "s"}
 
 
 class Cell:
+    """One cell of a worksheet: its value, formula, style, note and hyperlink.
+
+    Get cells from the worksheet (``ws["A1"]``, ``Worksheet.cell``); they are not
+    created directly.
+    """
     __slots__ = (
         "_sheet", "_row", "_column", "_value", "_data_type",
         "_style_id", "_comment", "_hyperlink", "_dirty", "_formula",
@@ -58,22 +63,27 @@ class Cell:
     # -- identity -----------------------------------------------------
     @property
     def row(self) -> int:
+        """The 1-based row number."""
         return self._row
 
     @property
     def column(self) -> int:
+        """The 1-based column number."""
         return self._column
 
     @property
     def column_letter(self) -> str:
+        """The column letter, such as ``"C"``."""
         return column_label(self._column - 1)
 
     @property
     def coordinate(self) -> str:
+        """The cell reference, such as ``"C5"``."""
         return _coordinate(self._row, self._column)
 
     @property
     def parent(self) -> Worksheet:
+        """The worksheet that holds the cell."""
         return self._sheet
 
     def __repr__(self) -> str:
@@ -82,6 +92,12 @@ class Cell:
     # -- value --------------------------------------------------------
     @property
     def value(self) -> Any:
+        """The cell value; a formula reads back as text that starts with ``=``.
+
+        Assigning text that starts with ``=`` or a Formula sets a formula, and a Hyperlink
+        sets the link and shows its text. A date, time or timedelta gets a default number
+        format when the cell's format is ``General``.
+        """
         if isinstance(self._formula, Formula):
             return "=" + self._formula.text
         if isinstance(self._formula, str):
@@ -137,18 +153,24 @@ class Cell:
 
     @property
     def formula(self) -> Formula | str | None:
+        """The formula without its leading ``=`` (a Formula or text), or None."""
         return self._formula
 
     @property
     def data_type(self) -> str:
+        """openpyxl's type code: ``n`` number or empty, ``s`` text, ``b`` boolean,
+        ``d`` date or time, ``f`` formula, ``e`` error.
+        """
         return self._data_type
 
     @property
     def internal_value(self) -> Any:
+        """The stored value; None for a formula cell that holds no cached result."""
         return self._value
 
     @property
     def is_date(self) -> bool:
+        """True when the value is a date, datetime, time or timedelta."""
         return isinstance(
             self._value,
             (_datetime.datetime, _datetime.date, _datetime.time, _datetime.timedelta),
@@ -156,14 +178,17 @@ class Cell:
 
     @property
     def encoding(self) -> str:
+        """Always ``"utf-8"``, for openpyxl compatibility."""
         return "utf-8"
 
     @property
     def base_date(self) -> _datetime.datetime:
+        """The workbook's ``epoch``, the base date of serial date numbers (1899-12-30)."""
         return self._sheet._workbook.epoch
 
     @property
     def hyperlink(self) -> Hyperlink | None:
+        """The cell's Hyperlink, or None."""
         return self._hyperlink
 
     @hyperlink.setter
@@ -176,6 +201,7 @@ class Cell:
 
     @property
     def comment(self) -> Comment | None:
+        """The cell's note (a Comment), or None."""
         return self._comment
 
     @comment.setter
@@ -217,6 +243,7 @@ class Cell:
 
     @property
     def font(self) -> Font | None:
+        """The cell font, or None. Assigning one replaces the font of the cell's style."""
         return self._style().font
 
     @font.setter
@@ -228,6 +255,7 @@ class Cell:
 
     @property
     def fill(self) -> str | PatternFill | GradientFill | None:
+        """The cell fill: a colour, a PatternFill or a GradientFill, or None."""
         return self._style().fill
 
     @fill.setter
@@ -238,6 +266,7 @@ class Cell:
 
     @property
     def border(self) -> Border | None:
+        """The cell border, or None."""
         return self._style().border
 
     @border.setter
@@ -248,6 +277,7 @@ class Cell:
 
     @property
     def alignment(self) -> Alignment | None:
+        """The cell alignment, or None."""
         return self._style().alignment
 
     @alignment.setter
@@ -259,6 +289,7 @@ class Cell:
 
     @property
     def protection(self) -> Protection | None:
+        """The cell protection (locked, hidden), or None."""
         return self._style().protection
 
     @protection.setter
@@ -269,6 +300,7 @@ class Cell:
 
     @property
     def number_format(self) -> str:
+        """The number format code; ``"General"`` when none is set."""
         fmt = self._style().number_format
         return "General" if fmt is None else fmt
 
@@ -293,6 +325,11 @@ class Cell:
 
     @property
     def style(self) -> Style:
+        """The cell's Style.
+
+        Assign a Style, or the name of a named style registered with
+        ``Workbook.add_named_style``.
+        """
         return self._style()
 
     @style.setter
@@ -345,6 +382,10 @@ class Cell:
 
     # -- convenience --------------------------------------------------
     def offset(self, row: int = 0, column: int = 0) -> Cell:
+        """The cell ``row`` rows below and ``column`` columns right of this one.
+
+        Negative offsets go up and left.
+        """
         return self._sheet.cell(self._row + row, self._column + column)
 
 

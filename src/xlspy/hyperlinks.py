@@ -63,6 +63,7 @@ class Hyperlink:
 
     @property
     def is_internal(self) -> bool:
+        """True for a link to a place in the workbook (a target that starts with ``#``)."""
         return self.target.startswith("#")
 
     @property
@@ -72,6 +73,7 @@ class Hyperlink:
 
     @property
     def display_text(self) -> str:
+        """The text shown in the cell: ``text``, or the target when there is none."""
         return self.target if self.text is None else self.text
 
 

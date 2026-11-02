@@ -195,7 +195,7 @@ class SharedStringsBin:
 
 
 def parse_shared_strings_bin(data: bytes) -> SharedStringsBin:
-    """Parse the plain-string SST emitted by Excel and :class:`XlsbWriter`."""
+    """Parse the plain-string SST emitted by Excel and ``XlsbWriter``."""
 
     values: list[str] = []
     total_count = 0

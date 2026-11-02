@@ -86,6 +86,30 @@ jobs:
         run: |
           mypy --warn-unused-ignores tests/typing/stub_usage.py
 
+  docs:
+    # The guide and the API reference build without warnings. mkdocstrings reads
+    # the sources statically, so the package (and its Rust module) is not built.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install mkdocs (the versions of the docs extra)
+        run: |
+          python -m pip install --upgrade pip
+          pip install "mkdocs>=1.6" "mkdocstrings[python]>=0.26"
+
+      - name: Build
+        run: mkdocs build --strict
+
   rust:
     runs-on: ubuntu-latest
     timeout-minutes: 15

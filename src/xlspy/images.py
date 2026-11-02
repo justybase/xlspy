@@ -108,6 +108,7 @@ class Image:
 
     @property
     def digest(self) -> str:
+        """The SHA-256 hex digest of the image bytes."""
         return hashlib.sha256(self.data).hexdigest()
 
 

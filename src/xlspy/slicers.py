@@ -75,10 +75,12 @@ class Slicer:
 
     @property
     def display_name(self) -> str:
+        """``name``, or the column name when none is set."""
         return self.name or self.column
 
     @property
     def display_caption(self) -> str:
+        """``caption``, or the column name when none is set."""
         return self.caption or self.column
 
     @property

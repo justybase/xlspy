@@ -169,6 +169,17 @@ _letter_to_column_num: dict[str, int] = {letter: idx for idx, letter in enumerat
 
 
 class ExcelReader:
+    """A fast reader of cell values from XLSX, XLSM and XLSB files.
+
+    Use it as a context manager::
+
+        with ExcelReader("report.xlsb") as reader:
+            rows = reader.read_all(reader.get_sheet_names()[0])
+
+    Error cells come back as CellError strings (``"error:#DIV/0!"``); with
+    ``errors="openpyxl"`` they are plain text such as ``"#DIV/0!"``. For styles,
+    coordinates or editing use ``load_workbook``.
+    """
     _open_xml_info_string = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
     def __init__(
@@ -197,6 +208,11 @@ class ExcelReader:
         self.use_memory_stream_for_xlsb = use_memory_stream_for_xlsb
 
     def open(self, path: str | os.PathLike[str]) -> None:
+        """Open ``path`` and read its sheet list, shared strings and styles.
+
+        A name ending in ``.xlsb`` is read as XLSB, any other as XLSX/XLSM. Raises
+        InvalidFileError for a damaged file.
+        """
         # Re-opening the same instance must not leak the previous archive nor
         # accumulate worksheet/style/shared-string state from the previous file.
         path = os.fspath(path)
@@ -226,6 +242,7 @@ class ExcelReader:
             raise
 
     def close(self) -> None:
+        """Close the file; calling it again does nothing."""
         if self._archive is not None:
             self._archive.close()
             self._archive = None
@@ -247,6 +264,7 @@ class ExcelReader:
         return False
 
     def get_sheet_names(self) -> list[str]:
+        """The worksheet names, in workbook order."""
         return list(self._worksheet_name_to_id.keys())
 
     def read_part(self, path: str) -> bytes | None:
@@ -257,6 +275,7 @@ class ExcelReader:
             return None
 
     def get_sheet_index(self, sheet_name: str) -> int:
+        """Return the 0-based position of ``sheet_name``; raises ValueError when absent."""
         names = self.get_sheet_names()
         for i, n in enumerate(names):
             if n == sheet_name:
@@ -288,6 +307,7 @@ class ExcelReader:
                 ]
 
     def read_all(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> list[list[Any]]:
+        """Return all rows of a sheet as a list; see ``get_rows``."""
         return list(self.get_rows(sheet_name, data_only=data_only, streaming=streaming))
 
     def get_comments(self, sheet_name: str) -> dict[str, Comment]:

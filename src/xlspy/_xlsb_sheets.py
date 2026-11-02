@@ -200,6 +200,7 @@ class XlsbSheetsMixin:
         self._chartsheets.discard(name)
 
     def rename_sheet(self, old: str, new: str) -> None:
+        """Rename sheet ``old`` to ``new``; raises KeyError when ``old`` is absent."""
         if old not in self._sheets:
             raise KeyError(f"Worksheet not found: {old}")
         if old == new:
@@ -234,6 +235,7 @@ class XlsbSheetsMixin:
         self._sheets = {name: self._sheets[name] for name in order}
 
     def set_sheet_state(self, name: str, state: str) -> None:
+        """Set a sheet to ``"visible"``, ``"hidden"`` or ``"veryHidden"``."""
         if state not in _STATES:
             raise ValueError(f"invalid sheet state {state!r}")
         workbook = self._package.get("xl/workbook.bin")
@@ -247,6 +249,7 @@ class XlsbSheetsMixin:
         self._apply_parts({"xl/workbook.bin": self._rewrite_sheet_list(workbook, entries, {})})
 
     def set_active_sheet(self, index: int) -> None:
+        """Make the sheet at 0-based ``index`` the active one."""
         workbook = self._package.get("xl/workbook.bin")
         entries = _bundles(workbook)
         if not 0 <= index < len(entries):

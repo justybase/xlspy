@@ -1,7 +1,7 @@
 """XLSX style-table reader/writer used by the openpyxl-like workbook model.
 
 The fast writers keep their own compact registries.  This module is only used
-by :mod:`xlspy.workbook`, where loading an existing file has to preserve the
+by ``xlspy.workbook``, where loading an existing file has to preserve the
 style components that are already in ``xl/styles.xml``.  New styles are
 appended to that table; existing component XML is left untouched.
 """
@@ -393,12 +393,14 @@ class XlsxStyleTable:
     # -- construction -------------------------------------------------
     @classmethod
     def empty(cls) -> XlsxStyleTable:
+        """A style table with Excel's default font, fills, border and cell format."""
         table = cls()
         table._add_default_components()
         return table
 
     @classmethod
     def from_xml(cls, xml: bytes | str | None) -> XlsxStyleTable:
+        """Parse ``xl/styles.xml``; empty input gives ``empty``."""
         if not xml:
             return cls.empty()
         table = cls()
@@ -1019,16 +1021,19 @@ class XlsxStyleTable:
         return indexes
 
     def style_at(self, index: int) -> Style:
+        """The Style of a cell format index; the default style for an index out of range."""
         if not 0 <= index < len(self.styles):
             return self.styles[0]
         return self.styles[index]
 
     def dxf_at(self, index: int | None) -> DifferentialStyle | None:
+        """The differential style at ``index``, or None when there is none."""
         if index is None or not 0 <= index < len(self.dxfs):
             return None
         return self.dxfs[index]
 
     def clone(self) -> XlsxStyleTable:
+        """Return an independent copy of the table."""
         clone = XlsxStyleTable()
         clone._root = copy.deepcopy(self._root)
         clone.fonts = list(self.fonts)

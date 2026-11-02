@@ -86,6 +86,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         return [name for name in self._sheets if name not in self._chartsheets]
 
     def get_chartsheet_names(self) -> list[str]:
+        """The chartsheet names, in workbook order."""
         return [name for name in self._sheets if name in self._chartsheets]
 
     def _read_table_header(self, table_part: bytes) -> TableHeader | None:

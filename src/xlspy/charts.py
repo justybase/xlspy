@@ -127,6 +127,7 @@ class LoadedChart:
 
     @property
     def edited(self) -> bool:
+        """True when the chart XML changed since it was loaded."""
         return self.xml != self._saved_xml
 
     def _mark_saved(self) -> None:
@@ -141,6 +142,7 @@ class LoadedChart:
 
     @property
     def x_axis_title(self) -> str | None:
+        """The title of the first axis (usually the category axis), or None."""
         return get_axis_title(self.xml, 0) if self.xml else None
 
     @x_axis_title.setter
@@ -149,6 +151,7 @@ class LoadedChart:
 
     @property
     def y_axis_title(self) -> str | None:
+        """The title of the second axis (usually the value axis), or None."""
         return get_axis_title(self.xml, 1) if self.xml else None
 
     @y_axis_title.setter
@@ -181,6 +184,7 @@ class LoadedChart:
 
     @property
     def legend_position(self) -> str | None:
+        """The legend position (``"r"``, ``"b"`` and so on), or None without a legend."""
         return get_legend_position(self.xml) if self.xml else None
 
     @legend_position.setter
@@ -639,6 +643,7 @@ class Chart:
 
     @property
     def labels_enabled(self) -> bool:
+        """True when the chart shows data labels."""
         return self.show_data_labels or self.data_labels is not None
 
     @property

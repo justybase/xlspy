@@ -272,6 +272,7 @@ class XlsxEditMixin:
         return read_defined_names(self._package.get("xl/workbook.xml"), self._sheets)
 
     def set_defined_name(self, definition: DefinedName) -> None:
+        """Add a defined name, replacing one with the same name and scope."""
         if not isinstance(definition, DefinedName):
             raise TypeError("definition must be a DefinedName")
         fragment = definition.to_xml(self._sheets)
@@ -294,6 +295,7 @@ class XlsxEditMixin:
         return updated
 
     def remove_defined_name(self, name: str, scope: str | None = None) -> None:
+        """Remove a defined name; with ``scope``, the one local to that sheet."""
         # Validate the name, including the reserved built-in namespace.
         DefinedName(name, "0", scope).to_xml(self._sheets)
         xml = self._package.get("xl/workbook.xml").decode("utf-8")
@@ -302,6 +304,7 @@ class XlsxEditMixin:
             self._apply_parts({"xl/workbook.xml": updated})
 
     def set_sheet_protection(self, sheet_name: str, protection: SheetProtection) -> None:
+        """Set or replace the protection of a sheet."""
         if not isinstance(protection, SheetProtection):
             raise TypeError("protection must be SheetProtection")
         path, xml = self._sheet_xml(sheet_name)
@@ -309,6 +312,7 @@ class XlsxEditMixin:
         self._apply_parts({path: xml})
 
     def set_workbook_protection(self, protection: WorkbookProtection) -> None:
+        """Set or replace the workbook protection."""
         if not isinstance(protection, WorkbookProtection):
             raise TypeError("protection must be WorkbookProtection")
         xml = self._package.get("xl/workbook.xml").decode("utf-8")

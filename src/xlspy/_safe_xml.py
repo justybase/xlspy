@@ -8,9 +8,9 @@ the rest of the document goes to the standard library unchanged.
 
 Three entry points cover the call sites:
 
-- :func:`fromstring` replaces ``ElementTree.fromstring``.
-- :func:`iterparse` replaces ``ElementTree.iterparse`` on a binary stream.
-- :func:`harden_expat` sets the same refusal on a raw ``pyexpat`` parser.
+- ``fromstring`` replaces ``ElementTree.fromstring``.
+- ``iterparse`` replaces ``ElementTree.iterparse`` on a binary stream.
+- ``harden_expat`` sets the same refusal on a raw ``pyexpat`` parser.
 """
 
 from __future__ import annotations

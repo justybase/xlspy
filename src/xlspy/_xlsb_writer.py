@@ -17,13 +17,16 @@ class XlsbWriterMetadata(_XlsbWriterHost):
         return self._xlsb_formula_context
 
     def set_defined_name(self, definition: DefinedName) -> None:
+        """Add a defined name, replacing one with the same name and scope."""
         self._require_writable()
         self._formula_context().set_name(definition)
 
     def get_defined_names(self) -> list[DefinedName]:
+        """The defined names set so far."""
         return self._xlsb_formula_context.defined_names() if self._xlsb_formula_context is not None else []
 
     def remove_defined_name(self, name: str, scope: str | None = None) -> None:
+        """Remove a defined name; with ``scope``, the one local to that sheet."""
         self._require_writable()
         DefinedName(name, '0', scope)
         if self._xlsb_formula_context is not None:

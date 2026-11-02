@@ -418,14 +418,17 @@ EXTRA_CF_RULES = (
 # The local rule classes use descriptive field names, so the aliases are added
 # here without changing their constructors.
 def _text_rule_type(rule: Any) -> str:
+    """The OOXML rule type, such as ``containsText`` (openpyxl's ``rule.type``)."""
     return "containsText" if rule.operator == "contains" else rule.operator
 
 
 def _duplicate_rule_type(rule: Any) -> str:
+    """The OOXML rule type: ``duplicateValues`` or ``uniqueValues`` (openpyxl's ``rule.type``)."""
     return "uniqueValues" if rule.unique else "duplicateValues"
 
 
 def _blanks_rule_type(rule: Any) -> str:
+    """The OOXML rule type, such as ``containsBlanks`` (openpyxl's ``rule.type``)."""
     types: dict[str, str] = {
         "blanks": "containsBlanks",
         "no_blanks": "notContainsBlanks",
@@ -438,6 +441,7 @@ def _blanks_rule_type(rule: Any) -> str:
 def _fixed_rule_type(name: str) -> Callable[[Any], str]:
     def rule_type(rule: Any) -> str:
         return name
+    rule_type.__doc__ = f"The OOXML rule type, ``{name}`` (openpyxl's ``rule.type``)."
     return rule_type
 
 

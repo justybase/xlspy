@@ -8,6 +8,9 @@ from ._coords import _coerce_column, _coerce_row
 
 
 class Dimension:
+    """The size, visibility and outline settings of a row or column, with openpyxl's
+    attribute names.
+    """
     def __init__(self, index: str | int) -> None:
         self.index = index
         self.min: int | None = None
@@ -23,14 +26,17 @@ class Dimension:
 
     @property
     def customWidth(self) -> bool:
+        """True when a width is set."""
         return self.width is not None
 
     @property
     def customHeight(self) -> bool:
+        """True when a height is set."""
         return self.height is not None
 
     @property
     def outline_level(self) -> int:
+        """The outline (group) level; the same as ``outlineLevel``."""
         return self.outlineLevel
 
     @outline_level.setter
@@ -39,11 +45,11 @@ class Dimension:
 
 
 class ColumnDimension(Dimension):
-    pass
+    """A column's width, visibility and outline level: ``ws.column_dimensions["B"]``."""
 
 
 class RowDimension(Dimension):
-    pass
+    """A row's height, visibility and outline level: ``ws.row_dimensions[3]``."""
 
 
 class DimensionHolder(dict[Any, Any]):
@@ -62,6 +68,7 @@ class DimensionHolder(dict[Any, Any]):
         super().__setitem__(self._transform(key), value)
 
     def get(self, key: Any, default: Any = None) -> Any:
+        """Like ``dict.get``, without creating an entry; the key may be a letter or a number."""
         return super().get(self._transform(key), default)
 
     def __contains__(self, key: object) -> bool:

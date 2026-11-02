@@ -1,6 +1,6 @@
 """The XlsbWriter state and cross-mixin methods, typed once for all its mixins.
 
-Each XlsbWriter mixin derives from :class:`_XlsbWriterHost`; see
+Each XlsbWriter mixin derives from ``_XlsbWriterHost``; see
 ``_xlsx_writer_host`` for how mypy uses it. Everything is declared under
 ``TYPE_CHECKING``: at runtime the class is empty and the writer sets the
 attributes.

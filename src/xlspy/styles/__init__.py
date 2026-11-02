@@ -1,4 +1,4 @@
-"""Cell style model, re-exported from :mod:`xlspy.styles.core`.
+"""Cell style model, re-exported from ``xlspy.styles.core``.
 
 The package layout keeps the historical ``from xlspy.styles import Style``
 imports working while adding openpyxl-compatible submodules such as
