@@ -1,5 +1,6 @@
 //! Column-width estimate and the formatted-cell pre-scan of the writers.
 
+use crate::pyseq::FastSeq;
 use pyo3::exceptions::{PySystemError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDateTime, PyFloat, PyList, PyTuple, PyType};
@@ -137,25 +138,17 @@ pub fn xlsb_row_has_formatted<'py>(
     py: Python<'py>,
     row: &Bound<'py, PyAny>,
 ) -> PyResult<Option<bool>> {
-    // PySequence_Fast: exact lists and tuples as they are, anything else as list(row).
-    let seq =
-        unsafe { pyo3::ffi::PySequence_Fast(row.as_ptr(), c"row must be a sequence".as_ptr()) };
-    let Ok(seq) = (unsafe { Bound::from_owned_ptr_or_err(py, seq) }) else {
+    let Ok(seq) = FastSeq::new(row, c"row must be a sequence") else {
         return Ok(None);
     };
-    let n = unsafe { pyo3::ffi::PySequence_Fast_GET_SIZE(seq.as_ptr()) } as usize;
+    let n = seq.len();
     let mut style = None; // looked up at the first tuple: most rows have none
     for i in 0..n {
         // Python code runs in this loop (len, get_item, overlay_kind) and can
         // shrink a list row, so the bound is checked before every read.
-        if i >= unsafe { pyo3::ffi::PySequence_Fast_GET_SIZE(seq.as_ptr()) } as usize {
+        let Some(cell) = seq.get(i) else {
             return Ok(None);
-        }
-        // SAFETY: `seq` is an exact list or tuple, kept alive, and i < its current size.
-        let cell = unsafe {
-            pyo3::ffi::PySequence_Fast_GET_ITEM(seq.as_ptr(), i as pyo3::ffi::Py_ssize_t)
         };
-        let cell = unsafe { pyo3::Borrowed::from_ptr(py, cell) };
         if cell.is_none() || !cell.is_instance_of::<PyTuple>() {
             continue;
         }

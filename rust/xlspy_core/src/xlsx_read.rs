@@ -75,6 +75,9 @@ fn decode_utf8<'py>(
     b: &[u8],
     errors: Option<&CStr>,
 ) -> PyResult<Bound<'py, PyAny>> {
+    // SAFETY: `b` is valid for `b.len()` bytes and `errors` is NULL or a
+    // NUL-terminated name that outlives the call; the result is a new
+    // reference or NULL with an exception set.
     unsafe {
         let obj = ffi::PyUnicode_DecodeUTF8(
             b.as_ptr().cast(),
@@ -205,6 +208,9 @@ fn py_float_value(py: Python<'_>, p: &[u8]) -> PyResult<f64> {
         buf.extend_from_slice(p);
         buf.push(0);
         let mut end: *mut std::ffi::c_char = std::ptr::null_mut();
+        // SAFETY: `buf` is NUL-terminated and alive for the call; `end` receives
+        // a pointer into it. A NULL overflow exception asks for ±inf rather than
+        // an error on overflow.
         let v = unsafe {
             ffi::PyOS_string_to_double(buf.as_ptr().cast(), &mut end, std::ptr::null_mut())
         };
@@ -214,7 +220,10 @@ fn py_float_value(py: Python<'_>, p: &[u8]) -> PyResult<f64> {
         }
     }
     let t = text(py, p)?;
+    // SAFETY: `t` is a live str; PyFloat_FromString returns a new reference or
+    // NULL with an exception set.
     let f = unsafe { Bound::from_owned_ptr_or_err(py, ffi::PyFloat_FromString(t.as_ptr()))? };
+    // SAFETY: PyFloat_FromString returns an exact float on success.
     Ok(unsafe { f.cast_into_unchecked::<PyFloat>() }.value())
 }
 
@@ -501,10 +510,8 @@ impl State {
                         Some(v) => v,
                         None => return Ok(None),
                     }
-                } else if serial.is_finite() && serial == serial.floor() {
-                    unsafe { Bound::from_owned_ptr_or_err(py, ffi::PyLong_FromDouble(serial))? }
                 } else {
-                    PyFloat::new(py, serial).into_any()
+                    crate::xlsb_read::number(py, serial)?
                 }
             };
             (value, &m.type_n)

@@ -21,3 +21,9 @@ codegen-units = 1
 # Unwind, not abort: a panic in a reader becomes a PanicException in Python
 # instead of killing the interpreter.
 panic = "unwind"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"

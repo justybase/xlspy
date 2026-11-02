@@ -13,8 +13,11 @@ use crate::cells::{
     text_fits,
 };
 use crate::numfmt::{write_repr, write_u32};
+use crate::pyseq::FastSeq;
 use crate::sst::u32_mask;
-use crate::types::{decimal_type, formula_type, hyperlink_type, style_type, type_check};
+use crate::types::{
+    decimal_type, formula_type, hyperlink_type, int_as_i64, style_type, type_check,
+};
 
 fn is_hex(c: u8) -> bool {
     c.is_ascii_hexdigit()
@@ -211,14 +214,12 @@ impl Row<'_, '_> {
             // int64 through float() (inf never raises for ints, but past float
             // range float() does, and the row falls back).
             let d = if cell.is_exact_instance_of::<PyInt>() {
-                let v = unsafe { pyo3::ffi::PyLong_AsLongLong(cell.as_ptr()) };
-                if v == -1 && PyErr::take(py).is_some() {
-                    match py_float(cell) {
+                match int_as_i64(cell) {
+                    Some(v) => v as f64,
+                    None => match py_float(cell) {
                         Some(d) => d,
                         None => return Ok(Cell::Fallback),
-                    }
-                } else {
-                    v as f64
+                    },
                 }
             } else {
                 match py_float(cell) {
@@ -250,6 +251,8 @@ impl Row<'_, '_> {
                     (inf.as_ptr(), pyo3::ffi::Py_EQ),
                     (ninf.as_ptr(), pyo3::ffi::Py_EQ),
                 ] {
+                    // SAFETY: `cell`, `inf` and `ninf` are live for the loop; the
+                    // call returns -1 with an exception set on failure (last arm).
                     match unsafe { pyo3::ffi::PyObject_RichCompareBool(cell.as_ptr(), other, op) } {
                         0 => {}
                         1 => return Ok(Cell::Fallback),
@@ -362,10 +365,9 @@ impl Row<'_, '_> {
         self.out.extend_from_slice(b"</f><v>");
         if value.is_exact_instance_of::<PyInt>() {
             // _format_number: str(int) of the value, here within int64.
-            let v = unsafe { pyo3::ffi::PyLong_AsLongLong(value.as_ptr()) };
-            if v == -1 && PyErr::take(py).is_some() {
+            let Some(v) = int_as_i64(&value) else {
                 return Ok(false);
-            }
+            };
             self.out.extend_from_slice(v.to_string().as_bytes());
         } else if let Ok(f) = value.cast::<PyFloat>() {
             // Exact floats only: a subclass may print differently from float.
@@ -397,8 +399,11 @@ impl Row<'_, '_> {
 
 /// `float(cell)`, or None when it raises.
 fn py_float(cell: &Bound<'_, PyAny>) -> Option<f64> {
+    // SAFETY: `cell` is live with the GIL held.
     let f = unsafe { pyo3::ffi::PyNumber_Float(cell.as_ptr()) };
+    // SAFETY: PyNumber_Float returns a new reference or NULL with an exception set.
     match unsafe { Bound::from_owned_ptr_or_err(cell.py(), f) } {
+        // SAFETY: on success PyNumber_Float returns a float (or float subclass) instance.
         Ok(f) => Some(unsafe { f.cast_into_unchecked::<PyFloat>() }.value()),
         Err(_) => None,
     }
@@ -466,14 +471,11 @@ pub fn encode_xlsx_row<'py>(
     };
     let mut styles = Styles::new(style_ids, true)?;
 
-    // PySequence_Fast: exact lists and tuples as they are, anything else as
-    // list(row); a non-sequence row goes to the Python writer.
-    let seq =
-        unsafe { pyo3::ffi::PySequence_Fast(row.as_ptr(), c"row must be a sequence".as_ptr()) };
-    let Ok(seq) = (unsafe { Bound::from_owned_ptr_or_err(py, seq) }) else {
+    // A non-sequence row goes to the Python writer.
+    let Ok(seq) = FastSeq::new(row, c"row must be a sequence") else {
         return Ok(None);
     };
-    let n = unsafe { pyo3::ffi::PySequence_Fast_GET_SIZE(seq.as_ptr()) } as usize;
+    let n = seq.len();
     let list_before = list.len();
     let style_type = style_type(py);
     let decimal = decimal_type(py);
@@ -505,14 +507,9 @@ pub fn encode_xlsx_row<'py>(
         for i in 0..n {
             // The body below can run Python code (hashing a format key, conversions)
             // that shrinks a list row, so the bound is checked before every read.
-            if i >= unsafe { pyo3::ffi::PySequence_Fast_GET_SIZE(seq.as_ptr()) } as usize {
+            let Some(mut cell) = seq.get(i) else {
                 return Ok(false);
-            }
-            // SAFETY: `seq` is an exact list or tuple, kept alive, and i < its current size.
-            let item = unsafe {
-                pyo3::ffi::PySequence_Fast_GET_ITEM(seq.as_ptr(), i as pyo3::ffi::Py_ssize_t)
             };
-            let mut cell = unsafe { Bound::from_borrowed_ptr(py, item) };
             let mut style = styles.for_column(i)?;
             let mut explicit_fmt = false; // a (value, "format") cell keeps its format
             if !cell.is_none() && cell.is_instance_of::<PyTuple>() {

@@ -91,6 +91,10 @@ impl<'a> CodePoints<'a> {
 /// `bytes.decode("utf-16-le", "surrogatepass")`, as the C reader did.
 pub fn decode_utf16le<'py>(py: Python<'py>, data: &[u8]) -> PyResult<Bound<'py, PyString>> {
     let mut byteorder: std::ffi::c_int = -1;
+    // SAFETY: `data` is valid for `data.len()` bytes, the error handler name is
+    // a NUL-terminated literal and `byteorder` is writable. The call returns a
+    // new reference to a str, or NULL with an exception set, so the unchecked
+    // cast to PyString holds.
     unsafe {
         let obj = pyo3::ffi::PyUnicode_DecodeUTF16(
             data.as_ptr().cast(),

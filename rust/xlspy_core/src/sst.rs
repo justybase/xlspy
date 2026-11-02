@@ -10,6 +10,8 @@ use crate::text::{CELL_TEXT_LIMIT, CodePoints, decode_utf16le};
 /// `PyLong_AsUnsignedLongMask` truncated to 32 bits: the C extension's `I`
 /// argument format, which wraps instead of checking the range.
 pub fn u32_mask(obj: &Bound<'_, PyAny>) -> PyResult<u32> {
+    // SAFETY: `obj` is live with the GIL held; the call accepts any object and
+    // reports failure as c_ulong::MAX with an exception set, checked below.
     let v = unsafe { pyo3::ffi::PyLong_AsUnsignedLongMask(obj.as_ptr()) };
     if v == std::ffi::c_ulong::MAX
         && let Some(err) = PyErr::take(obj.py())

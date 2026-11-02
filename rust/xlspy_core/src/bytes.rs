@@ -15,7 +15,11 @@ pub struct ByteView {
 
 impl ByteView {
     pub fn new(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        // SAFETY: Py_buffer is a plain C struct of pointers and integers, for
+        // which all-zero bytes are a valid (empty) value.
         let mut view: ffi::Py_buffer = unsafe { std::mem::zeroed() };
+        // SAFETY: `obj` is live with the GIL held and `view` is writable; on
+        // success the exporter fills `view` and must later get PyBuffer_Release.
         if unsafe { ffi::PyObject_GetBuffer(obj.as_ptr(), &mut view, ffi::PyBUF_SIMPLE) } < 0 {
             return Err(PyErr::take(obj.py())
                 .unwrap_or_else(|| PyBufferError::new_err("cannot get a buffer")));
@@ -27,6 +31,9 @@ impl ByteView {
         if self.view.buf.is_null() || self.view.len <= 0 {
             return &[];
         }
+        // SAFETY: a PyBUF_SIMPLE view is `len` contiguous bytes at `buf`, valid
+        // until PyBuffer_Release in drop; the slice borrows `self`, so it cannot
+        // outlive the view. Null and empty buffers returned early above.
         unsafe { std::slice::from_raw_parts(self.view.buf as *const u8, self.view.len as usize) }
     }
 }
@@ -35,11 +42,15 @@ impl ByteView {
 // reads it; it is only read, and released in drop with the GIL held
 // (pyclass deallocation).
 unsafe impl Send for ByteView {}
+// SAFETY: as for Send: the view is never written through, so shared reads
+// from several threads are sound.
 unsafe impl Sync for ByteView {}
 
 impl Drop for ByteView {
     fn drop(&mut self) {
-        // Every ByteView lives inside a call that holds the GIL.
+        // SAFETY: `view` was filled by a successful PyObject_GetBuffer (new()
+        // returns no ByteView otherwise) and is released exactly once, here.
+        // Every ByteView lives inside a call or a pyclass that holds the GIL.
         unsafe { ffi::PyBuffer_Release(&mut self.view) };
     }
 }

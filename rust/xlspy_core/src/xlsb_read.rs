@@ -80,6 +80,9 @@ pub fn date_xf_flags(styles: &Bound<'_, PyList>, date_num_fmts: &Bound<'_, PyAny
                 return 0;
             };
             // PySet_Contains; errors (a non-set argument too) count as a miss.
+            // SAFETY: both objects are live with the GIL held; PySet_Contains
+            // reports a non-set argument or a hashing failure as -1 with an
+            // exception set, which the last arm clears.
             match unsafe { pyo3::ffi::PySet_Contains(date_num_fmts.as_ptr(), nf.as_ptr()) } {
                 1 => 1,
                 0 => 0,
@@ -96,6 +99,8 @@ pub fn date_xf_flags(styles: &Bound<'_, PyList>, date_num_fmts: &Bound<'_, PyAny
 pub fn number(py: Python<'_>, value: f64) -> PyResult<Bound<'_, PyAny>> {
     // No epsilon test here: it would turn tiny non-zero doubles into zero.
     if value.is_finite() && value.trunc() == value {
+        // SAFETY: PyLong_FromDouble takes any double and returns a new reference,
+        // or NULL with an exception set (not reached: `value` is finite).
         unsafe { Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyLong_FromDouble(value)) }
     } else {
         Ok(pyo3::types::PyFloat::new(py, value).into_any())

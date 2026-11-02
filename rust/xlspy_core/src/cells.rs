@@ -199,11 +199,14 @@ pub fn excel_serial(cell: &Bound<'_, PyAny>, is_datetime: bool) -> Serial {
     };
     let (y, mo, d);
     if exact {
+        // SAFETY: `exact` checked that `cell` is exactly a date or datetime,
+        // and datetime is a date subclass.
         let date = unsafe { cell.cast_unchecked::<PyDate>() };
         y = i64::from(date.get_year());
         mo = i64::from(date.get_month());
         d = i64::from(date.get_day());
         if is_datetime {
+            // SAFETY: with `is_datetime`, `exact` checked for an exact datetime.
             let dt = unsafe { cell.cast_unchecked::<PyDateTime>() };
             hh = i64::from(dt.get_hour());
             mi = i64::from(dt.get_minute());

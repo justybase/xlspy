@@ -99,7 +99,23 @@ pub fn decimal_type(py: Python<'_>) -> Option<&Bound<'_, PyType>> {
 /// `PyObject_TypeCheck(obj, type_)`: exact type or subclass, no `__instancecheck__`.
 #[inline]
 pub fn type_check(obj: &Bound<'_, PyAny>, type_: &Bound<'_, PyType>) -> bool {
+    // SAFETY: both pointers come from live `Bound`s, so they are valid with the
+    // GIL held; PyObject_TypeCheck only reads the type and cannot fail.
     unsafe { pyo3::ffi::PyObject_TypeCheck(obj.as_ptr(), type_.as_type_ptr()) != 0 }
+}
+
+/// An int's value when it fits in an i64 (`PyLong_AsLongLong`); None, with the
+/// OverflowError cleared, when it does not.
+#[inline]
+pub fn int_as_i64(int: &Bound<'_, PyAny>) -> Option<i64> {
+    // SAFETY: `int` is a live object; PyLong_AsLongLong accepts any object and
+    // reports failure as -1 with an exception set.
+    let v = unsafe { ffi::PyLong_AsLongLong(int.as_ptr()) };
+    if v == -1 && PyErr::take(int.py()).is_some() {
+        None
+    } else {
+        Some(v)
+    }
 }
 
 /// Kind of the second item of a 2-tuple cell: 1 format string, 2 Style,

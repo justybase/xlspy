@@ -13,7 +13,7 @@ use crate::cells::{
 };
 use crate::sst::u32_mask;
 use crate::text::{CELL_TEXT_LIMIT, CodePoints};
-use crate::types::{decimal_type, style_type};
+use crate::types::{decimal_type, int_as_i64, style_type};
 
 /// Where text cells go: the shared-strings table, or inline (BrtCellSt).
 enum Strings<'a, 'py> {
@@ -195,25 +195,26 @@ fn encode_row<'py>(
             buf.out.push(u8::from(b.is_true()));
             Cell::Done
         } else if cell.is_instance_of::<PyInt>() {
-            let v = unsafe { pyo3::ffi::PyLong_AsLongLong(cell.as_ptr()) };
-            if v == -1 && PyErr::take(py).is_some() {
+            match int_as_i64(&cell) {
                 // Beyond int64: a double, like float(cell) in Python; beyond
                 // float range, str(cell).
-                match cell.extract::<f64>() {
+                None => match cell.extract::<f64>() {
                     Ok(f) => {
                         buf.double(col, style, f);
                         Cell::Done
                     }
                     Err(_) => str_cell(&mut buf, &cell, strings, col, row_idx, style)?,
+                },
+                Some(v) if (-536_870_912..=536_870_911).contains(&v) => {
+                    buf.cell([0x02, 0x0C], col, style);
+                    buf.out
+                        .extend_from_slice(&(((v as u32) << 2) | 2).to_le_bytes());
+                    Cell::Done
                 }
-            } else if (-536_870_912..=536_870_911).contains(&v) {
-                buf.cell([0x02, 0x0C], col, style);
-                buf.out
-                    .extend_from_slice(&(((v as u32) << 2) | 2).to_le_bytes());
-                Cell::Done
-            } else {
-                buf.double(col, style, v as f64);
-                Cell::Done
+                Some(v) => {
+                    buf.double(col, style, v as f64);
+                    Cell::Done
+                }
             }
         } else if let Ok(f) = cell.cast::<PyFloat>() {
             let v = f.value();

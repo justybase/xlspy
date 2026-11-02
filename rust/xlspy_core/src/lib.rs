@@ -11,6 +11,7 @@ mod cells;
 mod dates;
 mod model;
 mod numfmt;
+mod pyseq;
 mod sst;
 mod text;
 mod types;
