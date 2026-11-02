@@ -191,6 +191,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
                     (r1, c1, c2) for table in spec.tables if table.header_row
                     for c1, r1, c2, _r2 in (parse_cell_range(table.ref),)
                 ],
+                table_bounds=frozenset(parse_cell_range(table.ref) for table in spec.tables),
                 comment_vml_rid=(f'rId{3 + len(table_ids) + int(has_drawing)}' if spec.comments else None),
                 link_rids=link_rids, link_rid_start=link_rid_start,
                 print_spec=spec.print_settings, validations=spec.validations,

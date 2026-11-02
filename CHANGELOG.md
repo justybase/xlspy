@@ -170,6 +170,16 @@ Migration from 0.10:
 
 ### Changed
 
+- `XlsxWriter` and `XlsbWriter` choose the default autofilter by one rule (`tests/test_autofilter_parity.py`).
+  An explicit `auto_filter_ref` is written as given. Otherwise a filter is added only when data follows the
+  header, and it spans the columns up to the last one holding a value and the rows down to the last data row or
+  the last row of an array formula. What changes:
+  - XLSX: a trailing `None`, a formatted cell without a value, or a styled empty header cell no longer widens
+    the filter (`[["h1", "h2"], [1, 2, None]]` gave `A1:C2`, now `A1:B2`, as XLSB); the rows of an array
+    formula that reaches past the data are now inside the filter (as XLSB).
+  - XLSB: a header with no data rows below it, or a sheet with no values, no longer gets a filter (as XLSX);
+    `auto_filter=True` over exactly a table's range no longer adds a second filter beside the table's own (as
+    XLSX); the filter buttons of `auto_filter_ref` now widen their columns (as XLSX).
 - `ExcelReader` reads workbooks with chartsheets: `get_rows`/`read_all` on a chartsheet return no rows and
   `get_comments` an empty dict, where they raised `InvalidFileError` ("no worksheet part") or `KeyError`.
   `get_chartsheet_names()` lists them. A read-only `load_workbook` leaves chartsheets out of `worksheets`, like a

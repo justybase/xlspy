@@ -16,7 +16,7 @@ from ._text import check_cell_text, xstring_escape
 from .charts import Chart
 from .data_validation import DataValidation
 from .excel_dates import datetime_to_serial
-from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell
+from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell, _unwrap_cell
 from .formulas import Formula
 from .comments import Comment
 from ._metadata import SheetProtection, replace_element
@@ -79,8 +79,8 @@ def _filter_cells(
         if auto_filter_ref is not None:
             c1, r1, c2, _r2 = parse_cell_range(auto_filter_ref)
             filter_cells.append((r1, c1, c2))
-        elif body.num_rows > header_rows:
-            filter_cells.append((header_rows - 1, 0, body.max_cols - 1))
+        elif body.num_rows > header_rows and body.value_cols > 0:
+            filter_cells.append((header_rows - 1, 0, body.value_cols - 1))
     return filter_cells
 
 
@@ -464,6 +464,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         header_rows: dict = {}
         num_rows = 0
         max_cols = 0
+        value_cols = 0
+        arrays: list = []  # (c1, r1, c2, r2) of the array formulas written
         buf = io.BytesIO()  # encoded rows waiting for the spool
         text = io.StringIO()  # one Python-written row at a time, encoded once
         row_style_ids_cache: dict[Any, Any] = {}
@@ -481,6 +483,15 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             num_rows = row_idx + 1
             if len(row) > max_cols:
                 max_cols = len(row)
+            # Only a value past the columns seen so far can widen value_cols.
+            last_cell = len(row) - 1
+            while last_cell >= value_cols and row[last_cell] is None:
+                last_cell -= 1
+            for col_idx in range(last_cell, value_cols - 1, -1):
+                cell = row[col_idx]
+                if cell is not None and _unwrap_cell(cell) is not None:
+                    value_cols = col_idx + 1
+                    break
             row_attrs = self._row_attrs(row_idx, heights, hidden_row_set, row_outline)
             row_styles = (
                 styles_for_row(row_idx, len(row), style_ranges, header_style)
@@ -519,7 +530,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             else:
                 row_number = f' r="{row_idx + 1}"' if write_r else ''
                 text.write(f'<row{row_number}{row_attrs}>')
-                self._write_row_cells(text, row, row_idx, row_styles, hyperlinks)
+                self._write_row_cells(text, row, row_idx, row_styles, hyperlinks, arrays)
                 text.write('</row>')
                 buf.write(text.getvalue().encode('utf-8'))
                 text.seek(0)
@@ -551,7 +562,10 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         spool.write(buf.getvalue())
         if num_rows == 0:
             max_cols = 1
-        return _SheetBody(num_rows, max_cols, head, hyperlinks, header_rows=header_rows)
+        return _SheetBody(
+            num_rows, max_cols, head, hyperlinks, header_rows=header_rows, value_cols=value_cols,
+            array_rows=max((r2 + 1 for _c1, _r1, _c2, r2 in arrays), default=0),
+        )
 
     @staticmethod
     def _row_attrs(row_idx, heights, hidden_row_set, row_outline) -> str:
@@ -570,7 +584,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             row_attrs += ' hidden="1"'
         return row_attrs
 
-    def _write_row_cells(self, buf, row, row_idx, row_styles, hyperlinks):
+    def _write_row_cells(self, buf, row, row_idx, row_styles, hyperlinks, arrays=None):
+        """Write one row's cells; array formulas are added to ``arrays`` when given."""
         uniform_style = None
         uniform_xf = None
         if row_styles and len(row_styles) == len(row):
@@ -635,6 +650,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 buf.write(f'<c r="{self._letters[col_idx]}{row_idx + 1}" s="{xf_index}"/>')
             elif isinstance(cell, Formula):
                 self._write_formula_cell(buf, cell, xf_index)
+                if arrays is not None and cell.array_ref is not None:
+                    arrays.append(parse_cell_range(cell.array_ref))
             elif isinstance(cell, str):
                 self._write_string_cell(buf, cell, row_idx == 0, xf_index)
             elif isinstance(cell, bool):
@@ -715,6 +732,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             sink.write(buf.getvalue().encode('utf-8'))
             body.num_rows = max(body.num_rows, row_idx + 1)
             body.max_cols = max(body.max_cols, width)
+            body.value_cols = max(body.value_cols, width)
 
     def _write_pivot_sheet(self, sheet_index: int, renders) -> None:
         """A sheet that only holds pivot output (and its worksheet rels)."""

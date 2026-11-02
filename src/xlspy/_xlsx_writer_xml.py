@@ -58,6 +58,11 @@ class _SheetBody:
     head: list
     hyperlinks: list
     table_refs: set = field(default_factory=set)
+    # For the autofilter, as in the XLSB writer: the columns up to the last one
+    # holding a value (trailing None and formatted blanks do not count), and the
+    # rows down to the last row of an array formula, which may reach past the data.
+    value_cols: int = 0
+    array_rows: int = 0
     tables: list = field(default_factory=list)
     header_rows: dict = field(default_factory=dict)  # row index -> cells, for table headers
 

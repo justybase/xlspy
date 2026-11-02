@@ -267,17 +267,22 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         """Everything after the row data, in schema order."""
         parts = ['</sheetData>']
         data_filter = None
-        if body.num_rows > header_rows and body.max_cols > 0:
-            # The filter buttons sit on the last header row.
+        if body.num_rows > header_rows and body.value_cols > 0:
+            # The filter buttons sit on the last header row; the range spans the
+            # columns that hold a value and the rows of array formulas past the
+            # data (the same rule as the XLSB writer).
             data_filter = (
                 f"{self._letters[0]}{header_rows}:"
-                f"{self._letters[body.max_cols - 1]}{body.num_rows}"
+                f"{self._letters[body.value_cols - 1]}{max(body.num_rows, body.array_rows)}"
             )
         if auto_filter_ref is not None:
             data_filter = auto_filter_ref
         if auto_filter is False:
             data_filter = None
-        if data_filter is not None and data_filter not in body.table_refs:
+        # A table brings its own filter: none for the sheet over the same range.
+        if data_filter is not None and parse_cell_range(data_filter) not in {
+            parse_cell_range(ref) for ref in body.table_refs
+        }:
             parts.append(f'<autoFilter ref="{data_filter}"/>')
             first_col, first_row, last_col, last_row = parse_cell_range(data_filter)
             self._filtered_data_list.append(FilterData(

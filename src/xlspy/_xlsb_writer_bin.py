@@ -187,7 +187,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
         filter_cells: Any = (), header_rows: int = 1, tab_key: Any = None, zoom: int | None = None,
         link_rids: dict | None = None, link_rid_start: int = 2,
         print_spec: PrintSettings | None = None, validations: Any = (), sparklines: Any = (),
-        slicer_rel: str | None = None,
+        slicer_rel: str | None = None, table_bounds: frozenset = frozenset(),
     ) -> None:
         buffer = io.BytesIO()
         spool = _SheetSpool(self._zf, part_name)
@@ -200,12 +200,13 @@ class _XlsbBinMixin(_XlsbWriterHost):
             if link_rids is None:
                 link_rids = {}
             sheet_name = self._worksheet_data[worksheet_index][0]
-            data_iterator, end_col = self._write_sheet_head(
+            data_iterator, end_col, sample_value_cols = self._write_sheet_head(
                 buffer, worksheet_data, style_ranges=style_ranges, header_style=header_style,
                 widths=widths, hidden_cols=hidden_cols, freeze_panes=freeze_panes,
                 auto_filter=auto_filter, row_outline=row_outline, col_outline=col_outline,
                 show_grid_lines=show_grid_lines, view=view, filter_cells=filter_cells,
                 header_rows=header_rows, tab_key=tab_key, zoom=zoom, print_spec=print_spec,
+                auto_filter_ref=auto_filter_ref,
             )
             # The head stays aside until the rows give its dimension.
             head = bytearray(buffer.getvalue())
@@ -224,7 +225,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
             # Width of the whole sheet, measured as the rows stream past. The column
             # records come before the rows and use the sample, but the autofilter is
             # written after the rows and must span every column that holds a value.
-            stream_width = end_col
+            stream_width = sample_value_cols
             for row_idx, row in enumerate(data_iterator):
                 # The last entry that gets a cell record (anything but None).
                 last_cell = len(row) - 1
@@ -345,6 +346,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 used.add_row(rows_last)
             if cols_last >= 0:
                 used.add_cols(cols_first, cols_last)
+            data_rows = row_idx + 1
             row_idx = self._write_rows_after_data(
                 buffer, spool, row_idx, last_written, array_ranges=array_ranges,
                 row_outline=row_outline, heights=heights, hidden_row_set=hidden_row_set,
@@ -357,9 +359,9 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 used.add_row(r2)
                 used.add_cols(c1, c2)
             self._write_sheet_tail(
-                buffer, row_idx, worksheet_index, stream_width, sheet_protection=sheet_protection,
+                buffer, row_idx, worksheet_index, stream_width, data_rows, sheet_protection=sheet_protection,
                 header_rows=header_rows, auto_filter=auto_filter, auto_filter_ref=auto_filter_ref,
-                merge_refs=merge_refs, cf_rules=cf_rules, validations=validations, hyperlinks=hyperlinks,
+                table_bounds=table_bounds, merge_refs=merge_refs, cf_rules=cf_rules, validations=validations, hyperlinks=hyperlinks,
                 print_spec=print_spec, drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
                 comment_vml_rid=comment_vml_rid, sparklines=sparklines, slicer_rel=slicer_rel,
             )
@@ -373,13 +375,14 @@ class _XlsbBinMixin(_XlsbWriterHost):
         header_style: Style | None, widths: Any, hidden_cols: Any, freeze_panes: str | None,
         auto_filter: bool | None, row_outline: Any, col_outline: Any, show_grid_lines: bool,
         view: tuple[bool, bool, bool], filter_cells: Any, header_rows: int, tab_key: Any,
-        zoom: int | None, print_spec: PrintSettings | None,
-    ) -> tuple[Iterator[list[Any]], int]:
+        zoom: int | None, print_spec: PrintSettings | None, auto_filter_ref: str | None = None,
+    ) -> tuple[Iterator[list[Any]], int, int]:
         """Write the records before the first row (sheet properties, view, pane,
         selection, format info, column widths, BrtBeginSheetData).
 
         The column widths come from the first 100 rows; returns the rows (those
-        read ahead included) and the number of columns the sample uses."""
+        read ahead included), the number of columns the sample uses (at least 1)
+        and the number of columns up to the sample's last value (0 without one)."""
         if tab_key is None:
             head = self._sheet1Bytes[:54]
         else:
@@ -418,7 +421,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
 
         data_iterator = iter(worksheet_data)
         rows_to_analyze = []
-        max_cols = 1
+        max_cols = 0
 
         for _ in range(100):
             try:
@@ -433,12 +436,18 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     max_cols = max(max_cols, col_idx + 1)
                     break
 
-        end_col = max_cols
+        end_col = max(max_cols, 1)
 
-        if auto_filter is not False and len(rows_to_analyze) >= header_rows:
-            filter_cells = [*filter_cells, (header_rows - 1, 0, max_cols - 1)]
+        # Filter buttons widen their header cells: the explicit range, or the
+        # default one over the columns with values when data follows the header.
+        if auto_filter is not False:
+            if auto_filter_ref is not None:
+                c1, r1, c2, _r2 = parse_cell_range(auto_filter_ref)
+                filter_cells = [*filter_cells, (r1, c1, c2)]
+            elif len(rows_to_analyze) > header_rows and max_cols > 0:
+                filter_cells = [*filter_cells, (header_rows - 1, 0, max_cols - 1)]
         col_widths_array = estimate_column_widths(
-            rows_to_analyze, max_cols,
+            rows_to_analyze, end_col,
             lambda row_idx, length: styles_for_row(row_idx, length, style_ranges, header_style),
             filter_cells,
         )
@@ -471,7 +480,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
         else:
             data_iterator = iter([])
 
-        return data_iterator, end_col
+        return data_iterator, end_col, max_cols
 
     def _write_python_row(
         self, buffer: io.BytesIO, row: Any, row_idx: int, row_styles: dict[int, Style], *,
@@ -714,9 +723,10 @@ class _XlsbBinMixin(_XlsbWriterHost):
         return row_idx
 
     def _write_sheet_tail(
-        self, buffer: io.BytesIO, row_idx: int, worksheet_index: int, stream_width: int, *,
+        self, buffer: io.BytesIO, row_idx: int, worksheet_index: int, stream_width: int,
+        data_rows: int, *,
         sheet_protection: Any, header_rows: int, auto_filter: bool | None, auto_filter_ref: str | None,
-        merge_refs: Any, cf_rules: list | None, validations: Any, hyperlinks: list[Any],
+        table_bounds: frozenset, merge_refs: Any, cf_rules: list | None, validations: Any, hyperlinks: list[Any],
         print_spec: PrintSettings | None, drawing_rel: str | None, table_rel_ids: list[str] | None,
         comment_vml_rid: Any, sparklines: Any, slicer_rel: str | None,
     ) -> None:
@@ -730,15 +740,21 @@ class _XlsbBinMixin(_XlsbWriterHost):
 
         last_row_idx = row_idx if row_idx > -1 else 0 
 
-        # The filter buttons sit on the last header row.
-        filter_row = header_rows - 1
-        if row_idx >= filter_row and auto_filter is not False:
-            filter_first_col, filter_last_col = 0, stream_width - 1
-            filter_first_row, filter_last_row = filter_row, last_row_idx
+        # The same rule as the XLSX writer: an explicit range always; else a filter
+        # when data follows the header, its buttons on the last header row, over
+        # the columns that hold a value and down to the last row (array formulas
+        # past the data included).
+        filter_range = None
+        if auto_filter is not False:
             if auto_filter_ref is not None:
-                filter_first_col, filter_first_row, filter_last_col, filter_last_row = (
-                    parse_cell_range(auto_filter_ref)
-                )
+                filter_range = parse_cell_range(auto_filter_ref)
+            elif data_rows > header_rows and stream_width > 0:
+                filter_range = (0, header_rows - 1, stream_width - 1, last_row_idx)
+        if filter_range in table_bounds:
+            # A table brings its own filter: none for the sheet over the same range.
+            filter_range = None
+        if filter_range is not None:
+            filter_first_col, filter_first_row, filter_last_col, filter_last_row = filter_range
             buffer.write(self._autoFilterStartBytes)
             buffer.write(struct.pack('<I', filter_first_row))
             buffer.write(struct.pack('<I', filter_last_row))
