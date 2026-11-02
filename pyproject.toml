@@ -81,6 +81,7 @@ timeout = 300
 markers = [
     "com: requires Microsoft Excel via COM; skipped unless XLSPY_RUN_EXCEL_COM=1",
     "printer: reads or sets Excel's PageSetup, which needs a reachable default printer; skipped unless XLSPY_RUN_EXCEL_PRINT=1",
+    "libreoffice: converts output with headless LibreOffice; skipped when soffice is not found",
     "compat: openpyxl compatibility harness and golden workbooks (tests/openpyxl_compat)",
 ]
 filterwarnings = [
