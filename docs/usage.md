@@ -1553,14 +1553,14 @@ Supported model features:
   also keeps the other view settings).
 - `Cell`: `value` (numbers, text, booleans, dates/times, `Formula` or text
   starting with `=`, `CellRichText`), `font`, `fill`, `border`, `alignment`,
-  `protection`, `number_format`, `comment` and, for new workbooks, `hyperlink`.
+  `protection`, `number_format`, `comment` and `hyperlink`.
 - Rows and columns: `insert_rows()`, `delete_rows()`, `insert_cols()`,
   `delete_cols()` and `move_range(range, rows, cols, translate=False)`, also
   in loaded workbooks.
 - Objects: `add_chart()`, `add_image()`, `add_table()`,
   `add_data_validation()` and `conditional_formatting.add(range, rule)`, in
   new and loaded workbooks.
-- Printing (new XLSX and XLSB workbooks, and loaded XLSX ones): `print_title_rows`, `print_title_cols`,
+- Printing (new and loaded XLSX and XLSB workbooks): `print_title_rows`, `print_title_cols`,
   `print_area`, `page_setup`, `page_margins`, `print_options`,
   `sheet_properties.pageSetUpPr.fitToPage`, `oddHeader`/`oddFooter`, and
   `sheet_view.zoomScale` (XLSX and XLSB).
@@ -1614,29 +1614,28 @@ formula text by default (`data_only=False`).
 #### Loaded XLSX and XLSB workbooks
 
 `load_workbook()` reads XLSB into the same model as XLSX. Saving a loaded XLSB
-patches the binary parts in place, like `XlsxUpdater` does for XLSX, so fewer
-kinds of edits can be saved. An edit that a loaded XLSB cannot save raises
-`NotImplementedError` naming it when you call `save()`; nothing is dropped
-silently. A custom auto filter (criteria other than a value list) is kept when
-the sheet is saved unchanged; changing that filter raises `NotImplementedError`,
-and removing it is allowed.
+patches the binary parts in place, as `XlsxUpdater` does for XLSX: only the
+records of what changed are re-encoded, and everything else keeps its bytes. An
+edit that a loaded XLSB cannot save raises `UnsupportedFeatureError` (a
+`NotImplementedError`) naming it when you call `save()`; nothing is dropped
+silently.
 
 | Feature | XLSX read | XLSX save | XLSB read | XLSB save |
 |---|---|---|---|---|
-| Values, formulas, comments | yes | yes | yes | yes |
+| Values, formulas, comments, inserted and deleted rows | yes | yes | yes | yes |
 | Cell styles (font, fill, border, alignment, protection, number format) | yes | yes | yes | yes ¹ |
 | Merged cells, hyperlinks | yes | yes | yes | yes |
-| Data validation | yes | yes | yes | yes |
-| Defined names | yes | yes | yes | yes |
-| Column widths, row heights, hidden/outline | yes | yes | yes | no |
-| Freeze panes, sheet view, tab colour, sheet protection | yes | yes | yes | no |
-| Print setup (area, titles, page setup, margins, header/footer, breaks) | yes | yes | yes | no |
-| Conditional formatting | yes | yes | yes ² | no |
-| Tables | yes | yes | yes | no |
-| Charts, images | yes | add | yes | kept unchanged |
-| Document properties | yes | yes | yes | no |
-| Add, remove, rename, reorder sheets | yes | yes | yes | no |
-| Auto filter range | yes | yes | yes | no |
+| Data validation, defined names | yes | yes | yes | yes |
+| Column widths, row heights, hidden rows and columns, outline | yes | yes | yes | yes |
+| Freeze panes, sheet view (grid lines, zoom), tab colour | yes | yes | yes | yes ² |
+| Sheet protection | yes | yes | yes | yes ³ |
+| Print setup (area, titles, page setup, margins, header/footer, breaks) | yes | yes | yes | yes |
+| Conditional formatting | yes | yes | yes ⁴ | yes ⁴ |
+| Tables | yes | yes | yes | add only ⁵ |
+| Charts, images | yes | add, edit ⁶ | yes | add, remove |
+| Auto filter range | yes | yes | yes | yes ⁷ |
+| Document properties | yes | yes | yes | yes |
+| Add, remove, rename and reorder sheets | yes | yes | yes | yes |
 
 ¹ Styles that XLSB cannot store are refused as they are for new XLSB files:
 `Alignment.relative_indent` and the `vertical`, `horizontal`, `start`, `end`
@@ -1645,15 +1644,31 @@ longer than 31 characters and number formats longer than 255 raise
 `ValueError`. The existing style sheet is extended, never reordered, and is
 copied byte for byte when no style changed.
 
-² Cell-value, formula, top/bottom, above-average, duplicate/unique, text,
-time-period and blank/error rules. Colour scales, data bars and icon sets stay
-in the file, but are not loaded into the model.
+² A sheet saved with several window views cannot have its view edited.
 
-"no" means the setting is loaded and can be read, and the file's own setting
-is saved unchanged, but changing it raises `NotImplementedError`. To change
-those settings, use `XlsbUpdater` for the metadata it supports, or build the
-workbook with `Workbook()` and save it as `.xlsb`; the XLSB writer supports
-everything in the table.
+³ Protection whose password the file stores as a hash (written by Excel)
+cannot be edited; a password set through xlspy can.
+
+⁴ Cell-value, formula, top/bottom, above-average, duplicate/unique, text,
+time-period and blank/error rules are loaded into the model. Colour scales,
+data bars and icon sets stay in the file but are not loaded. In XLSB, each
+rule left as it was read keeps its Excel 2010 extension (negative bar colours,
+axes, gradient settings); a changed or removed rule loses its own extension.
+
+⁵ Tables can be added to a loaded XLSB; changing or removing a table that the
+file holds raises `UnsupportedFeatureError`.
+
+⁶ The title, axis titles, legend position, series titles and colours of a
+loaded chart can be changed; the rest of its XML is kept.
+
+⁷ A custom auto filter (criteria other than a value list) is kept when the
+sheet is saved unchanged; changing it raises `UnsupportedFeatureError`, and
+removing it is allowed. A filter's sort state cannot be saved into a loaded
+XLSB.
+
+Where a loaded XLSB refuses an edit, `XlsbUpdater` may support it, or the
+workbook can be built with `Workbook()` and saved as `.xlsb`: the XLSB writer
+supports everything in the table.
 
 ### Read-only mode
 
