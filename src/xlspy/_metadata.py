@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields
 import re
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
-from xml.sax.saxutils import escape, quoteattr
+from xml.sax.saxutils import escape, quoteattr, unescape
 
 from .refs import parse_cell_range, column_label
 
@@ -132,6 +132,18 @@ def replace_element(xml: str, tag: str, fragment: str, *, before=()) -> str:
         return xml[:match.start()] + f"<{match[1]}{match[2]}>" + fragment + f"</{match[1]}>" + xml[match.end():]
     pos = closing[-1].start()
     return xml[:pos] + fragment + xml[pos:]
+
+
+def tag_attributes(fragment: str) -> dict[str, str]:
+    """The attributes of the opening tag that starts ``fragment``, unescaped."""
+    opening = re.match(r"<[\w:.-]+\b([^>]*?)(?:/?>)", fragment)
+    if not opening:
+        raise ValueError("XML opening tag was not found")
+    # Attribute values can contain escaped XML; ET resolves those consistently.
+    attrs = {}
+    for match in re.finditer(r'''([\w:.-]+)\s*=\s*("[^"]*"|'[^']*')''', opening[1]):
+        attrs[match[1]] = unescape(match[2][1:-1], {"&quot;": '"', "&apos;": "'"})
+    return attrs
 
 
 def append_child(xml: str, container: str, fragment: str) -> str:

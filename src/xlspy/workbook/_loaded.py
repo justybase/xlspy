@@ -19,9 +19,9 @@ from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
 from ..utils.datetime import time_to_days, timedelta_to_days
-from .._metadata import MAIN, REL, PKG_REL, CT, qname, element_pattern, replace_element, serialize_like
-from .._sheet_data import sheet_data_match, tag_prefix
-from .._xlsx_edit import _attributes, _bytes, _cell_xml_value, _required_match
+from .._metadata import tag_attributes, MAIN, REL, PKG_REL, CT, qname, element_pattern, replace_element, serialize_like
+from .._sheet_data import insert_rows, patch_cells, patch_rows, set_dimension_ref, sheet_data_match, tag_prefix
+from .._xlsx_edit import _bytes, _cell_xml_value, _required_match
 from ..formula.sheets import rename_sheet_references
 from ..formulas import Formula
 from ..ignored_errors import ignored_errors_xml, snapshot as ignored_errors_snapshot
@@ -29,7 +29,7 @@ from ._drawings import check_removals, remove_drawing_objects, save_chart_edits
 from ._objects import (
     add_objects, check_object_rewrites, has_pending_objects, mark_objects_saved, sync_objects,
 )
-from ..refs import column_label, parse_cell_range
+from ..refs import parse_cell_range
 from ..styles import _coerce_color, _color_key
 from ..updater_utils import (
     renamed_chart_parts, renamed_sparkline_parts, replace_or_add_xml_attribute,
@@ -304,54 +304,30 @@ def _patch_xml_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
             return xml
         body = f"{body[:-2].rstrip()}></{tag_match[1]}>"
     seen = set()
-    next_row = 1
 
-    def patch_row(row_match):
-        nonlocal next_row
-        row_xml = row_match[0]
-        opening_match = re.match(r"<[^>]+>", row_xml)
-        if opening_match is None:
-            return row_xml
-        opening = opening_match[0]
-        attrs = _attributes(opening)
-        row_number = int(attrs.get("r", next_row))
-        next_row = row_number + 1
+    def patch_row(row_number: int, row_xml: str) -> str:
         seen.add(row_number)
+        opening = _required_match(re.match(r"<[^>]+>", row_xml), "row opening tag")[0]
         dimension = dimensions.get(row_number)
         new_opening = opening
         # The reader loads every row's attributes, so a row the model has no
         # dimension for (cleared, or moved by insert_rows) has none.
         for name in ("ht", "customHeight", "hidden", "outlineLevel", "collapsed"):
             new_opening = _remove_attr(new_opening, name)
-        if dimension is None:
-            return new_opening + row_xml[len(opening):]
-        wanted = _row_dimension_attrs(dimension)
-        for name, value in wanted.items():
-            new_opening = _set_attr(new_opening, name, value)
+        if dimension is not None:
+            for name, value in _row_dimension_attrs(dimension).items():
+                new_opening = _set_attr(new_opening, name, value)
         return new_opening + row_xml[len(opening):]
 
-    body = element_pattern("row").sub(patch_row, body)
-    missing = sorted(row for row in dimensions if row not in seen)
-    for row in reversed(missing):
-        dimension = dimensions[row]
-        attrs = {"r": str(row), **_row_dimension_attrs(dimension)}
-        fragment = f'<{prefix}row ' + " ".join(
-            f"{key}={quoteattr(value)}" for key, value in attrs.items()
-        ) + "/>"
-        rows = list(element_pattern("row").finditer(body))
-        position = None
-        for candidate in rows:
-            opening_match = re.match(r"<[^>]+>", candidate[0])
-            if opening_match is None:
-                continue
-            number = int(_attributes(opening_match[0]).get("r", "0") or 0)
-            if number > row:
-                position = candidate.start()
-                break
-        if position is None:
-            closing = body.rfind("</")
-            position = closing if closing >= 0 else len(body)
-        body = body[:position] + fragment + body[position:]
+    body = patch_rows(body, patch_row)
+    new_rows = {}
+    for row, dimension in dimensions.items():
+        if row not in seen:
+            attrs = {"r": str(row), **_row_dimension_attrs(dimension)}
+            new_rows[row] = f'<{prefix}row ' + " ".join(
+                f"{key}={quoteattr(value)}" for key, value in attrs.items()
+            ) + "/>"
+    body = insert_rows(body, new_rows)
     return xml[:match.start()] + body + xml[match.end():]
 
 
@@ -603,11 +579,7 @@ def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
     cols = _cols_xml(sheet, prefix)
     xml = replace_element(xml, "cols", cols, before=("sheetData",))
     xml = _patch_xml_rows(xml, sheet, prefix)
-    xml = replace_element(
-        xml, "dimension",
-        f'<{prefix}dimension ref="{_dimension_ref(sheet)}"/>',
-        before=("sheetViews", "sheetFormatPr", "cols", "sheetData"),
-    )
+    xml = set_dimension_ref(xml, _dimension_ref(sheet))
     xml = replace_element(
         xml, "sheetProtection", _sheet_protection_xml(sheet, prefix),
         before=("protectedRanges", "scenarios", "autoFilter", "sortState",
@@ -662,35 +634,6 @@ def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
     handle.apply_parts({path: xml})
 
 
-def _patch_cells(xml: str, patch) -> str:
-    """Call ``patch(ref, cell_xml)`` for each cell, resolving omitted ``r``
-    attributes from the cell's position as Excel does."""
-    match = sheet_data_match(xml)
-    if match is None:
-        return xml
-    next_row = 1
-
-    def patch_row(row_match):
-        nonlocal next_row
-        row_xml = row_match[0]
-        opening = _required_match(re.match(r"<[^>]+>", row_xml), "row element")[0]
-        row_number = int(_attributes(opening).get("r", next_row))
-        next_row = row_number + 1
-        next_column = 0
-
-        def patch_cell(cell_match):
-            nonlocal next_column
-            cell_xml = cell_match[0]
-            ref = _attributes(cell_xml).get("r") or f"{column_label(next_column)}{row_number}"
-            next_column = parse_cell_range(ref)[0] + 1
-            return patch(ref, cell_xml)
-
-        return opening + element_pattern("c").sub(patch_cell, row_xml[len(opening):])
-
-    body = element_pattern("row").sub(patch_row, match[0])
-    return xml[:match.start()] + body + xml[match.end():]
-
-
 def _save_hyperlinks(updater, sheet: Worksheet, name: str) -> None:
     if not sheet._dirty_hyperlinks:
         return
@@ -713,7 +656,7 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
         existing.add(ref)
         return cell_xml
 
-    _patch_cells(xml, collect_ref)
+    patch_cells(xml, collect_ref)
     missing = [ref for ref in styles if ref not in existing]
     if missing:
         updater.update_cells(name, dict.fromkeys(missing))
@@ -725,7 +668,7 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
         opening = _required_match(re.match(r"<[^>]+>", cell_xml), "cell element")[0]
         return _set_attr(opening, "s", styles[ref]) + cell_xml[len(opening):]
 
-    xml = _patch_cells(xml, patch_cell)
+    xml = patch_cells(xml, patch_cell)
     handle.apply_parts({path: xml})
 
 
@@ -897,7 +840,7 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
 
 def _remove_sheet_node(workbook_xml: str, name: str) -> tuple[str, str | None]:
     for match in list(element_pattern("sheet").finditer(workbook_xml)):
-        attrs = _attributes(match.group(0))
+        attrs = tag_attributes(match.group(0))
         if attrs.get("name") != name:
             continue
         # Attribute keys keep their source prefix (usually ``r:id``).
@@ -954,7 +897,7 @@ def rename_sheet(updater, old: str, new: str) -> None:
     workbook_path = "xl/workbook.xml"
     workbook_xml = package.get(workbook_path).decode("utf-8")
     for match in list(element_pattern("sheet").finditer(workbook_xml)):
-        attrs = _attributes(match.group(0))
+        attrs = tag_attributes(match.group(0))
         if attrs.get("name") != old:
             continue
         fragment = match.group(0)
@@ -1073,7 +1016,7 @@ def _remap_local_names(updater, before: list[str], renamed: dict[str, str]) -> N
     def remap(match):
         fragment = match[0]
         opening = _required_match(re.match(r"<[^>]+>", fragment), "fragment element")[0]
-        scope = _attributes(opening).get("localSheetId")
+        scope = tag_attributes(opening).get("localSheetId")
         if scope is None:
             return fragment
         index = int(scope)

@@ -22,8 +22,8 @@ from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import quoteattr
 
-from .._metadata import CT, MAIN, PKG_REL, REL, append_child, element_pattern, replace_element
-from .._xlsx_edit import _attributes, _bytes, _required_match
+from .._metadata import tag_attributes, CT, MAIN, PKG_REL, REL, append_child, element_pattern, replace_element
+from .._xlsx_edit import _bytes, _required_match
 from ..refs import parse_cell_range
 from ._print import WorksheetPageMargins, print_settings_for
 from ..chart_reader import _A as _A, _C as _C, _XDR as _XDR
@@ -262,8 +262,8 @@ def _merge_attributes(sheet: _Sheet, tag: str, donor: str) -> None:
     if match is None:
         sheet.insert(tag, _with_namespaces(donor, MAIN, r=REL))
         return
-    attributes = _attributes(match[0])
-    attributes.update(_attributes(donor))
+    attributes = tag_attributes(match[0])
+    attributes.update(tag_attributes(donor))
     text = "".join(f" {name}={quoteattr(value)}" for name, value in attributes.items())
     sheet.replace(match, f"<{sheet.prefix}{tag}{text}/>")
 
@@ -306,7 +306,7 @@ def _set_fit_to_page(sheet: _Sheet) -> None:
     existing = re.search(rf"<{re.escape(p)}pageSetUpPr\b[^>]*/?>", body)
     if existing:
         tag = existing[0]
-        attributes = _attributes(tag)
+        attributes = tag_attributes(tag)
         attributes["fitToPage"] = "1"
         text = "".join(f" {name}={quoteattr(value)}" for name, value in attributes.items())
         rebuilt = f"<{p}pageSetUpPr{text}" + ("/>" if tag.endswith("/>") else ">")
@@ -461,7 +461,7 @@ def _drop_print_names(package: _Package, sheet_index: int, names) -> None:
     xml = package.require("xl/workbook.xml").decode("utf-8")
 
     def drop(match):
-        attributes = _attributes(match[0])
+        attributes = tag_attributes(match[0])
         keep = not (attributes.get("name") in names and attributes.get("localSheetId") == str(sheet_index))
         return match[0] if keep else ""
 
@@ -528,14 +528,14 @@ def _set_print_names(package: _Package, scratch: dict[str, bytes], sheet_index: 
     xml = package.require("xl/workbook.xml").decode("utf-8")
 
     def drop(match):
-        attributes = _attributes(match[0])
+        attributes = tag_attributes(match[0])
         keep = not (attributes.get("name") in wanted and attributes.get("localSheetId") == str(sheet_index))
         return match[0] if keep else ""
 
     xml = element_pattern("definedName").sub(drop, xml)
     fragments = []
     for item in _donor_elements(donor, "definedName"):
-        name = _attributes(item).get("name")
+        name = tag_attributes(item).get("name")
         if name in wanted:
             formula = _required_match(re.search(r">(.*)</definedName>", item, re.S), "definedName text")[1]
             fragments.append(
@@ -625,7 +625,7 @@ def _existing_tables(package: _Package) -> list[tuple[str, dict]]:
             if data:
                 root = re.search(r"<(?:[\w.-]+:)?table\b[^>]*>", data.decode("utf-8"))
                 if root:
-                    tables.append((name, _attributes(root[0])))
+                    tables.append((name, tag_attributes(root[0])))
     return tables
 
 
@@ -651,7 +651,7 @@ def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: E
     rids = []
     for source in sources:
         xml = scratch[source].decode("utf-8")
-        attributes = _attributes(_required_match(re.search(r"<table\b[^>]*>", xml), "table element")[0])
+        attributes = tag_attributes(_required_match(re.search(r"<table\b[^>]*>", xml), "table element")[0])
         if attributes["displayName"].casefold() in names:
             raise ValueError(f"a table named {attributes['displayName']!r} already exists in the workbook")
         for name, other in existing:

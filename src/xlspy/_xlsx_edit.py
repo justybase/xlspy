@@ -13,10 +13,11 @@ import posixpath
 import re
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
-from xml.sax.saxutils import escape, quoteattr, unescape
+from xml.sax.saxutils import escape, quoteattr
 
-from ._sheet_data import sheet_data_match
+from ._sheet_data import insert_rows, patch_rows, set_dimension_ref, sheet_data_match
 from ._metadata import (
+    tag_attributes,
     MAIN, REL, PKG_REL, CT, DefinedName, SheetProtection, WorkbookProtection,
     cell_ref, element_pattern, replace_element, append_child, read_defined_names, xml_text,
 )
@@ -213,7 +214,7 @@ class XlsxEditMixin:
         dropped: set[Any] = set()
         if container:
             for match in element_pattern("hyperlink").finditer(container[0]):
-                attrs = _attributes(match[0])
+                attrs = tag_attributes(match[0])
                 try:
                     first_col, first_row, _, _ = parse_cell_range(attrs.get("ref", "").split()[0])
                     start = f"{column_label(first_col)}{first_row + 1}"
@@ -285,7 +286,7 @@ class XlsxEditMixin:
     def _remove_name(self, xml, name, scope):
         scope_id = None if scope is None else str(list(self._sheets).index(scope))
         def remove(match):
-            attrs = _attributes(match[0])
+            attrs = tag_attributes(match[0])
             return "" if attrs.get("name", "").casefold() == name.casefold() and attrs.get("localSheetId") == scope_id else match[0]
         updated = element_pattern("definedName").sub(remove, xml)
         if not element_pattern("definedName").search(updated):
@@ -364,41 +365,24 @@ class XlsxEditMixin:
         prefix = sheet_data["prefix"] or ""
         # Validate and encode all input before staging any mutation.
         encoded = {ref: _cell_xml_value(value, self._date_1904, prefix) for ref, value in values.items()}
-        body = sheet_data[0]
         pending = dict(encoded)
-        next_row = 1
-        row_numbers = []
 
-        def patch_row(match):
-            nonlocal next_row
-            row_xml = match[0]
-            row_num = int(_attributes(row_xml).get("r", next_row))
-            next_row = row_num + 1
-            row_numbers.append(row_num)
+        def patch_row(row_num: int, row_xml: str) -> str:
             targets = {ref: value for ref, value in pending.items() if parse_cell_range(ref)[1] + 1 == row_num}
             if not targets:
                 return row_xml
             return _patch_row(row_xml, targets, pending, prefix, row_num)
 
-        body = element_pattern("row").sub(patch_row, body)
-        # Insert new rows at their numeric position without changing old rows.
-        by_row: dict[Any, Any] = {}
+        body = patch_rows(sheet_data[0], patch_row)
+        # The cells left in ``pending`` are in rows the sheet does not have yet.
+        by_row: dict[int, list[str]] = {}
         for ref in pending:
             by_row.setdefault(parse_cell_range(ref)[1] + 1, []).append(ref)
         new_rows = {}
         for row_num, refs in by_row.items():
             content = "".join(_cell_xml(ref, encoded[ref], prefix) for ref in sorted(refs, key=lambda r: parse_cell_range(r)[0]))
             new_rows[row_num] = f'<{prefix}row r="{row_num}">{content}</{prefix}row>'
-        number_iterator = iter(row_numbers)
-        def insert_rows(match):
-            row_num = next(number_iterator)
-            before = "".join(new_rows.pop(n) for n in sorted(new_rows) if n < row_num)
-            return before + match[0]
-        body = element_pattern("row").sub(insert_rows, body)
-        if new_rows:
-            tail = "".join(new_rows[n] for n in sorted(new_rows))
-            # append_child also expands an empty <sheetData/>.
-            body = append_child(body, "sheetData", tail)
+        body = insert_rows(body, new_rows)
         xml = xml[:sheet_data.start()] + body + xml[sheet_data.end():]
         # Expand dimensions, never shrink existing coverage or filters/tables.
         refs = list(values) + [ref for ref, _ in cell_nodes]
@@ -408,7 +392,7 @@ class XlsxEditMixin:
         spans = [parse_cell_range(ref) for ref in refs]
         first = f"{column_label(min(b[0] for b in spans))}{min(b[1] for b in spans) + 1}"
         last = f"{column_label(max(b[2] for b in spans))}{max(b[3] for b in spans) + 1}"
-        xml = replace_element(xml, "dimension", f'<dimension xmlns="{MAIN}" ref="{first}:{last}"/>', before=("sheetViews", "sheetFormatPr", "cols", "sheetData"))
+        xml = set_dimension_ref(xml, f"{first}:{last}")
         updates = {path: xml}
         removed: list[str] = []
         removed_shared_refs = sum(ref in values and c.get("t") == "s" for ref, c in cell_nodes)
@@ -421,7 +405,7 @@ class XlsxEditMixin:
                     opening = re.search(r"<(?:[\w.-]+:)?sst\b[^>]*>", strings)
                     if opening is None:
                         raise ValueError("sharedStrings element was not found")
-                    attrs = _attributes(opening[0])
+                    attrs = tag_attributes(opening[0])
                     if "count" in attrs:
                         updated_tag = replace_or_add_xml_attribute(opening[0], "count", max(0, int(attrs["count"]) - removed_shared_refs))
                         updates[part] = strings[:opening.start()] + updated_tag + strings[opening.end():]
@@ -456,7 +440,7 @@ class XlsxEditMixin:
     def _recalculate(self, updates, removed):
         xml = self._package.get("xl/workbook.xml").decode("utf-8")
         existing = element_pattern("calcPr").search(xml)
-        attrs = _attributes(existing[0]) if existing else {}
+        attrs = tag_attributes(existing[0]) if existing else {}
         attrs.update(fullCalcOnLoad="1", forceFullCalc="1", calcMode="auto")
         fragment = f'<calcPr xmlns="{MAIN}" ' + " ".join(f"{key}={quoteattr(value)}" for key, value in attrs.items() if not key.startswith("xmlns")) + "/>"
         updates["xl/workbook.xml"] = replace_element(xml, "calcPr", fragment, before=("oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"))
@@ -473,17 +457,6 @@ class XlsxEditMixin:
                         types.remove(ct)
         updates[rp] = _bytes(rels)
         updates["[Content_Types].xml"] = _bytes(types)
-
-
-def _attributes(fragment):
-    opening = re.match(r"<[\w:.-]+\b([^>]*?)(?:/?>)", fragment)
-    if not opening:
-        raise ValueError("XML opening tag was not found")
-    # Attribute values can contain escaped XML; ET resolves those consistently.
-    attrs = {}
-    for match in re.finditer(r'''([\w:.-]+)\s*=\s*("[^"]*"|'[^']*')''', opening[1]):
-        attrs[match[1]] = unescape(match[2][1:-1], {"&quot;": '"', "&apos;": "'"})
-    return attrs
 
 
 def _cell_xml_value(value, date_1904, prefix):
@@ -528,7 +501,7 @@ def _cell_xml_value(value, date_1904, prefix):
 
 def _cell_xml(ref, encoded, prefix, old=None):
     kind, content = encoded
-    attrs = _attributes(old) if old else {"r": ref}
+    attrs = tag_attributes(old) if old else {"r": ref}
     attrs["r"] = ref
     attrs.pop("t", None)
     if kind:
@@ -543,12 +516,12 @@ def _cell_xml(ref, encoded, prefix, old=None):
     return opening + content + f'</{prefix}c>'
 
 
-def _patch_row(row_xml, targets, pending, prefix, row_num):
+def _patch_row(row_xml: str, targets: dict[str, Any], pending: dict[str, Any], prefix: str, row_num: int) -> str:
     additions = dict(targets)
     next_col = 0
     def patch_cell(match):
         nonlocal next_col
-        ref = cell_ref(_attributes(match[0]).get("r", f"{column_label(next_col)}{row_num}"))
+        ref = cell_ref(tag_attributes(match[0]).get("r", f"{column_label(next_col)}{row_num}"))
         next_col = parse_cell_range(ref)[0] + 1
         result = []
         col = parse_cell_range(ref)[0]

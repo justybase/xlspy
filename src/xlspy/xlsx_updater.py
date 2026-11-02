@@ -42,7 +42,7 @@ from .updater_utils import (
 )
 from ._text import check_cell_text
 from ._updater_base import StyleFallback, _UpdaterBase
-from ._sheet_data import replace_sheet_data_body, tag_prefix
+from ._sheet_data import replace_sheet_data_body, set_dimension_ref, tag_prefix
 from ._xlsx_edit import XlsxEditMixin
 from .formulas import Formula
 
@@ -878,28 +878,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
     def _patch_sheet_xml(sheet_xml: str, rows_xml: str, dimension_ref: str) -> str:
         sheet_xml = replace_sheet_data_body(sheet_xml, rows_xml)
 
-        dimension_match = re.search(
-            r"<(?P<prefix>[A-Za-z_][\w.-]*:)?dimension\b[^>]*>", sheet_xml
-        )
-        if dimension_match:
-            opening = dimension_match.group(0)
-            replacement = replace_or_add_xml_attribute(opening, "ref", dimension_ref)
-            sheet_xml = (
-                sheet_xml[: dimension_match.start()]
-                + replacement
-                + sheet_xml[dimension_match.end() :]
-            )
-        else:
-            worksheet_match = re.search(r"<(?P<prefix>[A-Za-z_][\w.-]*:)?worksheet\b[^>]*>", sheet_xml)
-            if not worksheet_match:
-                raise ValueError("Worksheet root element was not found")
-            prefix = XlsxUpdater._tag_prefix(sheet_xml, "worksheet")
-            dimension = f'<{prefix}dimension ref="{escape_xml_text(dimension_ref)}"/>'
-            # CT_Worksheet order: sheetPr, dimension, sheetViews, sheetFormatPr, cols, sheetData.
-            # Insert before the first element that follows dimension, after any sheetPr.
-            following = _AFTER_DIMENSION_STR.search(sheet_xml)
-            position = following.start() if following else worksheet_match.end()
-            sheet_xml = sheet_xml[:position] + dimension + sheet_xml[position:]
+        sheet_xml = set_dimension_ref(sheet_xml, dimension_ref)
 
         auto_filter_match = re.search(
             r"<(?P<prefix>[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>", sheet_xml
