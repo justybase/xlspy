@@ -228,7 +228,7 @@ class XlsbStyleTable(XlsxStyleTable):
     _new_cell_styles: list[Any]
 
     @classmethod
-    def from_bin(cls, data: bytes | None) -> "XlsbStyleTable":
+    def from_bin(cls, data: bytes | None) -> XlsbStyleTable:
         table = cls()
         table._source_bin = data or b""
         table._cell_style_count = 0

@@ -1,6 +1,5 @@
 """XlsxWriter style methods: fonts, fills, borders, styles.xml, conditional-format XML."""
 
-from typing import TYPE_CHECKING, Any
 import xml.sax.saxutils as saxutils
 from .styles import (
     CF_BLANK_RULES,
@@ -29,29 +28,11 @@ from .styles import (
     split_style,
 )
 from ._xlsx_writer_xml import _alignment_xml, _format_number, _protection_xml
+from ._xlsx_writer_host import _XlsxWriterHost
 
 
-class _XlsxStylesMixin:
+class _XlsxStylesMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _border_registry: Any
-        _claim_cf_priority: Any
-        _dxf_border_registry: Any
-        _dxf_fill_registry: Any
-        _dxf_font_registry: Any
-        _dxf_index: Any
-        _dxf_list: Any
-        _fill_registry: Any
-        _font_registry: Any
-        _format_registry: Any
-        _format_xf_map: Any
-        _letters: Any
-        _next_numfmt_id: Any
-        _next_xf_index: Any
-        _style_components: Any
-        _style_xf_map: Any
-        _xf_styles: Any
 
     def _intern_font(self, font_key) -> int:
         if _font_is_empty(font_key):

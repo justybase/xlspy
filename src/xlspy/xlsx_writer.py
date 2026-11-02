@@ -1,5 +1,6 @@
 import io
-from typing import Any, Iterable, Tuple
+from typing import Any
+from collections.abc import Iterable
 from . import _zip_threads as _zip_threads, chart_parts as chart_parts
 from ._output import PackageZip as PackageZip, StagedWriter as StagedWriter
 from ._writer_common import FilterData as FilterData, WriterFrontEnd as WriterFrontEnd, reject_unknown_arguments
@@ -143,7 +144,7 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
                  spool_max_bytes: int = DEFAULT_SPOOL_BYTES, **unknown: object):
         reject_unknown_arguments(type(self).__name__, unknown)
         self._file = file
-        self._worksheet_data: list[Tuple[str, Iterable[list[Any]] | None, bool]] = []
+        self._worksheet_data: list[tuple[str, Iterable[list[Any]] | None, bool]] = []
         self._shared_strings: list[str | tuple[str, str]] = []
         self._shared_strings_dict: dict[str | tuple[str, str], int] = {}
         self._sheet_count = 0

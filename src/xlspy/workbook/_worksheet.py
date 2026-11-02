@@ -790,7 +790,7 @@ class Chartsheet:
     def charts(self):
         return self._charts
 
-    def add_chart(self, chart, source: "Worksheet | str | None" = None) -> None:
+    def add_chart(self, chart, source: Worksheet | str | None = None) -> None:
         if self._part is None:
             _expect(chart, Chart, "chart", "an xlspy Chart")
             if self._charts:

@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-from typing import Generator
+from collections.abc import Generator
 
 import xlsxwriter
 

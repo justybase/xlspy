@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Example demonstrating cell number/date/datetime formatting in xlspy.
 Creates both .xlsx and .xlsb files with all supported formats.

@@ -1,6 +1,5 @@
 import struct
 from enum import IntEnum
-from typing import Optional
 
 # Last zero-based row Excel can hold. Row 0xFFFFFFFF reads as -1, the same as
 # a row record too short to hold an index.
@@ -60,7 +59,7 @@ class BiffReader:
         self.format = 0
         self.format_string = ""
 
-        self.shared_string_value: Optional[str] = None
+        self.shared_string_value: str | None = None
         self.shared_string_unique_count = 0
 
         self.cell_type = CellType.nullValue

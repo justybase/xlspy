@@ -671,7 +671,7 @@ def generate(out_dir: Path) -> dict:
     manifest = {
         "openpyxl_version": openpyxl.__version__,
         "python_version": platform.python_version(),
-        "generated_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "generated_utc": dt.datetime.now(dt.UTC).isoformat(),
         "files": sorted(builders),
         "errors": errors,
     }

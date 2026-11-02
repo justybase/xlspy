@@ -1,25 +1,15 @@
 """Optional metadata methods for XlsbWriter, outside its numeric row path."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ._metadata import DefinedName
+from ._xlsb_writer_host import _XlsbWriterHost
 
 if TYPE_CHECKING:
-    from ._metadata import WorkbookProtection
-    from ._xlsb_formulas import FormulaContext
+    pass
 
 
-class XlsbWriterMetadata:
-    if TYPE_CHECKING:
-        # Provided by WriterFrontEnd / StagedWriter, which the writer mixes in first.
-        def _require_writable(self) -> None: ...
-        # Attributes of XlsbWriter (writer.py) that these methods read and write.
-        _xlsb_formula_context: FormulaContext | None
-        _worksheet_data: list[tuple[str, Any, bool]]
-        _workbook_protection: WorkbookProtection | None
-        _filtered_data_list: list[Any]
-        _slicer_cache_names: Any
-        _sheet_print: dict[int, Any]
+class XlsbWriterMetadata(_XlsbWriterHost):
 
     def _formula_context(self):
         if self._xlsb_formula_context is None:

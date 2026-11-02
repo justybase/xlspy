@@ -1,6 +1,5 @@
 """XlsbWriter package methods: content types, relationships, workbook, shared strings, tables, CF."""
 
-from typing import TYPE_CHECKING, Any
 import struct
 import io
 import re
@@ -27,62 +26,11 @@ from .pivots import (
     pivot_table_rels_xml,
 )
 from ._xlsb_writer_consts import _ACUID_NAMESPACE, _BRT_AC_BEGIN, _BRT_AC_END, _BRT_BEGIN_AUTOFILTER, _BRT_BEGIN_CF, _BRT_BEGIN_LIST, _BRT_BEGIN_LIST_COL, _BRT_BEGIN_LIST_COLS, _BRT_BEGIN_LIST_PARTS, _BRT_END_AUTOFILTER, _BRT_END_CF, _BRT_END_LIST, _BRT_END_LIST_COL, _BRT_END_LIST_COLS, _BRT_END_LIST_PARTS, _BRT_FRT_BEGIN, _BRT_LIST_PART, _BRT_TABLE_STYLE_CLIENT, _REL_PIVOT_CACHE, _REL_PIVOT_TABLE
+from ._xlsb_writer_host import _XlsbWriterHost
 
 
-class _XlsbPartsMixin:
+class _XlsbPartsMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _build_styles_bin: Any
-        _check_unknown_cf_rule: Any
-        _claim_cf_priority: Any
-        _doc_props_content_types: Any
-        _doc_props_root_rels: Any
-        _dxf_index: Any
-        _formula_context: Any
-        _letters: Any
-        _media: Any
-        _metadata_workbook: Any
-        _next_chart_id: Any
-        _pending_pivots: Any
-        _pivot_renders: Any
-        _register_filter_names: Any
-        _register_numfmt: Any
-        _register_print_names: Any
-        _register_slicer_names: Any
-        _rich_str_payload: Any
-        _shared_strings: Any
-        _sheet_chart_cells: Any
-        _sheet_chart_ids: Any
-        _sheet_charts: Any
-        _sheet_comments: Any
-        _sheet_count: Any
-        _sheet_drawings: Any
-        _sheet_image_media: Any
-        _sheet_images: Any
-        _sheet_link_rels: Any
-        _sheet_pivots: Any
-        _sheet_print: Any
-        _sheet_shapes: Any
-        _sheet_slicer_parts: Any
-        _sheet_slicers: Any
-        _sheet_tables: Any
-        _slicer_cache_names: Any
-        _sst_all_count: Any
-        _sst_has_rich: Any
-        _sst_unique_count: Any
-        _tables_bin: Any
-        _workbookBinEnd: Any
-        _workbookBinMiddle: Any
-        _workbookBinStart: Any
-        _workbook_protection: Any
-        _worksheet_data: Any
-        _write_doc_props: Any
-        _write_empty_sheet: Any
-        _write_filter_defined_names: Any
-        _written_sheets: Any
-        _xlsb_formula_context: Any
-        _zf: Any
 
     def _normalize_cf_rules(self, conditional_formats):
         from .styles import ColorScaleRule, DataBarRule, DifferentialStyle, IconSetRule
@@ -580,7 +528,7 @@ class _XlsbPartsMixin:
         buffer.write(struct.pack('<II', self._sst_all_count, self._sst_unique_count))
         
         for s in self._shared_strings:
-            if type(s) is tuple:  # ("rich", text, runs) from _write_rich_str
+            if isinstance(s, tuple):  # ("rich", text, runs) from _write_rich_str
                 buffer.write(build_record(0x13, self._rich_str_payload(s[1], s[2])))
                 if buffer.tell() > BUFFER_SIZE:
                     sst_file.write(buffer.getvalue())

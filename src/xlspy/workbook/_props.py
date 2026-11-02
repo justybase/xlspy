@@ -68,7 +68,7 @@ def custom_xml(items) -> bytes:
         '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" '
         'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
         f"{body}</Properties>"
-    ).encode("utf-8")
+    ).encode()
 
 
 def _serialize(root) -> bytes:

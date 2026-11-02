@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Optional pandas / polars integration for the xlspy writers.
 
 Writing a DataFrame is a thin conversion layer on top of ``write_sheet``: an
@@ -17,7 +16,8 @@ from __future__ import annotations
 import datetime
 import importlib
 from decimal import Decimal
-from typing import Any, Iterator, cast
+from typing import Any, cast
+from collections.abc import Iterator
 
 
 _MISSING = object()

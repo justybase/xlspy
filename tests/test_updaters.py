@@ -42,11 +42,11 @@ def _make_xlsx_pivot(path):
         path,
         {
             "xl/pivotCache/pivotCacheDefinition1.xml": (
-                '<pivotCacheDefinition recordCount="1">'
-                '<cacheSource type="worksheet">'
-                '<worksheetSource ref="A1:B2" sheet="Data"/>'
-                "</cacheSource></pivotCacheDefinition>"
-            ).encode(),
+                b'<pivotCacheDefinition recordCount="1">'
+                b'<cacheSource type="worksheet">'
+                b'<worksheetSource ref="A1:B2" sheet="Data"/>'
+                b"</cacheSource></pivotCacheDefinition>"
+            ),
             "xl/pivotTables/pivotTable1.xml": b'<pivotTableDefinition refreshOnLoad="0"/>',
         },
     )

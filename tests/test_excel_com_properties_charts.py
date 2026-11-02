@@ -67,7 +67,7 @@ def test_document_properties_in_excel(tmp_path, open_workbook, writer_cls, ext):
             title="Report Q3 & <test>", subject="Sales", author="Zoë Ångström",
             manager="Boss", company="ACME", category="Finance", keywords="q3, sales",
             comments="Report description", status="Draft",
-            created=datetime.datetime(2024, 5, 1, 10, 0, tzinfo=datetime.timezone.utc),
+            created=datetime.datetime(2024, 5, 1, 10, 0, tzinfo=datetime.UTC),
             custom={"Project": "Alpha", "Count": 7, "Ratio": 0.25, "Approved": True,
                     "Due": datetime.datetime(2024, 6, 1, 12, 0)},
         )

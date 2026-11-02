@@ -1,7 +1,7 @@
 """XlsbWriter sheet methods: write_sheet, the sheet loop and the dataframe entry point."""
 
-from typing import TYPE_CHECKING, Any
-from typing import Iterable
+from typing import Any
+from collections.abc import Iterable
 from ._sheet_options import XLSB_OPTIONS, SheetOptions, resolve_sheet_options
 from . import chart_parts
 from .styles import (
@@ -31,59 +31,11 @@ from .printing import PrintSettings, normalize_print_settings
 from .data_validation import DataValidation, normalize_validations
 from .outline import build_outline
 from ._xlsb_writer_consts import _capture_cells
+from ._xlsb_writer_host import _XlsbWriterHost
 
 
-class _XlsbSheetMixin:
+class _XlsbSheetMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _aborted: Any
-        _binaryIndexBin: Any
-        _create_worksheet_rels: Any
-        _media: Any
-        _next_cf_priority: Any
-        _next_table_id: Any
-        _normalize_cf_rules: Any
-        _normalize_charts: Any
-        _normalize_merges: Any
-        _normalize_row_heights: Any
-        _normalize_tables: Any
-        _normalize_widths: Any
-        _pending_pivots: Any
-        _pivot_names: Any
-        _pivot_renders: Any
-        _reject_rich_style: Any
-        _reject_second_write: Any
-        _require_writable: Any
-        _reserved_cf_priorities: Any
-        _seen_cf_priorities: Any
-        _sheet_chart_cells: Any
-        _sheet_charts: Any
-        _sheet_comments: Any
-        _sheet_count: Any
-        _sheet_drawings: Any
-        _sheet_image_media: Any
-        _sheet_images: Any
-        _sheet_index_by_name: Any
-        _sheet_link_rels: Any
-        _sheet_pivots: Any
-        _sheet_print: Any
-        _sheet_shapes: Any
-        _sheet_slicers: Any
-        _sheet_tables: Any
-        _slicer_caches: Any
-        _slicer_names: Any
-        _slicer_targets: Any
-        _split_freeze_cell: Any
-        _table_bin: Any
-        _table_names: Any
-        _tables_bin: Any
-        _worksheet_data: Any
-        _write_slicer_parts: Any
-        _write_worksheet_bin: Any
-        _written_sheets: Any
-        _zf: Any
-        add_sheet: Any
 
     def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None, **kwargs):
         """Write rows to the current sheet.

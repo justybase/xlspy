@@ -532,7 +532,7 @@ class PivotFeeder:
             stats.add(cell_value_at(field_index))
         self._records += 1
 
-    def result(self) -> "PivotRender":
+    def result(self) -> PivotRender:
         if self._names is None:
             raise ValueError(
                 f"pivot source table {self.table.display_name!r} never reached its "

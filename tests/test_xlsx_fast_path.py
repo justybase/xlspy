@@ -142,7 +142,7 @@ PREFIXED_SHEETS = {
         f'<x:worksheet xmlns:x="{MAIN_NS}"><x:sheetData>'
         '<x:row r="1"><x:c r="A1"><x:v>1</x:v></x:c></x:row>'
         '</x:sheetData></x:worksheet>'
-    ).encode("utf-8"),
+    ).encode(),
 }
 
 

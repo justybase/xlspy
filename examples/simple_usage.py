@@ -16,7 +16,7 @@ if __name__ == "__main__":
         ["Alice", 25, "New York",datetime.date.today()],
         ["Bob", 30, "London",Decimal(3.14)],
         ["Charlie", 35, "Paris",datetime.datetime.now()],
-        [True, False, None,datetime.datetime.now(datetime.timezone.utc)]
+        [True, False, None,datetime.datetime.now(datetime.UTC)]
     ]
     data2 = [
         ["Name", "Age", "City", "info"],
@@ -25,8 +25,8 @@ if __name__ == "__main__":
         ["2Alice", 25, "New York",datetime.date.today()],
         ["2Bob", 30, "London",Decimal(5.14)],
         ["2Charlie", 35, "Paris",datetime.datetime.now()],
-        [True, False, None,datetime.datetime.now(datetime.timezone.utc)],
-        [True, False, None,datetime.datetime.now(datetime.timezone.utc)]
+        [True, False, None,datetime.datetime.now(datetime.UTC)],
+        [True, False, None,datetime.datetime.now(datetime.UTC)]
     ]
     with XlsbWriter("output.xlsb") as writer:
         writer.add_sheet("Sheet1")

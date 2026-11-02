@@ -27,6 +27,9 @@ from .biff_utils import build_record
 from .refs import check_sheet_name
 from .updater_utils import renamed_chart_parts
 
+if TYPE_CHECKING:
+    from .updater_utils import ZipPackage
+
 BUNDLE_SH = 0x9C
 BOOK_VIEW = 0x9E
 WORKSHEET_TYPE = "application/vnd.ms-excel.worksheet"
@@ -94,11 +97,11 @@ class XlsbSheetsMixin:
 
     if TYPE_CHECKING:
         # Provided by XlsbUpdater.
-        _package: Any
-        _chartsheets: Any
+        _package: ZipPackage
+        _chartsheets: set[str]
 
         def _apply_parts(self, parts: dict[str, Any], removed: Any = ()) -> None: ...
-        def _invalidate_calculation(self, *args: Any, **kwargs: Any) -> Any: ...
+        def _invalidate_calculation(self, updates: Any, removed: Any) -> Any: ...
 
     def get_sheet_states(self) -> dict[str, str]:
         """Sheet visibility (``visible``, ``hidden`` or ``veryHidden``) by name."""

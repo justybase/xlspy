@@ -55,7 +55,7 @@ def test_inline_rich_text_keeps_all_runs_and_spaces(tmp_path):
 def test_first_row_is_yielded_before_sheet_eof(tmp_path, monkeypatch):
     path = tmp_path / "incremental.xlsx"
     with XlsxWriter(path, use_shared_strings=False) as writer:
-        writer.write_sheet(([index, "x" * 200] for index in range(10000)))
+        writer.write_sheet([index, "x" * 200] for index in range(10000))
     with ExcelReader(str(path)) as reader:
         original = reader._archive.open
         reads = []
@@ -84,7 +84,7 @@ def test_first_row_is_yielded_before_sheet_eof(tmp_path, monkeypatch):
 def test_reader_row_memory_is_bounded(tmp_path):
     path = tmp_path / "memory.xlsx"
     with XlsxWriter(path, use_shared_strings=False) as writer:
-        writer.write_sheet(([index, "x" * 120] for index in range(30000)))
+        writer.write_sheet([index, "x" * 120] for index in range(30000))
     gc.collect()
     tracemalloc.start()
     try:

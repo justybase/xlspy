@@ -106,12 +106,15 @@ line-length = 120
 [tool.ruff.lint]
 # Correctness checks: syntax errors, undefined names, unused imports and
 # variables, plus rules that report nothing (or were fixed to report nothing).
+# UP keeps the syntax current for Python 3.11 (builtin generics, X | None).
 # Not enabled yet: B905 (zip strict=, changes behavior for unequal lengths),
 # B007 (unused loop variables; some are read after the loop), E/S/ARG/DTZ.
 select = [
     "E9", "F63", "F7", "F82", "F401", "F811", "F841",
-    "PLE", "PIE", "TRY203", "C4", "RET", "B010", "B023",
+    "PLE", "PIE", "TRY203", "C4", "RET", "B010", "B023", "UP",
 ]
+# printf-style formatting is fine where it is used.
+ignore = ["UP031"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/xlspy/__init__.py" = ["F401"]
@@ -126,3 +129,5 @@ ignore_missing_imports = true
 warn_unused_configs = true
 # Check the bodies of unannotated functions too; without this, mypy skips them.
 check_untyped_defs = true
+warn_unused_ignores = true
+strict_equality = true

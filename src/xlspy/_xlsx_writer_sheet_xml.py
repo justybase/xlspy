@@ -1,6 +1,5 @@
 """XlsxWriter sheet-level XML: head, views, columns, tail, tables, hyperlinks, page setup."""
 
-from typing import TYPE_CHECKING, Any
 import xml.sax.saxutils as saxutils
 from ._writer_common import FilterData
 from ._text import xstring_escape
@@ -21,26 +20,11 @@ from .styles import (
     styles_for_row,
 )
 from ._xlsx_writer_xml import _DEFAULT_MARGINS, _REL_HYPERLINK, _REL_TABLE, _format_number, _outline_col_attr
+from ._xlsx_writer_host import _XlsxWriterHost
 
 
-class _XlsxSheetXmlMixin:
+class _XlsxSheetXmlMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _cf_rule_xml: Any
-        _color_attrs: Any
-        _filtered_data_list: Any
-        _letters: Any
-        _next_slicer_part: Any
-        _next_table_id: Any
-        _shared_strings: Any
-        _sheet_count: Any
-        _sheet_drawings: Any
-        _slicer_cache_names: Any
-        _slicer_part_files: Any
-        _table_info: Any
-        _tables_xml: Any
-        _use_shared_strings: Any
 
     def _table_xml(self, table: ExcelTable, table_id: int, names: list[str]) -> str:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
@@ -355,7 +339,7 @@ class _XlsxSheetXmlMixin:
 
     def _hyperlinks_xml(self, hyperlinks, link_rels) -> str:
         rid_by_target = {target: rid for rid, _type, target, _ext in link_rels}
-        parts = [f'<hyperlinks>']
+        parts = ['<hyperlinks>']
         for row_idx, col_idx, link in hyperlinks:
             ref = f"{self._letters[col_idx]}{row_idx + 1}"
             attrs = f'ref="{ref}"'

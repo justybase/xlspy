@@ -196,7 +196,7 @@ def _set_properties(writer, props) -> None:
     created = props.created
     if isinstance(created, _datetime.datetime) and created.tzinfo is None:
         # The model's default is datetime.now(): local time.
-        created = created.astimezone(_datetime.timezone.utc)
+        created = created.astimezone(_datetime.UTC)
     writer.set_properties(
         title=props.title, subject=props.subject, author=props.creator,
         keywords=props.keywords, comments=props.description,

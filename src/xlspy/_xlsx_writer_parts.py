@@ -2,7 +2,7 @@
 
 import io
 import xml.sax.saxutils as saxutils
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from . import chart_parts
 from ._text import xstring_escape
 from .comments import comments_xml, vml_xml, COMMENTS_TYPE
@@ -25,49 +25,11 @@ from .printing import (
 )
 from .refs import quote_sheet_name
 from ._xlsx_writer_xml import _ATTR_ENTITIES, _CT_PIVOT_CACHE, _CT_PIVOT_TABLE, _REL_PIVOT_CACHE, _SST_CHUNK_STRINGS
+from ._xlsx_writer_host import _XlsxWriterHost
 
 
-class _XlsxPartsMixin:
+class _XlsxPartsMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _create_styles_xml: Any
-        _defined_names: Any
-        _doc_props_content_types: Any
-        _doc_props_root_rels: Any
-        _filtered_data_list: Any
-        _internal_links: Any
-        _letters: Any
-        _media: Any
-        _next_chart_id: Any
-        _number_format_id: Any
-        _pending_pivots: Any
-        _pivot_renders: Any
-        _shared_strings: Any
-        _sheet_chart_ids: Any
-        _sheet_charts: Any
-        _sheet_comments: Any
-        _sheet_count: Any
-        _sheet_drawings: Any
-        _sheet_image_media: Any
-        _sheet_images: Any
-        _sheet_print: Any
-        _sheet_rels: Any
-        _sheet_shapes: Any
-        _sheet_slicers: Any
-        _sheet_written: Any
-        _slicer_cache_names: Any
-        _slicer_part_files: Any
-        _sst_all_count: Any
-        _sst_unique_count: Any
-        _tables_xml: Any
-        _use_shared_strings: Any
-        _workbook_protection: Any
-        _workbook_rel_base: Any
-        _worksheet_data: Any
-        _write_doc_props: Any
-        _write_empty_sheet: Any
-        _zf: Any
 
     def _write_workbook_parts(self):
         # Excel compares sheet names without regard to case.
@@ -401,7 +363,7 @@ class _XlsxPartsMixin:
                 if parts:
                     sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))
                     parts.clear()
-                sst_file.write(f'<si>{s[1]}</si>'.encode('utf-8'))
+                sst_file.write(f'<si>{s[1]}</si>'.encode())
                 continue
             # The same three replacements as xml.sax.saxutils.escape, minus its call overhead.
             text = s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')

@@ -1,6 +1,6 @@
 """XlsxWriter sheet methods: sheet loop, rows, cells, pivot and empty sheets."""
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 import datetime
 from decimal import Decimal
 import io
@@ -8,7 +8,7 @@ import math
 import shutil
 import tempfile
 import xml.sax.saxutils as saxutils
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from . import _zip_threads
 from ._accel import encode_xlsx_row as accel_encode_xlsx_row
 from ._text import check_cell_text, xstring_escape
@@ -72,72 +72,12 @@ from .styles import (
     styles_for_row,
 )
 from ._xlsx_writer_xml import _EMPTY_ROW_STYLES, _FLUSH_BYTES, _REL_DRAWING, _REL_PIVOT_TABLE, _REL_WORKSHEET, _SheetBody, _Tee, _WIDTH_SAMPLE_ROWS, _format_number
+from ._xlsx_writer_host import _XlsxWriterHost
 
 
-class _XlsxSheetMixin:
+class _XlsxSheetMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _sst_all_count: Any
-        _sst_unique_count: Any
 
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _aborted: Any
-        _fmt_xf: Any
-        _fmt_xf_styles: Any
-        _internal_links: Any
-        _letters: Any
-        _link_relationships: Any
-        _media: Any
-        _next_cf_priority: Any
-        _next_pivot_id: Any
-        _normalize_cf_rules: Any
-        _normalize_charts: Any
-        _normalize_merges: Any
-        _normalize_row_heights: Any
-        _normalize_tables: Any
-        _normalize_widths: Any
-        _pending_pivots: Any
-        _pivot_names: Any
-        _pivot_renders: Any
-        _register_format: Any
-        _register_style: Any
-        _register_tables: Any
-        _reject_second_write: Any
-        _require_writable: Any
-        _reserved_cf_priorities: Any
-        _resolve_slicers: Any
-        _seen_cf_priorities: Any
-        _shared_strings: Any
-        _shared_strings_dict: Any
-        _sheet_charts: Any
-        _sheet_comments: Any
-        _sheet_count: Any
-        _sheet_drawings: Any
-        _sheet_head: Any
-        _sheet_image_media: Any
-        _sheet_images: Any
-        _sheet_index_by_name: Any
-        _sheet_print: Any
-        _sheet_rels: Any
-        _sheet_shapes: Any
-        _sheet_slicers: Any
-        _sheet_tail: Any
-        _sheet_written: Any
-        _slicer_caches: Any
-        _slicer_names: Any
-        _slicer_targets: Any
-        _split_freeze_cell: Any
-        _spool_max_bytes: Any
-        _style_format_xf: Any
-        _style_xf_map: Any
-        _table_names: Any
-        _use_shared_strings: Any
-        _worksheet_data: Any
-        _xf_styles: Any
-        _zf: Any
-        add_sheet: Any
 
     def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None, **kwargs):
         """Write rows to the current sheet.
@@ -614,7 +554,7 @@ class _XlsxSheetMixin:
             # Grouped rows and summary rows past the data are written empty.
             for row_idx in row_outline.indices_from(num_rows):
                 row_attrs = self._row_attrs(row_idx, heights, hidden_row_set, row_outline)
-                buf.write(f'<row r="{row_idx + 1}"{row_attrs}/>'.encode('utf-8'))
+                buf.write(f'<row r="{row_idx + 1}"{row_attrs}/>'.encode())
                 if buf.tell() >= _FLUSH_BYTES:
                     spool.write(buf.getvalue())
                     buf = io.BytesIO()

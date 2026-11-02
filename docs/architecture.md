@@ -35,10 +35,15 @@ pins the names.
 | `xlsx_writer.py` (`XlsxWriter`) | the constructor and state methods stay here; the rest is in mixins: `_xlsx_writer_sheet.py`, `_xlsx_writer_styles.py`, `_xlsx_writer_parts.py`, `_xlsx_writer_sheet_xml.py`; module helpers in `_xlsx_writer_xml.py` |
 | `writer.py` (`XlsbWriter`) | the constructor and state methods stay here; the rest is in mixins: `_xlsb_writer_sheet.py`, `_xlsb_writer_bin.py`, `_xlsb_writer_views.py`, `_xlsb_writer_strings.py`, `_xlsb_writer_styles.py`, `_xlsb_writer_parts.py`; constants in `_xlsb_writer_consts.py` |
 
-The writer mixins read attributes that the writer class sets. Each mixin
-declares them under `if TYPE_CHECKING:` as `Any`, so mypy checks the bodies
-without creating attributes at runtime. A method that reads a new attribute
-needs a declaration in its mixin.
+The writer mixins read attributes that the writer class sets and call each
+other's methods. Each writer has one host class that declares both with their
+real types: `_xlsx_writer_host._XlsxWriterHost` and
+`_xlsb_writer_host._XlsbWriterHost`. Every mixin of that writer derives from
+it. The declarations sit under `if TYPE_CHECKING:`, so the host is empty at
+runtime. mypy checks the writer's `__init__` against the attribute types, and
+it reports an override error when a method's implementation no longer matches
+its stub in the host. A new attribute or cross-mixin method needs a line in
+the host.
 
 ## What has been consolidated
 

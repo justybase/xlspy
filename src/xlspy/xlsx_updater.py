@@ -10,7 +10,8 @@ import numbers
 import os
 import re
 from decimal import Decimal
-from typing import Any, Iterable, Sequence, cast
+from typing import Any, cast
+from collections.abc import Iterable, Sequence
 from xml.parsers import expat
 from ._safe_xml import harden_expat
 

@@ -5,7 +5,8 @@ import zipfile
 
 from ._untrusted import SafeZipFile, check_column_span
 from enum import IntEnum
-from typing import Dict, List, Optional, Set, Generator, Any
+from typing import Any
+from collections.abc import Generator
 from xml.parsers.expat import ParserCreate
 from ._safe_xml import harden_expat
 
@@ -67,7 +68,7 @@ class FieldInfo:
         self.str_value: str = ""
 
 
-_date_excel_masks: Set[str] = {
+_date_excel_masks: set[str] = {
     '[$-F800]dddd,\\ mmmm\\ dd,\\ yyyy',
     'd\\-mm;@',
     'yy\\-mm\\-dd;@',
@@ -116,7 +117,7 @@ def _xlsb_date_1904(workbook_bin: bytes) -> bool:
             return bool(workbook_bin[record.data_start] & 0x01)
     return False
 
-_default_number_formats_type_dict: Dict[int, type] = {
+_default_number_formats_type_dict: dict[int, type] = {
     0: str,
     1: float,
     2: float,
@@ -139,7 +140,7 @@ _default_number_formats_type_dict: Dict[int, type] = {
 }
 
 
-def _get_date_num_fmt_ids(number_formats_type_dict: Dict[int, type]) -> Set[int]:
+def _get_date_num_fmt_ids(number_formats_type_dict: dict[int, type]) -> set[int]:
     return {k for k, v in number_formats_type_dict.items() if v is datetime.datetime}
 
 _letters = [chr(65 + i) for i in range(26)]
@@ -153,7 +154,7 @@ for i in range(24):
                 break
             _letters.append(chr(65 + i) + chr(65 + j) + chr(65 + k))
 
-_letter_to_column_num: Dict[str, int] = {letter: idx for idx, letter in enumerate(_letters)}
+_letter_to_column_num: dict[str, int] = {letter: idx for idx, letter in enumerate(_letters)}
 
 
 class ExcelReader:
@@ -161,25 +162,25 @@ class ExcelReader:
 
     def __init__(
         self,
-        path: Optional[str] = None,
+        path: str | None = None,
         use_memory_stream_for_xlsb: bool = True,
         errors: str = "legacy",
     ):
         if errors not in {"legacy", "openpyxl"}:
             raise ValueError("errors must be 'legacy' or 'openpyxl'")
         self._errors = errors
-        self._archive: Optional[zipfile.ZipFile] = None
+        self._archive: zipfile.ZipFile | None = None
         self._is_xlsb = False
-        self._worksheet_id_to_name: Dict[str, str] = {}
-        self._worksheet_name_to_id: Dict[str, str] = {}
-        self._worksheet_id_to_location: Dict[str, str] = {}
-        self._shared_string_array: List[str] = []
-        self._styles_cell_xfs_array: List[dict] = []
-        self._number_formats_type_dict: Dict[int, type] = dict(_default_number_formats_type_dict)
-        self._shared_strings_location: Optional[str] = None
-        self._styles_location: Optional[str] = None
+        self._worksheet_id_to_name: dict[str, str] = {}
+        self._worksheet_name_to_id: dict[str, str] = {}
+        self._worksheet_id_to_location: dict[str, str] = {}
+        self._shared_string_array: list[str] = []
+        self._styles_cell_xfs_array: list[dict] = []
+        self._number_formats_type_dict: dict[int, type] = dict(_default_number_formats_type_dict)
+        self._shared_strings_location: str | None = None
+        self._styles_location: str | None = None
         self._date_1904 = False
-        self._path: Optional[str] = None if path is None else os.fspath(path)
+        self._path: str | None = None if path is None else os.fspath(path)
         self.use_memory_stream_for_xlsb = use_memory_stream_for_xlsb
 
     def open(self, path: "str | os.PathLike[str]"):
@@ -229,7 +230,7 @@ class ExcelReader:
         self.close()
         return False
 
-    def get_sheet_names(self) -> List[str]:
+    def get_sheet_names(self) -> list[str]:
         return list(self._worksheet_name_to_id.keys())
 
     def read_part(self, path: str) -> bytes | None:
@@ -246,7 +247,7 @@ class ExcelReader:
                 return i
         raise ValueError(f"Sheet '{sheet_name}' not found")
 
-    def get_rows(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> Generator[List[Any], None, None]:
+    def get_rows(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> Generator[list[Any], None, None]:
         """Yield values or formula text; streaming=True opts into incremental XLSB."""
         if not isinstance(data_only, bool):
             raise TypeError("data_only must be bool")
@@ -269,7 +270,7 @@ class ExcelReader:
                     for value in row
                 ]
 
-    def read_all(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> List[List[Any]]:
+    def read_all(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> list[list[Any]]:
         return list(self.get_rows(sheet_name, data_only=data_only, streaming=streaming))
 
     def get_comments(self, sheet_name: str):
@@ -358,7 +359,7 @@ class ExcelReader:
         parser.StartElementHandler = lambda tag, attrs: self._rels_start_elem(tag, attrs)
         parser.Parse(content, True)
 
-    def _rels_start_elem(self, tag: str, attrs: Dict[str, str]):
+    def _rels_start_elem(self, tag: str, attrs: dict[str, str]):
         local = tag.rsplit('}', 1)[-1].rsplit(':', 1)[-1]
         if local == 'Relationship':
             target = attrs.get('Target', '')
@@ -561,11 +562,11 @@ class ExcelReader:
             return target
         return f'xl/{target}'
 
-    def _get_rows_xlsx(self, sheet_name: str, *, data_only: bool = True) -> Generator[List[Any], None, None]:
+    def _get_rows_xlsx(self, sheet_name: str, *, data_only: bool = True) -> Generator[list[Any], None, None]:
         from ._xlsx_read import read_xlsx_rows
         yield from read_xlsx_rows(self, sheet_name, data_only=data_only)
 
-    def _get_rows_xlsb(self, sheet_name: str) -> Generator[List[Any], None, None]:
+    def _get_rows_xlsb(self, sheet_name: str) -> Generator[list[Any], None, None]:
         r_id = self._worksheet_name_to_id[sheet_name]
         location = self._worksheet_id_to_location[r_id]
         entry_path = self._resolve_path(location)
@@ -624,7 +625,7 @@ class ExcelReader:
         return_value = True
         prev_col_num = -1
 
-        inner_row: Dict[int, Any] = {}
+        inner_row: dict[int, Any] = {}
 
         while True:
             if not return_value:

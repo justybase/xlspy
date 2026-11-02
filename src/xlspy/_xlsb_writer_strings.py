@@ -1,6 +1,5 @@
 """XlsbWriter cell string records: inline and rich strings, filter defined names."""
 
-from typing import TYPE_CHECKING, Any
 import struct
 from .styles import (
     _FontKey,
@@ -10,21 +9,11 @@ from .biff_utils import build_record
 from .rich_text import CellRichText, InlineFont, TextBlock
 from ._text import check_cell_text
 from ._xlsb_writer_consts import _MAX_STR_RUNS
+from ._xlsb_writer_host import _XlsbWriterHost
 
 
-class _XlsbStringsMixin:
+class _XlsbStringsMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _filtered_data_list: Any
-        _font_registry: Any
-        _magicFilterExcel2016Fix0: Any
-        _magicFilterExcel2016Fix1: Any
-        _magicFilterExcel2016Fix2: Any
-        _register_component: Any
-        _sst_all_count: Any
-        _sst_unique_count: Any
-        _use_shared_strings: Any
 
     @staticmethod
     def _write_inline_str(buffer, text: str, col_idx: int, style_ref: int):

@@ -26,7 +26,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any
+from collections.abc import Callable, Iterable, Sequence
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
 from xml.parsers import expat
@@ -313,7 +314,7 @@ def rewrite_shared_strings_xml(
                         (
                             f"<{prefix}si><{prefix}t{xml_space_attribute(value)}>"
                             f"{escape_xml_text(value)}</{prefix}t></{prefix}si>"
-                        ).encode("utf-8")
+                        ).encode()
                     )
                 copy_file_range(source_path, target, closing_match.start(), size)
 
@@ -604,7 +605,7 @@ def table_header(
 
 
 def sheet_table_headers(
-    package: "ZipPackage",
+    package: ZipPackage,
     sheet_path: str,
     read_table: Callable[[bytes], TableHeader | None],
 ) -> list[TableHeader]:

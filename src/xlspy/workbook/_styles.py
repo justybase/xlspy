@@ -392,13 +392,13 @@ class XlsxStyleTable:
 
     # -- construction -------------------------------------------------
     @classmethod
-    def empty(cls) -> "XlsxStyleTable":
+    def empty(cls) -> XlsxStyleTable:
         table = cls()
         table._add_default_components()
         return table
 
     @classmethod
-    def from_xml(cls, xml: bytes | str | None) -> "XlsxStyleTable":
+    def from_xml(cls, xml: bytes | str | None) -> XlsxStyleTable:
         if not xml:
             return cls.empty()
         table = cls()
@@ -1029,7 +1029,7 @@ class XlsxStyleTable:
             return None
         return self.dxfs[index]
 
-    def clone(self) -> "XlsxStyleTable":
+    def clone(self) -> XlsxStyleTable:
         import copy
         clone = XlsxStyleTable()
         clone._root = copy.deepcopy(self._root)

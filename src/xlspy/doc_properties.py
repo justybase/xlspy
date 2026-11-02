@@ -14,6 +14,9 @@ import re
 from typing import TYPE_CHECKING, Any
 from xml.sax.saxutils import escape
 
+if TYPE_CHECKING:
+    from ._output import PackageZip
+
 # Characters XML 1.0 cannot carry at all.
 _NOT_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 
@@ -53,7 +56,7 @@ def _utc(value: _datetime.datetime, name: str) -> str:
     if not isinstance(value, _datetime.datetime):
         raise TypeError(f"{name} must be a datetime.datetime")
     if value.tzinfo is not None:
-        value = value.astimezone(_datetime.timezone.utc)
+        value = value.astimezone(_datetime.UTC)
     # A naive datetime is taken as UTC, as XlsxWriter does.
     return value.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -85,7 +88,7 @@ class DocumentPropertiesMixin:
 
     if TYPE_CHECKING:
         # Provided by the writer that mixes this in.
-        _zf: Any
+        _zf: PackageZip
 
         def _require_writable(self) -> None: ...
 
@@ -122,7 +125,7 @@ class DocumentPropertiesMixin:
         }
         props: dict[str, Any] = {key: _check_doc_text(key, value) for key, value in values.items() if value is not None}
         if created is None:
-            created = _datetime.datetime.now(_datetime.timezone.utc)
+            created = _datetime.datetime.now(_datetime.UTC)
         props["created"] = _utc(created, "created")
         custom_xml = []
         if custom is not None:

@@ -401,7 +401,7 @@ class WorksheetProtection:
         return self.sheet
 
 
-def _as_model_protection(value) -> "WorksheetProtection":
+def _as_model_protection(value) -> WorksheetProtection:
     """Return the model WorksheetProtection for ``ws.protection`` assignments.
 
     Accepts the model class (openpyxl-style fields) or the public
@@ -422,7 +422,7 @@ def _as_model_protection(value) -> "WorksheetProtection":
     raise TypeError("protection must be an xlspy.SheetProtection, a WorksheetProtection or None")
 
 
-def _as_model_page_margins(value) -> "WorksheetPageMargins":
+def _as_model_page_margins(value) -> WorksheetPageMargins:
     """Return the model WorksheetPageMargins for ``ws.page_margins`` (mutable holder)."""
     if isinstance(value, WorksheetPageMargins):
         return value

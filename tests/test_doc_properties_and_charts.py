@@ -33,7 +33,7 @@ def test_properties_parts(tmp_path, writer_cls, ext):
         path, writer_cls, title="Q3 & <report>", author="Zoë Ångström", company="ACME",
         manager="Boss", keywords="sales, q3", comments="notes", category="Finance",
         status="Draft", subject="Sales",
-        created=datetime.datetime(2024, 5, 1, 10, 0, tzinfo=datetime.timezone.utc),
+        created=datetime.datetime(2024, 5, 1, 10, 0, tzinfo=datetime.UTC),
         custom={"Project": "X", "Count": 7, "Big": 2**40, "Ratio": 0.5, "Approved": True,
                 "Due": datetime.date(2024, 6, 1)},
     )

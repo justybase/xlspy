@@ -10,7 +10,8 @@ import re
 import struct
 from ._safe_xml import fromstring as safe_fromstring
 from decimal import Decimal
-from typing import Any, Iterable, Sequence
+from typing import Any
+from collections.abc import Iterable, Sequence
 from ._updater_base import StyleFallback, _UpdaterBase
 from ._xlsb_edit import XlsbEditMixin
 from ._xlsb_sheets import XlsbSheetsMixin
@@ -754,7 +755,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                     stream.seek(record.data_end)
 
     @staticmethod
-    def _find_rows_region_stream(sheet_path: str | os.PathLike[str]) -> "_RowsRegion":
+    def _find_rows_region_stream(sheet_path: str | os.PathLike[str]) -> _RowsRegion:
         rows_start = -1
         last_cell_end = -1
         last_row_header_end = -1
@@ -805,7 +806,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                     stream.write(struct.pack("<i", last_col))
                     stream.seek(record.data_end)
 
-    def _find_rows_region(self, sheet_data: bytes) -> "_RowsRegion":
+    def _find_rows_region(self, sheet_data: bytes) -> _RowsRegion:
         rows_start = -1
         last_cell_end = -1
         last_row_header_end = -1

@@ -1,5 +1,6 @@
 from .exceptions import UnsupportedFeatureError as UnsupportedFeatureError
-from typing import Any, Iterable, Tuple
+from typing import Any
+from collections.abc import Iterable
 import io
 from ._accel import encode_xlsb_row as encode_xlsb_row, encode_xlsb_row_inline as encode_xlsb_row_inline
 from ._widths import estimate_column_widths as estimate_column_widths, file_width as file_width
@@ -160,9 +161,10 @@ class XlsbWriter(_XlsbStylesMixin, _XlsbPartsMixin, _XlsbSheetMixin, _XlsbViewsM
         self._aborted = False
         self._saved = False
         self._output = None  # StagedOutput while open
-        self._worksheet_data: list[Tuple[str, Iterable[list[Any]],bool]] = []
-        self._shared_strings: list[str] = []
-        self._shared_strings_dict: dict[str, int] = {}
+        self._worksheet_data: list[tuple[str, Iterable[list[Any]],bool]] = []
+        # A rich-text entry is ("rich", text, runs) and only the Python SST writer encodes it.
+        self._shared_strings: list[str | tuple[str, str, tuple[Any, ...]]] = []
+        self._shared_strings_dict: dict[str | tuple[str, str, tuple[Any, ...]], int] = {}
         self._sheet_count = 0
         self._sst_unique_count = 0
         self._sst_all_count = 0
@@ -232,7 +234,7 @@ class XlsbWriter(_XlsbStylesMixin, _XlsbPartsMixin, _XlsbSheetMixin, _XlsbViewsM
         self._xlsb_formula_context = None
         self._sheet_comments: dict[int, Any] = {}
         self._sheet_link_rels: dict[int, Any] = {}
-        self._workbook_protection: Any = None
+        self._workbook_protection = None
 
 
     def _written_sheet_indexes(self) -> set[int]:

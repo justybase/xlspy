@@ -1,19 +1,15 @@
 """XlsbWriter sheet-view records: row headers, panes, selections, column widths."""
 
-from typing import TYPE_CHECKING, Any
 import struct
 import io
 from ._widths import file_width
 from .biff_utils import build_record
 from ._xlsb_writer_consts import _BRT_BEGIN_COL_INFOS, _BRT_COL_INFO, _BRT_END_COL_INFOS, _BRT_PANE, _BRT_ROW_HDR, _BRT_SEL, _PANE_ACTIVE
+from ._xlsb_writer_host import _XlsbWriterHost
 
 
-class _XlsbViewsMixin:
+class _XlsbViewsMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _split_freeze_cell: Any
-        _stickHeaderA1bytes: Any
 
     @staticmethod
     def _row_height_twips(points: float) -> int:

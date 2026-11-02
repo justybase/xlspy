@@ -4,7 +4,8 @@ from __future__ import annotations
 from dataclasses import replace
 from functools import lru_cache
 import re
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
 from ..refs import _column_index, parse_cell_range
 from ._attrs import _coerce_color
 from ._keys import _color_key

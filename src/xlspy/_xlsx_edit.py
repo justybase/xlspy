@@ -31,6 +31,9 @@ from .hyperlinks import Hyperlink
 from .refs import parse_cell_range, column_label
 from .updater_utils import unwrap_cell, replace_or_add_xml_attribute
 
+if TYPE_CHECKING:
+    from .updater_utils import DiskStringIndex, ZipPackage
+
 
 def _bytes(root):
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
@@ -57,13 +60,15 @@ class XlsxEditMixin:
     if TYPE_CHECKING:
         # Provided by the host updater (XlsxUpdater or XlsbUpdater). Annotations
         # only, plus stubs that the host's own methods replace at runtime.
-        _package: Any
-        _sheets: Any
-        _date_1904: Any
-        _tag_prefix: Any
-        _shared_strings_loaded: Any
-        _shared_strings_total: Any
-        _stream_shared_strings: Any
+        _package: ZipPackage
+        _sheets: dict[str, str]
+        _date_1904: bool
+        _shared_strings_loaded: bool
+        _shared_strings_total: int
+        _stream_shared_strings: DiskStringIndex | None
+
+        @staticmethod
+        def _tag_prefix(xml_data: str, tag_name: str) -> str: ...
 
     def _apply_parts(self, parts, removed=()):
         # The package owns the write-back transaction (ZipPackage.apply_parts).

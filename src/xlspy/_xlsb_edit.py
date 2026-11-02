@@ -64,9 +64,9 @@ class XlsbEditMixin(XlsxEditMixin):
     if TYPE_CHECKING:
         # Provided by XlsbUpdater; the attributes it shares with XlsxEditMixin are
         # declared there.
-        _shared_strings_loaded: Any
+        _shared_strings_loaded: bool
 
-        def _part_or_none(self, *args: Any, **kwargs: Any) -> Any: ...
+        def _part_or_none(self, path: str) -> bytes | None: ...
 
     def _sheet_bin(self, sheet_name):
         try:

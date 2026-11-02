@@ -1,11 +1,11 @@
 """XlsbWriter worksheet record stream for one sheet."""
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 import datetime
 import math
 from decimal import Decimal
 import struct
-from typing import Iterable
+from collections.abc import Iterable
 import io
 import itertools
 from ._accel import encode_xlsb_row, encode_xlsb_row_inline
@@ -38,41 +38,11 @@ from ._xlsb_sparklines import sparklines_bin
 from .printing import PrintSettings
 from ._writer_common import FilterData
 from ._xlsb_writer_consts import _BRT_BEGIN_MERGE_CELLS, _BRT_DRAWING, _BRT_END_MERGE_CELLS, _BRT_HLINK, _BRT_MERGE_CELL, _hlink_payload
+from ._xlsb_writer_host import _XlsbWriterHost
 
 
-class _XlsbBinMixin:
+class _XlsbBinMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _autoFilterEndBytes: Any
-        _autoFilterStartBytes: Any
-        _cf_bin_grouped: Any
-        _color_payload: Any
-        _filtered_data_list: Any
-        _fmt_xf: Any
-        _fmt_xf_styles: Any
-        _formula_context: Any
-        _list_parts_bin: Any
-        _pane_record: Any
-        _register_format: Any
-        _register_style: Any
-        _row_header_record: Any
-        _row_height_twips: Any
-        _selection_record: Any
-        _shared_strings: Any
-        _shared_strings_dict: Any
-        _sheet1Bytes: Any
-        _sheet_number: Any
-        _sst_all_count: Any
-        _sst_unique_count: Any
-        _style_format_xf: Any
-        _style_xf_map: Any
-        _use_shared_strings: Any
-        _worksheet_data: Any
-        _write_cols_width: Any
-        _write_rich_str: Any
-        _write_str: Any
-        _xf_styles: Any
 
     def _write_worksheet_bin(
         self, sheet_file: io.BufferedWriter, worksheet_data: Iterable[list[Any]],

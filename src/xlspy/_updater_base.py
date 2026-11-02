@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import datetime as _datetime
 import os
-from typing import Any, Iterable, Literal, Sequence
+from typing import Any, Literal
+from collections.abc import Iterable, Sequence
 
 from .excel_dates import datetime_to_serial
 from .updater_utils import (

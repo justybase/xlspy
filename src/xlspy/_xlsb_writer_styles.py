@@ -1,6 +1,5 @@
 """XlsbWriter style methods: number formats, xf registration, styles.bin records."""
 
-from typing import TYPE_CHECKING, Any
 from .exceptions import UnsupportedFeatureError
 import struct
 from .styles import (
@@ -16,25 +15,11 @@ from ._xlsb_style_records import (
 )
 from ._xlsb_cf import dxfs_bin
 from ._xlsb_writer_consts import _BRT_BEGIN_BORDERS, _BRT_BEGIN_CELL_XFS, _BRT_BEGIN_FILLS, _BRT_BEGIN_FMTS, _BRT_BEGIN_FONTS, _BRT_END_BORDERS, _BRT_END_CELL_XFS, _BRT_END_FILLS, _BRT_END_FMTS, _BRT_END_FONTS
+from ._xlsb_writer_host import _XlsbWriterHost
 
 
-class _XlsbStylesMixin:
+class _XlsbStylesMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
-    if TYPE_CHECKING:
-        # Attributes of the writer class that these methods use; it sets them.
-        _border_registry: Any
-        _build_numfmt_record: Any
-        _dxf_index: Any
-        _fill_registry: Any
-        _font_registry: Any
-        _format_registry: Any
-        _format_xf_map: Any
-        _next_numfmt_id: Any
-        _next_xf_index: Any
-        _style_components: Any
-        _style_xf_map: Any
-        _stylesBin: Any
-        _xf_styles: Any
 
     def _register_numfmt(self, fmt_string: str) -> int:
         numfmt_id = self._format_registry.get(fmt_string)
