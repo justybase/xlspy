@@ -1,4 +1,5 @@
 """XlsxWriter sheet-level XML: head, views, columns, tail, tables, hyperlinks, page setup."""
+from __future__ import annotations
 
 import xml.sax.saxutils as saxutils
 from ._writer_common import FilterData

@@ -1,6 +1,7 @@
 """BIFF built-in function identifiers and operand classes (MS-XLSB Ftab)."""
 
 # name -> (identifier, minimum arguments, maximum arguments, fixed arity, operand classes)
+from __future__ import annotations
 FUNCTIONS = {
     'COUNT': (0, 0, 255, None, 'R'),
     'IF': (1, 2, 3, None, 'VRR'),

@@ -1,4 +1,5 @@
 """XlsbWriter sheet methods: write_sheet, the sheet loop and the dataframe entry point."""
+from __future__ import annotations
 
 from typing import Any
 from collections.abc import Iterable

@@ -1,4 +1,5 @@
 """XlsbWriter worksheet record stream for one sheet."""
+from __future__ import annotations
 
 from typing import Any
 import datetime

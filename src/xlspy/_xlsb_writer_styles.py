@@ -1,4 +1,5 @@
 """XlsbWriter style methods: number formats, xf registration, styles.bin records."""
+from __future__ import annotations
 
 import typing
 from .exceptions import UnsupportedFeatureError

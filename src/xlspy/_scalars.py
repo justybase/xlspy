@@ -6,6 +6,7 @@ kinds that Excel stores as numbers or booleans: integers, ``bool_``, and
 float16/float32 (``float64`` already is a ``float``). numpy is never imported
 here: a scalar is recognised by its class's module and its dtype.
 """
+from __future__ import annotations
 
 
 def numpy_value(value):

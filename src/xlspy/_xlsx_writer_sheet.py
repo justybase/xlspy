@@ -1,4 +1,5 @@
 """XlsxWriter sheet methods: sheet loop, rows, cells, pivot and empty sheets."""
+from __future__ import annotations
 
 from typing import Any
 import datetime

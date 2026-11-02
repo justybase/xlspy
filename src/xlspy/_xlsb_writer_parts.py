@@ -1,4 +1,5 @@
 """XlsbWriter package methods: content types, relationships, workbook, shared strings, tables, CF."""
+from __future__ import annotations
 
 import struct
 import io

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import os
 import re
@@ -7,6 +9,8 @@ from ._untrusted import SafeZipFile, check_column_span
 from enum import IntEnum
 from typing import Any
 from collections.abc import Generator
+from types import TracebackType
+from typing import TYPE_CHECKING, Literal
 from xml.parsers.expat import ParserCreate
 from ._safe_xml import harden_expat
 
@@ -20,12 +24,16 @@ from ._accel import read_xlsx_shared_strings as _accel_read_xlsx_sst
 from ._text import xstring_unescape
 from ._xlsb_formulas import ERRORS as _XLSB_ERRORS
 
+if TYPE_CHECKING:
+    from ._metadata import DefinedName
+    from .comments import Comment
+
 _SST_ITEM = re.compile(r"<si>(.*?)</si>", re.DOTALL)
 _SST_TEXT = re.compile(r"<t(?:\s[^>]*)?>(.*?)</t>", re.DOTALL)
 _SST_UNSAFE = re.compile(r"<!\[CDATA\[|<!--|&#|<\w+:|<si\s|<si/>|<t\b[^>]*/>")
 
 
-def _parse_shared_strings_fast(content):
+def _parse_shared_strings_fast(content: str) -> list[str] | None:
     """Shared strings by regex, or None when the markup needs the XML parser
     (CDATA, comments, numeric references, prefixed or self-closing tags)."""
     if _SST_UNSAFE.search(content) or content.count("<si>") != content.count("</si>"):
@@ -58,7 +66,7 @@ class ExcelDataType(IntEnum):
 
 
 class FieldInfo:
-    def __init__(self):
+    def __init__(self) -> None:
         self.type = ExcelDataType.Null
         self.int32_value: int = 0
         self.int64_value: int = 0
@@ -183,7 +191,7 @@ class ExcelReader:
         self._path: str | None = None if path is None else os.fspath(path)
         self.use_memory_stream_for_xlsb = use_memory_stream_for_xlsb
 
-    def open(self, path: "str | os.PathLike[str]"):
+    def open(self, path: str | os.PathLike[str]) -> None:
         # Re-opening the same instance must not leak the previous archive nor
         # accumulate worksheet/style/shared-string state from the previous file.
         path = os.fspath(path)
@@ -210,7 +218,7 @@ class ExcelReader:
             self.close()
             raise
 
-    def close(self):
+    def close(self) -> None:
         if self._archive is not None:
             self._archive.close()
             self._archive = None
@@ -221,12 +229,13 @@ class ExcelReader:
             raise ValueError("ExcelReader is closed")
         return self._archive
 
-    def __enter__(self):
+    def __enter__(self) -> ExcelReader:
         if self._path is not None:
             self.open(self._path)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None,
+                 exc_tb: TracebackType | None) -> Literal[False]:
         self.close()
         return False
 
@@ -273,7 +282,7 @@ class ExcelReader:
     def read_all(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> list[list[Any]]:
         return list(self.get_rows(sheet_name, data_only=data_only, streaming=streaming))
 
-    def get_comments(self, sheet_name: str):
+    def get_comments(self, sheet_name: str) -> dict[str, Comment]:
         """Return classic note text and authors, without reading worksheet rows."""
         if self._is_xlsb:
             from ._xlsb_metadata import parse_comments
@@ -288,7 +297,7 @@ class ExcelReader:
         _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
         return read_comments(self._zip().read(parts["comments"][0])) if "comments" in parts else {}
 
-    def get_defined_names(self):
+    def get_defined_names(self) -> list[DefinedName]:
         """Return global and worksheet-local user names (not built-in names)."""
         if self._is_xlsb:
             from ._xlsb_formulas import FormulaContext
@@ -296,7 +305,7 @@ class ExcelReader:
         from ._metadata import read_defined_names
         return read_defined_names(self._zip().read("xl/workbook.xml"), self.get_sheet_names())
 
-    def _open_xlsx(self, path: str):
+    def _open_xlsx(self, path: str) -> None:
         self._archive = SafeZipFile(path, 'r')
 
         with self._zip().open('xl/workbook.xml') as f:
@@ -311,7 +320,7 @@ class ExcelReader:
         if self._shared_strings_location is not None:
             self._fill_shared_strings()
 
-    def _open_xlsb(self, path: str):
+    def _open_xlsb(self, path: str) -> None:
         self._archive = SafeZipFile(path, 'r')
 
         with self._zip().open('xl/workbook.bin') as f:
@@ -333,7 +342,7 @@ class ExcelReader:
         if self._shared_strings_location is not None:
             self._fill_bin_shared_strings()
 
-    def _parse_workbook_xml(self, content: str):
+    def _parse_workbook_xml(self, content: str) -> None:
         from ._safe_xml import fromstring as safe_fromstring
         from ._metadata import MAIN, namespace_of, relationship_namespace
         root = safe_fromstring(content)
@@ -347,7 +356,7 @@ class ExcelReader:
         if properties is not None:
             self._date_1904 = properties.get('date1904', '').strip().lower() in {'1', 'true'}
 
-    def _fill_rels(self, ext: str):
+    def _fill_rels(self, ext: str) -> None:
         rels_path = f'xl/_rels/workbook.{ext}.rels'
         if rels_path not in self._zip().namelist():
             return
@@ -359,7 +368,7 @@ class ExcelReader:
         parser.StartElementHandler = lambda tag, attrs: self._rels_start_elem(tag, attrs)
         parser.Parse(content, True)
 
-    def _rels_start_elem(self, tag: str, attrs: dict[str, str]):
+    def _rels_start_elem(self, tag: str, attrs: dict[str, str]) -> None:
         local = tag.rsplit('}', 1)[-1].rsplit(':', 1)[-1]
         if local == 'Relationship':
             target = attrs.get('Target', '')
@@ -375,7 +384,7 @@ class ExcelReader:
             elif kind == 'styles':
                 self._styles_location = target
 
-    def _fill_shared_strings(self):
+    def _fill_shared_strings(self) -> None:
         if self._shared_strings_location is None:
             return
         entry_path = self._resolve_path(self._shared_strings_location)
@@ -400,13 +409,13 @@ class ExcelReader:
         parser.CharacterDataHandler = lambda data: None
 
         class SstHandler:
-            def __init__(self, strings_list):
+            def __init__(self, strings_list: list[str]) -> None:
                 self.strings = strings_list
                 self.in_si = False
                 self.in_t = False
                 self.buf = ""
 
-            def start(self, tag, attrs):
+            def start(self, tag: str, attrs: dict[str, str]) -> None:
                 local = tag.split('}')[-1] if '}' in tag else tag
                 if local == 'si':
                     self.in_si = True
@@ -414,7 +423,7 @@ class ExcelReader:
                 elif local == 't' and self.in_si:
                     self.in_t = True
 
-            def end(self, tag):
+            def end(self, tag: str) -> None:
                 local = tag.split('}')[-1] if '}' in tag else tag
                 if local == 't' and self.in_t:
                     self.in_t = False
@@ -424,7 +433,7 @@ class ExcelReader:
                         self.in_si = False
                         self.buf = ""
 
-            def chars(self, data):
+            def chars(self, data: str) -> None:
                 if self.in_t:
                     self.buf += data
 
@@ -434,7 +443,7 @@ class ExcelReader:
         parser.CharacterDataHandler = h.chars
         parser.Parse(content, True)
 
-    def _fill_bin_shared_strings(self):
+    def _fill_bin_shared_strings(self) -> None:
         if self._shared_strings_location is None:
             return
         entry_path = self._resolve_path(self._shared_strings_location)
@@ -465,7 +474,7 @@ class ExcelReader:
             self._shared_string_array = self._shared_string_array[:idx]
         reader.close()
 
-    def _fill_styles(self):
+    def _fill_styles(self) -> None:
         self._number_formats_type_dict = dict(_default_number_formats_type_dict)
         if self._styles_location is None:
             return
@@ -477,12 +486,12 @@ class ExcelReader:
         fmt_types = self._number_formats_type_dict
 
         class StylesHandler:
-            def __init__(self, xfs_list):
+            def __init__(self, xfs_list: list[dict[str, int]]) -> None:
                 self.xfs = xfs_list
                 self.in_cell_xfs = False
                 self.in_num_fmts = False
 
-            def start(self, tag, attrs):
+            def start(self, tag: str, attrs: dict[str, str]) -> None:
                 local = tag.split('}')[-1] if '}' in tag else tag
                 if local == 'cellXfs':
                     self.in_cell_xfs = True
@@ -501,14 +510,14 @@ class ExcelReader:
                         else:
                             fmt_types[num_fmt_id] = str
 
-            def end(self, tag):
+            def end(self, tag: str) -> None:
                 local = tag.split('}')[-1] if '}' in tag else tag
                 if local == 'cellXfs':
                     self.in_cell_xfs = False
                 elif local == 'numFmts':
                     self.in_num_fmts = False
 
-            def chars(self, data):
+            def chars(self, data: str) -> None:
                 pass
 
         h = StylesHandler(self._styles_cell_xfs_array)
@@ -518,7 +527,7 @@ class ExcelReader:
         parser.CharacterDataHandler = h.chars
         parser.Parse(content, True)
 
-    def _fill_bin_styles(self):
+    def _fill_bin_styles(self) -> None:
         self._number_formats_type_dict = dict(_default_number_formats_type_dict)
         if self._styles_location is None:
             return
@@ -774,7 +783,7 @@ class _MemoryStream:
         self._pos += size
         return size
 
-    def close(self):
+    def close(self) -> None:
         pass
 
     @property

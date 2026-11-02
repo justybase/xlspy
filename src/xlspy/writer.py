@@ -1,3 +1,4 @@
+from __future__ import annotations
 from .exceptions import UnsupportedFeatureError as UnsupportedFeatureError
 from typing import Any
 from collections.abc import Iterable

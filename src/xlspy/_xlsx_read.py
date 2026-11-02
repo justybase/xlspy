@@ -1,4 +1,5 @@
 """Incremental XLSX rows and shared-formula expansion."""
+from __future__ import annotations
 
 import codecs
 import datetime

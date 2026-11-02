@@ -1,4 +1,5 @@
 """Module-level constants and record helpers of the XLSB writer (BIFF12 record ids)."""
+from __future__ import annotations
 
 import struct
 import uuid

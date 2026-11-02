@@ -4,6 +4,7 @@ The package layout keeps the historical ``from xlspy.styles import Style``
 imports working while adding openpyxl-compatible submodules such as
 ``xlspy.styles.numbers``.
 """
+from __future__ import annotations
 
 from .core import *  # noqa: F401,F403
 from .named_styles import NamedStyle as NamedStyle, NamedStyleList as NamedStyleList

@@ -1,4 +1,5 @@
 """Module-level helpers of the XLSX writer: XML fragments, spool and flush constants."""
+from __future__ import annotations
 
 from typing import IO, Protocol
 from dataclasses import dataclass, field

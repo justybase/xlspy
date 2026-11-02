@@ -1,4 +1,5 @@
 """Formula tokenizer and translator compatible with openpyxl."""
+from __future__ import annotations
 
 from .token import Token
 from .tokenizer import Tokenizer, TokenizerError

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import io
 from typing import Any
 from collections.abc import Iterable

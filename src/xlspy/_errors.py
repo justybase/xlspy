@@ -1,4 +1,5 @@
 """Error values (``#DIV/0!``, ``#N/A``, ...) as the readers return them."""
+from __future__ import annotations
 
 
 class CellError(str):

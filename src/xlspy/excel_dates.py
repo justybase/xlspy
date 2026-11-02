@@ -11,6 +11,7 @@ the reference implementation): serials ``1..59`` are shifted by one day when
 read, serial 60 and 59 both read as 1900-02-28, and dates before 1900-03-01
 are written one serial lower.
 """
+from __future__ import annotations
 
 import datetime
 

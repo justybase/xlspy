@@ -12,6 +12,7 @@ Every wrapper below returns None when the native module does not provide the
 function (or is disabled), and the caller then uses the pure-Python
 implementation.
 """
+from __future__ import annotations
 
 import importlib as _importlib
 import os as _os

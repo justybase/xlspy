@@ -1,3 +1,4 @@
+from __future__ import annotations
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError, version as _metadata_version
 
 from .exceptions import InvalidFileError, UnsupportedFeatureError, XlspyError

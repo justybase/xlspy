@@ -4,6 +4,7 @@
 import this package.  Use this API when you need random access, styles,
 merges, metadata, or round-trip editing of an existing XLSX/XLSM file.
 """
+from __future__ import annotations
 
 from ._model import (
     AutoFilter,

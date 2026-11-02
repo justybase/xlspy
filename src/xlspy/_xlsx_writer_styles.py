@@ -1,4 +1,5 @@
 """XlsxWriter style methods: fonts, fills, borders, styles.xml, conditional-format XML."""
+from __future__ import annotations
 
 import xml.sax.saxutils as saxutils
 from .styles import (

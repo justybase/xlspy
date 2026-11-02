@@ -14,6 +14,7 @@ The copy into a caller's stream is the one step that cannot be rolled back:
 if the stream itself fails part-way through that copy, the bytes it already
 accepted stay there.
 """
+from __future__ import annotations
 
 import errno
 import os

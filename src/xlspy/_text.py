@@ -10,6 +10,7 @@ would turn into line feeds) and U+FFFE/U+FFFF are written that way, and the
 underscore of literal text that already looks like ``_xHHHH_`` is written as
 ``_x005F_``, so Excel reads back exactly the original text.
 """
+from __future__ import annotations
 
 import re
 from xml.sax import saxutils

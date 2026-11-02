@@ -48,7 +48,7 @@ def normalize_comments(comments, *, allow_none=False, merges=()):
         return {}
     if not isinstance(comments, Mapping):
         raise TypeError("comments must map cell references to Comment objects")
-    result = {}
+    result: dict[str, Comment | None] = {}
     for ref, comment in comments.items():
         ref = cell_ref(ref)
         if ref in result:
@@ -104,7 +104,7 @@ def _comment_xml(ref, comment, authors):
             f'<t xml:space="preserve">{escape(xstring_escape(comment.text))}</t></text></comment>')
 
 
-def read_comments(data):
+def read_comments(data: bytes) -> dict[str, Comment]:
     root = safe_fromstring(data)
     ns = namespace_of(root.tag) or MAIN  # Transitional or Strict
     authors = [xstring_unescape(n.text or "") for n in root.findall(f"{{{ns}}}authors/{{{ns}}}author")]

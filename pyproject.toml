@@ -111,13 +111,18 @@ line-length = 120
 # B007 (unused loop variables; some are read after the loop), E/S/ARG/DTZ.
 select = [
     "E9", "F63", "F7", "F82", "F401", "F811", "F841",
-    "PLE", "PIE", "TRY203", "C4", "RET", "B010", "B023", "UP",
+    "PLE", "PIE", "TRY203", "C4", "RET", "B010", "B023", "UP", "I002",
 ]
 # printf-style formatting is fine where it is used.
 ignore = ["UP031"]
 
+[tool.ruff.lint.isort]
+# Annotations are never evaluated at runtime in the package (I002 adds the import).
+required-imports = ["from __future__ import annotations"]
+
 [tool.ruff.lint.per-file-ignores]
 "src/xlspy/__init__.py" = ["F401"]
+"{tests,tools,benchmarks,examples}/**" = ["I002"]
 # The lambdas read Excel COM properties and are called at once, inside the loop.
 "tests/test_excel_com_xlsb_parity.py" = ["B023"]
 

@@ -1,4 +1,5 @@
 """Formula-aware, incremental XLSB rows (separate from the bulk C/Python path)."""
+from __future__ import annotations
 
 import datetime
 import struct

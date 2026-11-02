@@ -1,4 +1,5 @@
 """XlsbWriter cell string records: inline and rich strings, filter defined names."""
+from __future__ import annotations
 
 import struct
 from .styles import (

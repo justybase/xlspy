@@ -1,4 +1,5 @@
 """XlsxWriter package methods: workbook, relationships, content types, charts, shared strings."""
+from __future__ import annotations
 
 import io
 import xml.sax.saxutils as saxutils

@@ -3,6 +3,7 @@
 The URIs and element names come from a workbook saved by Excel itself, so the
 writer and Excel agree byte for byte on what an extension means.
 """
+from __future__ import annotations
 
 X14 = "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
 X15 = "http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"

@@ -1,4 +1,5 @@
 """XlsbWriter sheet-view records: row headers, panes, selections, column widths."""
+from __future__ import annotations
 
 import struct
 import io
