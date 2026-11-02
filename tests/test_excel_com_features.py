@@ -8,15 +8,10 @@ is covered.
 """
 
 import io
-import os
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-    reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation",
-)
-pytestmark = [pytest.mark.com, pytestmark]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 from xlspy import ExcelTable, Group, XlsbWriter, XlsxWriter  # noqa: E402
 

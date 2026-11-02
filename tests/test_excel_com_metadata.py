@@ -1,15 +1,11 @@
 """Opt-in validation of notes, template edits and protection in real Excel."""
 
-import os
 
 import pytest
 
 from xlspy import Comment, DefinedName, Formula, SheetProtection, WorkbookProtection, XlsxUpdater, XlsxWriter
 
-pytestmark = [
-    pytest.mark.com,
-    pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1 to validate in Excel"),
-]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 
 def test_notes_dimensions_names_and_protection_in_excel(tmp_path, open_workbook):

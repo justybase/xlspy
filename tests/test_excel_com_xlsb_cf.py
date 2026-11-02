@@ -1,6 +1,5 @@
 """Excel reads conditional formats written into XLSB files, new and loaded."""
 
-import os
 
 import pytest
 
@@ -10,8 +9,7 @@ from xlspy.styles import (
     PatternFill,
 )
 
-pytestmark = [pytest.mark.com, pytest.mark.skipif(
-    os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1")]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 XL_XLSB = 50
 XL_CELL_VALUE, XL_COLOR_SCALE, XL_DATABAR, XL_ICON_SETS = 1, 3, 4, 6

@@ -1,13 +1,11 @@
 """Native Excel checks for edits saved into a loaded XLSB workbook."""
 
-import os
 
 import pytest
 
 from xlspy import Border, Font, PatternFill, Side, Workbook, load_workbook
 
-pytestmark = [pytest.mark.com, pytest.mark.skipif(
-    os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1")]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 
 def test_loaded_xlsb_style_edits_in_excel(tmp_path, open_workbook):

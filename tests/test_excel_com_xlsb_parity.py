@@ -2,7 +2,6 @@
 
 import datetime
 import io
-import os
 
 import pytest
 
@@ -17,7 +16,7 @@ XL_CATEGORY, XL_VALUE = 1, 2
 # xlLine, xlLineMarkers, xlXYScatter, xlXYScatterLines, xlXYScatterLinesNoMarkers
 _LINE_TYPES = {4, 65, -4169, 74, 75}
 
-pytestmark = [pytest.mark.com, pytest.mark.skipif(os.environ.get('XLSPY_RUN_EXCEL_COM') != '1', reason='Set XLSPY_RUN_EXCEL_COM=1')]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 
 def test_chart_over_formula_cells_in_excel(tmp_path, open_workbook):

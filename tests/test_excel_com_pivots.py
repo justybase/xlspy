@@ -8,17 +8,12 @@ Labels are not compared: Excel localises them ("Row Labels" becomes
 
 import gc
 import io
-import os
 import time
 
 import openpyxl
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-    reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation",
-)
-pytestmark = [pytest.mark.com, pytestmark]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 from xlspy import (  # noqa: E402
     ExcelTable, PivotTable, PivotValue, XlsbWriter, XlsxWriter, load_workbook,

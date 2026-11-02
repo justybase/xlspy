@@ -6,15 +6,13 @@ Print_Area name: reading PageSetup needs a reachable printer.
 """
 
 import gc
-import os
 
 import pytest
 
 from xlspy import load_workbook
 from test_model_loaded_objects import ROWS, _add_everything, _source
 
-pytestmark = [pytest.mark.com, pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-                                                   reason="Set XLSPY_RUN_EXCEL_COM=1")]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 XL_VALIDATE_WHOLE_NUMBER = 1
 XL_CELL_VALUE = 1

@@ -1,12 +1,11 @@
 """Native Excel checks for XLSB metadata and tokenized formulas."""
 
-import os
 
 import pytest
 
 from xlspy import Comment, DefinedName, Formula, Protection, SheetProtection, Style, WorkbookProtection, XlsbWriter, XlsbUpdater, ExcelReader, ExcelTable, Chart, ChartSeries
 
-pytestmark = [pytest.mark.com, pytest.mark.skipif(os.environ.get('XLSPY_RUN_EXCEL_COM') != '1', reason='Set XLSPY_RUN_EXCEL_COM=1')]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 
 @pytest.mark.parametrize(('text','expected'), [

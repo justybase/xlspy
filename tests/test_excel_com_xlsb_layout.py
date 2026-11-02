@@ -1,13 +1,11 @@
 """Excel opens an Excel-written XLSB after layout and sheet-list edits by the model."""
 
-import os
 
 import pytest
 
 from xlspy import load_workbook
 
-pytestmark = [pytest.mark.com, pytest.mark.skipif(
-    os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1")]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 XL_XLSB = 50
 

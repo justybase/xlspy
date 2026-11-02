@@ -2,7 +2,6 @@
 coordinates, XLSB formulas/arrays and Strict Open XML reading."""
 
 import gc
-import os
 import re
 import struct
 import zipfile
@@ -15,10 +14,7 @@ from xlspy import (
     XlsxUpdater, XlsxWriter, load_workbook,
 )
 
-pytestmark = [
-    pytest.mark.com,
-    pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1 to validate in Excel"),
-]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 XL_XLSB, XL_STRICT = 50, 61
 

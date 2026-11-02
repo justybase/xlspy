@@ -5,17 +5,12 @@ extra conditional formatting rules. Set XLSPY_RUN_EXCEL_COM=1 to run.
 
 import datetime
 import io
-import os
 import struct
 import zlib
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("XLSPY_RUN_EXCEL_COM") != "1",
-    reason="Set XLSPY_RUN_EXCEL_COM=1 to run Microsoft Excel COM validation",
-)
-pytestmark = [pytest.mark.com, pytestmark]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 from xlspy import (  # noqa: E402
     AboveAverageRule, BlanksRule, CellIsRule, CellRichText, Chart, ChartSeries, Comment,

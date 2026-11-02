@@ -1,12 +1,11 @@
 """Native Excel checks for hyperlinks and chart layout in XLSB output."""
 
-import os
 
 import pytest
 
 from xlspy import Chart, ChartSeries, Hyperlink, Style, XlsbWriter
 
-pytestmark = [pytest.mark.com, pytest.mark.skipif(os.environ.get('XLSPY_RUN_EXCEL_COM') != '1', reason='Set XLSPY_RUN_EXCEL_COM=1')]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 XL_UNDERLINE_SINGLE = 2
 HYPERLINK_BLUE_BGR = 0xC16305  # #0563C1 as Excel's BGR integer

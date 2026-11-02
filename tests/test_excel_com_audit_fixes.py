@@ -4,7 +4,6 @@ style, sheet protection, page breaks, default row height, tables and control
 characters)."""
 
 import gc
-import os
 import zipfile
 
 import pytest
@@ -12,10 +11,7 @@ import pytest
 from xlspy import Chart, ChartSeries, NamedStyle, Table, Workbook, load_workbook
 from xlspy.workbook._model import Break, RowBreak
 
-pytestmark = [
-    pytest.mark.com,
-    pytest.mark.skipif(os.environ.get("XLSPY_RUN_EXCEL_COM") != "1", reason="Set XLSPY_RUN_EXCEL_COM=1 to validate in Excel"),
-]
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 XL_RADAR = {-4151, 81, 82}  # xlRadar, xlRadarMarkers, xlRadarFilled
 
