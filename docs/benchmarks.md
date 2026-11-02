@@ -4,11 +4,11 @@
 
 `xlspy` includes a **native extension** (`_rs_core`, Rust/PyO3) that accelerates XLSB read and write, the XLSX read and write paths and workbook-model loading. It is enabled by default. Set `XLSPY_ACCEL=python` to force the pure-Python fallback.
 
-The [current results](#current-results-rust-module-2026-11-02) were measured on the Rust module. The [historical results](#historical-results-c-extension-2026-10-19-to-2026-10-30) were taken before the Rust port, with the C extension it replaced; they are kept as recorded, including the macOS and WSL2 runs, which have not been repeated.
+The [current results](#current-results-rust-module-2026-11-02) were measured on the Rust module, on Windows and, for [macOS and WSL2](#macos-and-wsl2-xlspy-0110), with xlspy 0.11.0. The [historical results](#historical-results-c-extension-2026-10-19-to-2026-10-30) were taken before the Rust port, with the C extension it replaced; they are kept as recorded.
 
 ## Current results (Rust module, 2026-11-02)
 
-Windows 11 Pro (build 26300), AMD Ryzen 7 7840HS (16 logical CPUs, 31 GiB RAM), Python 3.14.2, xlspy at commit `333cc8a` (Q7 of the quality round), openpyxl 3.1.5, xlsxwriter 3.3.1, PyExcelerate 0.13.0. Output goes to NTFS.
+Windows 11 Pro (build 26300), AMD Ryzen 7 7840HS (16 logical CPUs, 31 GiB RAM), Python 3.14.2, xlspy at commit `203721c` (Q7 of the quality round), openpyxl 3.1.5, xlsxwriter 3.3.1, PyExcelerate 0.13.0. Output goes to NTFS.
 
 ### Write
 
@@ -62,6 +62,58 @@ The 50,000 × 50 file each writer produced, read back right after writing (warm 
 
 - `load_workbook()` builds its `Cell` objects natively. It costs **1.4–1.6×** an `ExcelReader` pass for XLSX and **4.5–5.4×** for XLSB, whose plain read is much faster; `ExcelReader` creates no `Cell` objects, so use it when you only need values.
 - A loaded XLSB is saved by patching the binary worksheet in place: the time depends mostly on the size of the edited sheet, not on the number of edits.
+
+### macOS and WSL2 (xlspy 0.11.0)
+
+The same three benchmarks, run the same day on the release commit of 0.11.0 (`bf8c6ba`), from a fresh clone with the package and its Rust module built in release mode. The Windows column repeats the tables above, measured at `203721c`; a check of the Windows load rows at `bf8c6ba` gave the same times within 0.03 s.
+
+| | Windows | macOS | WSL2 |
+| :--- | :--- | :--- | :--- |
+| CPU and memory | AMD Ryzen 7 7840HS, 16 logical CPUs, 31 GiB RAM | Apple M4 (Mac mini), 10 CPU cores, 16 GiB RAM | AMD Ryzen 7 7840HS (the Windows host), 16 logical CPUs, 20 GiB visible to WSL2 |
+| OS | Windows 11 Pro, build 26300 | macOS 27.2 (arm64) | Ubuntu 26.04.1 LTS, kernel 6.18.54.1-microsoft-standard-WSL2 (x86_64) |
+| Python | 3.14.2 | 3.14.7 | 3.14.8 |
+| Filesystem | NTFS | APFS | ext4 (the WSL2 virtual disk, not `/mnt/c`) |
+
+**Write**, 50,000 × 50, `mixed`, median of three runs ([`mac-m4-2026-11-02-rust-write.json`](benchmark-results/mac-m4-2026-11-02-rust-write.json), [`wsl2-2026-11-02-rust-write.json`](benchmark-results/wsl2-2026-11-02-rust-write.json)). Peak is `ru_maxrss` of the worker process:
+
+| Writer | Format | Windows | macOS | WSL2 | macOS peak | WSL2 peak |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| xlspy, inline strings | XLSB | **0.81 s** | **0.42 s** | **0.59 s** | 46.9 MB | 39.9 MB |
+| xlspy, shared strings | XLSB | **1.01 s** | **0.49 s** | **0.75 s** | 125.9 MB | 117.3 MB |
+| xlspy, inline strings | XLSX | **1.27 s** | **0.69 s** | **0.89 s** | 60.3 MB | 45.5 MB |
+| xlspy, shared strings | XLSX | **1.45 s** | **0.75 s** | **1.07 s** | 121.6 MB | 99.3 MB |
+| xlspy, inline strings, `XLSPY_ACCEL=python` | XLSB | 2.98 s | 1.58 s | 2.24 s | 46.0 MB | 40.0 MB |
+| xlspy, shared strings, `XLSPY_ACCEL=python` | XLSB | 3.21 s | 1.65 s | 2.37 s | 106.1 MB | 97.4 MB |
+| xlspy, inline strings, `XLSPY_ACCEL=python` | XLSX | 3.35 s | 1.82 s | 2.45 s | 48.1 MB | 40.3 MB |
+| xlspy, shared strings, `XLSPY_ACCEL=python` | XLSX | 3.59 s | 1.93 s | 2.67 s | 109.5 MB | 97.4 MB |
+| PyExcelerate | XLSX | 8.42 s | 4.87 s | 6.55 s | 304.1 MB | 281.4 MB |
+| xlsxwriter (`constant_memory`) | XLSX | 10.17 s | 5.59 s | 7.77 s | 32.7 MB | 35.1 MB |
+| openpyxl (`write_only`) | XLSX | 17.06 s | 9.26 s | 13.05 s | 44.3 MB | 48.9 MB |
+
+**Read**, the files each writer produced, median of three runs of `examples/performance_test.py` ([`read-mac-m4-2026-11-02-rust.log`](benchmark-results/read-mac-m4-2026-11-02-rust.log), [`read-wsl2-2026-11-02-rust.log`](benchmark-results/read-wsl2-2026-11-02-rust.log)):
+
+| Reader | Format | Windows | macOS | WSL2 |
+| :--- | :--- | ---: | ---: | ---: |
+| xlspy `ExcelReader`, native | XLSB | **0.14 s** | **0.07 s** | **0.14 s** |
+| xlspy `ExcelReader`, native | XLSX | **0.73 s** | **0.44 s** | **0.55 s** |
+| xlspy `ExcelReader`, `XLSPY_ACCEL=python` | XLSB | 6.51 s | 3.62 s | 4.47 s |
+| openpyxl (`read_only`) | XLSX | 10.75 s | 6.15 s | 7.99 s |
+
+**Read modes and the workbook model**, `benchmarks/bench_io.py`, 50,000 × 20, median of three runs ([`mac-m4-2026-11-02-rust-io.json`](benchmark-results/mac-m4-2026-11-02-rust-io.json), [`wsl2-2026-11-02-rust-io.json`](benchmark-results/wsl2-2026-11-02-rust-io.json)):
+
+| Case | Windows XLSX | macOS XLSX | WSL2 XLSX | Windows XLSB | macOS XLSB | WSL2 XLSB |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `ExcelReader.get_rows()` (values, no styles) | 0.27 s | 0.15 s | 0.20 s | 0.05 s | 0.03 s | 0.05 s |
+| `load_workbook()` | 0.37 s | 0.23 s | 0.39 s | 0.23 s | 0.12 s | 0.29 s |
+| `load_workbook()`, every 10th row bold | 0.42 s | 0.49 s | 0.82 s | 0.27 s | 0.12 s | 0.26 s |
+| Save a loaded styled workbook after 1,000 value and style edits | — | — | — | 2.57 s | 1.66 s | 2.77 s |
+| Build the model and save it | 1.48 s | 1.03 s | 1.76 s | 1.41 s | 0.94 s | 1.60 s |
+| Write rows with `XlsxWriter` / `XlsbWriter` | 0.40 s | 0.24 s | 0.31 s | 0.31 s | 0.16 s | 0.25 s |
+
+- The ratios hold on all three systems: native XLSB (inline) writes **12.6–13.4×** faster than xlsxwriter and **21–22×** faster than openpyxl; the native module writes **2.5–3.8×** faster than the pure-Python path; native XLSB reads are **57–88×** faster than openpyxl reading XLSX.
+- The Apple M4 is the fastest of the three: **1.7–2.1×** Windows for writes and reads. WSL2 runs on the same CPU as Windows and is **1.3–1.4×** faster for writes and the XLSX read, and equal for the native XLSB read; the filesystems differ (ext4 against NTFS), so this does not isolate the operating system.
+- One row does not follow: `load_workbook()` of the styled XLSX costs about 2× the unstyled load on macOS and WSL2, but 1.1× on Windows. A profile on WSL2 puts the time in the native row loader, not in a Python fallback; the cause is still open.
+- Peaks on macOS and WSL2 are `ru_maxrss` and are not comparable with the Windows peak working set. File sizes differ slightly from Windows (7.02 against 7.32 MiB for XLSB inline) because the zlib builds differ; the data is the same.
 
 ## Historical results (C extension, 2026-10-19 to 2026-10-30)
 
@@ -363,7 +415,11 @@ Known limitations:
 
 ### Result files
 
-Current results (Rust module, Windows): [`windows-2026-11-02-rust-write.json`](benchmark-results/windows-2026-11-02-rust-write.json) (write), [`read-windows-2026-11-02-rust.log`](benchmark-results/read-windows-2026-11-02-rust.log) (read) and [`windows-2026-11-02-rust-io.json`](benchmark-results/windows-2026-11-02-rust-io.json) (read modes and model).
+Current results (Rust module):
+
+- Windows: [`windows-2026-11-02-rust-write.json`](benchmark-results/windows-2026-11-02-rust-write.json) (write), [`read-windows-2026-11-02-rust.log`](benchmark-results/read-windows-2026-11-02-rust.log) (read) and [`windows-2026-11-02-rust-io.json`](benchmark-results/windows-2026-11-02-rust-io.json) (read modes and model)
+- macOS (Apple M4): [`mac-m4-2026-11-02-rust-write.json`](benchmark-results/mac-m4-2026-11-02-rust-write.json), [`read-mac-m4-2026-11-02-rust.log`](benchmark-results/read-mac-m4-2026-11-02-rust.log) and [`mac-m4-2026-11-02-rust-io.json`](benchmark-results/mac-m4-2026-11-02-rust-io.json)
+- WSL2: [`wsl2-2026-11-02-rust-write.json`](benchmark-results/wsl2-2026-11-02-rust-write.json), [`read-wsl2-2026-11-02-rust.log`](benchmark-results/read-wsl2-2026-11-02-rust.log) and [`wsl2-2026-11-02-rust-io.json`](benchmark-results/wsl2-2026-11-02-rust-io.json)
 
 Historical results (C extension):
 

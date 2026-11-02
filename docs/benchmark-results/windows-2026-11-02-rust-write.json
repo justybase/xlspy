@@ -9,7 +9,7 @@
     "python_implementation": "CPython",
     "xlspy": "0.10.1",
     "xlspy_src": "D:\\DEV\\DEV\\source\\repos\\excel\\xlspy\\src",
-    "git_commit": "333cc8aa0d87d12734cdf9f0818b7a82bb2765c5",
+    "git_commit": "203721c182ba53bffae706f992694db8742903bb",
     "git_dirty": false,
     "openpyxl": "3.1.5",
     "xlsxwriter": "3.3.1",
