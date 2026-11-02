@@ -175,7 +175,7 @@ Migration from 0.10:
   are `None` until the sheet is sized.
 - Internal: mypy requires annotations on every def by default (`disallow_untyped_defs`), and also runs with
   `warn_return_any` and `no_implicit_reexport`. The modules still to annotate are listed in `pyproject.toml`
-  (68 of 131). The writer mixins are typed through one host class per writer, so attributes and methods shared
+  (61 of 134). The writer mixins are typed through one host class per writer, so attributes and methods shared
   between mixins have real types instead of `Any`.
 - Internal: 18 private helpers that nothing called are removed (leftovers of the module split and older code paths).
 - `__version__` is read from the installed package metadata, so `pyproject.toml` is the only place the version is
@@ -486,6 +486,16 @@ Migration from 0.10:
 - The longest functions are split into named steps (the XLSB worksheet encoder, both `write_sheet` paths, the
   XLSX and XLSB model loaders, the Python row readers). Output is byte for byte the same; benchmarks are within 3%.
 - `docs/architecture.md` describes the layers, `PackageHandle`, the XLSB updater/model map and the error policy.
+- Rust: every `unsafe` block states why it is sound, and the crate's lints (`undocumented_unsafe_blocks`,
+  `unsafe_op_in_unsafe_fn`) keep it so. The row walk and integer conversion are shared helpers; the pure encoders
+  have Rust unit tests (16 to 27).
+- Tests are organized by topic instead of by review round, with shared helpers in `tests/helpers.py`. CI measures
+  coverage over the native and the pure-Python run together (floor 89%), and a smoke test runs every script in
+  `examples/`.
+- Documentation: the usage guide is split into topic pages under `docs/guide/`; an API reference is generated from
+  the docstrings with mkdocs and mkdocstrings (`docs/api/`, the `docs` extra; CI runs `mkdocs build --strict`);
+  every public method and property has a docstring (a test keeps it so); `CONTRIBUTING.md` describes the
+  development setup. The benchmarks were measured again on the Rust module (`docs/benchmarks.md`).
 
 ## [0.10.1] - 2026-10-24
 
@@ -969,41 +979,6 @@ Migration from 0.10:
   1904 date overflow parity, and wide-layout fallback.
 - XLSB tables (`ExcelTable`) and conditional formatting for color scales,
   data bars, and icon sets; formula and cell-is rules remain XLSX-only.
-
-### Fixed
-
-- XLSB writer C extension now matches the pure-Python reference exactly:
-  integers beyond the int64 range are stored as doubles (were strings),
-  `int`/`float`/`str` subclasses take the numeric/string path, and column
-  autofit unwraps `(value, format)` tuples and measures `Decimal` as
-  `float` (were `str(tuple)` / `str(Decimal)`).
-- Fixed a latent heap buffer overrun in the C row encoder: the per-cell
-  buffer reservation (16 bytes) was smaller than the largest cell record
-  (`BrtCellReal`, 18 bytes).
-- Fixed a per-call reference leak in the C XLSB row encoder: the result
-  bytes leaked one reference per encoded row.
-- XLSB reader now parses the shared-strings table in the C extension with
-  behavior identical to the pure-Python reference, quirks included
-  (50k×50 read 1.32 s → 0.74 s).
-- C XLSB worksheet reader now matches the reference on first-row column
-  ordering, left-of-layout cells, short/overrunning cell records, and date
-  conversion errors. Unusually wide layouts delegate to the Python reader
-  instead of using a C-specific memory limit. Hostile SST lengths no longer
-  produce a `SystemError` from a negative Unicode allocation size.
-
-### Changed
-
-- Faster XLSB writes: shared-strings table serialization and the
-  formatted-row pre-scan moved to the C extension (50k×50 write
-  1.92 s → 1.43 s with byte-identical output).
-- Faster XLSX writes: the plain (unstyled) row encoder moved to the C
-  extension, with byte-identical output including shared-strings dedup,
-  float formatting, datetimes, and XML escaping (50k×50 write
-  5.18 s → 4.12 s; rows with `(value, format)` tuples still use the
-  Python path, which owns format registration).
-
-### Added
-
 - Structured cell styling for XLSX: `Font`, `PatternFill`, `GradientFill`
   (linear and path, with `Stop` colors/positions), `Border`/`Side`,
   `Alignment`, and `Protection`, usable via `Style(font=..., fill=...,
@@ -1055,6 +1030,14 @@ Migration from 0.10:
 
 ### Changed
 
+- Faster XLSB writes: shared-strings table serialization and the
+  formatted-row pre-scan moved to the C extension (50k×50 write
+  1.92 s → 1.43 s with byte-identical output).
+- Faster XLSX writes: the plain (unstyled) row encoder moved to the C
+  extension, with byte-identical output including shared-strings dedup,
+  float formatting, datetimes, and XML escaping (50k×50 write
+  5.18 s → 4.12 s; rows with `(value, format)` tuples still use the
+  Python path, which owns format registration).
 - `xl/styles.bin` is now built section by section (Fmts, Fonts, Fills, Borders,
   CellStyleXFs, CellXFs) with correct record framing instead of patching byte
   offsets in a template; multi-byte VLQ record headers are handled properly.
@@ -1063,6 +1046,24 @@ Migration from 0.10:
 
 ### Fixed
 
+- XLSB writer C extension now matches the pure-Python reference exactly:
+  integers beyond the int64 range are stored as doubles (were strings),
+  `int`/`float`/`str` subclasses take the numeric/string path, and column
+  autofit unwraps `(value, format)` tuples and measures `Decimal` as
+  `float` (were `str(tuple)` / `str(Decimal)`).
+- Fixed a latent heap buffer overrun in the C row encoder: the per-cell
+  buffer reservation (16 bytes) was smaller than the largest cell record
+  (`BrtCellReal`, 18 bytes).
+- Fixed a per-call reference leak in the C XLSB row encoder: the result
+  bytes leaked one reference per encoded row.
+- XLSB reader now parses the shared-strings table in the C extension with
+  behavior identical to the pure-Python reference, quirks included
+  (50k×50 read 1.32 s → 0.74 s).
+- C XLSB worksheet reader now matches the reference on first-row column
+  ordering, left-of-layout cells, short/overrunning cell records, and date
+  conversion errors. Unusually wide layouts delegate to the Python reader
+  instead of using a C-specific memory limit. Hostile SST lengths no longer
+  produce a `SystemError` from a negative Unicode allocation size.
 - A font that names its typeface no longer claims a theme font scheme, so
   Excel renders the requested typeface instead of substituting the theme font.
 - Conditional formatting priorities no longer collide between rules that
@@ -1101,3 +1102,17 @@ Migration from 0.10:
   it painted series with the theme accents (Office 2013 palette) and used
   14 pt titles, while the XLSX loader draws legacy styles with their
   built-in classic colours and larger titles.
+
+## 0.1.0 – 0.6.0 (2026-05-25 – 2026-10-16)
+
+Releases before 0.7.0 have no changelog entries; their history is in the git log.
+
+[Unreleased]: https://github.com/justybase/xlspy/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/justybase/xlspy/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/justybase/xlspy/compare/96e1efd47e29882578e74965014a3ea0fdf3a759...v0.10.0
+[0.9.2]: https://github.com/justybase/xlspy/compare/v0.9.1...96e1efd47e29882578e74965014a3ea0fdf3a759
+[0.9.1]: https://github.com/justybase/xlspy/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/justybase/xlspy/compare/v0.8.1...v0.9.0
+[0.8.1]: https://github.com/justybase/xlspy/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/justybase/xlspy/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/justybase/xlspy/releases/tag/v0.7.0

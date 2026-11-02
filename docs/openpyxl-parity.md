@@ -27,8 +27,11 @@ gap is implemented the same test starts passing without changes.
   no-op ZIP preservation; `tools/compare_openpyxl_model.py` produces a semantic
   JSON diff.
 - The `test` extra pins `openpyxl==3.1.5`, so every CI test job runs the harness.
-- Current results: the compatibility harness is **85 passed, 0 xfailed**; the
-  full suite is **1452 passed, 132 skipped**. All planned harness checks pass.
+- Results on 2026-11-02 (Windows, native module): the compatibility harness is
+  **83 passed, 1 skipped, 1 xfailed**; the full suite is **2233 passed, 289
+  skipped, 1 xfailed**. The xfail is C7 in an environment without Pillow:
+  openpyxl then loads no images (xlspy reads all 4), so the counts differ. With
+  Pillow installed every planned harness check passes.
 
 **Phase 1 — public API, utilities and formulas**
 - New `xlspy.utils.cell`, `xlspy.utils.datetime`, `xlspy.utils.escape`,
@@ -116,8 +119,10 @@ gap is implemented the same test starts passing without changes.
 - Saved into a loaded XLSB: cell values and formulas, cell styles (new fonts,
   fills, borders, number formats and XFs are appended to `styles.bin`),
   merged cells, hyperlinks (internal and external, with their relationships),
-  data validations, comments and defined names. Every other edit raises
-  `NotImplementedError` at `save()` rather than being dropped.
+  data validations, comments and defined names. At that point every other edit
+  raised `NotImplementedError` at `save()` rather than being dropped; the
+  sprints below lifted most of these limits. For what a loaded XLSB saves now,
+  see [Loaded XLSX and XLSB workbooks](guide/model.md#loaded-xlsx-and-xlsb-workbooks).
 - Excel COM tests (`tests/test_excel_com_xlsb_loaded.py`) open the saved files
   and check styles, merges, hyperlinks and validations.
 
