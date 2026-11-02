@@ -4,7 +4,8 @@
 //! row builder in reader.py), quirks included: the layout (first column and
 //! width) is frozen from the first row with cells, missing rows are yielded
 //! as empty rows, cells before any Row record form a phantom row, and
-//! undersized or overrunning records are ignored.
+//! undersized records are ignored.  A record cut short by the end of the data
+//! raises InvalidFileError.
 
 use pyo3::exceptions::{PyMemoryError, PyTypeError};
 use pyo3::prelude::*;
@@ -29,15 +30,29 @@ pub struct Record {
     pub len: usize,
 }
 
-/// Next record at `*pos` (advanced past its body), or None at a truncated
-/// header.  The body may overrun the data; callers check.
+/// A record cut short: its header or body runs past the end of the data.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Truncated;
+
+impl From<Truncated> for PyErr {
+    fn from(_: Truncated) -> PyErr {
+        invalid_file_error("XLSB record is cut short".to_string())
+    }
+}
+
+/// Next record at `*pos` (advanced past its body).  Callers stop at the end
+/// of the data; a header or body cut short there is an error, so a damaged
+/// sheet is reported instead of read in part.
 #[inline]
-pub fn next_record(data: &[u8], pos: &mut usize) -> Option<Record> {
-    let id = read_varint(data, pos)?;
-    let len = read_varint(data, pos)? as usize;
+pub fn next_record(data: &[u8], pos: &mut usize) -> Result<Record, Truncated> {
+    let id = read_varint(data, pos).ok_or(Truncated)?;
+    let len = read_varint(data, pos).ok_or(Truncated)? as usize;
     let body = *pos;
-    *pos = body.saturating_add(len);
-    Some(Record { id, body, len })
+    if len > data.len() - body {
+        return Err(Truncated);
+    }
+    *pos = body + len;
+    Ok(Record { id, body, len })
 }
 
 /// Row index of a BrtRowHdr body, like the reference: a short body and row
@@ -254,7 +269,8 @@ impl XlsbReader {
         let mut span_row = -2i64; // row of the first row with cells (-2: none)
         let (mut first_c, mut last_c) = (-1i64, -1i64);
         while pos < data.len() {
-            let Some(rec) = next_record(data, &mut pos) else {
+            // A cut-short record raises later, when iteration reaches it.
+            let Ok(rec) = next_record(data, &mut pos) else {
                 break;
             };
             match rec.id {
@@ -407,10 +423,7 @@ impl XlsbReader {
             let data_len = self.view.as_slice().len();
             while self.pos < data_len {
                 let start = self.pos;
-                let Some(rec) = next_record(self.view.as_slice(), &mut self.pos) else {
-                    self.done = true;
-                    return Ok(None);
-                };
+                let rec = next_record(self.view.as_slice(), &mut self.pos)?;
                 if rec.id == 0x00 {
                     self.cur_row_num = row_index(self.view.as_slice(), rec.body)?;
                     self.seen_row_record = true;
@@ -428,9 +441,7 @@ impl XlsbReader {
             }
         }
         while self.pos < self.view.as_slice().len() {
-            let Some(rec) = next_record(self.view.as_slice(), &mut self.pos) else {
-                break;
-            };
+            let rec = next_record(self.view.as_slice(), &mut self.pos)?;
             match rec.id {
                 0x00 => {
                     let row = self.take_row(py)?;
@@ -581,15 +592,11 @@ pub fn xlsb_load_cells<'py>(
 
     while pos < data.len() {
         let header_start = pos;
-        let Some(rec_id) = read_varint(data, &mut pos) else {
-            break;
-        };
-        let rec_len = match read_varint(data, &mut pos) {
-            Some(len) if len as usize <= data.len() - pos => len as usize,
-            _ => return Err(invalid_file_error("truncated XLSB record".to_string())),
-        };
-        let body = pos;
-        pos += rec_len;
+        let Record {
+            id: rec_id,
+            body,
+            len: rec_len,
+        } = next_record(data, &mut pos)?;
         if data_start < 0 {
             if rec_id == 0x91 {
                 data_start = pos as i64;
@@ -767,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn next_record_walks_records_and_stops_at_a_truncated_header() {
+    fn next_record_walks_records_and_reports_a_truncated_header() {
         let mut data = record(0x00, &[1, 0, 0, 0]);
         data.extend(record(0x07, &[0; 12]));
         data.push(0x80); // a header cut inside its id varint
@@ -777,17 +784,17 @@ mod tests {
         let second = next_record(&data, &mut pos).unwrap();
         assert_eq!((second.id, second.len), (0x07, 12));
         assert_eq!(pos, data.len() - 1);
-        assert!(next_record(&data, &mut pos).is_none());
+        assert_eq!(next_record(&data, &mut pos).err(), Some(Truncated));
     }
 
     #[test]
     fn next_record_reports_a_body_that_overruns_the_data() {
-        // The length is kept as read; counts_for_layout and the cell readers check it.
         let data = [0x07, 20, 0, 0];
         let mut pos = 0;
-        let rec = next_record(&data, &mut pos).unwrap();
-        assert_eq!((rec.body, rec.len), (2, 20));
-        assert!(!counts_for_layout(&data, &rec));
+        assert_eq!(next_record(&data, &mut pos).err(), Some(Truncated));
+        // A header whose length varint is missing is cut short too.
+        let mut pos = 0;
+        assert_eq!(next_record(&[0x07], &mut pos).err(), Some(Truncated));
     }
 
     #[test]

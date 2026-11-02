@@ -74,16 +74,58 @@ def test_undecodable_text_in_a_sheet(tmp_path: Path) -> None:
             read(path)
 
 
-# ExcelReader stops quietly at a record cut short (both backends; kept from the C
-# reader), so only the model is checked here.
-@pytest.mark.parametrize("read", [load_workbook])
-def test_truncated_xlsb_record(tmp_path: Path, read) -> None:
+def _varint(data: bytes, pos: int) -> tuple[int, int]:
+    value = shift = 0
+    while True:
+        byte = data[pos]
+        pos += 1
+        value |= (byte & 0x7F) << shift
+        shift += 7
+        if not byte & 0x80:
+            return value, pos
+
+
+def _cut_sheet_files(tmp_path: Path) -> list[tuple[Path, bool]]:
+    """The sheet part cut after every byte inside its records, each with whether the
+    cut falls in the cell data (up to BrtEndSheetData). A cut between two records
+    is a clean end of the data, so those are left out."""
     source = _workbook(tmp_path, "xlsb")
     with zipfile.ZipFile(source) as archive:
         sheet = archive.read("xl/worksheets/sheet1.bin")
-    path = _replace_part(source, tmp_path / "bad.xlsb", "xl/worksheets/sheet1.bin", sheet[: len(sheet) // 2])
-    with pytest.raises(InvalidFileError):
-        read(path)
+    boundaries, pos, cells_end = {0}, 0, 0
+    while pos < len(sheet):
+        record_id, pos = _varint(sheet, pos)
+        length, pos = _varint(sheet, pos)
+        pos += length
+        boundaries.add(pos)
+        if record_id == 0x92:  # BrtEndSheetData
+            cells_end = pos
+    assert cells_end
+    return [
+        (_replace_part(source, tmp_path / f"cut{cut}.xlsb", "xl/worksheets/sheet1.bin", sheet[:cut]),
+         cut < cells_end)
+        for cut in range(1, len(sheet)) if cut not in boundaries
+    ]
+
+
+@pytest.mark.parametrize("backend", ["native", "python"])
+def test_truncated_xlsb_record(tmp_path: Path, monkeypatch, backend: str) -> None:
+    # A record cut short is a damaged file: no reader returns the rows before the cut
+    # as if they were the whole sheet. ExcelReader stops reading at the end of the
+    # cell data, so a cut after it, which loses no cell, is checked by the model only.
+    if backend == "native" and not _accel.HAVE_NATIVE:
+        pytest.skip("native extension not built")
+    if backend == "python":
+        import xlspy.reader as reader_module
+
+        monkeypatch.setattr(reader_module, "_accel_read_xlsb_worksheet", lambda *args, **kwargs: None)
+        monkeypatch.setattr(_accel, "xlsb_load_cells", None)
+    files = _cut_sheet_files(tmp_path)
+    assert len(files) > 20
+    for path, in_cells in files:
+        for read in (_read_rows, _read_rows_streaming, load_workbook) if in_cells else (load_workbook,):
+            with pytest.raises(InvalidFileError):
+                read(path)
 
 
 def test_invalid_file_error_is_still_a_value_error(tmp_path: Path) -> None:

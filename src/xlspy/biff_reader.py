@@ -77,6 +77,7 @@ class BiffReader:
         self.row_index = -1
 
     def _try_read_variable_value(self):
+        """``(True, value)``, or ``(False, 0)`` when the data ends before its first byte."""
         value = 0
         b = self._stream.read(1)
         if len(b) == 0:
@@ -90,7 +91,7 @@ class BiffReader:
 
         b = self._stream.read(1)
         if len(b) == 0:
-            return False, 0
+            raise InvalidFileError("XLSB record header is cut short")
         b2 = b[0]
         value = ((b2 & 0x7F) << 7) | value
 
@@ -99,7 +100,7 @@ class BiffReader:
 
         b = self._stream.read(1)
         if len(b) == 0:
-            return False, 0
+            raise InvalidFileError("XLSB record header is cut short")
         b3 = b[0]
         value = ((b3 & 0x7F) << 14) | value
 
@@ -108,19 +109,24 @@ class BiffReader:
 
         b = self._stream.read(1)
         if len(b) == 0:
-            return False, 0
+            raise InvalidFileError("XLSB record header is cut short")
         b4 = b[0]
         value = ((b4 & 0x7F) << 21) | value
 
         return True, value
 
     def _read_record(self):
+        """The next record as ``(True, id, body)``, or ``(False, 0, None)`` at the end.
+
+        Only the end of the data between records is a clean end; a header or body
+        cut short raises InvalidFileError instead of dropping the rest silently.
+        """
         ok1, record_id = self._try_read_variable_value()
         if not ok1:
             return False, 0, None
         ok2, record_length = self._try_read_variable_value()
         if not ok2:
-            return False, 0, None
+            raise InvalidFileError("XLSB record header is cut short")
         if record_length < len(self._buffer):
             buf = self._buffer[:record_length]
         else:
@@ -128,7 +134,9 @@ class BiffReader:
         if record_length > 0:
             read = self._stream.readinto(buf)
             if read != record_length:
-                return False, 0, None
+                raise InvalidFileError(
+                    f"XLSB record 0x{record_id:X} is cut short: {read} of {record_length} bytes"
+                )
         return True, record_id, bytes(buf)
 
     @staticmethod

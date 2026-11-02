@@ -11,9 +11,6 @@
   file object untouched, but if the stream itself fails while the finished
   workbook is being copied in, it holds part of the workbook (see
   [Failure handling](guide/writing.md#failure-handling)).
-- **A cut-short XLSB record.** `ExcelReader` stops quietly at an XLSB record cut
-  short at the end of a sheet and returns the rows read so far;
-  `load_workbook` raises `InvalidFileError` for the same file.
 
 ## Quality round (2026-11-02)
 

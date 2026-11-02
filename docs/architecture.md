@@ -136,8 +136,8 @@ readers, `load_workbook`, the updater constructors), and so does a Rust panic:
 check their arguments before the block, so a `ValueError` inside it comes from
 the file. Low-level decoders raise `InvalidFileError` directly.
 `tests/test_native_fuzz.py` fails when the cause of an error is a panic. A `KeyError` for an unknown sheet name is left as
-it is. `ExcelReader` still stops quietly when an XLSB record is cut short at the
-end of a sheet, on both backends.
+it is. A record cut short is an error on every XLSB read path; `ExcelReader`
+stops reading at the end of the cell data, so a cut after it is not seen there.
 
 **Long functions.** Functions over about 150 lines were split into named steps
 where that helps: the XLSB worksheet encoder, both `_write_sheet` methods, the

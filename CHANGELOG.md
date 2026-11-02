@@ -31,7 +31,10 @@ Migration from 0.10:
 - Corrupt files raise `InvalidFileError` from `ExcelReader.open()` and its row readers, `load_workbook()` and the
   `XlsxUpdater`/`XlsbUpdater` constructors. It is a `ValueError`, so `except ValueError` still matches; code that
   caught `ParseError` or `UnicodeDecodeError` must catch `InvalidFileError` instead. A panic in the native reader
-  (`PanicException`, a `BaseException`) is reported the same way. A missing sheet name is still a `KeyError`. `ExcelReader` still stops quietly at an XLSB record cut short at the end of a sheet.
+  (`PanicException`, a `BaseException`) is reported the same way. A missing sheet name is still a `KeyError`.
+- `ExcelReader` raises `InvalidFileError` for an XLSB record cut short in a sheet's cell data, on both backends. It
+  used to stop there and return the rows read so far as if they were the whole sheet. `load_workbook` raised already
+  and now also catches a record id cut in the middle.
 
 ### Added
 
