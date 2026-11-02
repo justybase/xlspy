@@ -38,6 +38,10 @@ with ExcelReader("large_file.xlsb") as reader:
         print(row)
 ```
 
+`get_sheet_names()` lists every sheet in workbook order, chartsheets included. A
+chartsheet has no cells, so `get_rows` yields nothing for it;
+`get_chartsheet_names()` names them.
+
 ### Read modes: which one to use
 
 Every read mode is fast by default; nothing has to be switched on or off. The

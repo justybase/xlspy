@@ -170,6 +170,10 @@ Migration from 0.10:
 
 ### Changed
 
+- `ExcelReader` reads workbooks with chartsheets: `get_rows`/`read_all` on a chartsheet return no rows and
+  `get_comments` an empty dict, where they raised `InvalidFileError` ("no worksheet part") or `KeyError`.
+  `get_chartsheet_names()` lists them. A read-only `load_workbook` leaves chartsheets out of `worksheets`, like a
+  full load. A worksheet whose part is missing from the package raises `InvalidFileError` instead of `KeyError`.
 - `ws.tables` also works like openpyxl's name-keyed `TableList`: `del ws.tables["Sales"]`, `get`, `keys`,
   `values` and `items()` (`(name, ref)` pairs). Iterating still gives the tables. Tables added as `ExcelTable` are
   now found by name too.

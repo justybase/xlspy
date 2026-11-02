@@ -81,8 +81,9 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
     With ``with_styles`` the cells are ``(column, value, style_id)``."""
     path = None
     if data is None:
-        rid = reader._worksheet_name_to_id[sheet_name]
-        path = reader._resolve_path(reader._worksheet_id_to_location[rid])
+        path = reader._sheet_part(sheet_name)
+        if path is None:
+            return  # a chartsheet: no cells
     context = FormulaContext(reader.get_sheet_names(), reader._archive.read('xl/workbook.bin'), reader.read_part) if not data_only else None
     groups: dict[Any, Any] = {}
     current_row: int | None = None
@@ -151,8 +152,9 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
 def sheet_dimension(reader, sheet_name):
     """Return ``(min_col, min_row, max_col, max_row)`` (1-based) from BrtWsDim,
     or None when the sheet has no usable dimension record."""
-    rid = reader._worksheet_name_to_id[sheet_name]
-    path = reader._resolve_path(reader._worksheet_id_to_location[rid])
+    path = reader._sheet_part(sheet_name)
+    if path is None:
+        return None
     with reader._archive.open(path) as stream:
         for record, payload in iter_records_stream(stream):
             if record.record_id == 0x94 and len(payload) >= 16:

@@ -196,6 +196,8 @@ class ExcelReader:
         self._worksheet_id_to_name: dict[str, str] = {}
         self._worksheet_name_to_id: dict[str, str] = {}
         self._worksheet_id_to_location: dict[str, str] = {}
+        # Relationship ids of chartsheets and dialog sheets: sheets without cells.
+        self._cellless_sheet_ids: set[str] = set()
         self._shared_string_array: list[str] = []
         self._styles_cell_xfs_array: list[dict] = []
         self._number_formats_type_dict: dict[int, type] = dict(_default_number_formats_type_dict)
@@ -221,6 +223,7 @@ class ExcelReader:
         self._worksheet_id_to_name = {}
         self._worksheet_name_to_id = {}
         self._worksheet_id_to_location = {}
+        self._cellless_sheet_ids = set()
         self._shared_string_array = []
         self._styles_cell_xfs_array = []
         self._number_formats_type_dict = dict(_default_number_formats_type_dict)
@@ -264,8 +267,35 @@ class ExcelReader:
         return False
 
     def get_sheet_names(self) -> list[str]:
-        """The worksheet names, in workbook order."""
+        """The sheet names, in workbook order, chartsheets included.
+
+        A chartsheet has no cells: ``get_rows`` yields nothing for it. See
+        ``get_chartsheet_names``.
+        """
         return list(self._worksheet_name_to_id.keys())
+
+    def get_chartsheet_names(self) -> list[str]:
+        """The names of the sheets without cells (chartsheets and dialog sheets), in workbook order."""
+        return [name for name, rid in self._worksheet_name_to_id.items() if rid in self._cellless_sheet_ids]
+
+    def _sheet_part(self, sheet_name: str) -> str | None:
+        """The package path of a sheet's cells, or None for a sheet without cells.
+
+        An unknown name raises KeyError; a worksheet whose part is missing from the
+        package raises InvalidFileError.
+        """
+        rid = self._worksheet_name_to_id[sheet_name]
+        location = self._worksheet_id_to_location.get(rid)
+        if location is not None:
+            path = self._resolve_path(location)
+            try:
+                self._zip().getinfo(path)
+            except KeyError:
+                raise InvalidFileError(f"sheet {sheet_name!r}: the package has no part {path!r}") from None
+            return path
+        if rid in self._cellless_sheet_ids:
+            return None
+        raise InvalidFileError(f"sheet {sheet_name!r} has no worksheet part")
 
     def read_part(self, path: str) -> bytes | None:
         """The bytes of a package part, or None when the package has no such part."""
@@ -288,6 +318,8 @@ class ExcelReader:
             raise TypeError("data_only must be bool")
         if not isinstance(streaming, bool):
             raise TypeError("streaming must be bool")
+        if self._sheet_part(sheet_name) is None:
+            return  # a chartsheet: no cells
         if self._is_xlsb:
             if not data_only or streaming:
                 from ._xlsb_read import read_xlsb_rows
@@ -312,13 +344,12 @@ class ExcelReader:
 
     def get_comments(self, sheet_name: str) -> dict[str, Comment]:
         """Return classic note text and authors, without reading worksheet rows."""
+        path = self._sheet_part(sheet_name)
+        if path is None:
+            return {}
         if self._is_xlsb:
-            rid = self._worksheet_name_to_id[sheet_name]
-            path = self._resolve_path(self._worksheet_id_to_location[rid])
             _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
             return parse_comments(self._zip().read(parts['comments'][0]))[0] if 'comments' in parts else {}
-        rid = self._worksheet_name_to_id[sheet_name]
-        path = self._resolve_path(self._worksheet_id_to_location[rid])
         _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
         return read_comments(self._zip().read(parts["comments"][0])) if "comments" in parts else {}
 
@@ -399,6 +430,8 @@ class ExcelReader:
             kind = relationship_kind(rel_type)
             if kind == 'worksheet':
                 self._worksheet_id_to_location[r_id] = target
+            elif kind in ('chartsheet', 'dialogsheet'):
+                self._cellless_sheet_ids.add(r_id)
             elif kind == 'sharedStrings':
                 self._shared_strings_location = target
             elif kind == 'styles':
@@ -596,11 +629,9 @@ class ExcelReader:
         yield from read_xlsx_rows(self, sheet_name, data_only=data_only)
 
     def _get_rows_xlsb(self, sheet_name: str) -> Generator[list[Any], None, None]:
-        r_id = self._worksheet_name_to_id[sheet_name]
-        location = self._worksheet_id_to_location.get(r_id)
-        if location is None:
-            raise InvalidFileError(f"sheet {sheet_name!r} has no worksheet part")
-        entry_path = self._resolve_path(location)
+        entry_path = self._sheet_part(sheet_name)
+        if entry_path is None:
+            return
 
         with self._zip().open(entry_path) as f:
             raw = f.read()

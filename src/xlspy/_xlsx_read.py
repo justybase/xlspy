@@ -49,8 +49,9 @@ def translate_formula(text, origin, target):
 def iter_xlsx_indexed_rows(reader, sheet_name, data_only=True):
     """Yield ``(row_number, [(column, value), ...])`` with worksheet coordinates
     (1-based rows, 0-based columns). Rows absent from the XML are not yielded."""
-    rid = reader._worksheet_name_to_id[sheet_name]
-    path = reader._resolve_path(reader._worksheet_id_to_location[rid])
+    path = reader._sheet_part(sheet_name)
+    if path is None:
+        return  # a chartsheet: no cells
     if data_only:
         with reader._archive.open(path) as stream:
             probe = _probe_fast(stream)

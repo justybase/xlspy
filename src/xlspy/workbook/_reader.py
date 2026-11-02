@@ -1476,7 +1476,10 @@ def _load_workbook(path: str, *, read_only: bool, data_only: bool, keep_vba: boo
         workbook._read_only = True
         workbook._loaded = True
         workbook._source_path = path
+        cellless = set(reader.get_chartsheet_names())
         for index, name in enumerate(reader.get_sheet_names()):
+            if name in cellless:
+                continue  # as in a full load, chartsheets are not worksheets
             sheet = ReadOnlyWorksheet(
                 workbook, name, reader=reader, data_only=data_only, index=index
             )
@@ -1484,10 +1487,9 @@ def _load_workbook(path: str, *, read_only: bool, data_only: bool, keep_vba: boo
                 from .._xlsb_read import sheet_dimension
                 sheet._set_bounds(sheet_dimension(reader, name))
             else:
-                rid = reader._worksheet_name_to_id.get(name)
-                location = reader._worksheet_id_to_location.get(rid) if rid else None
-                if location:
-                    sheet._set_bounds(_read_only_bounds(path, reader._resolve_path(location)))
+                part = reader._sheet_part(name)
+                if part is not None:
+                    sheet._set_bounds(_read_only_bounds(path, part))
             workbook._sheets.append(sheet)
         if workbook._sheets:
             workbook._active_index = 0
