@@ -227,6 +227,9 @@ class _XlsbBinMixin(_XlsbWriterHost):
             heights = heights or {}
             custom_rows = set(heights) | set(hidden_row_set)
             array_ranges: list[Any] = []
+            # Last row of the array formulas written so far: the rows up to it
+            # hold array members, which only the Python encoder writes.
+            array_end = -1
             row_style_ids_cache: dict[Any, Any] = {}
 
             row_idx = -1
@@ -265,7 +268,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     outline_level, outline_hidden = row_outline.state_at(row_idx)
                     outline_collapsed = row_outline.collapsed_at(row_idx)
                 if (
-                    len(row) == 0 and not array_ranges and not row_styles and not outline_level
+                    len(row) == 0 and row_idx > array_end and not row_styles and not outline_level
                     and not outline_collapsed and row_idx not in custom_rows
                 ):
                     # An empty row with no height, flags or style needs no row record;
@@ -298,7 +301,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     if rows_first < 0:
                         rows_first = row_idx
                     rows_last = row_idx
-                use_native = not array_ranges and (not has_formatted or self._fmt_xf)
+                use_native = row_idx > array_end and (not has_formatted or self._fmt_xf)
                 style_ids = None
                 if use_native and row_styles:
                     if has_formatted:
@@ -323,7 +326,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     row_header = None
                     if row_idx in custom_rows or outline_level or outline_collapsed:
                         row_header = self._row_header_record(
-                            row_idx, len(row) - 1 if row else 0,
+                            row_idx, max(len(row) - 1, 0),
                             self._row_height_twips(heights[row_idx]) if row_idx in heights else None,
                             row_idx in hidden_row_set or outline_hidden,
                             outline_level, outline_collapsed,
@@ -354,6 +357,8 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     link_rid_start=link_rid_start, style_ranges=style_ranges,
                     header_style=header_style, sheet_name=sheet_name,
                 )
+                if array_ranges:
+                    array_end = max(r2 for _c1, _r1, _c2, r2 in array_ranges)
                 if buffer.tell() > _BUFFER_SIZE:
                     _flush(buffer, spool)
 
@@ -486,7 +491,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
         ``hyperlinks`` (with their relationship ids in ``link_rids``)."""
         shared_strings_dict = self._shared_strings_dict
         shared_strings_append = self._shared_strings.append
-        last_col = len(row) - 1 if row else 0
+        last_col = max(len(row) - 1, 0)
         if array_ranges:
             row = list(row)
             for c1, r1, c2, r2 in array_ranges:
@@ -539,15 +544,16 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 cell = cell.display_text
             if overlay is not None:
                 if cell_style is not None:
+                    # The range style is registered too, as XlsxWriter does: the
+                    # native encoder finds the cell's xf under (range style xf,
+                    # format), so the following rows need not come here.
+                    base_xf = self._register_style(cell_style)
                     xf_index = _xf_for_style_format(
                         cell_style, overlay, self._register_style,
                         self._style_format_xf,
                     )
-                    # Only a registered style has the id the native encoder sees.
-                    base_xf = self._style_xf_map.get(cell_style)
-                    if base_xf is not None:
-                        _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
-                                        base_xf, overlay, xf_index)
+                    _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
+                                    base_xf, overlay, xf_index)
                 else:
                     if isinstance(overlay, str):
                         xf_index = self._register_format(overlay)
@@ -584,8 +590,15 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     buffer.write(b'\x02\x0C')
                     buffer.write(struct.pack('<IIi', col_idx, style_ref, rk_val))
                 else:
-                    buffer.write(b'\x05\x10')
-                    buffer.write(struct.pack('<IId', col_idx, style_ref, float(cell)))
+                    try:
+                        number = float(cell)
+                    except OverflowError:
+                        # Past the float range: the digits, as text (as the native encoder writes them).
+                        self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx,
+                                        col_idx, xf_index if has_custom_fmt else None)
+                    else:
+                        buffer.write(b'\x05\x10')
+                        buffer.write(struct.pack('<IId', col_idx, style_ref, number))
             elif isinstance(cell, (float, Decimal)):
                 if not math.isfinite(float(cell)):
                     raise ValueError("numeric cell values must be finite")

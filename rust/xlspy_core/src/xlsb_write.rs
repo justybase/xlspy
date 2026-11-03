@@ -7,6 +7,7 @@ use pyo3::types::{
 };
 
 use crate::bytes::write_varint;
+use crate::pyseq::FastSeq;
 use crate::cells::{
     Cell, Serial, Sst, Styles, date_style_xf, excel_serial, fmt_tuple_kind, fmt_xf_value, rollback,
     text_fits,
@@ -112,9 +113,12 @@ fn encode_row<'py>(
     row_header: &Bound<'py, PyAny>,
 ) -> PyResult<Option<Vec<u8>>> {
     let py = row.py();
-    let row = row
-        .cast::<PyList>()
-        .map_err(|_| PyTypeError::new_err("row must be a list"))?;
+    // A list or tuple is read in place, any other sequence (a numpy row) as
+    // list(row); a non-sequence goes to the Python encoder, as in XLSX.
+    let Ok(row) = FastSeq::new(row, c"row must be a sequence") else {
+        PyErr::take(py);
+        return Ok(None);
+    };
     let fmt_xf = if fmt_xf.is_none() {
         None
     } else {
@@ -161,7 +165,10 @@ fn encode_row<'py>(
     }
 
     for col_idx in 0..row_len {
-        let mut cell = row.get_item(col_idx)?;
+        // Python code run below (hashing, conversions) can shrink a list row.
+        let Some(mut cell) = row.get(col_idx) else {
+            return Ok(None);
+        };
         let mut style = styles.for_column(col_idx)?;
         let col = col_idx as u32;
         let mut explicit_fmt = false; // a (value, "format") cell keeps its format
@@ -281,9 +288,6 @@ pub fn encode_xlsb_row<'py>(
         .cast::<PyList>()
         .map_err(|_| PyTypeError::new_err("ss_list must be a list"))?;
     let list_before = list.len();
-    if !row.is_instance_of::<PyList>() {
-        return Err(PyTypeError::new_err("row must be a list"));
-    }
     let dict = ss_dict
         .cast::<PyDict>()
         .map_err(|_| PyTypeError::new_err("ss_dict must be a dict"))?;

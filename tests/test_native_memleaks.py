@@ -23,7 +23,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from xlspy import ExcelReader, XlsbWriter, XlsxWriter
+from xlspy import CellRichText, ExcelReader, XlsbWriter, XlsxWriter
 from xlspy import _xlsx_read
 from xlspy._accel import (
     HAVE_NATIVE,
@@ -344,13 +344,13 @@ def test_encode_xlsx_row_no_growth():
 
 @needs_native
 def test_encode_xlsx_row_rollback_no_growth():
-    # Rows that insert SST entries then hit a row fallback (huge int overflows
-    # float(); tuple formats owned by the Python path) must leave the caller's
+    # Rows that insert SST entries then hit a row fallback (rich text;
+    # tuple formats owned by the Python path) must leave the caller's
     # dict/list untouched so the Python slow path reprocesses the row cleanly.
     fb_rows = [
-        ["a", "b", 10**1000],
+        ["a", "b", CellRichText(["rich"])],
         ["x", "y", ("v", "#,##0")],
-        ["p", "q", "r", 10**1000, ("w", "0.00")],
+        ["p", "q", "r", CellRichText(["rich"]), ("w", "0.00")],
     ]
     d0, l0 = {"pre": 0}, ["pre"]
 

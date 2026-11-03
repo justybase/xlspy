@@ -681,8 +681,16 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             elif isinstance(cell, (int, float, Decimal)):
                 if isinstance(cell, (float, Decimal)) and not math.isfinite(float(cell)):
                     raise ValueError("numeric cell values must be finite")
-                s_attr = f' s="{xf_index}"' if xf_index is not None else ''
-                buf.write(f'<c{s_attr}><v>{float(cell)}</v></c>')
+                try:
+                    number = float(cell)
+                except OverflowError:
+                    if not isinstance(cell, int):
+                        raise
+                    # An int past the float range: the digits, as text (as XlsbWriter writes it).
+                    self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
+                else:
+                    s_attr = f' s="{xf_index}"' if xf_index is not None else ''
+                    buf.write(f'<c{s_attr}><v>{number}</v></c>')
             elif isinstance(cell, datetime.datetime):
                 if cell.year < 1900 or cell.year > 9999:
                     self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)

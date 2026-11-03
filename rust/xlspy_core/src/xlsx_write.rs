@@ -213,19 +213,24 @@ impl Row<'_, '_> {
             // Ints are written as float(cell), like the Python path: beyond
             // int64 through float() (inf never raises for ints, but past float
             // range float() does, and the row falls back).
-            let d = if cell.is_exact_instance_of::<PyInt>() {
-                match int_as_i64(cell) {
-                    Some(v) => v as f64,
-                    None => match py_float(cell) {
-                        Some(d) => d,
-                        None => return Ok(Cell::Fallback),
-                    },
-                }
+            let exact = if cell.is_exact_instance_of::<PyInt>() {
+                int_as_i64(cell)
             } else {
-                match py_float(cell) {
-                    Some(d) => d,
-                    None => return Ok(Cell::Fallback),
-                }
+                None
+            };
+            let d = match exact {
+                Some(v) => v as f64,
+                None => match int_float(cell) {
+                    IntFloat::Value(d) => d,
+                    // Past the float range: the digits, as text (as XlsbWriter).
+                    IntFloat::Overflow => {
+                        return match cell.str() {
+                            Ok(s) => self.string(&s, style),
+                            Err(_) => Ok(Cell::Fallback),
+                        };
+                    }
+                    IntFloat::Error => return Ok(Cell::Fallback),
+                },
             };
             return number(py, &mut self.out, style, d);
         }
@@ -406,6 +411,26 @@ fn py_float(cell: &Bound<'_, PyAny>) -> Option<f64> {
         // SAFETY: on success PyNumber_Float returns a float (or float subclass) instance.
         Ok(f) => Some(unsafe { f.cast_into_unchecked::<PyFloat>() }.value()),
         Err(_) => None,
+    }
+}
+
+/// `float(cell)` of an int: its value, OverflowError (past the float range,
+/// written as text), or any other error (the Python writer raises it).
+enum IntFloat {
+    Value(f64),
+    Overflow,
+    Error,
+}
+
+fn int_float(cell: &Bound<'_, PyAny>) -> IntFloat {
+    // SAFETY: `cell` is live with the GIL held.
+    let f = unsafe { pyo3::ffi::PyNumber_Float(cell.as_ptr()) };
+    // SAFETY: PyNumber_Float returns a new reference or NULL with an exception set.
+    match unsafe { Bound::from_owned_ptr_or_err(cell.py(), f) } {
+        // SAFETY: on success PyNumber_Float returns a float (or float subclass) instance.
+        Ok(f) => IntFloat::Value(unsafe { f.cast_into_unchecked::<PyFloat>() }.value()),
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyOverflowError>(cell.py()) => IntFloat::Overflow,
+        Err(_) => IntFloat::Error,
     }
 }
 

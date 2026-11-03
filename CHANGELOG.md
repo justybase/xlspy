@@ -59,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `load_workbook(read_only=True)` kept the file open after a damaged sheet (on Windows, locked),
   and `XlsxUpdater`/`XlsbUpdater` given the other format, or `load_workbook` on an XLSB whose
   reader failed, kept their staging directory. They are released before the exception propagates.
+- `XlsbWriter.write_sheet` raised `TypeError: row must be a list` for rows given as tuples or as a
+  numpy array (any row the native encoder saw); `XlsxWriter` took them. Every sequence is a row now.
+- An int past the float range (`10**400`) was text in an `XlsbWriter` row the native encoder wrote
+  and an `OverflowError` everywhere else; both writers now write its digits as text.
 
 ### Changed
 
@@ -80,6 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the native encoder, as `XlsxWriter` does: it sent every such row to the Python encoder, because
   the style's date variant was handed to the native encoder only for rows with `(value, format)`
   cells. 200,000 x 10 with column styles: 0.64 s, was 6.7 s (XLSX: 0.8 s). The bytes are the same.
+- More `XlsbWriter` rows stay on the native encoder: after an array formula only the rows of its
+  range go to the Python encoder (every later row of the sheet did), and a column whose cells are
+  all `(value, format)` overlays on a column style registers that style, so the rows after the
+  first go native (none did). Empty rows past an array formula's range get no row record.
 
 ## [0.11.1] - 2026-11-02
 
