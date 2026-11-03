@@ -175,6 +175,7 @@ styled date or link) still do.
 |---|---|---|
 | `xlsb_write.rs`, `cells.rs`, `sst.rs` | XLSB row records, shared strings | `_xlsb_writer_bin.py` |
 | `xlsx_write.rs`, `xml_text.rs` | XLSX `<row>` XML | `_xlsx_writer_sheet.py` |
+| `update_rows.rs` | the rows of `XlsxUpdater` / `XlsbUpdater.replace_sheet_data` (other cells: the updater's Python code, one at a time) | `xlsx_updater.py`, `xlsb_updater.py` |
 | `widths.rs` | column widths, the formatted-cell pre-scan | `_widths.py` |
 | `xlsb_read.rs` | `ExcelReader` XLSB rows | `biff_reader.py`, `reader.py` |
 | `xlsx_read.rs`, `xlsx_sst.rs` | `ExcelReader` XLSX rows and shared strings; `load_workbook` fast rows | `_xlsx_read.py`, `workbook/_fast_sheet.py` |

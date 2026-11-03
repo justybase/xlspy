@@ -27,6 +27,9 @@ def _accepted_calls() -> None:
     core.encode_xlsb_row(["a"], {}, [], 0, 0, 0, [1, 2], {("s", 1): 3}, b"\x00")
     core.encode_xlsb_row_inline(["a"], 0, 5)
     core.encode_xlsx_row(["a"], {}, [], 0, 0, 0, True, None, None, ' s="1"')
+    core.encode_update_xlsx_row(("a", 1), 2, [0, 3], 0, "", None, lambda cell, col: "<c/>", False)
+    core.encode_update_xlsb_row(["a"], 0, 0, [], 0, lambda text: 0, lambda cell, col: b"", True)
+    core.patch_xlsb_row_headers("rows.bin", 3)
     # Any sequence is a row; the hook encodes cells of other types.
     core.encode_xlsb_row(("a",), {}, [], 0, 0, 0, None, None, None, lambda cell, col, xf, row: str(cell))
     core.encode_xlsb_row_inline(("a",), 0, cell_hook=lambda cell, col, xf, row: NotImplemented)

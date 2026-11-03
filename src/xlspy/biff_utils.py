@@ -140,14 +140,16 @@ def _read_vlq_stream(stream: IO[bytes], offset: int) -> tuple[int | None, int]:
             raise InvalidFileError("Truncated BIFF12 variable-length integer")
 
 
-def iter_records_stream(stream: IO[bytes]) -> Iterator[tuple[Biff12Record, bytes]]:
-    """Yield BIFF12 records from a seekable binary stream.
+def iter_records_stream(stream: IO[bytes], start: int = 0) -> Iterator[tuple[Biff12Record, bytes]]:
+    """Yield BIFF12 records from a seekable binary stream, from offset ``start``.
 
     The record payload is yielded as the second item.  Only one record is
     materialised at a time, while offsets remain relative to the stream.
     """
 
-    offset = 0
+    offset = start
+    if start:
+        stream.seek(start)
     while True:
         header_start = offset
         record_id, offset = _read_vlq_stream(stream, offset)

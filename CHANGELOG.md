@@ -63,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   numpy array (any row the native encoder saw); `XlsxWriter` took them. Every sequence is a row now.
 - An int past the float range (`10**400`) was text in an `XlsbWriter` row the native encoder wrote
   and an `OverflowError` everywhere else; both writers now write its digits as text.
+- `XlsbUpdater.replace_sheet_data` wrote `True` and `False` as the numbers 1 and 0 (a conversion of
+  every `numbers.Real` to float caught `bool` first); they are booleans now, as in `XlsxUpdater`.
 - pandas' `NaT` in a raw row (`write_sheet`, not `write_dataframe`) was a NaN number in XLSB, which
   Excel does not open as a date, and the text `nan` in XLSX; `NA` was the text `<NA>`. Both are
   empty cells now, as in the DataFrame path, and the column widths measure them as empty.
@@ -100,6 +102,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are those of the Python encoder, which writes a styled blank without its `r` now, as the native
   encoder always did. Rich text, `(Hyperlink, Style)` cells and array formulas still go to the
   Python encoder.
+- `XlsxUpdater` and `XlsbUpdater.replace_sheet_data` (and `replace_sheet_data_stream`) write their
+  rows natively (`update_rows.rs`): text, numbers, booleans and dates there, any other cell through
+  the updater's Python code, one cell at a time, so the bytes and the errors are the same.
+  100,000 x 6: XLSX 0.73 s (was 1.61 s), XLSB 0.40 s (1.35 s); streamed, XLSX 1.5 s (3.0 s) and
+  XLSB 1.4 s (3.8 s). The streaming shared-string index keeps the last 65,536 strings' indexes in
+  memory and no longer flushes its file for every new string, and the streamed XLSB sheet's row
+  headers are patched natively, without parsing the rows twice in Python.
 
 ## [0.11.1] - 2026-11-02
 

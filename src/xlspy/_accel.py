@@ -40,6 +40,7 @@ _NATIVE_NAMES = (
     "read_xlsx_shared_strings",
     "set_style_type", "set_error_type", "xlsb_load_cells",
     "WidthMeter", "general_number_text",
+    "encode_update_xlsx_row", "encode_update_xlsb_row", "patch_xlsb_row_headers",
 )
 
 
@@ -105,6 +106,10 @@ _native_read_xlsx_sst: Any = _impl.get("read_xlsx_shared_strings")
 _native_encode_xlsx_row: Any = _impl.get("encode_xlsx_row")
 # Workbook model loader for XLSB sheet data (see workbook/_xlsb_reader.py).
 xlsb_load_cells: Any = _impl.get("xlsb_load_cells")
+# The rows of XlsxUpdater / XlsbUpdater.replace_sheet_data (None: the Python code).
+encode_update_xlsx_row: Any = _impl.get("encode_update_xlsx_row")
+encode_update_xlsb_row: Any = _impl.get("encode_update_xlsb_row")
+patch_xlsb_row_headers: Any = _impl.get("patch_xlsb_row_headers")
 # Column-width meter for the rows after the first (see _widths.ColumnWidthMeter).
 WidthMeter: Any = _impl.get("WidthMeter")
 general_number_text: Any = _impl.get("general_number_text")

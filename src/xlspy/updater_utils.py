@@ -100,7 +100,14 @@ def date_like_format(format_code: str) -> bool:
 
 
 class DiskStringIndex:
-    """Disk-backed shared-string lookup with an append-only pending file."""
+    """Disk-backed shared-string lookup with an append-only pending file.
+
+    The indexes of the strings looked up last are kept in memory as well (at
+    most ``_CACHE_LIMIT``, so memory stays bounded): an index never changes
+    once given, except by ``add_existing`` and a rollback, which drop them.
+    """
+
+    _CACHE_LIMIT = 65536
 
     def __init__(self, directory: str | os.PathLike[str], *, total_count: int = 0):
         directory = Path(directory)
@@ -116,6 +123,7 @@ class DiskStringIndex:
         self.dirty = False
         self._uncommitted_inserts = 0
         self._transaction: dict[str, Any] | None = None
+        self._cache: dict[str, int] = {}
 
     def seed(self, values: Iterable[str]) -> None:
         for index, value in enumerate(values):
@@ -127,6 +135,7 @@ class DiskStringIndex:
 
         # The in-memory reference implementation uses a dict comprehension,
         # so duplicate shared strings resolve to their last index.
+        self._cache.pop(value, None)
         self._database.execute(
             "INSERT OR REPLACE INTO strings(value, idx) VALUES (?, ?)",
             (value, index),
@@ -134,6 +143,11 @@ class DiskStringIndex:
         self.unique_count = max(self.unique_count, index + 1)
 
     def get_or_add(self, value: str) -> int:
+        cached = self._cache.get(value)
+        if cached is not None:
+            self.total_count += 1
+            self.dirty = True
+            return cached
         result = self._database.execute(
             "SELECT idx FROM strings WHERE value = ?", (value,)
         ).fetchone()
@@ -147,12 +161,15 @@ class DiskStringIndex:
                 self._database.commit()
                 self._uncommitted_inserts = 0
             encoded = value.encode("utf-8")
+            # Buffered: every reader of the file flushes it first.
             self._pending.write(struct.pack("<Q", len(encoded)))
             self._pending.write(encoded)
-            self._pending.flush()
             self.unique_count += 1
         else:
             index = int(result[0])
+        if len(self._cache) >= self._CACHE_LIMIT:
+            self._cache.clear()
+        self._cache[value] = index
         self.total_count += 1
         self.dirty = True
         return index
@@ -240,6 +257,7 @@ class DiskStringIndex:
             return
 
         backup = transaction["pending_backup"]
+        self._cache.clear()
         try:
             # New values always receive indexes at or above the old unique
             # count, so no in-memory list of inserted strings is needed.

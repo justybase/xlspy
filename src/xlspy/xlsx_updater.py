@@ -45,6 +45,7 @@ from ._text import check_cell_text
 from ._updater_base import StyleFallback, _UpdaterBase
 from ._sheet_data import replace_sheet_data_body, set_dimension_ref, tag_prefix
 from ._xlsx_edit import XlsxEditMixin
+from ._accel import encode_update_xlsx_row
 from .formulas import Formula
 
 # A formula element (<f>, <f t="shared">, or a prefixed <x:f>); not <formula>.
@@ -151,54 +152,23 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         last_col = width - 1
         dimension_ref = self._dimension_ref(total_rows, last_col)
 
-        rows_xml: list[str] = []
+        writer = _XlsxRowWriter(self, header_styles, data_styles, date_style, style_fallback, worksheet_prefix)
+        rows_xml: list[bytes] = []
         next_row = 1
         if header_values is not None:
-            cells = [
-                self._value_cell(
-                    value,
-                    column,
-                    next_row,
-                    header_styles,
-                    data_styles,
-                    date_style,
-                    style_fallback,
-                    header=True,
-                    prefix=worksheet_prefix,
-                )
-                for column, value in enumerate(header_values)
-            ]
-            rows_xml.append(self._row_xml(next_row, cells, worksheet_prefix))
+            rows_xml.append(writer.row(header_values, next_row, header=True))
             next_row += 1
 
         for row in materialized:
-            cells = [
-                self._value_cell(
-                    value,
-                    column,
-                    next_row,
-                    header_styles,
-                    data_styles,
-                    date_style,
-                    style_fallback,
-                    header=False,
-                    prefix=worksheet_prefix,
-                )
-                for column, value in enumerate(row)
-            ]
-            rows_xml.append(self._row_xml(next_row, cells, worksheet_prefix))
+            rows_xml.append(writer.row(row, next_row, header=False))
             next_row += 1
 
         updated_sheet_xml = self._patch_sheet_xml(
-            old_sheet_xml, "".join(rows_xml), dimension_ref
+            old_sheet_xml, b"".join(rows_xml).decode("utf-8"), dimension_ref
         )
         self._drop_stale_calc_chain(
             had_formulas=_FORMULA_TAG.search(old_sheet_xml) is not None,
-            has_formulas=any(
-                isinstance(unwrap_cell(value), Formula)
-                for row in materialized
-                for value in row
-            ),
+            has_formulas=writer.formulas,
         )
         self._package.set(sheet_path, updated_sheet_xml.encode("utf-8"))
         self._commit_shared_strings()
@@ -252,54 +222,21 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         rows_file = self._package.temporary_path(suffix=".rows")
 
         updated_sheet = None
-        new_has_formulas = False
+        writer = _XlsxRowWriter(self, header_styles, data_styles, date_style, style_fallback, worksheet_prefix)
         try:
             with rows_file.open("wb") as output:
                 trimmer = TrailingRowTrimmer(output, len(header_values) if header_values is not None else 0)
                 next_row = 1
                 if header_values is not None:
                     guard.check_row(0, header_row_texts(header_values))
-                    cells = [
-                        self._value_cell(
-                            value,
-                            column,
-                            next_row,
-                            header_styles,
-                            data_styles,
-                            date_style,
-                            style_fallback,
-                            header=True,
-                            prefix=worksheet_prefix,
-                        )
-                        for column, value in enumerate(header_values)
-                    ]
-                    output.write(self._row_xml(next_row, cells, worksheet_prefix).encode("utf-8"))
+                    output.write(writer.row(header_values, next_row, header=True))
                     trimmer.keep()
                     next_row += 1
 
                 for source_row in rows:
                     row = row_cells(source_row)
                     guard.check_row(next_row - 1, row)
-                    if not new_has_formulas and any(
-                        isinstance(unwrap_cell(value), Formula) for value in row
-                    ):
-                        new_has_formulas = True
-
-                    cells = [
-                        self._value_cell(
-                            value,
-                            column,
-                            next_row,
-                            header_styles,
-                            data_styles,
-                            date_style,
-                            style_fallback,
-                            header=False,
-                            prefix=worksheet_prefix,
-                        )
-                        for column, value in enumerate(row)
-                    ]
-                    output.write(self._row_xml(next_row, cells, worksheet_prefix).encode("utf-8"))
+                    output.write(writer.row(row, next_row, header=False))
                     trimmer.wrote(row)
                     next_row += 1
 
@@ -318,7 +255,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             )
             self._drop_stale_calc_chain(
                 had_formulas=old_had_formulas,
-                has_formulas=new_has_formulas,
+                has_formulas=writer.formulas,
             )
             self._package.set_file(sheet_path, updated_sheet)
             self._commit_stream_shared_strings()
@@ -879,6 +816,52 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
 # callers who want the input format to be explicit while sharing the exact
 # same implementation and macro-preservation behaviour.
 XlsmUpdater = XlsxUpdater
+
+
+class _XlsxRowWriter:
+    """The ``<row>`` elements of a replacement, natively when the extension is
+    built (``encode_update_xlsx_row``): the common cells there, any other cell
+    through ``XlsxUpdater._value_cell``, one at a time. ``formulas`` turns true
+    at the first formula in a data row."""
+
+    def __init__(self, updater: XlsxUpdater, header_styles: dict[int, int], data_styles: dict[int, int],
+                 date_style: int | None, style_fallback: StyleFallback, prefix: str) -> None:
+        self._updater = updater
+        self._styles = (header_styles, data_styles)
+        self._date_style = date_style
+        self._style_fallback = style_fallback
+        self._prefix = prefix
+        self.formulas = False
+        self._row_number = 0
+        self._header = False
+        general = style_fallback == "general"
+        # The native encoder takes the column xfs as a list (none for "general",
+        # whose cells all have xf 0, dates too).
+        self._style_lists = tuple(
+            [] if general else [styles.get(column, 0) for column in range(max(styles, default=-1) + 1)]
+            for styles in self._styles
+        )
+        self._native_date_style = 0 if general else (date_style or 0)
+        self._string_index = updater._shared_string_index if updater._use_shared_strings else None
+
+    def _cell(self, value: Any, column: int) -> str:
+        if not self._header and isinstance(unwrap_cell(value), Formula):
+            self.formulas = True
+        header_styles, data_styles = self._styles
+        return self._updater._value_cell(
+            value, column, self._row_number, header_styles, data_styles, self._date_style,
+            self._style_fallback, header=self._header, prefix=self._prefix,
+        )
+
+    def row(self, row: Sequence[Any], row_number: int, *, header: bool) -> bytes:
+        self._row_number, self._header = row_number, header
+        if encode_update_xlsx_row is not None:
+            return bytes(encode_update_xlsx_row(
+                row, row_number, self._style_lists[0 if header else 1], self._native_date_style,
+                self._prefix, self._string_index, self._cell, self._updater._date_1904,
+            ))
+        cells = [self._cell(value, column) for column, value in enumerate(row)]
+        return XlsxUpdater._row_xml(row_number, cells, self._prefix).encode("utf-8")
 
 
 def _chunks(data: Any, size: int = 64 * 1024) -> Iterator[Any]:

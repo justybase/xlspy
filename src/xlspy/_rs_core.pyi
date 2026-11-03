@@ -9,6 +9,7 @@ stub uses those, not the wider ``Sequence``/``Mapping`` protocols.
 """
 
 from collections.abc import Callable, Iterator, Sequence
+from os import PathLike
 from typing import Any, final
 
 from _typeshed import ReadableBuffer, SupportsRead
@@ -32,6 +33,9 @@ __all__ = [
     "encode_xlsb_row",
     "encode_xlsb_row_inline",
     "encode_xlsx_row",
+    "encode_update_xlsx_row",
+    "encode_update_xlsb_row",
+    "patch_xlsb_row_headers",
     "read_xlsb_worksheet",
     "XlsbReader",
     "xlsb_load_cells",
@@ -90,6 +94,27 @@ def encode_xlsx_row(
     write_r: bool = True,
     cell_hook: _CellHook | None = None,
 ) -> tuple[bytes, int, int, list[tuple[int, int, Any]]] | None: ...
+def encode_update_xlsx_row(
+    row: Sequence[Any],
+    row_number: int,
+    styles: list[int],
+    date_style: int,
+    prefix: str,
+    string_index: Callable[[str], int] | None,
+    cell_xml: Callable[[Any, int], str],
+    date_1904: bool,
+) -> bytes: ...
+def encode_update_xlsb_row(
+    row: Sequence[Any],
+    row_number: int,
+    last_col: int,
+    styles: list[int],
+    date_style: int,
+    string_index: Callable[[str], int] | None,
+    cell_bytes: Callable[[Any, int], bytes],
+    date_1904: bool,
+) -> bytes: ...
+def patch_xlsb_row_headers(path: str | PathLike[str], last_col: int) -> None: ...
 @final
 class XlsbReader(Iterator[list[Any]]):
     def __iter__(self) -> XlsbReader: ...

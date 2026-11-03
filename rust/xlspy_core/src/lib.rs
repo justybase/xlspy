@@ -16,6 +16,7 @@ mod pyseq;
 mod sst;
 mod text;
 mod types;
+mod update_rows;
 mod widths;
 mod xlsb_read;
 mod xlsb_write;
@@ -48,6 +49,9 @@ fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(xlsb_write::encode_xlsb_row, m)?)?;
     m.add_function(wrap_pyfunction!(xlsb_write::encode_xlsb_row_inline, m)?)?;
     m.add_function(wrap_pyfunction!(xlsx_write::encode_xlsx_row, m)?)?;
+    m.add_function(wrap_pyfunction!(update_rows::encode_update_xlsx_row, m)?)?;
+    m.add_function(wrap_pyfunction!(update_rows::encode_update_xlsb_row, m)?)?;
+    m.add_function(wrap_pyfunction!(update_rows::patch_xlsb_row_headers, m)?)?;
     m.add_function(wrap_pyfunction!(xlsb_read::read_xlsb_worksheet, m)?)?;
     m.add_class::<xlsb_read::XlsbReader>()?;
     m.add_function(wrap_pyfunction!(xlsb_read::xlsb_load_cells, m)?)?;
