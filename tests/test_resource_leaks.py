@@ -30,11 +30,17 @@ def _xlspy_objects() -> int:
     return count
 
 
-def _temp_entries(*dirs) -> set[str]:
-    entries = set()
-    for directory in dirs:
-        entries |= {os.path.join(directory, name) for name in os.listdir(directory)}
-    return entries
+# What xlspy (and tempfile's defaults) name the entries it makes in the system
+# temporary directory; other processes add theirs there too (macOS daemons).
+_OWN_TEMP_PREFIXES = ("xlspy-", "tmp")
+
+
+def _temp_entries(directory) -> set[str]:
+    """Entries xlspy could have left: all of ``directory``, and those of the
+    system temporary directory with xlspy's names."""
+    root = tempfile.gettempdir()
+    entries = {os.path.join(root, name) for name in os.listdir(root) if name.startswith(_OWN_TEMP_PREFIXES)}
+    return entries | {os.path.join(directory, name) for name in os.listdir(directory)}
 
 
 def assert_released(run, directory, rounds: int = 3) -> None:
@@ -42,7 +48,7 @@ def assert_released(run, directory, rounds: int = 3) -> None:
     run()  # warm-up: module-level caches fill here
     gc.collect()
     objects, threads = _xlspy_objects(), threading.active_count()
-    entries = _temp_entries(tempfile.gettempdir(), directory)
+    entries = _temp_entries(directory)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", ResourceWarning)
         for _ in range(rounds):
@@ -50,7 +56,7 @@ def assert_released(run, directory, rounds: int = 3) -> None:
         gc.collect()
     assert not [w for w in caught if issubclass(w.category, ResourceWarning)]
     assert threading.active_count() == threads
-    assert _temp_entries(tempfile.gettempdir(), directory) <= entries
+    assert _temp_entries(directory) <= entries
     assert _xlspy_objects() <= objects
 
 
