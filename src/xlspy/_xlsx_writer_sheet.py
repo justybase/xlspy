@@ -40,7 +40,7 @@ from .pivots import (
     tee_rows,
 )
 from .hyperlinks import Hyperlink
-from ._scalars import numpy_value
+from ._scalars import is_pandas_missing, native_cell_value, plain_value
 from .images import Image
 from .printing import (
     PrintSettings,
@@ -83,6 +83,10 @@ def _filter_cells(
         elif body.num_rows > header_rows and body.value_cols > 0:
             filter_cells.append((header_rows - 1, 0, body.value_cols - 1))
     return filter_cells
+
+
+# Cells the native encoder's hook leaves to the Python writer.
+_XLSX_PYTHON_CELLS = (Formula, Hyperlink, CellRichText, datetime.date)
 
 
 class _XlsxSheetMixin(_XlsxWriterHost):
@@ -492,6 +496,24 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         # Style id of the built-in link style, 0 until a link registers it. Only the
         # Python row path registers styles, so the lookup is repeated after those rows.
         link_xf = self._style_xf_map.get(HYPERLINK_STYLE, 0)
+        # Cells of types the native encoder does not know reach this hook one at
+        # a time (see call_hook in cells.rs): it gives the value the Python
+        # writer would write. A link in a styled cell is kept in pending_links
+        # until its row has been written natively.
+        pending_links: list = []
+
+        def cell_hook(cell, col, style, row):
+            if isinstance(cell, Hyperlink):
+                # The link's xf, once the Python writer has written a link in
+                # this range style (see _write_row_cells).
+                xf = fmt_xf.get(("link", style))
+                text = cell.display_text
+                if xf is None or type(text) is not str:
+                    return NotImplemented
+                pending_links.append((row, col, cell))
+                return text, xf
+            return native_cell_value(cell, _XLSX_PYTHON_CELLS)
+
         if table_headers:
             data = capture_table_headers(data, table_headers, header_rows)
         last_written = -1  # index of the last <row> written
@@ -538,15 +560,20 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             )
             # Link cells need the built-in link style registered first: the Python
             # path registers it on the first link, so the xf order is unchanged.
+            if pending_links:
+                pending_links.clear()  # from a row that went to Python
             c_row = accel_encode_xlsx_row(
                 row, ss_dict, ss_list,
                 self._sst_unique_count, self._sst_all_count,
                 row_idx, use_sst, style_ids, fmt_xf or None, row_attrs or None,
-                link_xf, write_r,
+                link_xf, write_r, cell_hook,
             )
             if c_row is not None:
                 row_xml, self._sst_unique_count, self._sst_all_count, links = c_row
                 buf.write(row_xml)
+                if pending_links:
+                    # In column order, as the Python writer lists them.
+                    links = sorted([*links, *pending_links], key=lambda link: link[1])
                 hyperlinks.extend(links)
             else:
                 row_number = f' r="{row_idx + 1}"' if write_r else ''
@@ -617,18 +644,22 @@ class _XlsxSheetMixin(_XlsxWriterHost):
 
         for col_idx, cell in enumerate(row):
             cell_style = uniform_style if uniform_style is not None else row_styles.get(col_idx)
+            if cell is not None and type(cell).__module__.startswith("pandas") and is_pandas_missing(cell):
+                cell = None  # NaT, NA: an empty cell
             if cell is None:
+                # Every cell of the row is written, so none needs its r (as the
+                # native encoder writes them).
                 if cell_style is None:
                     buf.write('<c/>')
                 else:
                     xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
-                    cell_ref = f'{self._letters[col_idx]}{row_idx + 1}'
-                    buf.write(f'<c r="{cell_ref}" s="{xf_index}"/>')
+                    buf.write(f'<c s="{xf_index}"/>')
                 continue
 
             # (value, format) and (value, Style) cells: the overlay goes on
             # top of the range style.
             overlay = None
+            link_base = None
             if _is_formatted_cell(cell):
                 cell, overlay = cell
                 if isinstance(cell, Hyperlink):
@@ -636,7 +667,11 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                         raise TypeError("a hyperlink cell cannot carry a number format; style the cell instead")
                     cell_style = merge_styles(cell_style, overlay)
                     overlay = None
-            cell = numpy_value(cell)
+            elif isinstance(cell, Hyperlink) and cell_style is not None:
+                # The native encoder's hook writes the next links in this range
+                # style with the xf found under ("link", its xf).
+                link_base = self._style_xf_map.get(cell_style)
+            cell = plain_value(cell)
             if overlay is None and isinstance(cell, Hyperlink):
                 hyperlinks.append((row_idx, col_idx, cell))
                 cell = cell.display_text
@@ -664,11 +699,13 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
             else:
                 xf_index = None
+            if link_base is not None and xf_index is not None:
+                self._fmt_xf.setdefault(("link", link_base), xf_index)
 
             if cell is None:
                 # (None, format) or (None, Style): a formatted cell without a
                 # value, written like a blank with a range style.
-                buf.write(f'<c r="{self._letters[col_idx]}{row_idx + 1}" s="{xf_index}"/>')
+                buf.write('<c/>' if xf_index is None else f'<c s="{xf_index}"/>')
             elif isinstance(cell, Formula):
                 self._write_formula_cell(buf, cell, xf_index)
                 if arrays is not None and cell.array_ref is not None:

@@ -27,6 +27,10 @@ def _accepted_calls() -> None:
     core.encode_xlsb_row(["a"], {}, [], 0, 0, 0, [1, 2], {("s", 1): 3}, b"\x00")
     core.encode_xlsb_row_inline(["a"], 0, 5)
     core.encode_xlsx_row(["a"], {}, [], 0, 0, 0, True, None, None, ' s="1"')
+    # Any sequence is a row; the hook encodes cells of other types.
+    core.encode_xlsb_row(("a",), {}, [], 0, 0, 0, None, None, None, lambda cell, col, xf, row: str(cell))
+    core.encode_xlsb_row_inline(("a",), 0, cell_hook=lambda cell, col, xf, row: NotImplemented)
+    core.encode_xlsx_row(("a",), {}, [], 0, 0, 0, True, cell_hook=lambda cell, col, xf, row: (str(cell), xf))
 
     reader = core.read_xlsb_worksheet(b"", [], [], set(), False)
     if reader is not None:
@@ -47,8 +51,6 @@ def _accepted_calls() -> None:
 def _rejected_calls() -> None:
     # Tuples are not accepted where the native code needs exact lists.
     core.encode_xlsb_sst(("a",), 1, 2)  # type: ignore[arg-type]
-    core.encode_xlsb_row(("a",), {}, [], 0, 0, 0)  # type: ignore[arg-type]
-    core.encode_xlsx_row(("a",), {}, [], 0, 0, 0, True)  # type: ignore[arg-type]
     # read_xlsb_worksheet requires a set, not a frozenset.
     core.read_xlsb_worksheet(b"", [], [], frozenset())  # type: ignore[arg-type]
 

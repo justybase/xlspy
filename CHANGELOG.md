@@ -63,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   numpy array (any row the native encoder saw); `XlsxWriter` took them. Every sequence is a row now.
 - An int past the float range (`10**400`) was text in an `XlsbWriter` row the native encoder wrote
   and an `OverflowError` everywhere else; both writers now write its digits as text.
+- pandas' `NaT` in a raw row (`write_sheet`, not `write_dataframe`) was a NaN number in XLSB, which
+  Excel does not open as a date, and the text `nan` in XLSX; `NA` was the text `<NA>`. Both are
+  empty cells now, as in the DataFrame path, and the column widths measure them as empty.
 
 ### Changed
 
@@ -88,6 +91,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   range go to the Python encoder (every later row of the sheet did), and a column whose cells are
   all `(value, format)` overlays on a column style registers that style, so the rows after the
   first go native (none did). Empty rows past an array formula's range get no row record.
+- The native row encoders no longer hand a whole row to the Python encoder for one cell of a type
+  they do not know: they ask the writer for that cell alone (`cell_hook`). numpy scalars, times,
+  `timedelta`, bytes and other objects (written as `str()`, as before), pandas' `NaT`/`NA`,
+  `(None, format)` blanks, XLSB formulas and links (also in styled cells) are written natively;
+  100,000 x 6 with such a column: numpy ints 0.3 s (were 0.95 s), times 0.3 s (0.9 s), XLSB
+  formulas 1.3 s (1.9 s; compiling the formula is the rest), XLSB links 0.5 s (1.1 s). The bytes
+  are those of the Python encoder, which writes a styled blank without its `r` now, as the native
+  encoder always did. Rich text, `(Hyperlink, Style)` cells and array formulas still go to the
+  Python encoder.
 
 ## [0.11.1] - 2026-11-02
 

@@ -110,14 +110,17 @@ WidthMeter: Any = _impl.get("WidthMeter")
 general_number_text: Any = _impl.get("general_number_text")
 
 
-def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header=None):
+def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header=None, cell_hook=None):
     """Row bytes with inline text cells natively, or None to use the Python
     writer (over-long or unpaired-surrogate text, tuple-formatted cells whose
     xf is not in ``fmt_xf`` yet). ``row_header`` replaces the default
-    BrtRowHdr record."""
+    BrtRowHdr record; ``cell_hook(cell, column, xf, row)`` encodes the cells
+    of other types (see ``cells.rs``, ``call_hook``)."""
     native = _native_encode_xlsb_row_inline
     if native is None:
         return None
+    if cell_hook is not None:
+        return native(row, row_idx, style_ids, fmt_xf, row_header, cell_hook)
     if fmt_xf is not None or row_header is not None:
         return native(row, row_idx, style_ids, fmt_xf, row_header)
     if style_ids is not None:
@@ -126,9 +129,14 @@ def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header
 
 
 def encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx,
-                    style_ids=None, fmt_xf=None, row_header=None):
+                    style_ids=None, fmt_xf=None, row_header=None, cell_hook=None):
     if not HAVE_NATIVE:
         return None
+    if cell_hook is not None:
+        return _native_encode_xlsb_row(
+            row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx,
+            style_ids, fmt_xf, row_header, cell_hook,
+        )
     if fmt_xf is not None or row_header is not None:
         return _native_encode_xlsb_row(
             row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx,
@@ -197,16 +205,23 @@ def read_xlsx_shared_strings(data):
 
 def encode_xlsx_row(row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,
                     use_shared_strings, style_ids=None, fmt_xf=None, row_attrs=None,
-                    link_xf=None, write_r=True):
+                    link_xf=None, write_r=True, cell_hook=None):
     """(row_xml as UTF-8 bytes, uniq, all, hyperlinks) natively, or None to use the
     Python row writer (unencodable rows, and tuple-formatted cells whose xf is not
     in ``fmt_xf`` yet).  ``row_attrs`` are extra ``<row>`` attributes.  ``link_xf``
     is the style id of the built-in link style, once the writer has registered it;
     without it, link cells go to the Python writer.  ``hyperlinks`` lists
     (row, column, Hyperlink) for the link cells written.  ``write_r`` False leaves
-    the ``r`` attribute off (see the native function).  Native errors propagate."""
+    the ``r`` attribute off (see the native function).  ``cell_hook(cell, column,
+    xf, row)`` encodes the cells of other types (see ``cells.rs``, ``call_hook``).
+    Native errors propagate."""
     if _native_encode_xlsx_row is None:
         return None
+    if cell_hook is not None:
+        return _native_encode_xlsx_row(
+            row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,
+            use_shared_strings, style_ids, fmt_xf, row_attrs, link_xf, write_r, cell_hook,
+        )
     if not write_r:
         return _native_encode_xlsx_row(
             row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,

@@ -3,15 +3,15 @@
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{
-    PyBool, PyBytes, PyDate, PyDateTime, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple,
+    PyBool, PyBytes, PyDate, PyDateTime, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple, PyType,
 };
 
 use crate::bytes::write_varint;
-use crate::pyseq::FastSeq;
 use crate::cells::{
-    Cell, Serial, Sst, Styles, date_style_xf, excel_serial, fmt_tuple_kind, fmt_xf_value, rollback,
-    text_fits,
+    Cell, Hooked, Serial, Sst, Styles, call_hook, date_style_xf, excel_serial, fmt_tuple_kind,
+    fmt_xf_value, rollback, text_fits,
 };
+use crate::pyseq::FastSeq;
 use crate::sst::u32_mask;
 use crate::text::{CELL_TEXT_LIMIT, CodePoints};
 use crate::types::{decimal_type, int_as_i64, style_type};
@@ -102,6 +102,100 @@ fn str_cell(
     }
 }
 
+/// How one value was encoded.
+enum Value {
+    Done,
+    /// The row goes to the Python encoder (which may raise).
+    Fallback,
+    /// A type the encoder does not know: ask the writer's hook.
+    Unknown,
+}
+
+/// Encode one cell value (None: a blank, written only with a style).
+fn value_cell(
+    buf: &mut RowBuf,
+    cell: &Bound<'_, PyAny>,
+    strings: &mut Strings<'_, '_>,
+    col: u32,
+    row_idx: u32,
+    style: u32,
+    decimal: Option<&Bound<'_, PyType>>,
+) -> PyResult<Value> {
+    let py = cell.py();
+    let done = if cell.is_none() {
+        if style != 0 {
+            buf.cell([0x01, 0x08], col, style);
+        }
+        Cell::Done
+    } else if let Ok(s) = cell.cast::<PyString>() {
+        text_cell(buf, s, strings, col, row_idx, style)?
+    } else if let Ok(b) = cell.cast::<PyBool>() {
+        buf.cell([0x04, 0x09], col, style);
+        buf.out.push(u8::from(b.is_true()));
+        Cell::Done
+    } else if cell.is_instance_of::<PyInt>() {
+        match int_as_i64(cell) {
+            // Beyond int64: a double, like float(cell) in Python; beyond
+            // float range, str(cell).
+            None => match cell.extract::<f64>() {
+                Ok(f) => {
+                    buf.double(col, style, f);
+                    Cell::Done
+                }
+                Err(_) => str_cell(buf, cell, strings, col, row_idx, style)?,
+            },
+            Some(v) if (-536_870_912..=536_870_911).contains(&v) => {
+                buf.cell([0x02, 0x0C], col, style);
+                buf.out
+                    .extend_from_slice(&(((v as u32) << 2) | 2).to_le_bytes());
+                Cell::Done
+            }
+            Some(v) => {
+                buf.double(col, style, v as f64);
+                Cell::Done
+            }
+        }
+    } else if let Ok(f) = cell.cast::<PyFloat>() {
+        let v = f.value();
+        if !v.is_finite() {
+            return Ok(Value::Fallback); // the Python encoder raises
+        }
+        buf.double(col, style, v);
+        Cell::Done
+    } else if decimal.is_some_and(|d| cell.is_instance(d).unwrap_or(false)) {
+        match cell
+            .call_method0(pyo3::intern!(py, "__float__"))
+            .and_then(|f| f.extract::<f64>())
+        {
+            Ok(v) if !v.is_finite() => return Ok(Value::Fallback),
+            Ok(v) => {
+                buf.double(col, style, v);
+                Cell::Done
+            }
+            Err(_) => str_cell(buf, cell, strings, col, row_idx, style)?,
+        }
+    } else if cell.is_instance_of::<PyDateTime>() || cell.is_instance_of::<PyDate>() {
+        let is_dt = cell.is_instance_of::<PyDateTime>();
+        match excel_serial(cell, is_dt) {
+            // Unreadable fields (pandas' NaT) or past exact microseconds.
+            Serial::Fallback => return Ok(Value::Unknown),
+            Serial::OutOfRange => str_cell(buf, cell, strings, col, row_idx, style)?,
+            Serial::Value(serial) => {
+                let default = if is_dt { 1 } else { 2 };
+                buf.double(col, if style != 0 { style } else { default }, serial);
+                Cell::Done
+            }
+        }
+    } else {
+        // Formula, Hyperlink, numpy scalars and other objects.
+        return Ok(Value::Unknown);
+    };
+    Ok(match done {
+        Cell::Done => Value::Done,
+        Cell::Fallback => Value::Fallback,
+    })
+}
+
 /// Encode one row: the bytes, or None when the Python encoder must write it.
 #[allow(clippy::too_many_arguments)]
 fn encode_row<'py>(
@@ -111,6 +205,7 @@ fn encode_row<'py>(
     style_ids: &Bound<'py, PyAny>,
     fmt_xf: &Bound<'py, PyAny>,
     row_header: &Bound<'py, PyAny>,
+    hook: &Bound<'py, PyAny>,
 ) -> PyResult<Option<Vec<u8>>> {
     let py = row.py();
     // A list or tuple is read in place, any other sequence (a numpy row) as
@@ -185,81 +280,27 @@ fn encode_row<'py>(
                 }
             }
         }
+        // The hook sees the style before a date's variant: a date it is asked
+        // about (pandas' NaT) is no date to the Python encoder.
+        let hook_style = style;
         if !explicit_fmt && !date_style_xf(&cell, fmt_xf, &mut style)? {
             return Ok(None);
         }
-        if cell.is_none() {
-            if style != 0 {
-                buf.cell([0x01, 0x08], col, style);
-            }
-            continue;
-        }
-
-        let done = if let Ok(s) = cell.cast::<PyString>() {
-            text_cell(&mut buf, s, strings, col, row_idx, style)?
-        } else if let Ok(b) = cell.cast::<PyBool>() {
-            buf.cell([0x04, 0x09], col, style);
-            buf.out.push(u8::from(b.is_true()));
-            Cell::Done
-        } else if cell.is_instance_of::<PyInt>() {
-            match int_as_i64(&cell) {
-                // Beyond int64: a double, like float(cell) in Python; beyond
-                // float range, str(cell).
-                None => match cell.extract::<f64>() {
-                    Ok(f) => {
-                        buf.double(col, style, f);
-                        Cell::Done
+        match value_cell(&mut buf, &cell, strings, col, row_idx, style, decimal)? {
+            Value::Done => {}
+            Value::Fallback => return Ok(None),
+            // A type the encoder does not know: the writer's hook encodes it
+            // (a formula), or gives the value to write in its place.
+            Value::Unknown => match call_hook(hook, &cell, col, hook_style, row_idx)? {
+                Hooked::Fallback => return Ok(None),
+                Hooked::Raw(raw) => buf.out.extend_from_slice(raw.as_bytes()),
+                Hooked::Value(value, xf) => {
+                    match value_cell(&mut buf, &value, strings, col, row_idx, xf, decimal)? {
+                        Value::Done => {}
+                        Value::Fallback | Value::Unknown => return Ok(None),
                     }
-                    Err(_) => str_cell(&mut buf, &cell, strings, col, row_idx, style)?,
-                },
-                Some(v) if (-536_870_912..=536_870_911).contains(&v) => {
-                    buf.cell([0x02, 0x0C], col, style);
-                    buf.out
-                        .extend_from_slice(&(((v as u32) << 2) | 2).to_le_bytes());
-                    Cell::Done
                 }
-                Some(v) => {
-                    buf.double(col, style, v as f64);
-                    Cell::Done
-                }
-            }
-        } else if let Ok(f) = cell.cast::<PyFloat>() {
-            let v = f.value();
-            if !v.is_finite() {
-                return Ok(None); // the Python encoder raises
-            }
-            buf.double(col, style, v);
-            Cell::Done
-        } else if decimal.is_some_and(|d| cell.is_instance(d).unwrap_or(false)) {
-            match cell
-                .call_method0(pyo3::intern!(py, "__float__"))
-                .and_then(|f| f.extract::<f64>())
-            {
-                Ok(v) if !v.is_finite() => return Ok(None),
-                Ok(v) => {
-                    buf.double(col, style, v);
-                    Cell::Done
-                }
-                Err(_) => str_cell(&mut buf, &cell, strings, col, row_idx, style)?,
-            }
-        } else if cell.is_instance_of::<PyDateTime>() || cell.is_instance_of::<PyDate>() {
-            let is_dt = cell.is_instance_of::<PyDateTime>();
-            match excel_serial(&cell, is_dt) {
-                Serial::Fallback => return Ok(None),
-                Serial::OutOfRange => str_cell(&mut buf, &cell, strings, col, row_idx, style)?,
-                Serial::Value(serial) => {
-                    let default = if is_dt { 1 } else { 2 };
-                    buf.double(col, if style != 0 { style } else { default }, serial);
-                    Cell::Done
-                }
-            }
-        } else {
-            // Formula, Hyperlink and other objects: the Python encoder refuses
-            // or writes str() of them.  Rare, so callers need not pre-scan rows.
-            return Ok(None);
-        };
-        if let Cell::Fallback = done {
-            return Ok(None);
+            },
         }
     }
     Ok(Some(buf.out))
@@ -269,7 +310,7 @@ fn encode_row<'py>(
 /// sst_all), or None when the Python encoder must handle the row; then the
 /// strings this call added to the table are removed again.
 #[pyfunction]
-#[pyo3(signature = (row, ss_dict, ss_list, sst_uniq, sst_all, row_idx, style_ids=None, fmt_xf=None, row_header=None))]
+#[pyo3(signature = (row, ss_dict, ss_list, sst_uniq, sst_all, row_idx, style_ids=None, fmt_xf=None, row_header=None, cell_hook=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn encode_xlsb_row<'py>(
     py: Python<'py>,
@@ -282,6 +323,7 @@ pub fn encode_xlsb_row<'py>(
     style_ids: Option<&Bound<'py, PyAny>>,
     fmt_xf: Option<&Bound<'py, PyAny>>,
     row_header: Option<&Bound<'py, PyAny>>,
+    cell_hook: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<Option<(Bound<'py, PyBytes>, u32, u32)>> {
     let (uniq, all, row_idx) = (u32_mask(sst_uniq)?, u32_mask(sst_all)?, u32_mask(row_idx)?);
     let list = ss_list
@@ -305,6 +347,7 @@ pub fn encode_xlsb_row<'py>(
         style_ids.unwrap_or(&none),
         fmt_xf.unwrap_or(&none),
         row_header.unwrap_or(&none),
+        cell_hook.unwrap_or(&none),
     );
     let Strings::Shared(sst) = strings else {
         unreachable!()
@@ -321,7 +364,7 @@ pub fn encode_xlsb_row<'py>(
 /// Encode a single XLSB row with inline text cells.  Returns bytes, or None
 /// to use the Python encoder.  Takes no shared-string state.
 #[pyfunction]
-#[pyo3(signature = (row, row_idx, style_ids=None, fmt_xf=None, row_header=None))]
+#[pyo3(signature = (row, row_idx, style_ids=None, fmt_xf=None, row_header=None, cell_hook=None))]
 pub fn encode_xlsb_row_inline<'py>(
     py: Python<'py>,
     row: &Bound<'py, PyAny>,
@@ -329,6 +372,7 @@ pub fn encode_xlsb_row_inline<'py>(
     style_ids: Option<&Bound<'py, PyAny>>,
     fmt_xf: Option<&Bound<'py, PyAny>>,
     row_header: Option<&Bound<'py, PyAny>>,
+    cell_hook: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<Option<Bound<'py, PyBytes>>> {
     let row_idx = u32_mask(row_idx)?;
     let none = py.None().into_bound(py);
@@ -339,6 +383,7 @@ pub fn encode_xlsb_row_inline<'py>(
         style_ids.unwrap_or(&none),
         fmt_xf.unwrap_or(&none),
         row_header.unwrap_or(&none),
+        cell_hook.unwrap_or(&none),
     )?;
     Ok(bytes.map(|b| PyBytes::new(py, &b)))
 }

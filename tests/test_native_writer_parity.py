@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from xlspy import ExcelReader, Font, Formula, Style, XlsbWriter, XlsxWriter, _accel, _xlsb_writer_bin, _xlsx_writer_sheet
+from xlspy import ExcelReader, Font, Formula, Hyperlink, Style, XlsbWriter, XlsxWriter, _accel, _xlsb_writer_bin, _xlsx_writer_sheet
 
 pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 
@@ -73,8 +73,8 @@ def _write_both(tmp_path, monkeypatch, cls, rows, shared=True, **options):
                                 (_xlsx_writer_sheet._XlsxSheetMixin, "_write_row_cells")):
                 original = getattr(owner, name)
 
-                def counted(self, *args, _original=original, **kwargs):
-                    calls.append(1)
+                def counted(self, *args, _original=original, _calls=calls, **kwargs):
+                    _calls.append(1)
                     return _original(self, *args, **kwargs)
 
                 patch.setattr(owner, name, counted)
@@ -159,3 +159,107 @@ def test_ints_past_the_float_range_are_written_as_text(tmp_path, monkeypatch, cl
         values = reader.read_all("S")
     assert values[0][1] == str(10**400) and values[1][1] == str(-(10**400))
     assert values[2][1] == float(2**70)
+
+
+class _Opaque:
+    """An object the writers know nothing about: written as str()."""
+
+    def __str__(self):
+        return "opaque"
+
+
+def _other_cells():
+    np = pytest.importorskip("numpy")
+    cells = [
+        np.int64(-5), np.int32(7), np.uint8(200), np.bool_(True), np.float32(1.5), np.float16(0.25),
+        np.datetime64("2024-01-02"), np.str_("numpy text"),
+        dt.time(3, 4, 5), dt.timedelta(hours=5), b"bytes", _Opaque(), (1, 2, 3), [4, 5],
+        (None, "0.00"), (np.int64(3), "0.00"),
+    ]
+    try:
+        import pandas as pd
+    except ImportError:
+        pass
+    else:
+        cells += [pd.NaT, pd.NA, pd.Timestamp("2024-01-02 03:04:05"), (pd.NaT, "yyyy-mm-dd")]
+    return cells
+
+
+@WRITERS
+@SHARED
+@pytest.mark.parametrize("styled", [False, True])
+def test_other_values_are_written_natively_as_python_writes_them(tmp_path, monkeypatch, cls, shared, styled):
+    cells = _other_cells()
+    rows = [["head"] * len(cells)] + [list(cells) for _ in range(30)]
+    styles = {"A:ZZ": Style(font=Font(italic=True))} if styled else {}
+    native, python, python_rows = _write_both(tmp_path, monkeypatch, cls, rows, shared, styles=styles)
+    assert native == python
+    # The first data row records the (None, format) and (value, format) xfs.
+    assert python_rows <= 1
+
+
+@pytest.mark.parametrize("shared", [True, False])
+@pytest.mark.parametrize("styled", [False, True])
+def test_xlsb_formulas_are_written_natively(tmp_path, monkeypatch, shared, styled):
+    def rows():
+        out = [["n", "double", "text", "flag", "formatted"]]
+        for i in range(1, 120):
+            out.append([
+                i, Formula(f"A{i + 1}*2", i * 2), Formula(f'"x"&A{i + 1}', f"x{i}"),
+                Formula(f"A{i + 1}>5"), (Formula(f"A{i + 1}/3"), "0.00"),
+            ])
+        return out
+    styles = {"B:C": Style(font=Font(bold=True))} if styled else {}
+    native, python, python_rows = _write_both(tmp_path, monkeypatch, XlsbWriter, rows, shared, styles=styles)
+    assert native == python
+    assert python_rows <= 2
+
+
+def test_xlsb_formula_errors_are_raised_as_before(tmp_path):
+    with pytest.raises(Exception) as native_error:
+        with XlsbWriter(tmp_path / "bad.xlsb") as book:
+            book.add_sheet("S")
+            book.write_sheet([["ok", 1], ["bad", Formula("SUM(")]])
+    with pytest.raises(type(native_error.value)):
+        with XlsbWriter(tmp_path / "bad2.xlsb") as book:
+            book.add_sheet("S")
+            book.write_sheet([["bad", Formula("SUM(")]])
+
+
+def _links_part(path):
+    with zipfile.ZipFile(path) as archive:
+        return {n: archive.read(n) for n in archive.namelist() if "_rels/sheet" in n}
+
+
+@WRITERS
+@SHARED
+@pytest.mark.parametrize("styled", [False, True])
+def test_links_are_written_natively(tmp_path, monkeypatch, cls, shared, styled):
+    def rows():
+        out = [["n", "web", "inside", "text"]]
+        for i in range(1, 80):
+            out.append([i, Hyperlink(f"https://example.com/{i % 7}", f"site {i}"),
+                        Hyperlink(f"#S!A{i}", f"go {i}"), "t"])
+        return out
+    styles = {"B:C": Style(font=Font(bold=True))} if styled else {}
+    native, python, python_rows = _write_both(tmp_path, monkeypatch, cls, rows, shared, styles=styles)
+    # The first link row registers the link style (and its variant for the range style).
+    assert python_rows <= 1
+    if not styled:
+        assert native == python
+    paths = []
+    for name, patch_native in (("native", False), ("python", True)):
+        path = tmp_path / f"{name}.{'xlsx' if cls is XlsxWriter else 'xlsb'}"
+        with monkeypatch.context() as patch:
+            if patch_native:
+                none = lambda *args, **kwargs: None
+                patch.setattr(_xlsx_writer_sheet, "accel_encode_xlsx_row", none)
+                patch.setattr(_xlsb_writer_bin, "encode_xlsb_row", none)
+                patch.setattr(_xlsb_writer_bin, "encode_xlsb_row_inline", none)
+            with cls(path, use_shared_strings=shared) as book:
+                book.add_sheet("S")
+                book.write_sheet(rows(), styles=styles)
+        paths.append(path)
+    assert _links_part(paths[0]) == _links_part(paths[1])
+    with ExcelReader(paths[0]) as first, ExcelReader(paths[1]) as second:
+        assert first.read_all("S") == second.read_all("S")

@@ -432,7 +432,7 @@ def test_encoders_with_format_ids_fall_back_cleanly():
 
     fallbacks = [
         ["a", ("v", "unknown format")],   # format not recorded yet
-        ["a", (None, "0.00")],            # the Python path writes a styled blank
+        ["a", (CellRichText(["r"]), "0.00")],  # rich text: the Python path
         ["a", Tup((1, "0.00"))],          # XLSB borrows items of exact tuples only
         ["a", ((1, 2), "0.00")],          # nested tuple
     ]

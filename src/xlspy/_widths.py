@@ -23,12 +23,12 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from . import _fonts
 from ._accel import WidthMeter as _NativeWidthMeter
-from ._scalars import numpy_value
+from ._scalars import plain_value
 from .formulas import Formula
 from .hyperlinks import Hyperlink
 from .formats import _is_formatted_cell
 from .rich_text import CellRichText, TextBlock
-from .styles import merge_styles
+from .styles import Alignment, merge_styles
 
 DEFAULT_WIDTH = 8.43
 MAX_WIDTH = 255.0
@@ -358,7 +358,7 @@ def _format_plan(number_format: str, measure) -> tuple | None:
 
 def _shown(value, number_format: str | None) -> tuple[str | None, str | None]:
     """(the text a cell shows, the text AutoFit makes room for)."""
-    value = numpy_value(value)  # written as the Python value it holds
+    value = plain_value(value)  # written as the Python value it holds (NaT, NA: empty)
     if isinstance(value, Hyperlink):
         value = value.display_text
     elif isinstance(value, Formula):
@@ -440,7 +440,7 @@ def file_width(width: float) -> float:
     return width + _CELL_PADDING
 
 
-def _indent_pixels(alignment) -> int:
+def _indent_pixels(alignment: Alignment | None) -> int:
     """The room an alignment's indent takes in a column, in pixels."""
     if alignment is None or not alignment.indent or alignment.indent < 0:
         return 0
@@ -496,7 +496,7 @@ class ColumnWidthMeter:
         self._cells: dict[int, dict[int, int]] = {}  # button row -> {column: pixels}
         self._style_cache: dict = {}
         self._fonts: dict = {}  # (family, bold, italic, size) -> (advances, pixels, margin, slant)
-        self._constant: dict = {}  # (type, number format, font) -> pixels of dates and booleans
+        self._constant: dict[tuple, int] = {}  # (type, number format, font) -> pixels of dates and booleans
         self._native = None
         self.fast_add = None
         self.slow_rows = self._button_rows | {0}
@@ -601,10 +601,11 @@ class ColumnWidthMeter:
             text = None
         elif kind is bool or kind is datetime.date or kind is datetime.datetime:
             key = (kind, number_format, family, bold, italic, size)
-            text_px = self._constant.get(key)
-            if text_px is None:
-                text_px = self._constant[key] = _sum_pixels(
+            known = self._constant.get(key)
+            if known is None:
+                known = self._constant[key] = _sum_pixels(
                     _shown(cell, number_format)[1] or "", advances, bold, pixels)
+            text_px = known
             text = None
         elif (kind is int or kind is float) and (number_format is None or number_format == "General"):
             text = _general_room(cell)

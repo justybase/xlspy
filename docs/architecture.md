@@ -160,6 +160,17 @@ behavior; the pure-Python code stays the reference and the fallback.
 cannot handle the input (an over-long string, a cell format not known yet), and the
 caller then runs the Python code. `ACCEL_BACKEND` records which functions are native.
 
+**Cell hook.** The row encoders write every type they know (text, numbers, booleans,
+dates, `Decimal`, XLSX formulas and links) themselves. For any other cell they call
+the writer's `cell_hook(cell, column, xf, row)` (`call_hook` in `cells.rs`) instead of
+handing the whole row back: the hook returns the value the Python encoder would
+write (a numpy scalar's `.item()`, None for pandas' `NaT` and `NA`, `str()` of
+anything else), the encoded cell (an XLSB formula, compiled in Python), a
+`(text, xf)` pair (a link in a styled cell), or `NotImplemented`, and then the row
+goes to the Python encoder after all. Only rich text, `(Hyperlink, Style)` cells,
+array formulas and the first row that needs a new style variant (a format overlay, a
+styled date or link) still do.
+
 | Rust module | Does | Python counterpart |
 |---|---|---|
 | `xlsb_write.rs`, `cells.rs`, `sst.rs` | XLSB row records, shared strings | `_xlsb_writer_bin.py` |

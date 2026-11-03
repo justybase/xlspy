@@ -306,7 +306,7 @@ def test_characters_the_font_lacks_and_unicode_spaces():
     assert text_pixels("😀") >= 21 and text_pixels("✅") >= 21  # Segoe UI Emoji
     assert text_pixels("✈") >= 15 and text_pixels("⇔") >= 16 and text_pixels("═") >= 11
     assert text_pixels("\xad") == text_pixels("-")  # a soft hyphen shows as a hyphen
-    assert text_pixels("​‍﻿") == 0
+    assert text_pixels("\u200b\u200d\ufeff") == 0
     assert text_pixels("日") == 16 and text_pixels("ｱ") == 8
 
 

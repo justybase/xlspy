@@ -22,6 +22,7 @@ import functools
 import json
 import math
 import zlib
+from typing import Any
 
 from . import _font_metrics as _metrics
 
@@ -53,13 +54,14 @@ def family_key(name: str | None) -> str:
     return UNKNOWN
 
 
-def _unpack(packed):
+def _unpack(packed: str) -> Any:
     return json.loads(zlib.decompress(base64.b85decode(packed)))
 
 
-@functools.lru_cache(maxsize=None)
-def _family_styles(family: str) -> dict:
-    return _unpack(_metrics.FAMILIES[family][1])
+@functools.cache
+def _family_styles(family: str) -> dict[str, Any]:
+    styles: dict[str, Any] = _unpack(_metrics.FAMILIES[family][1])
+    return styles
 
 
 @functools.lru_cache(maxsize=1)
@@ -135,7 +137,7 @@ def ascent(family: str, bold: bool, italic: bool, pixels: int) -> int:
         return math.ceil(ascent(DEFAULT_FAMILY, bold, italic, pixels) * UNKNOWN_SCALE)
     style = _family_styles(family)[f"{int(bold)}{int(italic)}"]
     if pixels in _SIZES:
-        return style["ascent"][pixels - _SIZES.start]
+        return int(style["ascent"][pixels - _SIZES.start])
     return _scaled(style["ascent_units"], pixels)
 
 

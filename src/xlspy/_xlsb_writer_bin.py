@@ -32,7 +32,7 @@ from ._xlsb_validation import validations_bin
 from .rich_text import CellRichText
 from .formulas import Formula
 from .hyperlinks import Hyperlink
-from ._scalars import numpy_value
+from ._scalars import is_pandas_missing, native_cell_value, plain_value
 from ._xlsb_slicers import (
     sheet_slicers_bin,
 )
@@ -55,6 +55,20 @@ _WS_DIM_OFFSET = 32
 # The body of a sheet larger than the row buffer is spooled until its dimension
 # is known; each spool (raw and compressed) moves to disk past this size.
 _SPOOL_MAX_BYTES = 1 << 20
+
+
+# Cells the native encoders' hook leaves to the Python encoder.
+_XLSB_PYTHON_CELLS = (Formula, Hyperlink, CellRichText, ArrayValue, datetime.date)
+
+
+def _link_rid(link: Hyperlink, link_rids: dict, start: int) -> str | None:
+    """The relationship id of an external link's target, one per target."""
+    if link.is_internal:
+        return None
+    rid = link_rids.get(link.target)
+    if rid is None:
+        rid = link_rids[link.target] = f"rId{start + len(link_rids)}"
+    return rid
 
 
 class _UsedRange:
@@ -226,6 +240,30 @@ class _XlsbBinMixin(_XlsbWriterHost):
             # encoder, which only emits default row headers.
             heights = heights or {}
             custom_rows = set(heights) | set(hidden_row_set)
+            # Cells of types the native encoder does not know reach this hook one
+            # at a time (see call_hook in cells.rs): it gives the value the Python
+            # encoder would write, or the encoded cell (a formula). Links are kept
+            # in pending_links until their row has been written natively.
+            pending_links: list[Any] = []
+            fmt_xf_map = self._fmt_xf
+            formula_context = self._formula_context
+
+            def cell_hook(cell: Any, col: int, style: int, row: int) -> Any:
+                if isinstance(cell, Formula):
+                    if cell.array_ref is not None:
+                        return NotImplemented
+                    return formula_cell(cell, col, style, formula_context(), sheet=sheet_name, row=row)
+                if isinstance(cell, Hyperlink):
+                    # The link's xf, once the Python encoder has written a link
+                    # in this range style (see _write_python_row).
+                    xf = fmt_xf_map.get(("link", style))
+                    text = cell.display_text
+                    if xf is None or type(text) is not str:
+                        return NotImplemented
+                    pending_links.append((row, col, cell))
+                    return text, xf
+                return native_cell_value(cell, _XLSB_PYTHON_CELLS)
+
             array_ranges: list[Any] = []
             # Last row of the array formulas written so far: the rows up to it
             # hold array members, which only the Python encoder writes.
@@ -332,17 +370,21 @@ class _XlsbBinMixin(_XlsbWriterHost):
                             outline_level, outline_collapsed,
                         )
                     cell_data = None
+                    if pending_links:
+                        pending_links.clear()  # from a row that went to Python
                     if self._use_shared_strings:
                         c_result = encode_xlsb_row(
                             row, self._shared_strings_dict, self._shared_strings,
                             self._sst_unique_count, self._sst_all_count, row_idx,
-                            style_ids, fmt_xf, row_header,
+                            style_ids, fmt_xf, row_header, cell_hook,
                         )
                         if c_result is not None:
                             cell_data, self._sst_unique_count, self._sst_all_count = c_result
                     else:
-                        cell_data = encode_xlsb_row_inline(row, row_idx, style_ids, fmt_xf, row_header)
+                        cell_data = encode_xlsb_row_inline(row, row_idx, style_ids, fmt_xf, row_header, cell_hook)
                     if cell_data is not None:
+                        for link_row, link_col, link in pending_links:
+                            hyperlinks.append((link_row, link_col, link, _link_rid(link, link_rids, link_rid_start)))
                         buffer.write(cell_data)
                         if buffer.tell() > _BUFFER_SIZE:
                             _flush(buffer, spool)
@@ -513,6 +555,8 @@ class _XlsbBinMixin(_XlsbWriterHost):
 
         row_cells = enumerate(row)
         for col_idx, cell in row_cells:
+            if cell is not None and type(cell).__module__.startswith("pandas") and is_pandas_missing(cell):
+                cell = None  # NaT, NA: an empty cell
             if cell is None:
                 cell_style = row_styles.get(col_idx)
                 if cell_style is not None:
@@ -526,21 +570,21 @@ class _XlsbBinMixin(_XlsbWriterHost):
             overlay = None
             if _is_formatted_cell(cell):
                 cell, overlay = cell
-            cell = numpy_value(cell)
+            cell = plain_value(cell)
             cell_style = row_styles.get(col_idx)
+            link_base = None
             if isinstance(cell, Hyperlink):
                 if isinstance(overlay, str):
                     raise TypeError("a hyperlink cell cannot carry a number format; style the cell instead")
+                if overlay is None:
+                    # The native encoder's hook writes the next links in this
+                    # range style with the xf found under ("link", its xf).
+                    link_base = 0 if cell_style is None else self._style_xf_map.get(cell_style)
                 # The link look sits under the range style and the cell's
                 # own style, as in the XLSX writer.
                 cell_style = merge_styles(HYPERLINK_STYLE, merge_styles(cell_style, overlay))
                 overlay = None
-                rid = None
-                if not cell.is_internal:
-                    rid = link_rids.get(cell.target)
-                    if rid is None:
-                        rid = link_rids[cell.target] = f"rId{link_rid_start + len(link_rids)}"
-                hyperlinks.append((row_idx, col_idx, cell, rid))
+                hyperlinks.append((row_idx, col_idx, cell, _link_rid(cell, link_rids, link_rid_start)))
                 cell = cell.display_text
             if overlay is not None:
                 if cell_style is not None:
@@ -568,6 +612,8 @@ class _XlsbBinMixin(_XlsbWriterHost):
             else:
                 xf_index = 0
                 has_custom_fmt = False
+            if link_base is not None:
+                self._fmt_xf.setdefault(("link", link_base), xf_index)
 
             if cell is None:
                 # (None, format) or (None, Style): a formatted cell without a

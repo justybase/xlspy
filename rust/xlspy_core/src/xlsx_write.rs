@@ -9,8 +9,8 @@ use pyo3::types::{
 };
 
 use crate::cells::{
-    Cell, Serial, Sst, Styles, date_style_xf, excel_serial, fmt_tuple_kind, fmt_xf_value, rollback,
-    text_fits,
+    Cell, Hooked, Serial, Sst, Styles, call_hook, date_style_xf, excel_serial, fmt_tuple_kind,
+    fmt_xf_value, rollback, text_fits,
 };
 use crate::numfmt::{write_repr, write_u32};
 use crate::pyseq::FastSeq;
@@ -115,6 +115,11 @@ struct Row<'a, 'py> {
     link_xf: u32,
     /// (column, Hyperlink) for the link cells written, in column order.
     links: Vec<(u32, Py<PyAny>)>,
+    /// The writer's cell hook (see `call_hook`), or None.
+    hook: Bound<'py, PyAny>,
+    row_idx: u32,
+    /// The current cell's style before a date's variant (see `date_style_xf`).
+    hook_style: u32,
 }
 
 impl Row<'_, '_> {
@@ -164,7 +169,19 @@ impl Row<'_, '_> {
     /// Hyperlink cell, as the Python writer writes a link with no style of its
     /// own: the display text in the built-in link style, and the link kept for
     /// the sheet's <hyperlinks>. Anything else goes to the Python writer.
-    fn hyperlink(&mut self, cell: &Bound<'_, PyAny>, style: u32, col: u32) -> PyResult<Cell> {
+    fn hyperlink(
+        &mut self,
+        cell: &Bound<'_, PyAny>,
+        style: u32,
+        col: u32,
+        decimal: Option<&Bound<'_, pyo3::types::PyType>>,
+        may_hook: bool,
+    ) -> PyResult<Cell> {
+        if style != 0 && may_hook {
+            // A link in a styled cell: the hook knows the link variant of the
+            // style (and keeps the link) once the Python writer has made it.
+            return self.hooked(cell, style, col, decimal, true);
+        }
         if style != 0 || self.link_xf == 0 {
             return Ok(Cell::Fallback);
         }
@@ -188,6 +205,40 @@ impl Row<'_, '_> {
         style: u32,
         col: u32,
         decimal: Option<&Bound<'_, pyo3::types::PyType>>,
+    ) -> PyResult<Cell> {
+        self.value(cell, style, col, decimal, true)
+    }
+
+    /// A cell of a type the encoder does not know, through the writer's hook.
+    fn hooked(
+        &mut self,
+        cell: &Bound<'_, PyAny>,
+        style: u32,
+        col: u32,
+        decimal: Option<&Bound<'_, pyo3::types::PyType>>,
+        is_link: bool,
+    ) -> PyResult<Cell> {
+        // A link's style is its own; anything else asks in the cell's style
+        // before a date's variant (see `hook_style`).
+        let style = if is_link { style } else { self.hook_style };
+        match call_hook(&self.hook, cell, col, style, self.row_idx)? {
+            Hooked::Fallback => Ok(Cell::Fallback),
+            Hooked::Raw(raw) => {
+                self.out.extend_from_slice(raw.as_bytes());
+                Ok(Cell::Done)
+            }
+            Hooked::Value(value, xf) => self.value(&value, xf, col, decimal, false),
+        }
+    }
+
+    /// Encode one value; `may_hook` false for a value the hook returned.
+    fn value(
+        &mut self,
+        cell: &Bound<'_, PyAny>,
+        style: u32,
+        col: u32,
+        decimal: Option<&Bound<'_, pyo3::types::PyType>>,
+        may_hook: bool,
     ) -> PyResult<Cell> {
         let py = cell.py();
         if cell.is_none() {
@@ -279,6 +330,8 @@ impl Row<'_, '_> {
         let is_dt = cell.is_instance_of::<PyDateTime>();
         if is_dt || cell.is_instance_of::<PyDate>() {
             return match excel_serial(cell, is_dt) {
+                // Unreadable fields (pandas' NaT) or past exact microseconds.
+                Serial::Fallback if may_hook => self.hooked(cell, style, col, decimal, false),
                 Serial::Fallback => Ok(Cell::Fallback),
                 Serial::OutOfRange => match cell.str() {
                     // Year out of range: str(cell), like the Python path.
@@ -305,9 +358,13 @@ impl Row<'_, '_> {
             return self.formula(cell, style);
         }
         if hyperlink_type(py).is_some_and(|t| type_check(cell, &t)) {
-            return self.hyperlink(cell, style, col);
+            return self.hyperlink(cell, style, col, decimal, may_hook);
         }
-        // Anything else: the Python writer.
+        // Anything else (numpy scalars, times, rich text...): the hook, which
+        // gives the value the Python writer would write, or the Python writer.
+        if may_hook {
+            return self.hooked(cell, style, col, decimal, false);
+        }
         Ok(Cell::Fallback)
     }
 
@@ -429,7 +486,9 @@ fn int_float(cell: &Bound<'_, PyAny>) -> IntFloat {
     match unsafe { Bound::from_owned_ptr_or_err(cell.py(), f) } {
         // SAFETY: on success PyNumber_Float returns a float (or float subclass) instance.
         Ok(f) => IntFloat::Value(unsafe { f.cast_into_unchecked::<PyFloat>() }.value()),
-        Err(e) if e.is_instance_of::<pyo3::exceptions::PyOverflowError>(cell.py()) => IntFloat::Overflow,
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyOverflowError>(cell.py()) => {
+            IntFloat::Overflow
+        }
         Err(_) => IntFloat::Error,
     }
 }
@@ -445,7 +504,7 @@ type EncodedRow<'py> = (Bound<'py, PyBytes>, u32, u32, Bound<'py, PyList>);
 /// takes the number after the previous row, which is how the writer keeps dense
 /// rows small; the caller sets it only for a row that follows a gap.
 #[pyfunction]
-#[pyo3(signature = (row, ss_dict, ss_list, sst_uniq, sst_all, row_idx, use_shared_strings, style_ids=None, fmt_xf=None, row_attrs=None, link_xf=None, write_r=true))]
+#[pyo3(signature = (row, ss_dict, ss_list, sst_uniq, sst_all, row_idx, use_shared_strings, style_ids=None, fmt_xf=None, row_attrs=None, link_xf=None, write_r=true, cell_hook=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn encode_xlsx_row<'py>(
     py: Python<'py>,
@@ -461,6 +520,7 @@ pub fn encode_xlsx_row<'py>(
     row_attrs: Option<&Bound<'py, PyAny>>,
     link_xf: Option<&Bound<'py, PyAny>>,
     write_r: bool,
+    cell_hook: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<Option<EncodedRow<'py>>> {
     let link_xf = match link_xf {
         Some(x) if !x.is_none() => x
@@ -516,6 +576,11 @@ pub fn encode_xlsx_row<'py>(
         }),
         link_xf,
         links: Vec::new(),
+        hook: cell_hook
+            .cloned()
+            .unwrap_or_else(|| py.None().into_bound(py)),
+        row_idx,
+        hook_style: 0,
     };
     row.out.extend_from_slice(b"<row");
     if write_r {
@@ -549,6 +614,9 @@ pub fn encode_xlsx_row<'py>(
                     explicit_fmt = kind == 1;
                 }
             }
+            // The hook sees the style before a date's variant: a date it is
+            // asked about (pandas' NaT) is no date to the Python writer.
+            row.hook_style = style;
             if !explicit_fmt && !date_style_xf(&cell, fmt_xf, &mut style)? {
                 return Ok(false);
             }

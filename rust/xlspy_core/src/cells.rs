@@ -4,8 +4,8 @@
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{
-    PyDate, PyDateAccess, PyDateTime, PyDict, PyInt, PyList, PyString, PyTimeAccess, PyTuple,
-    PyType,
+    PyBytes, PyDate, PyDateAccess, PyDateTime, PyDict, PyInt, PyList, PyString, PyTimeAccess,
+    PyTuple, PyType,
 };
 
 use crate::dates::days_from_civil;
@@ -16,6 +16,55 @@ use crate::types::overlay_kind;
 pub enum Cell {
     Done,
     Fallback,
+}
+
+/// What the writer's cell hook made of a value the encoder does not know
+/// (a numpy scalar, a time, an XLSB formula...).
+pub enum Hooked<'py> {
+    /// Not handled (the hook returned NotImplemented, or raised): the row
+    /// goes to the Python encoder, which repeats the work and raises.
+    Fallback,
+    /// The encoded cell (an XLSB record, XLSX markup), written as it is.
+    Raw(Bound<'py, PyBytes>),
+    /// A value to encode in its place, with this xf.
+    Value(Bound<'py, PyAny>, u32),
+}
+
+/// Ask the writer's hook, `hook(cell, column, xf, row)`, for a cell the
+/// encoder cannot write itself. The hook returns NotImplemented, bytes, a
+/// `(value, xf)` pair (a value in another style: a link's text) or the value
+/// to write in the cell's style. None as the hook: no hook, row fallback.
+pub fn call_hook<'py>(
+    hook: &Bound<'_, PyAny>,
+    cell: &Bound<'py, PyAny>,
+    col: u32,
+    style: u32,
+    row_idx: u32,
+) -> PyResult<Hooked<'py>> {
+    let py = cell.py();
+    if hook.is_none() {
+        return Ok(Hooked::Fallback);
+    }
+    let result = match hook.call1((cell, col, style, row_idx)) {
+        Ok(result) => result.unbind().into_bound(py),
+        Err(_) => return Ok(Hooked::Fallback),
+    };
+    if result.is(py.NotImplemented()) {
+        return Ok(Hooked::Fallback);
+    }
+    if let Ok(raw) = result.cast::<PyBytes>() {
+        return Ok(Hooked::Raw(raw.clone()));
+    }
+    if let Ok(pair) = result.cast_exact::<PyTuple>() {
+        if pair.len() != 2 {
+            return Ok(Hooked::Fallback);
+        }
+        let Ok(xf) = pair.get_item(1)?.extract::<u32>() else {
+            return Ok(Hooked::Fallback);
+        };
+        return Ok(Hooked::Value(pair.get_item(0)?, xf));
+    }
+    Ok(Hooked::Value(result, style))
 }
 
 /// True when the str fits in a cell (at most 32767 UTF-16 units).  Each code
@@ -111,8 +160,8 @@ pub fn as_unsigned_long(obj: &Bound<'_, PyAny>) -> PyResult<u32> {
 /// Resolve a (value, format) or (value, Style) cell through `fmt_xf`.  The
 /// key is the format string, or the Style's id(), for an unstyled cell and
 /// (style id, that key) for a styled one.  On success `style` becomes the xf
-/// and the cell's value is returned; None (row fallback) when the key is
-/// missing, the value is None, or a nested tuple.
+/// and the cell's value is returned (None: a blank in that xf); None (row
+/// fallback) when the key is missing or the value a nested tuple.
 pub fn fmt_xf_value<'py>(
     cell: &Bound<'py, PyAny>,
     fmt_xf: Option<&Bound<'py, PyDict>>,
@@ -142,7 +191,7 @@ pub fn fmt_xf_value<'py>(
     let Ok(inner) = cell.get_item(0) else {
         return Ok(None);
     };
-    if inner.is_none() || inner.is_instance_of::<PyTuple>() {
+    if inner.is_instance_of::<PyTuple>() {
         return Ok(None);
     }
     *style = xf;
@@ -151,7 +200,8 @@ pub fn fmt_xf_value<'py>(
 
 /// Resolve the xf of a styled date or datetime cell through `fmt_xf`: the
 /// Python writer records the variant with the default date format under
-/// ("date" | "datetime", style xf).  False: row fallback.
+/// ("date" | "datetime", style xf).  False: row fallback.  A date without a
+/// serial (pandas' NaT) keeps its style: it goes to the writer's cell hook.
 pub fn date_style_xf(
     cell: &Bound<'_, PyAny>,
     fmt_xf: Option<&Bound<'_, PyDict>>,
@@ -165,15 +215,19 @@ pub fn date_style_xf(
     } else {
         "date"
     };
-    let Some(fmt_xf) = fmt_xf else {
-        return Ok(false);
+    let found = match fmt_xf {
+        Some(fmt_xf) => get_xf(fmt_xf, (kind, *style))?,
+        None => None,
     };
-    match get_xf(fmt_xf, (kind, *style))? {
+    match found {
         Some(xf) => {
             *style = xf;
             Ok(true)
         }
-        None => Ok(false),
+        None => Ok(matches!(
+            excel_serial(cell, kind == "datetime"),
+            Serial::Fallback
+        )),
     }
 }
 

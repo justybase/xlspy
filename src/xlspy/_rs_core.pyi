@@ -8,7 +8,7 @@ writers test for exact ``list``/``dict``/``set``/``bytes`` values, so the
 stub uses those, not the wider ``Sequence``/``Mapping`` protocols.
 """
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any, final
 
 from _typeshed import ReadableBuffer, SupportsRead
@@ -51,8 +51,12 @@ def read_xlsb_shared_strings(data: ReadableBuffer) -> list[str]: ...
 def read_xlsx_shared_strings(data: ReadableBuffer) -> list[str] | None: ...
 def calc_column_widths(rows: list[list[Any]], max_cols: int) -> list[float]: ...
 def xlsb_row_has_formatted(row: list[Any]) -> bool | None: ...
+# cell_hook(cell, column, xf, row): NotImplemented (row fallback), the encoded
+# cell as bytes, a (value, xf) pair, or the value to write in the cell's xf.
+_CellHook = Callable[[Any, int, int, int], Any]
+
 def encode_xlsb_row(
-    row: list[Any],
+    row: Sequence[Any],
     ss_dict: dict[str, int],
     ss_list: list[str],
     sst_uniq: int,
@@ -61,16 +65,18 @@ def encode_xlsb_row(
     style_ids: int | list[int] | tuple[int, ...] | None = None,
     fmt_xf: dict[Any, int] | None = None,
     row_header: bytes | None = None,
+    cell_hook: _CellHook | None = None,
 ) -> tuple[bytes, int, int] | None: ...
 def encode_xlsb_row_inline(
-    row: list[Any],
+    row: Sequence[Any],
     row_idx: int,
     style_ids: int | list[int] | tuple[int, ...] | None = None,
     fmt_xf: dict[Any, int] | None = None,
     row_header: bytes | None = None,
+    cell_hook: _CellHook | None = None,
 ) -> bytes | None: ...
 def encode_xlsx_row(
-    row: list[Any],
+    row: Sequence[Any],
     ss_dict: dict[str, int],
     ss_list: list[str],
     sst_uniq: int,
@@ -82,6 +88,7 @@ def encode_xlsx_row(
     row_attrs: str | None = None,
     link_xf: int | None = None,
     write_r: bool = True,
+    cell_hook: _CellHook | None = None,
 ) -> tuple[bytes, int, int, list[tuple[int, int, Any]]] | None: ...
 @final
 class XlsbReader(Iterator[list[Any]]):
@@ -139,13 +146,13 @@ class WidthMeter:
     """Column widths in pixels of the rows the native code measures (see
     ``xlspy._widths.ColumnWidthMeter``)."""
 
-    def __init__(
-        self,
+    def __new__(
+        cls,
         fallback: Callable[[Any, Any, bool], int],
         kind_of: Callable[[Any], tuple[int, tuple[Any, ...] | None]],
         constant_types: list[type],
         overlay_kind: Callable[[Any, Any, bool], tuple[int, tuple[Any, ...] | None]] | None = None,
-    ) -> None: ...
+    ) -> WidthMeter: ...
     def add_kind(
         self, id: int, spec: tuple[dict[str, int], int, bool, bool, Callable[[str], int], tuple[Any, ...] | None, int],
     ) -> None: ...
