@@ -47,3 +47,57 @@ impl<'py> FastSeq<'py> {
         Some(unsafe { Bound::from_borrowed_ptr(self.seq.py(), item) })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::FastSeq;
+    use pyo3::exceptions::PyTypeError;
+    use pyo3::prelude::*;
+    use pyo3::types::{PyList, PyTuple};
+
+    #[test]
+    fn lists_and_tuples_are_read_in_place_and_iterables_materialized() {
+        Python::initialize();
+        Python::attach(|py| {
+            let list = PyList::new(py, [1, 2, 3]).unwrap().into_any();
+            let seq = FastSeq::new(&list, c"row").unwrap();
+            assert!(seq.seq.is(&list), "an exact list is used as it is");
+            assert_eq!(seq.len(), 3);
+            assert_eq!(seq.get(2).unwrap().extract::<i64>().unwrap(), 3);
+            assert!(seq.get(3).is_none());
+
+            let tuple = PyTuple::new(py, ["a"]).unwrap().into_any();
+            assert!(FastSeq::new(&tuple, c"row").unwrap().seq.is(&tuple));
+
+            let generator = py.eval(c"(i * 10 for i in range(4))", None, None).unwrap();
+            let seq = FastSeq::new(&generator, c"row").unwrap();
+            assert_eq!(seq.len(), 4);
+            assert_eq!(seq.get(3).unwrap().extract::<i64>().unwrap(), 30);
+        });
+    }
+
+    #[test]
+    fn a_non_iterable_raises_type_error_with_the_message() {
+        Python::initialize();
+        Python::attach(|py| {
+            let five = 5i64.into_pyobject(py).unwrap().into_any();
+            let err = FastSeq::new(&five, c"rows must be lists")
+                .err()
+                .expect("an int is not a sequence");
+            assert!(err.is_instance_of::<PyTypeError>(py));
+            assert!(err.to_string().contains("rows must be lists"));
+        });
+    }
+
+    #[test]
+    fn a_list_shrunk_after_creation_is_bounds_checked() {
+        Python::initialize();
+        Python::attach(|py| {
+            let list = PyList::new(py, [1, 2, 3]).unwrap();
+            let seq = FastSeq::new(list.as_any(), c"row").unwrap();
+            list.del_item(2).unwrap();
+            assert_eq!(seq.len(), 2);
+            assert!(seq.get(2).is_none());
+        });
+    }
+}

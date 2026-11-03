@@ -105,3 +105,58 @@ pub fn decode_utf16le<'py>(py: Python<'py>, data: &[u8]) -> PyResult<Bound<'py, 
         Ok(Bound::from_owned_ptr_or_err(py, obj)?.cast_into_unchecked())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{CodePoints, decode_utf16le};
+    use pyo3::prelude::*;
+    use pyo3::types::{PyBytes, PyString};
+
+    /// Python's own UTF-16LE encoding of `s`, lone surrogates passed through.
+    fn python_utf16le(s: &Bound<'_, PyString>) -> Vec<u8> {
+        s.call_method1("encode", ("utf-16-le", "surrogatepass"))
+            .unwrap()
+            .cast_into::<PyBytes>()
+            .unwrap()
+            .as_bytes()
+            .to_vec()
+    }
+
+    #[test]
+    fn every_storage_kind_matches_python() {
+        Python::initialize();
+        Python::attach(|py| {
+            // UCS-1, UCS-2 and UCS-4 storage, each with a second line.
+            for text in ["caf\u{e9}\nx", "\u{17c}\u{f3}\u{142}w\nx", "a\u{1f600}b\nx"] {
+                let s = PyString::new(py, text);
+                let points = CodePoints::of(&s).unwrap();
+                let mut out = Vec::new();
+                points.write_utf16le(&mut out);
+                assert_eq!(out, python_utf16le(&s), "{text:?}");
+                assert_eq!(points.utf16_len(), out.len() / 2);
+                let first_line = text.chars().position(|c| c == '\n').unwrap();
+                assert_eq!(points.first_line_len(), first_line);
+                assert_eq!(points.first_surrogate(), None);
+                assert_eq!(decode_utf16le(py, &out).unwrap().to_cow().unwrap(), text);
+            }
+        });
+    }
+
+    #[test]
+    fn lone_surrogates_are_found_and_round_trip() {
+        Python::initialize();
+        Python::attach(|py| {
+            // Python source text: the escapes are Python's, not Rust's.
+            for (code, at) in [(cr"'ab\ud800'", 2), (cr"'\U0001f600\udfff'", 1)] {
+                let s = py
+                    .eval(code, None, None)
+                    .unwrap()
+                    .cast_into::<PyString>()
+                    .unwrap();
+                assert_eq!(CodePoints::of(&s).unwrap().first_surrogate(), Some(at));
+                let decoded = decode_utf16le(py, &python_utf16le(&s)).unwrap();
+                assert!(decoded.as_any().eq(s.as_any()).unwrap());
+            }
+        });
+    }
+}

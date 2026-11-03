@@ -109,7 +109,10 @@ jobs:
           # The manylinux/musllinux containers have no Rust toolchain.
           CIBW_BEFORE_ALL_LINUX: "curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal"
           CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH"'
-          CIBW_TEST_COMMAND: "python {project}/tools/wheel_smoke.py"
+          # The smoke test, then a subset of the suite against the installed wheel:
+          # the only test run on Linux aarch64, Windows ARM64 and Intel macOS.
+          CIBW_TEST_REQUIRES: pytest
+          CIBW_TEST_COMMAND: "python {project}/tools/wheel_smoke.py && python {project}/tools/wheel_tests.py {project}"
 
       - uses: actions/upload-artifact@v6
         with:

@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, MutableMapping
 import datetime
 from decimal import Decimal
 import math
 import numbers
-import posixpath
 import re
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
@@ -24,7 +23,7 @@ from ._metadata import (
 from ._text import check_cell_text, xstring_escape
 from .comments import (
     Comment, COMMENTS_TYPE, VML_TYPE, V, comments_xml, vml_xml, normalize_comments,
-    comment_part_targets, find_comment_parts, read_comments, resolve_part, rels_path,
+    NotePartsEdit, comment_part_targets, find_comment_parts, read_comments, resolve_part, rels_path,
 )
 from .excel_dates import datetime_to_serial
 from .formulas import Formula
@@ -37,8 +36,9 @@ if TYPE_CHECKING:
     from .updater_utils import DiskStringIndex, ZipPackage
 
 
-def _bytes(root):
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+def _bytes(root: ET.Element) -> bytes:
+    data: bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    return data
 
 
 def _required_match(match: re.Match[str] | None, what: str) -> re.Match[str]:
@@ -72,7 +72,7 @@ class XlsxEditMixin:
         @staticmethod
         def _tag_prefix(xml_data: str, tag_name: str) -> str: ...
 
-    def _apply_parts(self, parts, removed=()):
+    def _apply_parts(self, parts: Mapping[str, Any], removed: Iterable[str] = ()) -> None:
         # The package owns the write-back transaction (ZipPackage.apply_parts).
         self._package.apply_parts(parts, removed)
 
@@ -122,56 +122,23 @@ class XlsxEditMixin:
         if legacy is not None and "vmlDrawing" not in parts:
             raise ValueError("unsupported legacy drawing relationship")
 
-        used_ids = {rel.get("Id") for rel in relationships}
-        occupied = set(names)
-
-        def ensure(kind, directory, stem, suffix):
-            if kind in parts:
-                return parts[kind][0]
-            index = 1
-            while f"{directory}/{stem}{index}.{suffix}" in occupied:
-                index += 1
-            part = f"{directory}/{stem}{index}.{suffix}"
-            occupied.add(part)
-            index = 1
-            while f"rId{index}" in used_ids:
-                index += 1
-            rid = f"rId{index}"
-            used_ids.add(rid)
-            ET.SubElement(relationships, f"{{{PKG_REL}}}Relationship", {
-                "Id": rid, "Type": REL + "/" + kind,
-                "Target": posixpath.relpath(part, posixpath.dirname(path)),
-            })
-            parts[kind] = (part, rid)
-            return part
-
-        cp = ensure("comments", "xl/comments", "comment", "xml")
-        vp = ensure("vmlDrawing", "xl/drawings", "commentsDrawing", "vml")
+        edit = NotePartsEdit(path, relationships, parts, names)
+        cp = edit.ensure("comments", "xl/comments", "comment", "xml")
+        vp = edit.ensure("vmlDrawing", "xl/drawings", "commentsDrawing", "vml")
         comment_data = comments_xml(changes, self._package.get(cp) if cp in names else None)
         vml_data = vml_xml(changes, self._package.get(vp) if vp in names else None)
         remaining = read_comments(comment_data)
-        removed = []
-        updates = {cp: comment_data, vp: vml_data}
+        removed: list[str] = []
+        updates: dict[str, Any] = {cp: comment_data, vp: vml_data}
         types = safe_fromstring(self._package.get("[Content_Types].xml"))
 
-        def drop(part, kind):
-            updates.pop(part, None)
-            removed.append(part)
-            # Only this part's relationship: other vmlDrawing parts may exist.
-            for node in list(relationships):
-                if node.get("Id") == parts[kind][1]:
-                    relationships.remove(node)
-            for node in list(types):
-                if node.get("PartName") == "/" + part:
-                    types.remove(node)
-
         if not remaining:
-            drop(cp, "comments")
+            edit.drop(cp, "comments", types, updates, removed)
         elif not any(n.get("PartName") == "/" + cp for n in types):
             ET.SubElement(types, f"{{{CT}}}Override", {"PartName": "/" + cp, "ContentType": COMMENTS_TYPE})
         has_shapes = any(n.tag == f"{{{V}}}shape" for n in safe_fromstring(vml_data).iter())
         if not has_shapes:
-            drop(vp, "vmlDrawing")
+            edit.drop(vp, "vmlDrawing", types, updates, removed)
             sheet = replace_element(sheet, "legacyDrawing", "")
         else:
             # Use a part override: it cannot alter another VML part's type.
@@ -259,7 +226,8 @@ class XlsxEditMixin:
             if rid in dropped and node.get("Type") == _HYPERLINK_TYPE \
                     and not re.search(rf"""[\w.-]+:id=["']{re.escape(rid)}["']""", sheet):
                 relationships.remove(node)
-        updates, removed = {path: sheet}, []
+        updates: dict[str, str | bytes] = {path: sheet}
+        removed: list[str] = []
         ET.register_namespace("", PKG_REL)
         if len(relationships):
             updates[rp] = _bytes(relationships)
@@ -284,9 +252,9 @@ class XlsxEditMixin:
             xml = replace_element(xml, "definedNames", f'<definedNames xmlns="{MAIN}">{fragment}</definedNames>', before=("calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"))
         self._apply_parts({"xl/workbook.xml": xml})
 
-    def _remove_name(self, xml, name, scope):
+    def _remove_name(self, xml: str, name: str, scope: str | None) -> str:
         scope_id = None if scope is None else str(list(self._sheets).index(scope))
-        def remove(match):
+        def remove(match: re.Match[str]) -> str:
             attrs = tag_attributes(match[0])
             return "" if attrs.get("name", "").casefold() == name.casefold() and attrs.get("localSheetId") == scope_id else match[0]
         updated = element_pattern("definedName").sub(remove, xml)
@@ -441,7 +409,7 @@ class XlsxEditMixin:
         for path in removed:
             self._package.remove(path)
 
-    def _recalculate(self, updates, removed):
+    def _recalculate(self, updates: MutableMapping[str, Any], removed: list[str]) -> None:
         xml = self._package.get("xl/workbook.xml").decode("utf-8")
         existing = element_pattern("calcPr").search(xml)
         attrs = tag_attributes(existing[0]) if existing else {}
@@ -463,7 +431,7 @@ class XlsxEditMixin:
         updates["[Content_Types].xml"] = _bytes(types)
 
 
-def _cell_xml_value(value, date_1904, prefix):
+def _cell_xml_value(value: Any, date_1904: bool, prefix: str) -> tuple[str | None, str]:
     if value is None:
         return None, ""
     if isinstance(value, Formula):
@@ -503,7 +471,7 @@ def _cell_xml_value(value, date_1904, prefix):
     return "inlineStr", f'<{prefix}is><{prefix}t xml:space="preserve">{text}</{prefix}t></{prefix}is>'
 
 
-def _cell_xml(ref, encoded, prefix, old=None):
+def _cell_xml(ref: str, encoded: tuple[str | None, str], prefix: str, old: str | None = None) -> str:
     kind, content = encoded
     attrs = tag_attributes(old) if old else {"r": ref}
     attrs["r"] = ref
@@ -523,7 +491,7 @@ def _cell_xml(ref, encoded, prefix, old=None):
 def _patch_row(row_xml: str, targets: dict[str, Any], pending: dict[str, Any], prefix: str, row_num: int) -> str:
     additions = dict(targets)
     next_col = 0
-    def patch_cell(match):
+    def patch_cell(match: re.Match[str]) -> str:
         nonlocal next_col
         ref = cell_ref(tag_attributes(match[0]).get("r", f"{column_label(next_col)}{row_num}"))
         next_col = parse_cell_range(ref)[0] + 1

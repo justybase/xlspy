@@ -60,3 +60,14 @@ def test_failed_write_stops_the_worker():
                 writer.add_sheet("S")
                 writer.write_sheet(failing())
     assert not [t for t in threading.enumerate() if t.name.startswith("xlspy-deflate")]
+
+
+def test_pipeline_refuses_an_executor_with_several_workers():
+    # Two workers could run compress() calls of one compressobj at once or out of order.
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(2) as pool:
+        with pytest.raises(ValueError, match="single-worker"):
+            _zip_threads.ThreadedDeflate(pool, 3)
+    with ThreadPoolExecutor(1) as pool:
+        _zip_threads.ThreadedDeflate(pool, 3)

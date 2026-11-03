@@ -39,6 +39,7 @@ _NATIVE_NAMES = (
     "encode_xlsb_sst", "read_xlsb_shared_strings", "encode_xlsx_row",
     "read_xlsx_shared_strings",
     "set_style_type", "set_error_type", "xlsb_load_cells",
+    "WidthMeter", "general_number_text",
 )
 
 
@@ -104,6 +105,9 @@ _native_read_xlsx_sst: Any = _impl.get("read_xlsx_shared_strings")
 _native_encode_xlsx_row: Any = _impl.get("encode_xlsx_row")
 # Workbook model loader for XLSB sheet data (see workbook/_xlsb_reader.py).
 xlsb_load_cells: Any = _impl.get("xlsb_load_cells")
+# Column-width meter for the rows after the first (see _widths.ColumnWidthMeter).
+WidthMeter: Any = _impl.get("WidthMeter")
+general_number_text: Any = _impl.get("general_number_text")
 
 
 def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header=None):

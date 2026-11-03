@@ -11,8 +11,8 @@ import sys
 import tempfile
 
 import xlspy
-from xlspy import ExcelReader, XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWriter
-from xlspy._accel import HAVE_NATIVE
+from xlspy import ExcelReader, XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWriter, load_workbook
+from xlspy._accel import ACCEL_BACKEND, HAVE_NATIVE
 
 
 def _read_all(path):
@@ -42,6 +42,16 @@ def _roundtrip_and_update(directory, suffix, writer_cls, updater_cls):
     expected = [["name", "value"], ["beta", 7]]
     assert updated == expected, f"{suffix}: updater mismatch: {updated!r}"
 
+    # The workbook model: the XLSB load builds its cells natively (model.rs).
+    workbook = load_workbook(path)
+    sheet = workbook["Sheet1"]
+    assert sheet["A2"].value == "beta" and sheet["B2"].value == 7, f"{suffix}: model load mismatch"
+    sheet["C2"] = 3.5
+    saved = directory / f"model{suffix}"
+    workbook.save(saved)
+    reloaded = _read_all(saved)
+    assert reloaded[1] == ["beta", 7, 3.5], f"{suffix}: model save mismatch: {reloaded!r}"
+
 
 def _check_typing_files():
     # Type checkers read the stub and the py.typed marker from the installed package.
@@ -52,6 +62,7 @@ def _check_typing_files():
 
 def main():
     assert HAVE_NATIVE, "the native extension did not load from the wheel"
+    assert ACCEL_BACKEND.get("xlsb_load_cells") == "rust", "the native model loader is missing"
     _check_typing_files()
     print(f"xlspy imported from: {xlspy.__file__}")
     with tempfile.TemporaryDirectory() as directory:

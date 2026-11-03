@@ -46,7 +46,9 @@ impl Sst<'_, '_> {
     /// insert leaves only a list entry, which the rollback removes).
     pub fn index(&mut self, s: &Bound<'_, PyString>) -> PyResult<u32> {
         let idx = match self.dict.get_item(s)? {
-            Some(idx) => idx.extract::<i64>().unwrap_or(-1) as u32,
+            // The writer stores the indices it hands out; anything else is a
+            // corrupted table, which must not reach the file as index 0xFFFFFFFF.
+            Some(idx) => idx.extract::<u32>()?,
             None => {
                 let idx = self.uniq;
                 self.list.append(s)?;

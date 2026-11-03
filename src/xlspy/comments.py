@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Collection, Mapping
+from typing import Any
 from dataclasses import dataclass
 import math
 import posixpath
@@ -11,7 +12,7 @@ from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape
 
-from ._metadata import MAIN, PKG_REL, cell_ref, xml_text, append_child, element_pattern, namespace_of
+from ._metadata import MAIN, PKG_REL, REL, cell_ref, xml_text, append_child, element_pattern, namespace_of
 from ._text import check_cell_text, xstring_escape, xstring_unescape
 from .refs import parse_cell_range, column_label
 
@@ -191,7 +192,8 @@ def resolve_part(part, target):
 _ANY_VML = object()
 
 
-def find_comment_parts(get, names, sheet_part, legacy_rid=_ANY_VML):
+def find_comment_parts(get: Callable[[str], bytes], names: Collection[str], sheet_part: str,
+                       legacy_rid: object = _ANY_VML) -> tuple[str, ET.Element, dict[str, tuple[str, str]]]:
     """Return the sheet's comments part and its note VML part.
 
     Editors pass ``legacy_rid`` (the legacyDrawing r:id, or None when the sheet
@@ -201,7 +203,7 @@ def find_comment_parts(get, names, sheet_part, legacy_rid=_ANY_VML):
     """
     path = rels_path(sheet_part)
     root = safe_fromstring(get(path)) if path in names else ET.Element(f"{{{PKG_REL}}}Relationships")
-    parts = {}
+    parts: dict[str, tuple[str, str]] = {}
     drawings = []
     for rel in root:
         kind = rel.get("Type", "").rsplit("/", 1)[-1]
@@ -217,6 +219,57 @@ def find_comment_parts(get, names, sheet_part, legacy_rid=_ANY_VML):
     if legacy_rid is _ANY_VML and len(drawings) == 1 and drawings[0].get("TargetMode") != "External":
         parts["vmlDrawing"] = (resolve_part(sheet_part, drawings[0].attrib["Target"]), drawings[0].attrib["Id"])
     return path, root, parts
+
+
+class NotePartsEdit:
+    """The comments and note-VML parts of one sheet, while its notes are edited.
+
+    ``ensure`` gives a missing part a free name and a free relationship id;
+    ``drop`` removes a part with its relationship and content-type override.
+    ``parts`` and ``relationships`` (from ``find_comment_parts``) are updated
+    in place.
+    """
+
+    def __init__(self, sheet_path: str, relationships: ET.Element,
+                 parts: dict[str, tuple[str, str]], names: Collection[str]) -> None:
+        self.sheet_path = sheet_path
+        self.relationships = relationships
+        self.parts = parts
+        self._occupied = set(names)
+        self._used_ids = {rel.get("Id") for rel in relationships}
+
+    def ensure(self, kind: str, directory: str, stem: str, extension: str) -> str:
+        """The path of the ``kind`` part, created (with a relationship) when missing."""
+        if kind in self.parts:
+            return self.parts[kind][0]
+        index = 1
+        while f"{directory}/{stem}{index}.{extension}" in self._occupied:
+            index += 1
+        part = f"{directory}/{stem}{index}.{extension}"
+        self._occupied.add(part)
+        index = 1
+        while f"rId{index}" in self._used_ids:
+            index += 1
+        rid = f"rId{index}"
+        self._used_ids.add(rid)
+        ET.SubElement(self.relationships, f"{{{PKG_REL}}}Relationship", {
+            "Id": rid, "Type": REL + "/" + kind,
+            "Target": posixpath.relpath(part, posixpath.dirname(self.sheet_path)),
+        })
+        self.parts[kind] = (part, rid)
+        return part
+
+    def drop(self, part: str, kind: str, types: ET.Element, updates: dict[str, Any], removed: list[str]) -> None:
+        """Remove ``part`` from the edit: no update, its relationship and override gone."""
+        updates.pop(part, None)
+        removed.append(part)
+        # Only this part's relationship: other vmlDrawing parts may exist.
+        for node in list(self.relationships):
+            if node.get("Id") == self.parts[kind][1]:
+                self.relationships.remove(node)
+        for node in list(types):
+            if node.get("PartName") == "/" + part:
+                types.remove(node)
 
 
 def comment_part_targets(get, names, sheet_part):

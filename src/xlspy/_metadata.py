@@ -9,6 +9,7 @@ from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr, unescape
 
+from .exceptions import InvalidFileError
 from .refs import parse_cell_range, column_label
 
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -243,12 +244,15 @@ def read_defined_names(xml: str | bytes, sheets) -> list[DefinedName]:
     for node in root.findall(f"{{{ns}}}definedNames/{{{ns}}}definedName"):
         if node.get("name", "").lower().startswith("_xlnm."):
             continue
+        name = node.get("name")
+        if name is None:
+            raise InvalidFileError("workbook.xml: a <definedName> has no name")
         raw_scope = node.get("localSheetId")
         local_sheet_id = int(raw_scope) if raw_scope is not None else None
         scope = None if local_sheet_id is None else sheet_titles[local_sheet_id]
         result.append(
             DefinedName(
-                node.attrib["name"],
+                name,
                 node.text or "",
                 scope,
                 localSheetId=local_sheet_id,

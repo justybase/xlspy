@@ -7,7 +7,6 @@ import zipfile
 
 from ._untrusted import SafeZipFile, check_column_span
 from .exceptions import InvalidFileError, reading, reading_rows
-from enum import IntEnum
 from typing import Any, TYPE_CHECKING, Literal
 from collections.abc import Generator
 from types import TracebackType
@@ -17,12 +16,12 @@ from ._safe_xml import harden_expat, fromstring as safe_fromstring
 from ._errors import CellError
 from .biff_reader import BiffReader, CellType
 from .biff_utils import iter_records as _iter_biff_records
-from .excel_dates import serial_to_datetime as _serial_to_datetime
 from ._accel import HAVE_NATIVE, read_xlsb_worksheet as _accel_read_xlsb_worksheet
 from ._accel import read_xlsb_shared_strings as _accel_read_sst
 from ._accel import read_xlsx_shared_strings as _accel_read_xlsx_sst
 from ._text import xstring_unescape
 from ._xlsb_formulas import ERRORS as _XLSB_ERRORS, FormulaContext
+from ._xlsb_read import _date_or_number
 from ._xlsb_metadata import parse_comments
 from .comments import find_comment_parts, read_comments
 from ._metadata import read_defined_names, MAIN, namespace_of, relationship_namespace, relationship_kind
@@ -55,28 +54,6 @@ def _parse_shared_strings_fast(content: str) -> list[str] | None:
                     .replace("&apos;", "'").replace("&amp;", "&"))
         append(xstring_unescape(text))
     return strings
-
-
-class ExcelDataType(IntEnum):
-    Null = 0
-    Int32 = 1
-    Int64 = 2
-    Double = 3
-    DateTime = 4
-    String = 5
-    Boolean = 6
-    Error = 7
-
-
-class FieldInfo:
-    def __init__(self) -> None:
-        self.type = ExcelDataType.Null
-        self.int32_value: int = 0
-        self.int64_value: int = 0
-        self.double_value: float = 0.0
-        self.dt_value: datetime.datetime = datetime.datetime(1899, 12, 30)
-        self.bool_value: bool = False
-        self.str_value: str = ""
 
 
 _date_excel_masks: set[str] = {
@@ -401,7 +378,9 @@ class ExcelReader:
         main = namespace_of(root.tag) or MAIN  # Transitional or Strict
         rel = relationship_namespace(main)
         for node in root.findall(f"{{{main}}}sheets/{{{main}}}sheet"):
-            name, rid = node.attrib['name'], node.attrib[f'{{{rel}}}id']
+            name, rid = node.get('name'), node.get(f'{{{rel}}}id')
+            if name is None or rid is None:
+                raise InvalidFileError("workbook.xml: a <sheet> lacks its name or r:id")
             self._worksheet_id_to_name[rid] = name
             self._worksheet_name_to_id[name] = rid
         properties = root.find(f"{{{main}}}workbookPr")
@@ -734,7 +713,7 @@ class ExcelReader:
                                 self._styles_cell_xfs_array[style_index]['numFmtId'], str,
                             ) is datetime.datetime
                         ):
-                            inner_row[tmp_len] = _serial_to_datetime(double_val, self._date_1904)
+                            inner_row[tmp_len] = _date_or_number(double_val, self._date_1904)
                         elif double_val.is_integer():
                             inner_row[tmp_len] = int(double_val)
                         else:

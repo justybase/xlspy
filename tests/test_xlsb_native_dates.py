@@ -2,10 +2,12 @@
 
 ``read_xlsb_worksheet`` converts date serials itself and keeps each row in a
 buffer that grows as cells arrive. The date results are compared with the
-reference ``serial_to_datetime`` (values, types and exception messages); the
-wide rows have known values, written in both column orders.
+reference ``serial_to_datetime``; a serial the reference cannot convert (NaN,
+infinite, outside years 1..9999) stays a number, as Excel shows such a cell as
+####. The wide rows have known values, written in both column orders.
 """
 
+import math
 import random
 import struct
 
@@ -70,13 +72,18 @@ def test_date_cells_match_reference(date_1904):
     assert got == [serial_to_datetime(v, date_1904) for v in valid]
     assert all(type(item) is type(serial_to_datetime(v, date_1904)) for item, v in zip(got, valid))
 
-    for value in values:
-        want = _reference(value, date_1904)
-        if not isinstance(want, Exception):
-            continue
-        with pytest.raises(type(want)) as info:
-            _read(_single_column_sheet([value]), date_1904)
-        assert str(info.value) == str(want)
+    invalid = [v for v in values if isinstance(_reference(v, date_1904), Exception)]
+    assert invalid, "the edge list must hold serials outside the datetime range"
+    for value, row in zip(invalid, _read(_single_column_sheet(invalid), date_1904)):
+        assert_same_number(row[0], value)
+
+
+def assert_same_number(got, serial):
+    if math.isnan(serial):
+        assert type(got) is float and math.isnan(got)
+        return
+    want = int(serial) if serial.is_integer() else serial
+    assert got == want and type(got) is type(want)
 
 
 @needs_native
@@ -97,3 +104,33 @@ def test_wide_rows_keep_every_column_in_either_order():
             parts.append(_real_cell(col, 0, row * 100.0 + col + 0.5))
         expected.append([row * 100.0 + col + 0.5 for col in range(width)])
     assert [list(row) for row in _read(b"".join(parts))] == expected
+
+
+@pytest.mark.parametrize("backend", ["native", "python"])
+def test_out_of_range_date_serials_read_as_numbers_everywhere(tmp_path, monkeypatch, backend):
+    # A date-formatted cell whose serial is no datetime is not a damaged file:
+    # every read path returns the number, as the XLSX readers do.
+    from xlspy import ExcelReader, XlsbWriter, _accel, load_workbook
+
+    if backend == "native" and not HAVE_NATIVE:
+        pytest.skip("native extension not built")
+    if backend == "python":
+        import xlspy.reader as reader_module
+
+        monkeypatch.setattr(reader_module, "_accel_read_xlsb_worksheet", lambda *args, **kwargs: None)
+        monkeypatch.setattr(_accel, "xlsb_load_cells", None)
+    serials = [1e7, 3e6 + 0.5, -1e10]  # the writer refuses NaN; see above
+    path = tmp_path / "dates.xlsb"
+    with XlsbWriter(str(path)) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet([[(serial, "yyyy-mm-dd")] for serial in serials] + [[(45000.0, "yyyy-mm-dd")]])
+
+    with ExcelReader(str(path)) as reader:
+        bulk = [row[0] for row in reader.get_rows("Data")]
+        streamed = [row[0] for row in reader.get_rows("Data", streaming=True)]
+    sheet = load_workbook(path)["Data"]
+    model = [sheet.cell(row=i + 1, column=1).value for i in range(len(serials) + 1)]
+    for values in (bulk, streamed, model):
+        assert values[-1] == serial_to_datetime(45000.0, False)
+        for got, serial in zip(values, serials):
+            assert_same_number(got, serial)

@@ -476,6 +476,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         """
         head: list = []  # kept empty: the meter measures the rows
         measure_until = meter.limit if meter is not None else 0
+        fast_add = meter.fast_add if meter is not None else None
+        slow_rows = meter.slow_rows if meter is not None else frozenset()
         hyperlinks: list = []
         header_rows: dict = {}
         num_rows = 0
@@ -494,8 +496,15 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             data = capture_table_headers(data, table_headers, header_rows)
         last_written = -1  # index of the last <row> written
         for row_idx, row in enumerate(data):
+            row_styles = (
+                styles_for_row(row_idx, len(row), style_ranges, header_style)
+                if has_styles else _EMPTY_ROW_STYLES
+            )
             if row_idx < measure_until:
-                meter.add(row_idx, row)
+                if fast_add is not None and row_idx not in slow_rows:
+                    fast_add(row, row_styles or None)
+                else:
+                    meter.add(row_idx, row, row_styles)
             num_rows = row_idx + 1
             if len(row) > max_cols:
                 max_cols = len(row)
@@ -509,10 +518,6 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                     value_cols = col_idx + 1
                     break
             row_attrs = self._row_attrs(row_idx, heights, hidden_row_set, row_outline)
-            row_styles = (
-                styles_for_row(row_idx, len(row), style_ranges, header_style)
-                if has_styles else _EMPTY_ROW_STYLES
-            )
             if len(row) == 0 and not row_attrs and not row_styles:
                 # Nothing to show: no <row> at all. The next row written takes its
                 # number from a gap (see write_r below), so the sheet keeps its place.

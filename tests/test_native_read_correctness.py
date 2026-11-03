@@ -208,7 +208,9 @@ def test_native_reader_ignores_short_and_overrunning_records(tmp_path, monkeypat
     assert c_grid == [[10, 20, 30], [40, 50, 60]]
 
 
-def test_native_reader_propagates_out_of_range_1904_date_error(tmp_path, monkeypatch):
+def test_native_reader_keeps_out_of_range_1904_date_as_number_like_python(tmp_path, monkeypatch):
+    # Read in the 1904 system, the last 1900-system moment lies past 9999-12-31:
+    # no datetime exists, so both readers return the serial (Excel shows ####).
     path = tmp_path / "far-date.xlsb"
     with XlsbWriter(str(path)) as writer:
         writer.add_sheet("S")
@@ -216,11 +218,10 @@ def test_native_reader_propagates_out_of_range_1904_date_error(tmp_path, monkeyp
                               "yyyy-mm-dd hh:mm:ss")]])
     _set_1904_date_system(path)
 
-    with pytest.raises(OverflowError) as c_error:
-        _read(path, monkeypatch=monkeypatch)
-    with pytest.raises(OverflowError) as py_error:
-        _read(path, force_python=True, monkeypatch=monkeypatch)
-    assert type(c_error.value) is type(py_error.value)
+    native = _read(path, monkeypatch=monkeypatch)
+    python = _read(path, force_python=True, monkeypatch=monkeypatch)
+    assert native == python
+    assert isinstance(native[0][0], (int, float)) and native[0][0] > 2958465
 
 
 def test_native_reader_refuses_unusually_wide_layout_like_python(tmp_path, monkeypatch):

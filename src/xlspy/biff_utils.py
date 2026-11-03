@@ -5,7 +5,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 from collections.abc import Iterator
-from typing import BinaryIO
+from typing import IO
 
 from .exceptions import InvalidFileError
 
@@ -117,7 +117,7 @@ def iter_record_payloads(data: bytes) -> Iterator[tuple[int, bytes]]:
         offset = end
 
 
-def _read_vlq_stream(stream: BinaryIO, offset: int) -> tuple[int | None, int]:
+def _read_vlq_stream(stream: IO[bytes], offset: int) -> tuple[int | None, int]:
     """Read one BIFF12 variable-length integer from a binary stream."""
 
     value = 0
@@ -140,7 +140,7 @@ def _read_vlq_stream(stream: BinaryIO, offset: int) -> tuple[int | None, int]:
             raise InvalidFileError("Truncated BIFF12 variable-length integer")
 
 
-def iter_records_stream(stream: BinaryIO) -> Iterator[tuple[Biff12Record, bytes]]:
+def iter_records_stream(stream: IO[bytes]) -> Iterator[tuple[Biff12Record, bytes]]:
     """Yield BIFF12 records from a seekable binary stream.
 
     The record payload is yielded as the second item.  Only one record is

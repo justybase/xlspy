@@ -10,30 +10,31 @@ import numbers
 import os
 import re
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, cast
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from xml.parsers import expat
 from ._safe_xml import harden_expat
 
 from .updater_utils import (
     DiskStringIndex,
+    TrailingRowTrimmer,
+    dominant_styles,
+    row_cells,
     ZipPackage,
     column_index_to_letter,
     column_letter_to_index,
     copy_file_range,
     copy_stream,
-    date_like_format,
     escape_xml_text,
     local_xml_name,
     TableHeader,
     header_row_texts,
-    materialize_rows,
     parse_relationships_xml,
     parse_shared_strings_xml,
     replace_or_add_xml_attribute,
     rewrite_shared_strings_xml,
     resolve_zip_target,
-    trim_trailing_empty_rows,
     unescape_xml_text,
     unwrap_cell,
     xml_attribute,
@@ -74,19 +75,17 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
 
     def __init__(self, path: str | os.PathLike[str]) -> None:
         self._package = ZipPackage(path)
-        if self._package.has("xl/workbook.bin"):
-            raise ValueError("The input is XLSB; use XlsbUpdater")
-        if not self._package.has("xl/workbook.xml"):
-            raise InvalidFileError("XLSX workbook.xml was not found")
-        if b"http://purl.oclc.org/ooxml/spreadsheetml/main" in self._package.get("xl/workbook.xml")[:4096]:
-            # Edits write Transitional markup, which a Strict package must not mix.
-            self._package.close()
-            raise UnsupportedFeatureError(
-                "Strict Open XML workbooks are supported for reading only "
-                "(ExcelReader, load_workbook(read_only=True)); save as a regular .xlsx to edit"
-            )
-
         try:
+            if self._package.has("xl/workbook.bin"):
+                raise ValueError("The input is XLSB; use XlsbUpdater")
+            if not self._package.has("xl/workbook.xml"):
+                raise InvalidFileError("XLSX workbook.xml was not found")
+            if b"http://purl.oclc.org/ooxml/spreadsheetml/main" in self._package.get("xl/workbook.xml")[:4096]:
+                # Edits write Transitional markup, which a Strict package must not mix.
+                raise UnsupportedFeatureError(
+                    "Strict Open XML workbooks are supported for reading only "
+                    "(ExcelReader, load_workbook(read_only=True)); save as a regular .xlsx to edit"
+                )
             with reading(path):
                 self._date_1904 = self._load_date_system()
                 self._sheets = self._load_sheet_structure()
@@ -122,13 +121,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         the writers; its value is used and no new style is created.
         """
 
-        if style_fallback not in ("inherit", "general"):
-            raise ValueError("style_fallback must be 'inherit' or 'general'")
-        try:
-            sheet_path = self._sheets[sheet_name]
-        except KeyError as exc:
-            raise KeyError(f"Worksheet not found: {sheet_name}") from exc
-
+        sheet_path = self._replacement_sheet_path(sheet_name, style_fallback)
         if self._stream_shared_strings is not None:
             self.replace_sheet_data_stream(
                 sheet_name,
@@ -138,16 +131,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             )
             return
 
-        materialized = trim_trailing_empty_rows(materialize_rows(rows))
-        header_values = list(headers) if headers is not None else None
-        guard = self._table_header_guard(sheet_name, sheet_path)
-        first_data_row = 0
-        if header_values is not None:
-            guard.check_row(0, header_row_texts(header_values))
-            first_data_row = 1
-        for index, row in enumerate(materialized, start=first_data_row):
-            guard.check_row(index, row)
-        guard.finish()
+        materialized, header_values = self._checked_rows(sheet_name, sheet_path, rows, headers)
         old_sheet_xml = self._package.get(sheet_path).decode("utf-8")
         self._ensure_shared_strings_loaded()
         if self._use_shared_strings:
@@ -161,14 +145,9 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         header_styles, data_styles = self._collect_styles(
             old_sheet_xml, headers_provided=headers is not None
         )
-        date_style = self._find_date_style_index() if style_fallback == "inherit" else None
+        date_style = self._find_date_style() if style_fallback == "inherit" else None
         worksheet_prefix = self._tag_prefix(old_sheet_xml, "sheetData")
-        width = max(
-            [len(row) for row in materialized]
-            + ([len(header_values)] if header_values is not None else [])
-            + [0]
-        )
-        total_rows = len(materialized) + (1 if header_values is not None else 0)
+        total_rows, width = self._region_size(materialized, header_values)
         last_col = width - 1
         dimension_ref = self._dimension_ref(total_rows, last_col)
 
@@ -240,18 +219,10 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         ``save`` without calling ``to_bytes``.
         """
 
-        if style_fallback not in ("inherit", "general"):
-            raise ValueError("style_fallback must be 'inherit' or 'general'")
-        try:
-            sheet_path = self._sheets[sheet_name]
-        except KeyError as exc:
-            raise KeyError(f"Worksheet not found: {sheet_name}") from exc
-
+        sheet_path = self._replacement_sheet_path(sheet_name, style_fallback)
         header_values = list(headers) if headers is not None else None
         guard = self._table_header_guard(sheet_name, sheet_path)
-        original_sheet = self._package.temporary_path(suffix=".xml")
-        with self._package.open_entry(sheet_path) as source, original_sheet.open("wb") as target:
-            copy_stream(source, target)
+        original_sheet = self._stage_part_copy(sheet_path, ".xml")
 
         self._ensure_stream_shared_strings()
         with original_sheet.open("rb") as stream, mmap.mmap(
@@ -267,7 +238,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                     - self._shared_string_ref_count_stream(mapped),
                 )
                 self._stream_shared_strings.dirty = True
-            date_style = self._find_date_style_index() if style_fallback == "inherit" else None
+            date_style = self._find_date_style() if style_fallback == "inherit" else None
             old_had_formulas = _FORMULA_TAG_BYTES.search(mapped) is not None
             sheet_data_match = re.search(
                 rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?sheetData\b", mapped
@@ -279,16 +250,12 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             )
 
         rows_file = self._package.temporary_path(suffix=".rows")
-        width = len(header_values) if header_values is not None else 0
-        data_rows_seen = 0
-        kept_data_rows = 0
-        last_kept_end = 0
-        pending_empty_width = 0
 
         updated_sheet = None
         new_has_formulas = False
         try:
             with rows_file.open("wb") as output:
+                trimmer = TrailingRowTrimmer(output, len(header_values) if header_values is not None else 0)
                 next_row = 1
                 if header_values is not None:
                     guard.check_row(0, header_row_texts(header_values))
@@ -306,18 +273,12 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                         )
                         for column, value in enumerate(header_values)
                     ]
-                    header_bytes = self._row_xml(next_row, cells, worksheet_prefix).encode("utf-8")
-                    output.write(header_bytes)
-                    last_kept_end = len(header_bytes)
+                    output.write(self._row_xml(next_row, cells, worksheet_prefix).encode("utf-8"))
+                    trimmer.keep()
                     next_row += 1
 
                 for source_row in rows:
-                    if isinstance(source_row, (str, bytes, bytearray)):
-                        raise TypeError("Each row must be a sequence of cells, not text")
-                    try:
-                        row = list(source_row)
-                    except TypeError as exc:
-                        raise TypeError("Each row must be an iterable of cells") from exc
+                    row = row_cells(source_row)
                     guard.check_row(next_row - 1, row)
                     if not new_has_formulas and any(
                         isinstance(unwrap_cell(value), Formula) for value in row
@@ -338,24 +299,15 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                         )
                         for column, value in enumerate(row)
                     ]
-                    row_bytes = self._row_xml(next_row, cells, worksheet_prefix).encode("utf-8")
-                    output.write(row_bytes)
-                    data_rows_seen += 1
+                    output.write(self._row_xml(next_row, cells, worksheet_prefix).encode("utf-8"))
+                    trimmer.wrote(row)
                     next_row += 1
 
-                    if all(cell is None for cell in row):
-                        pending_empty_width = max(pending_empty_width, len(row))
-                    else:
-                        width = max(width, pending_empty_width, len(row))
-                        pending_empty_width = 0
-                        kept_data_rows = data_rows_seen
-                        last_kept_end = output.tell()
-
                 guard.finish()
-                output.truncate(last_kept_end)
+                trimmer.finish()
 
-            total_rows = kept_data_rows + (1 if header_values is not None else 0)
-            last_col = width - 1
+            total_rows = trimmer.kept_rows + (1 if header_values is not None else 0)
+            last_col = trimmer.width - 1
             dimension_ref = self._dimension_ref(total_rows, last_col)
             updated_sheet = self._package.temporary_path(suffix=".xml")
             self._patch_sheet_file(
@@ -370,7 +322,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             )
             self._package.set_file(sheet_path, updated_sheet)
             self._commit_stream_shared_strings()
-            self._patch_pivot_metadata(sheet_name, kept_data_rows, dimension_ref)
+            self._patch_pivot_metadata(sheet_name, trimmer.kept_rows, dimension_ref)
         finally:
             for temporary_path in (original_sheet, rows_file):
                 try:
@@ -432,78 +384,11 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
     ) -> tuple[dict[int, int], dict[int, int]]:
         """Collect dominant styles from an mmap without copying the sheet."""
 
-        header_counts: dict[int, dict[int, int]] = {}
-        data_counts: dict[int, dict[int, int]] = {}
-        current_row: int | None = None
-        current_column = 0
-        row_sequence = 0
-        parser = harden_expat(expat.ParserCreate())
-
-        def start_element(name: str, attrs: dict[str, str]) -> None:
-            nonlocal current_row, current_column, row_sequence
-            local = local_xml_name(name)
-            if local == "row":
-                row_value = xml_attribute(attrs, "r")
-                if row_value:
-                    current_row = int(row_value)
-                    row_sequence = current_row
-                else:
-                    row_sequence += 1
-                    current_row = row_sequence
-                current_column = 0
-            elif local == "c" and current_row is not None:
-                style_value = xml_attribute(attrs, "s")
-                reference = xml_attribute(attrs, "r")
-                column = (
-                    column_letter_to_index(reference) if reference else current_column
-                )
-                current_column = column + 1
-                if style_value:
-                    style = int(style_value)
-                    if style > 0:
-                        target = (
-                            header_counts
-                            if headers_provided and current_row == 1
-                            else data_counts
-                        )
-                        counts = target.setdefault(column, {})
-                        counts[style] = counts.get(style, 0) + 1
-
-        def end_element(name: str) -> None:
-            nonlocal current_row, current_column
-            if local_xml_name(name) == "row":
-                current_row = None
-                current_column = 0
-
-        parser.StartElementHandler = start_element
-        parser.EndElementHandler = end_element
-        for offset in range(0, len(sheet_data), 64 * 1024):
-            parser.Parse(sheet_data[offset : offset + 64 * 1024], False)
-        parser.Parse(b"", True)
-
-        def dominant(counts: dict[int, dict[int, int]]) -> dict[int, int]:
-            return {
-                column: max(styles.items(), key=lambda item: (item[1], -item[0]))[0]
-                for column, styles in counts.items()
-            }
-
-        return dominant(header_counts), dominant(data_counts)
+        return _xml_cell_styles(_chunks(sheet_data), headers_provided=headers_provided)
 
     @staticmethod
     def _shared_string_ref_count_stream(sheet_data: Any) -> int:
-        count = 0
-        parser = harden_expat(expat.ParserCreate())
-
-        def start_element(name: str, attrs: dict[str, str]) -> None:
-            nonlocal count
-            if local_xml_name(name) == "c" and xml_attribute(attrs, "t") == "s":
-                count += 1
-
-        parser.StartElementHandler = start_element
-        for offset in range(0, len(sheet_data), 64 * 1024):
-            parser.Parse(sheet_data[offset : offset + 64 * 1024], False)
-        parser.Parse(b"", True)
-        return count
+        return _xml_shared_string_cells(_chunks(sheet_data))
 
     def _ensure_stream_shared_strings(self) -> None:
         if self._stream_shared_strings is not None:
@@ -566,12 +451,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         if store is None or not store.dirty:
             return
 
-        source_path = self._package.temporary_path(suffix=".xml")
-        with self._package.open_entry("xl/sharedStrings.xml") as source, source_path.open("wb") as target:
-            copy_stream(source, target)
-        output_path = self._package.temporary_path(suffix=".xml")
-        output_staged = False
-        try:
+        def rewrite(source_path: Path, output_path: Path) -> None:
             rewrite_shared_strings_xml(
                 source_path,
                 output_path,
@@ -579,19 +459,9 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                 total_count=store.total_count,
                 unique_count=store.unique_count,
             )
-            self._package.set_file("xl/sharedStrings.xml", output_path)
-            output_staged = True
-            store.clear_pending()
-        finally:
-            try:
-                source_path.unlink()
-            except FileNotFoundError:
-                pass
-            if not output_staged:
-                try:
-                    output_path.unlink()
-                except FileNotFoundError:
-                    pass
+
+        self._rewrite_part_on_disk("xl/sharedStrings.xml", ".xml", rewrite)
+        store.clear_pending()
 
     def _ensure_shared_strings_loaded(self) -> None:
         if self._shared_strings_loaded:
@@ -656,17 +526,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
 
     @staticmethod
     def _shared_string_ref_count(sheet_xml: str) -> int:
-        count = 0
-        parser = harden_expat(expat.ParserCreate())
-
-        def start_element(name: str, attrs: dict[str, str]) -> None:
-            nonlocal count
-            if local_xml_name(name) == "c" and xml_attribute(attrs, "t") == "s":
-                count += 1
-
-        parser.StartElementHandler = start_element
-        parser.Parse(sheet_xml.encode("utf-8"), True)
-        return count
+        return _xml_shared_string_cells((sheet_xml.encode("utf-8"),))
 
     @staticmethod
     def _dimension_ref(total_rows: int, last_col: int) -> str:
@@ -677,62 +537,9 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
     def _collect_styles(
         self, sheet_xml: str, *, headers_provided: bool
     ) -> tuple[dict[int, int], dict[int, int]]:
-        header_counts: dict[int, dict[int, int]] = {}
-        data_counts: dict[int, dict[int, int]] = {}
-        current_row: int | None = None
-        current_column = 0
-        row_sequence = 0
-        parser = harden_expat(expat.ParserCreate())
+        return _xml_cell_styles((sheet_xml.encode("utf-8"),), headers_provided=headers_provided)
 
-        def start_element(name: str, attrs: dict[str, str]) -> None:
-            nonlocal current_row, current_column, row_sequence
-            local = local_xml_name(name)
-            if local == "row":
-                row_value = xml_attribute(attrs, "r")
-                if row_value:
-                    current_row = int(row_value)
-                    row_sequence = current_row
-                else:
-                    row_sequence += 1
-                    current_row = row_sequence
-                current_column = 0
-            elif local == "c" and current_row is not None:
-                style_value = xml_attribute(attrs, "s")
-                reference = xml_attribute(attrs, "r")
-                column = (
-                    column_letter_to_index(reference) if reference else current_column
-                )
-                current_column = column + 1
-                if style_value:
-                    style = int(style_value)
-                    if style > 0:
-                        target = (
-                            header_counts
-                            if headers_provided and current_row == 1
-                            else data_counts
-                        )
-                        counts = target.setdefault(column, {})
-                        counts[style] = counts.get(style, 0) + 1
-
-        def end_element(name: str) -> None:
-            nonlocal current_row, current_column
-            if local_xml_name(name) == "row":
-                current_row = None
-                current_column = 0
-
-        parser.StartElementHandler = start_element
-        parser.EndElementHandler = end_element
-        parser.Parse(sheet_xml.encode("utf-8"), True)
-
-        def dominant(counts: dict[int, dict[int, int]]) -> dict[int, int]:
-            return {
-                column: max(styles.items(), key=lambda item: (item[1], -item[0]))[0]
-                for column, styles in counts.items()
-            }
-
-        return dominant(header_counts), dominant(data_counts)
-
-    def _find_date_style_index(self) -> int | None:
+    def _cell_xf_number_formats(self) -> tuple[list[int], dict[int, str]] | None:
         if not self._package.has("xl/styles.xml"):
             return None
         custom_formats: dict[int, str] = {}
@@ -768,15 +575,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         parser.StartElementHandler = start_element
         parser.EndElementHandler = end_element
         parser.Parse(self._package.get("xl/styles.xml"), True)
-
-        built_in_date_formats = set(range(14, 23)) | {45, 46, 47}
-        for index, number_format_id in enumerate(cell_xfs):
-            if number_format_id in built_in_date_formats:
-                return index
-            format_code = custom_formats.get(number_format_id)
-            if format_code and date_like_format(format_code):
-                return index
-        return None
+        return cell_xfs, custom_formats
 
     def _style_for_cell(
         self,
@@ -1080,3 +879,81 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
 # callers who want the input format to be explicit while sharing the exact
 # same implementation and macro-preservation behaviour.
 XlsmUpdater = XlsxUpdater
+
+
+def _chunks(data: Any, size: int = 64 * 1024) -> Iterator[Any]:
+    """``data`` (bytes or an mmap) in slices, so expat never sees one huge buffer."""
+    for offset in range(0, len(data), size):
+        yield data[offset : offset + size]
+
+
+def _parse_chunks(chunks: Iterable[Any], start_element: Callable[[str, dict[str, str]], None],
+                  end_element: Callable[[str], None] | None = None) -> None:
+    parser = harden_expat(expat.ParserCreate())
+    parser.StartElementHandler = start_element
+    if end_element is not None:
+        parser.EndElementHandler = end_element
+    for chunk in chunks:
+        parser.Parse(chunk, False)
+    parser.Parse(b"", True)
+
+
+def _xml_shared_string_cells(chunks: Iterable[Any]) -> int:
+    """The number of ``<c t="s">`` (shared-string) cells in worksheet XML."""
+    count = 0
+
+    def start_element(name: str, attrs: dict[str, str]) -> None:
+        nonlocal count
+        if local_xml_name(name) == "c" and xml_attribute(attrs, "t") == "s":
+            count += 1
+
+    _parse_chunks(chunks, start_element)
+    return count
+
+
+def _xml_cell_styles(chunks: Iterable[Any], *, headers_provided: bool) -> tuple[dict[int, int], dict[int, int]]:
+    """Per column: the dominant style of the header row and of the data rows."""
+    header_counts: dict[int, dict[int, int]] = {}
+    data_counts: dict[int, dict[int, int]] = {}
+    current_row: int | None = None
+    current_column = 0
+    row_sequence = 0
+
+    def start_element(name: str, attrs: dict[str, str]) -> None:
+        nonlocal current_row, current_column, row_sequence
+        local = local_xml_name(name)
+        if local == "row":
+            row_value = xml_attribute(attrs, "r")
+            if row_value:
+                current_row = int(row_value)
+                row_sequence = current_row
+            else:
+                row_sequence += 1
+                current_row = row_sequence
+            current_column = 0
+        elif local == "c" and current_row is not None:
+            style_value = xml_attribute(attrs, "s")
+            reference = xml_attribute(attrs, "r")
+            column = (
+                column_letter_to_index(reference) if reference else current_column
+            )
+            current_column = column + 1
+            if style_value:
+                style = int(style_value)
+                if style > 0:
+                    target = (
+                        header_counts
+                        if headers_provided and current_row == 1
+                        else data_counts
+                    )
+                    counts = target.setdefault(column, {})
+                    counts[style] = counts.get(style, 0) + 1
+
+    def end_element(name: str) -> None:
+        nonlocal current_row, current_column
+        if local_xml_name(name) == "row":
+            current_row = None
+            current_column = 0
+
+    _parse_chunks(chunks, start_element, end_element)
+    return dominant_styles(header_counts), dominant_styles(data_counts)

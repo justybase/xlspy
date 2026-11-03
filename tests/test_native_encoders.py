@@ -51,3 +51,13 @@ def test_table_indexes_stay_correct_after_a_failed_row():
     assert (uniq, all_) == (2, 2)
     assert ss_list == ["a", "b"]
     assert ss_dict == {"a": 0, "b": 1}
+
+
+@pytest.mark.parametrize("index", ["bogus", -1, 2**32])
+def test_corrupted_table_index_raises_instead_of_writing_a_bad_index(index):
+    # The table maps text to the indices the writer handed out; any other value
+    # must fail loudly rather than reach the file as index 0xFFFFFFFF.
+    with pytest.raises((TypeError, OverflowError)):
+        _accel.encode_xlsb_row(["a"], {"a": index}, ["a"], 1, 1, 1)
+    with pytest.raises((TypeError, OverflowError)):
+        _accel.encode_xlsx_row(["a"], {"a": index}, ["a"], 1, 1, 1, True)

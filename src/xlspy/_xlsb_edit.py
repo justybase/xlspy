@@ -10,7 +10,6 @@ import datetime
 from decimal import Decimal
 import math
 import numbers
-import posixpath
 import struct
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
@@ -26,7 +25,7 @@ from ._xlsb_metadata import (
 from ._xlsb_formulas import FormulaContext, formula_cell
 from ._xlsx_edit import XlsxEditMixin, _HYPERLINK_TYPE as _HYPERLINK_TYPE
 from .biff_utils import build_record
-from .comments import Comment, V, VML_TYPE, comment_part_targets, find_comment_parts, normalize_comments, vml_xml, rels_path, resolve_part
+from .comments import Comment, NotePartsEdit, V, VML_TYPE, comment_part_targets, find_comment_parts, normalize_comments, vml_xml, rels_path, resolve_part
 from .excel_dates import datetime_to_serial
 from .formulas import Formula
 from .refs import parse_cell_range
@@ -103,56 +102,27 @@ class XlsbEditMixin(XlsxEditMixin):
                 raise ValueError("comment/VML parts shared by sheets cannot be edited")
         if legacy and 'vmlDrawing' not in parts:
             raise ValueError("unsupported legacy drawing relationship")
-        used = {node.get('Id') for node in relationships}
-        occupied = set(names)
-        def ensure(kind, directory, stem, extension):
-            if kind in parts:
-                return parts[kind][0]
-            index = 1
-            while f'{directory}/{stem}{index}.{extension}' in occupied:
-                index += 1
-            part = f'{directory}/{stem}{index}.{extension}'
-            occupied.add(part)
-            index = 1
-            while f'rId{index}' in used:
-                index += 1
-            rid = f'rId{index}'
-            used.add(rid)
-            ET.SubElement(relationships, f'{{{PKG_REL}}}Relationship', {
-                'Id': rid, 'Type': REL + '/' + kind,
-                'Target': posixpath.relpath(part, posixpath.dirname(path)),
-            })
-            parts[kind] = (part, rid)
-            return part
-        cp = ensure('comments', 'xl/comments', 'comment', 'bin')
-        vp = ensure('vmlDrawing', 'xl/drawings', 'commentsDrawing', 'vml')
+        edit = NotePartsEdit(path, relationships, parts, names)
+        cp = edit.ensure('comments', 'xl/comments', 'comment', 'bin')
+        vp = edit.ensure('vmlDrawing', 'xl/drawings', 'commentsDrawing', 'vml')
         note_data = comments_bin(changes, self._package.get(cp) if cp in names else None)
         drawing = vml_xml(changes, self._package.get(vp) if vp in names else None)
         remaining = parse_comments(note_data)[0]
         types = safe_fromstring(self._package.get('[Content_Types].xml'))
-        updates, removed = {cp: note_data, vp: drawing}, []
-        def drop(part, kind):
-            updates.pop(part, None)
-            removed.append(part)
-            # Only this part's relationship: other vmlDrawing parts may exist.
-            for node in list(relationships):
-                if node.get('Id') == parts[kind][1]:
-                    relationships.remove(node)
-            for node in list(types):
-                if node.get('PartName') == '/' + part:
-                    types.remove(node)
+        updates: dict[str, Any] = {cp: note_data, vp: drawing}
+        removed: list[str] = []
         if remaining:
             if not any(node.get('PartName') == '/' + cp for node in types):
                 ET.SubElement(types, f'{{{CT}}}Override', {'PartName': '/' + cp, 'ContentType': _XLSB_COMMENTS_TYPE})
         else:
-            drop(cp, 'comments')
+            edit.drop(cp, 'comments', types, updates, removed)
         if any(node.tag == f'{{{V}}}shape' for node in safe_fromstring(drawing).iter()):
             if not any(node.get('PartName') == '/' + vp or node.get('Extension') == 'vml' for node in types):
                 ET.SubElement(types, f'{{{CT}}}Override', {'PartName': '/' + vp, 'ContentType': VML_TYPE})
             if not legacy:
                 data = replace_records(data, {LEGACY_DRAWING}, build_record(LEGACY_DRAWING, wide_string(parts['vmlDrawing'][1])), before=(0x228, 0x229, 0x27F, 0x294, 0x82))
         else:
-            drop(vp, 'vmlDrawing')
+            edit.drop(vp, 'vmlDrawing', types, updates, removed)
             data = replace_records(data, {LEGACY_DRAWING}, before=(0x82,))
         updates[path] = data
         if len(relationships):
@@ -324,7 +294,7 @@ class XlsbEditMixin(XlsxEditMixin):
         data = replace_records(data, {BOOK_PROTECTION, BOOK_PROTECTION_ISO}, workbook_protection_bin(protection), before=(0x87, 0x8F))
         self._apply_parts({'xl/workbook.bin': data})
 
-    def _invalidate_calculation(self, updates, removed):
+    def _invalidate_calculation(self, updates: dict[str, Any], removed: list[str]) -> None:
         updates['xl/workbook.bin'] = request_recalculation(updates.get('xl/workbook.bin', self._package.get('xl/workbook.bin')))
         rp = 'xl/_rels/workbook.bin.rels'
         rels = safe_fromstring(updates.get(rp, self._package.get(rp)))
@@ -484,14 +454,16 @@ class XlsbEditMixin(XlsxEditMixin):
             self._stream_shared_strings.total_count = max(0, self._stream_shared_strings.total_count - removed_shared_refs)
 
 
-def encode_cell(value, column, style, context, sheet, row, date_1904=False):
+def encode_cell(value: Any, column: int, style: int, context: FormulaContext | None, sheet: str | None,
+                row: int, date_1904: bool = False) -> bytes:
     header = struct.pack('<II', column, style)
     if value is None:
         return build_record(1, header)
     if isinstance(value, Formula):
         if value.array_ref is not None:
             raise ValueError("update_cells supports scalar formulas only")
-        return formula_cell(value, column, style, context, sheet=sheet, row=row)
+        encoded: bytes = formula_cell(value, column, style, context, sheet=sheet, row=row)
+        return encoded
     if isinstance(value, bool):
         return build_record(4, header + bytes([value]))
     if isinstance(value, (datetime.date, datetime.datetime)):
@@ -508,16 +480,20 @@ def encode_cell(value, column, style, context, sheet, row, date_1904=False):
 
 # A style-only edit: the cell keeps its record (and value), only its XF changes.
 KEEP = object()
+# One cell edit: the new value (or KEEP) and the new XF index (None: keep the current one).
+CellEdit = tuple[Any, int | None]
 
 
-def _encode_entry(entry, column, current_style, context, sheet, row, date_1904):
+def _encode_entry(entry: CellEdit, column: int, current_style: int, context: FormulaContext | None,
+                  sheet: str | None, row: int, date_1904: bool) -> bytes:
     """Encode a ``(value, style)`` edit of a cell that has no record to keep."""
     value, style = entry
     style = current_style if style is None else style
     return encode_cell(None if value is KEEP else value, column, style, context, sheet, row, date_1904)
 
 
-def new_row_bytes(row, values, context, sheet, date_1904=False):
+def new_row_bytes(row: int, values: Mapping[int, CellEdit], context: FormulaContext | None, sheet: str | None,
+                  date_1904: bool = False) -> bytes:
     payload = bytearray(25)
     struct.pack_into('<I', payload, 0, row)
     struct.pack_into('<I', payload, 8, 300)
@@ -528,7 +504,8 @@ def new_row_bytes(row, values, context, sheet, date_1904=False):
     )
 
 
-def patch_row(data, values, context, sheet, row, date_1904):
+def patch_row(data: bytes, values: Mapping[int, CellEdit], context: FormulaContext | None, sheet: str | None,
+              row: int, date_1904: bool) -> tuple[bytes, int]:
     pending = dict(values)
     output = []
     removed_shared = 0

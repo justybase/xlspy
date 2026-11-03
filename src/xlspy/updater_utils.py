@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import IO, Any
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring, harden_expat
 from xml.parsers import expat
@@ -42,13 +42,13 @@ from .refs import parse_cell_range
 STREAM_BUFFER_SIZE = 1024 * 1024
 
 
-def copy_stream(source, target, *, length: int = STREAM_BUFFER_SIZE) -> None:
+def copy_stream(source: IO[bytes], target: IO[bytes], *, length: int = STREAM_BUFFER_SIZE) -> None:
     """Copy a binary stream with a bounded buffer."""
 
     shutil.copyfileobj(source, target, length=length)
 
 
-def copy_file_range(source_path: str | os.PathLike[str], target, start: int, end: int) -> None:
+def copy_file_range(source_path: str | os.PathLike[str], target: IO[bytes], start: int, end: int) -> None:
     """Copy a byte range from a seekable file to an open binary stream."""
 
     with open(source_path, "rb") as source:
@@ -78,6 +78,15 @@ def xml_attribute(attrs: dict[str, str], wanted: str) -> str | None:
         if local_xml_name(name) == wanted:
             return value
     return None
+
+
+def dominant_styles(counts: dict[int, dict[int, int]]) -> dict[int, int]:
+    """Per column, the style used most often (the lowest style index on a tie)."""
+
+    return {
+        column: max(styles.items(), key=lambda item: (item[1], -item[0]))[0]
+        for column, styles in counts.items()
+    }
 
 
 def date_like_format(format_code: str) -> bool:
@@ -148,7 +157,7 @@ class DiskStringIndex:
         self.dirty = True
         return index
 
-    def pending_values(self):
+    def pending_values(self) -> Iterator[str]:
         self._pending.flush()
         with self._pending_path.open("rb") as stream:
             while True:
@@ -263,7 +272,7 @@ class DiskStringIndex:
         self._pending.close()
         self._database.close()
 
-    def __del__(self):
+    def __del__(self) -> None:
         # Close the pending file (and the sqlite handle) explicitly: relying on
         # garbage collection alone leaks the file handle and makes Python 3.12+
         # emit a ResourceWarning.
@@ -319,18 +328,21 @@ def rewrite_shared_strings_xml(
                 copy_file_range(source_path, target, closing_match.start(), size)
 
 
+def row_cells(row: Any) -> list[Any]:
+    """The cells of one source row, as a list; text is refused, not split."""
+
+    if isinstance(row, (str, bytes, bytearray)):
+        raise TypeError("Each row must be a sequence of cells, not text")
+    try:
+        return list(row)
+    except TypeError as exc:
+        raise TypeError("Each row must be an iterable of cells") from exc
+
+
 def materialize_rows(rows: Iterable[Sequence[Any]]) -> list[list[Any]]:
     """Materialise an iterable of rows while keeping its cell boundaries."""
 
-    materialized: list[list[Any]] = []
-    for row in rows:
-        if isinstance(row, (str, bytes, bytearray)):
-            raise TypeError("Each row must be a sequence of cells, not text")
-        try:
-            materialized.append(list(row))
-        except TypeError as exc:
-            raise TypeError("Each row must be an iterable of cells") from exc
-    return materialized
+    return [row_cells(row) for row in rows]
 
 
 def trim_trailing_empty_rows(rows: list[list[Any]]) -> list[list[Any]]:
@@ -347,6 +359,42 @@ def trim_trailing_empty_rows(rows: list[list[Any]]) -> list[list[Any]]:
     return rows[:last]
 
 
+class TrailingRowTrimmer:
+    """Trailing empty rows of a streaming replacement, cut off at the end.
+
+    The rows are written to ``output`` as they arrive; ``finish`` truncates the
+    file after the last row with a value, which is what
+    ``trim_trailing_empty_rows`` does to materialized rows. ``width`` grows to
+    the widest row kept (an empty row counts once a later row is kept).
+    """
+
+    def __init__(self, output: IO[bytes], width: int) -> None:
+        self._output = output
+        self.width = width
+        self.kept_rows = 0  # data rows up to the last one with a value
+        self._rows_seen = 0
+        self._kept_end = output.tell()
+        self._pending_width = 0
+
+    def keep(self) -> None:
+        """Keep everything written so far (the header row)."""
+        self._kept_end = self._output.tell()
+
+    def wrote(self, row: Sequence[Any]) -> None:
+        """Record a data row just written to the output."""
+        self._rows_seen += 1
+        if all(cell is None for cell in row):
+            self._pending_width = max(self._pending_width, len(row))
+        else:
+            self.width = max(self.width, self._pending_width, len(row))
+            self._pending_width = 0
+            self.kept_rows = self._rows_seen
+            self._kept_end = self._output.tell()
+
+    def finish(self) -> None:
+        self._output.truncate(self._kept_end)
+
+
 def is_formatted_cell(cell: Any) -> bool:
     """Return whether a writer-style ``(value, format_string)`` wrapper exists."""
 
@@ -357,19 +405,6 @@ def unwrap_cell(cell: Any) -> Any:
     """Return the value from the optional writer-style format wrapper."""
 
     return cell[0] if is_formatted_cell(cell) else cell
-
-
-def strip_invalid_xml_characters(value: str) -> str:
-    """Remove characters which XML 1.0 cannot represent."""
-
-    return "".join(
-        character
-        for character in value
-        if character in "\t\n\r"
-        or 0x20 <= ord(character) <= 0xD7FF
-        or 0xE000 <= ord(character) <= 0xFFFD
-        or 0x10000 <= ord(character) <= 0x10FFFF
-    )
 
 
 def escape_xml_text(value: Any) -> str:
@@ -394,11 +429,11 @@ _CHART_PART = re.compile(r"xl/charts/chart[^/]*\.xml")
 _CHART_FORMULA = re.compile(r"(<(?:\w+:)?f(?:\s[^>]*)?>)([^<]*)(</(?:\w+:)?f>)")
 
 
-def renamed_chart_parts(package, old: str, new: str) -> dict[str, bytes]:
+def renamed_chart_parts(package: ZipPackage, old: str, new: str) -> dict[str, bytes]:
     """The chart parts whose formulas (``<c:f>``) name sheet ``old``, pointed at ``new``."""
     from .formula.sheets import rename_sheet_references
 
-    def rename(match):
+    def rename(match: re.Match[str]) -> str:
         text = unescape_xml_text(match[2])
         updated = rename_sheet_references(text, old, new)
         if updated == text:
@@ -420,11 +455,11 @@ _WORKSHEET_PART = re.compile(r"xl/worksheets/sheet[^/]*\.xml")
 _SPARKLINE_FORMULA = re.compile(r"(<xm:f>)([^<]*)(</xm:f>)")
 
 
-def renamed_sparkline_parts(package, old: str, new: str) -> dict[str, bytes]:
+def renamed_sparkline_parts(package: ZipPackage, old: str, new: str) -> dict[str, bytes]:
     """The worksheet parts whose sparkline formulas (``<xm:f>``) name sheet ``old``."""
     from .formula.sheets import rename_sheet_references
 
-    def rename(match):
+    def rename(match: re.Match[str]) -> str:
         text = unescape_xml_text(match[2])
         updated = rename_sheet_references(text, old, new)
         if updated == text:
@@ -780,7 +815,7 @@ class ZipPackage:
             return archive.read(self._entries[index])
 
     @contextmanager
-    def open_entry(self, name: str):
+    def open_entry(self, name: str) -> Iterator[IO[bytes]]:
         """Open one entry for bounded-memory reading."""
         index = self._index_for(name)
         override = self._overrides.get(index)
@@ -886,7 +921,7 @@ class ZipPackage:
         self._package_transaction = None
         self._superseded_paths = set()
 
-    def apply_parts(self, parts, removed=()) -> None:
+    def apply_parts(self, parts: Mapping[str, str | bytes], removed: Iterable[str] = ()) -> None:
         """Write ``parts`` (str or bytes) and remove ``removed`` as one transaction.
 
         The package owns this write-back: an updater or the object model that
@@ -953,7 +988,7 @@ class ZipPackage:
         self._set_override(len(self._entries) - 1, replacement)
 
     @contextmanager
-    def _replacement_stream(self, index: int):
+    def _replacement_stream(self, index: int) -> Iterator[IO[bytes]]:
         override = self._overrides.get(index)
         if isinstance(override, bytes):
             with BytesIO(override) as stream:

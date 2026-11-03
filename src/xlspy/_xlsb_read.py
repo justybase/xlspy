@@ -1,4 +1,4 @@
-"""Formula-aware, incremental XLSB rows (separate from the bulk C/Python path)."""
+"""Formula-aware, incremental XLSB rows (separate from the bulk native/Python path)."""
 from __future__ import annotations
 
 import datetime
@@ -43,10 +43,19 @@ def cached_cell(kind, payload, reader):
         raise ValueError(f"unknown XLSB cell kind {kind}")
     if isinstance(value, float):
         if style < len(reader._styles_cell_xfs_array) and reader._number_formats_type_dict.get(reader._styles_cell_xfs_array[style]['numFmtId']) is datetime.datetime:
-            value = serial_to_datetime(value, reader._date_1904)
+            value = _date_or_number(value, reader._date_1904)
         elif value.is_integer():
             value = int(value)
     return value, payload[formula_offset:] if formula_offset is not None else None, style
+
+
+def _date_or_number(serial: float, date_1904: bool) -> Any:
+    """The datetime of a date-formatted serial; a serial outside the datetime
+    range (NaN, infinite, past 9999) stays a number, as Excel shows it as ####."""
+    try:
+        return serial_to_datetime(serial, date_1904)
+    except (ValueError, OverflowError):
+        return int(serial) if serial.is_integer() else serial
 
 
 def formula_groups(records):

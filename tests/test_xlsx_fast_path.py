@@ -233,7 +233,7 @@ def test_native_reader_handles_tiny_stream_chunks(tmp_path):
             rows = _accel.read_xlsx_worksheet(
                 _Trickle(rest, size), probe[4], reader._shared_string_array,
                 _xlsx_read._date_style_flags(reader), reader._date_1904)
-            got = list(_xlsx_read._c_rows(reader, rows, probe[2], probe[3]))
+            got = list(_xlsx_read._native_rows(reader, rows, probe[2], probe[3]))
             _same_typed_rows(got, expected)
 
 

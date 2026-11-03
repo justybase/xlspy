@@ -276,8 +276,8 @@ def test_streaming_save_does_not_materialize_rows_or_archive(
     path = tmp_path / f"streaming{extension}"
     _write_workbook(path, binary)
     updater_type = XlsbUpdater if binary else XlsxUpdater
-    module_name = "xlspy.xlsb_updater" if binary else "xlspy.xlsx_updater"
-    updater_module = __import__(module_name, fromlist=["materialize_rows"])
+    # Both updaters materialize rows only through the shared base class.
+    import xlspy._updater_base as updater_module
 
     def fail_materialization(_):
         raise AssertionError("streaming updater materialized all rows")

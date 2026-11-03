@@ -8,7 +8,7 @@ writers test for exact ``list``/``dict``/``set``/``bytes`` values, so the
 stub uses those, not the wider ``Sequence``/``Mapping`` protocols.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, final
 
 from _typeshed import ReadableBuffer, SupportsRead
@@ -37,6 +37,8 @@ __all__ = [
     "xlsb_load_cells",
     "read_xlsx_worksheet",
     "XlsxReader",
+    "WidthMeter",
+    "general_number_text",
 ]
 
 def set_error_type(type_: type) -> None: ...
@@ -132,3 +134,25 @@ def read_xlsx_worksheet(
     date_1904: bool | None = None,
     model: tuple[Any, ...] | None = None,
 ) -> XlsxReader: ...
+@final
+class WidthMeter:
+    """Column widths in pixels of the rows the native code measures (see
+    ``xlspy._widths.ColumnWidthMeter``)."""
+
+    def __init__(
+        self,
+        fallback: Callable[[Any, Any, bool], int],
+        kind_of: Callable[[Any], tuple[int, tuple[Any, ...] | None]],
+        constant_types: list[type],
+        overlay_kind: Callable[[Any, Any, bool], tuple[int, tuple[Any, ...] | None]] | None = None,
+    ) -> None: ...
+    def add_kind(
+        self, id: int, spec: tuple[dict[str, int], int, bool, bool, Callable[[str], int], tuple[Any, ...] | None, int],
+    ) -> None: ...
+    def add(
+        self, row: list[Any] | tuple[Any, ...], styles: dict[int, Any] | None = None,
+        header: bool = False, keep: bool = False,
+    ) -> list[int] | None: ...
+    def best(self) -> list[int]: ...
+
+def general_number_text(value: object) -> str | None: ...

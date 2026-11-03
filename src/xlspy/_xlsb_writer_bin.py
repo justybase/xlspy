@@ -218,6 +218,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 autofit_rows, button_rows,
             )
             measure_until = meter.limit
+            fast_add, slow_rows = meter.fast_add, meter.slow_rows
             buffer.seek(0)
             buffer.truncate()
 
@@ -235,8 +236,12 @@ class _XlsbBinMixin(_XlsbWriterHost):
             # written after the rows and must span every column that holds a value.
             stream_width = 0
             for row_idx, row in enumerate(data_iterator):
+                row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
                 if row_idx < measure_until:
-                    meter.add(row_idx, row)
+                    if fast_add is not None and row_idx not in slow_rows:
+                        fast_add(row, row_styles or None)
+                    else:
+                        meter.add(row_idx, row, row_styles)
                 # The last entry that gets a cell record (anything but None).
                 last_cell = len(row) - 1
                 while last_cell >= 0 and row[last_cell] is None:
@@ -253,7 +258,6 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     has_formatted = any(_is_formatted_cell(c) for c in row if c is not None)
                 else:
                     has_formatted = c_has_formatted
-                row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
 
                 if row_outline is None:
                     outline_level, outline_hidden, outline_collapsed = 0, False, False
@@ -313,7 +317,9 @@ class _XlsbBinMixin(_XlsbWriterHost):
                             row_style_ids_cache,
                         )
                 if use_native:
-                    fmt_xf = self._fmt_xf if has_formatted else None
+                    # Styled dates resolve their xf through fmt_xf as well, so the
+                    # encoder needs it on rows without formatted cells too.
+                    fmt_xf = self._fmt_xf or None
                     row_header = None
                     if row_idx in custom_rows or outline_level or outline_collapsed:
                         row_header = self._row_header_record(

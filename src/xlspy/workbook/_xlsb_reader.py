@@ -24,6 +24,7 @@ from ..biff_utils import iter_record_payloads
 from ..comments import rels_path
 from ..external_links import read_external_links
 from ..hyperlinks import Hyperlink
+from ..exceptions import InvalidFileError
 from ..reader import ExcelReader, _get_date_num_fmt_ids
 from ..refs import column_label, parse_cell_range
 from ..xlsb_updater import XlsbUpdater
@@ -339,7 +340,11 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
     path = os.fspath(path)
     updater = XlsbUpdater(path)
     reader = ExcelReader(path)
-    reader.open(path)
+    try:
+        reader.open(path)
+    except BaseException:
+        updater.close()
+        raise
     workbook = Workbook()
     workbook._sheets.clear()
     workbook._loaded = True
@@ -350,6 +355,13 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
     workbook._loaded_worksheet_names = set()
     handle = PackageHandle(updater)
     try:
+        # The updater and the reader each parse workbook.bin; on a damaged part
+        # they can disagree, and a sheet one of them lacks cannot be loaded.
+        missing = set(updater.get_sheet_names()) - set(reader.get_sheet_names())
+        if missing:
+            raise InvalidFileError(
+                f"cannot read the sheet list of {path!r}: xl/workbook.bin is damaged"
+            )
         styles_path = reader._styles_location and reader._resolve_path(reader._styles_location)
         styles_bin = (
             handle.package.get(styles_path)
@@ -367,7 +379,6 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         _read_workbook_parts(workbook, handle, updater, reader)
         return workbook
     except BaseException:
-        reader.close()
         updater.close()
         raise
     finally:

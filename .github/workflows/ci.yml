@@ -131,6 +131,10 @@ jobs:
 
       - name: Rustfmt, Clippy and unit tests
         working-directory: rust/xlspy_core
+        # Some unit tests embed Python (pyseq.rs, text.rs): the test binary loads
+        # the libpython of setup-python.
+        env:
+          LD_LIBRARY_PATH: ${{ env.pythonLocation }}/lib
         run: |
           rustup component add rustfmt clippy
           cargo fmt --check
@@ -253,13 +257,37 @@ jobs:
         run: .venv-smoke/bin/python tools/wheel_smoke.py
 
       - name: Run core tests against the installed wheel
+        # The same subset cibuildwheel runs on every wheel (publish.yml).
+        run: .venv-smoke/bin/python tools/wheel_tests.py "$GITHUB_WORKSPACE"
+
+  sdist:
+    name: Sdist builds and installs into a clean venv
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build the sdist and install it in a clean venv
         run: |
-          smoke="$RUNNER_TEMP/wheel-smoke"
-          mkdir -p "$smoke"
-          cp tests/test_reader.py tests/test_updaters.py tests/test_streaming_updaters.py \
-             tests/test_output_integrity.py tests/conftest.py tests/zip_utils.py "$smoke/"
-          cd "$smoke"
-          "$GITHUB_WORKSPACE/.venv-smoke/bin/python" -m pytest -q
+          python -m pip install --upgrade pip build
+          python -m build --sdist --outdir dist
+          python -m venv "$RUNNER_TEMP/sdist-venv"
+          "$RUNNER_TEMP/sdist-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/sdist-venv/bin/python" -m pip install dist/*.tar.gz
+
+      - name: Smoke-test the installed sdist
+        run: |
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/sdist-venv/bin/python" "$GITHUB_WORKSPACE/tools/wheel_smoke.py"
 
   deps-floor:
     name: Dependency floor (pandas 2.1, polars 1.0)

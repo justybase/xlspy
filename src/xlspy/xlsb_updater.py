@@ -10,8 +10,9 @@ import re
 import struct
 from ._safe_xml import fromstring as safe_fromstring
 from decimal import Decimal
-from typing import Any
-from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any, BinaryIO
+from collections.abc import Iterable, Iterator, Sequence
 from ._updater_base import StyleFallback, _UpdaterBase
 from ._xlsb_edit import XlsbEditMixin
 from ._xlsb_table_part import parse_table_part
@@ -20,6 +21,7 @@ from .exceptions import InvalidFileError, UnsupportedFeatureError, reading
 from .formulas import Formula
 
 from .biff_utils import (
+    Biff12Record,
     build_record,
     iter_records,
     iter_records_stream,
@@ -27,18 +29,18 @@ from .biff_utils import (
     read_utf16,
 )
 from .updater_utils import (
+    TrailingRowTrimmer,
+    dominant_styles,
+    row_cells,
     DiskStringIndex,
     TableHeader,
     ZipPackage,
     copy_file_range,
     copy_stream,
-    date_like_format,
     header_row_texts,
-    materialize_rows,
     table_header,
     parse_relationships_xml,
     resolve_zip_target,
-    trim_trailing_empty_rows,
     unwrap_cell,
 )
 from ._text import check_cell_text
@@ -56,12 +58,11 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
 
     def __init__(self, path: str | os.PathLike[str]) -> None:
         self._package = ZipPackage(path)
-        if self._package.has("xl/workbook.xml"):
-            raise ValueError("The input is XLSX; use XlsxUpdater")
-        if not self._package.has("xl/workbook.bin"):
-            raise InvalidFileError("XLSB workbook.bin was not found")
-
         try:
+            if self._package.has("xl/workbook.xml"):
+                raise ValueError("The input is XLSX; use XlsxUpdater")
+            if not self._package.has("xl/workbook.bin"):
+                raise InvalidFileError("XLSB workbook.bin was not found")
             with reading(path):
                 self._date_1904 = self._load_date_system()
                 self._sheets = self._load_sheet_structure()
@@ -110,13 +111,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
     ) -> None:
         """Replace one worksheet's used data region and preserve sheet wrappers."""
 
-        if style_fallback not in ("inherit", "general"):
-            raise ValueError("style_fallback must be 'inherit' or 'general'")
-        try:
-            sheet_path = self._sheets[sheet_name]
-        except KeyError as exc:
-            raise KeyError(f"Worksheet not found: {sheet_name}") from exc
-
+        sheet_path = self._replacement_sheet_path(sheet_name, style_fallback)
         if self._stream_shared_strings is not None:
             self.replace_sheet_data_stream(
                 sheet_name,
@@ -126,16 +121,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             )
             return
 
-        materialized = trim_trailing_empty_rows(materialize_rows(rows))
-        header_values = list(headers) if headers is not None else None
-        guard = self._table_header_guard(sheet_name, sheet_path)
-        first_data_row = 0
-        if header_values is not None:
-            guard.check_row(0, header_row_texts(header_values))
-            first_data_row = 1
-        for index, row in enumerate(materialized, start=first_data_row):
-            guard.check_row(index, row)
-        guard.finish()
+        materialized, header_values = self._checked_rows(sheet_name, sheet_path, rows, headers)
         sheet_data = self._package.get(sheet_path)
         self._ensure_shared_strings_loaded()
         if self._shared_strings_data is not None:
@@ -149,13 +135,8 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         header_styles, data_styles = self._collect_styles(
             sheet_data, headers_provided=headers is not None
         )
-        date_xf = self._find_date_xf() if style_fallback == "inherit" else None
-        width = max(
-            [len(row) for row in materialized]
-            + ([len(header_values)] if header_values is not None else [])
-            + [0]
-        )
-        total_rows = len(materialized) + (1 if header_values is not None else 0)
+        date_xf = self._find_date_style() if style_fallback == "inherit" else None
+        total_rows, width = self._region_size(materialized, header_values)
         last_row = max(0, total_rows - 1)
         last_col = max(0, width - 1)
         new_rows = self._build_rows(
@@ -199,18 +180,10 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
     ) -> None:
         """Replace worksheet data while streaming rows through temporary files."""
 
-        if style_fallback not in ("inherit", "general"):
-            raise ValueError("style_fallback must be 'inherit' or 'general'")
-        try:
-            sheet_path = self._sheets[sheet_name]
-        except KeyError as exc:
-            raise KeyError(f"Worksheet not found: {sheet_name}") from exc
-
+        sheet_path = self._replacement_sheet_path(sheet_name, style_fallback)
         header_values = list(headers) if headers is not None else None
         guard = self._table_header_guard(sheet_name, sheet_path)
-        original_sheet = self._package.temporary_path(suffix=".bin")
-        with self._package.open_entry(sheet_path) as source, original_sheet.open("wb") as target:
-            copy_stream(source, target)
+        original_sheet = self._stage_part_copy(sheet_path, ".bin")
 
         self._ensure_stream_shared_strings()
         header_styles, data_styles = self._collect_styles_stream(
@@ -224,17 +197,13 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             )
             self._stream_shared_strings.total_count = self._shared_strings_total
             self._stream_shared_strings.dirty = True
-        date_xf = self._find_date_xf() if style_fallback == "inherit" else None
+        date_xf = self._find_date_style() if style_fallback == "inherit" else None
 
         rows_file = self._package.temporary_path(suffix=".rows")
-        width = len(header_values) if header_values is not None else 0
-        data_rows_seen = 0
-        kept_data_rows = 0
-        last_kept_end = 0
-        pending_empty_width = 0
 
         try:
             with rows_file.open("wb") as output:
+                trimmer = TrailingRowTrimmer(output, len(header_values) if header_values is not None else 0)
                 next_row = 0
 
                 def write_row(row_number: int, row_cells: list[bytes]) -> None:
@@ -263,17 +232,11 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                             for column, header_text in enumerate(header_texts)
                         ],
                     )
-                    last_kept_end = output.tell()
+                    trimmer.keep()
                     next_row += 1
 
                 for source_row in rows:
-                    if isinstance(source_row, (str, bytes, bytearray)):
-                        raise TypeError("Each row must be a sequence of cells, not text")
-                    try:
-                        row = list(source_row)
-                    except TypeError as exc:
-                        raise TypeError("Each row must be an iterable of cells") from exc
-
+                    row = row_cells(source_row)
                     guard.check_row(next_row, row)
                     cells = [
                         self._value_cell_bytes(
@@ -287,21 +250,13 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                         if raw is not None
                     ]
                     write_row(next_row, cells)
-                    data_rows_seen += 1
+                    trimmer.wrote(row)
                     next_row += 1
 
-                    if all(cell is None for cell in row):
-                        pending_empty_width = max(pending_empty_width, len(row))
-                    else:
-                        width = max(width, pending_empty_width, len(row))
-                        pending_empty_width = 0
-                        kept_data_rows = data_rows_seen
-                        last_kept_end = output.tell()
-
                 guard.finish()
-                output.truncate(last_kept_end)
+                trimmer.finish()
 
-            last_col = max(0, width - 1)
+            last_col = max(0, trimmer.width - 1)
             self._patch_row_headers_file(rows_file, last_col)
             region = self._find_rows_region_stream(original_sheet)
             updated_sheet = self._package.temporary_path(suffix=".bin")
@@ -316,7 +271,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                     original_sheet.stat().st_size,
                 )
 
-            total_rows = kept_data_rows + (1 if header_values is not None else 0)
+            total_rows = trimmer.kept_rows + (1 if header_values is not None else 0)
             last_row = max(0, total_rows - 1)
             self._patch_sheet_file(updated_sheet, last_row, last_col)
             self._package.set_file(sheet_path, updated_sheet)
@@ -430,24 +385,23 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         if store is None or not store.dirty:
             return
 
-        source_path = self._package.temporary_path(suffix=".bin")
-        with self._package.open_entry("xl/sharedStrings.bin") as source, source_path.open("wb") as target:
-            copy_stream(source, target)
-        output_path = self._package.temporary_path(suffix=".bin")
-        inserted = False
-        output_staged = False
-        try:
+        def write_pending(target: BinaryIO) -> None:
+            for value in store.pending_values():
+                encoded = value.encode("utf-16le")
+                target.write(
+                    build_record(
+                        0x13,
+                        b"\x00" + struct.pack("<I", len(encoded) // 2) + encoded,
+                    )
+                )
+
+        def rewrite(source_path: Path, output_path: Path) -> None:
+            # New items go before BrtEndSst (0xA0); the BrtBeginSst counts are updated.
+            inserted = False
             with source_path.open("rb") as source, output_path.open("wb") as target:
                 for record, payload in iter_records_stream(source):
                     if record.record_id == 0xA0 and not inserted:
-                        for value in store.pending_values():
-                            encoded = value.encode("utf-16le")
-                            target.write(
-                                build_record(
-                                    0x13,
-                                    b"\x00" + struct.pack("<I", len(encoded) // 2) + encoded,
-                                )
-                            )
+                        write_pending(target)
                         inserted = True
 
                     if record.record_id == 0x9F and len(payload) >= 8:
@@ -473,65 +427,21 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                         )
 
                 if not inserted:
-                    for value in store.pending_values():
-                        encoded = value.encode("utf-16le")
-                        target.write(
-                            build_record(
-                                0x13,
-                                b"\x00" + struct.pack("<I", len(encoded) // 2) + encoded,
-                            )
-                        )
-            self._package.set_file("xl/sharedStrings.bin", output_path)
-            output_staged = True
-            store.clear_pending()
-        finally:
-            try:
-                source_path.unlink()
-            except FileNotFoundError:
-                pass
-            if not output_staged:
-                try:
-                    output_path.unlink()
-                except FileNotFoundError:
-                    pass
+                    write_pending(target)
+
+        self._rewrite_part_on_disk("xl/sharedStrings.bin", ".bin", rewrite)
+        store.clear_pending()
 
     def _collect_styles_stream(
         self, sheet_path: str | os.PathLike[str], *, headers_provided: bool
     ) -> tuple[dict[int, int], dict[int, int]]:
-        header_styles: dict[int, int] = {}
-        data_counts: dict[int, dict[int, int]] = {}
-        row = -1
         with open(sheet_path, "rb") as stream:
-            for record, payload in iter_records_stream(stream):
-                if record.record_id == 0x00 and record.length >= 4:
-                    row = struct.unpack_from("<i", payload, 0)[0]
-                    continue
-                if record.record_id not in _CELL_RECORDS or record.length < 8:
-                    continue
-                column, style = struct.unpack_from("<II", payload, 0)
-                style &= 0xFFFFFF
-                if style <= 0:
-                    continue
-                if headers_provided and row == 0:
-                    header_styles.setdefault(column, style)
-                elif row >= 0:
-                    counts = data_counts.setdefault(column, {})
-                    counts[style] = counts.get(style, 0) + 1
-
-        data_styles = {
-            column: max(counts.items(), key=lambda item: (item[1], -item[0]))[0]
-            for column, counts in data_counts.items()
-        }
-        return header_styles, data_styles
+            return _record_cell_styles(iter_records_stream(stream), headers_provided=headers_provided)
 
     @staticmethod
     def _shared_string_ref_count_stream(sheet_path: str | os.PathLike[str]) -> int:
         with open(sheet_path, "rb") as stream:
-            return sum(
-                1
-                for record, _ in iter_records_stream(stream)
-                if record.record_id == 0x07
-            )
+            return _record_shared_string_cells(iter_records_stream(stream))
 
     def _commit_shared_strings(self) -> None:
         if self._shared_strings_data is None or (
@@ -564,42 +474,19 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
 
     @staticmethod
     def _shared_string_ref_count(sheet_data: bytes) -> int:
-        return sum(1 for record in iter_records(sheet_data) if record.record_id == 0x07)
+        return _record_shared_string_cells(_with_payloads(sheet_data))
 
     def _collect_styles(
         self, sheet_data: bytes, *, headers_provided: bool
     ) -> tuple[dict[int, int], dict[int, int]]:
-        header_styles: dict[int, int] = {}
-        data_counts: dict[int, dict[int, int]] = {}
-        row = -1
-        for record in iter_records(sheet_data):
-            payload = sheet_data[record.data_start : record.data_end]
-            if record.record_id == 0x00 and record.length >= 4:
-                row = struct.unpack_from("<i", payload, 0)[0]
-                continue
-            if record.record_id not in _CELL_RECORDS or record.length < 8:
-                continue
-            column, style = struct.unpack_from("<II", payload, 0)
-            style &= 0xFFFFFF
-            if style <= 0:
-                continue
-            if headers_provided and row == 0:
-                header_styles.setdefault(column, style)
-            elif row >= 0:
-                counts = data_counts.setdefault(column, {})
-                counts[style] = counts.get(style, 0) + 1
+        return _record_cell_styles(_with_payloads(sheet_data), headers_provided=headers_provided)
 
-        data_styles: dict[int, int] = {}
-        for column, counts in data_counts.items():
-            data_styles[column] = max(counts.items(), key=lambda item: (item[1], -item[0]))[0]
-        return header_styles, data_styles
-
-    def _find_date_xf(self) -> int | None:
+    def _cell_xf_number_formats(self) -> tuple[list[int], dict[int, str]] | None:
         if not self._package.has("xl/styles.bin"):
             return None
         styles_data = self._package.get("xl/styles.bin")
         in_cell_xfs = False
-        xf_index = 0
+        xf_formats: list[int] = []
         custom_formats: dict[int, str] = {}
         in_number_formats = False
         for record in iter_records(styles_data):
@@ -621,19 +508,13 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                 continue
             if record.record_id == 0x269:
                 in_cell_xfs = True
-                xf_index = 0
                 continue
             if record.record_id == 0x26A:
                 in_cell_xfs = False
                 continue
             if in_cell_xfs and record.record_id == 0x2F and record.length >= 4:
-                number_format_id = struct.unpack_from("<H", payload, 2)[0]
-                if (14 <= number_format_id <= 22) or (45 <= number_format_id <= 47):
-                    return xf_index
-                if date_like_format(custom_formats.get(number_format_id, "")):
-                    return xf_index
-                xf_index += 1
-        return None
+                xf_formats.append(struct.unpack_from("<H", payload, 2)[0])
+        return xf_formats, custom_formats
 
     def _build_rows(
         self,
@@ -884,3 +765,39 @@ class _RowsRegion:
         self.rows_start = rows_start
         self.rows_end = rows_end
         self.auto_filter_ranges = auto_filter_ranges
+
+
+def _with_payloads(data: bytes) -> Iterator[tuple[Biff12Record, bytes]]:
+    """The records of ``data`` with their payloads, as ``iter_records_stream`` yields them."""
+    for record in iter_records(data):
+        yield record, data[record.data_start : record.data_end]
+
+
+def _record_shared_string_cells(records: Iterable[tuple[Biff12Record, bytes]]) -> int:
+    """The number of BrtCellIsst (shared-string) cells."""
+    return sum(1 for record, _ in records if record.record_id == 0x07)
+
+
+def _record_cell_styles(
+    records: Iterable[tuple[Biff12Record, bytes]], *, headers_provided: bool
+) -> tuple[dict[int, int], dict[int, int]]:
+    """Per column: the first style of the header row and the dominant data style."""
+    header_styles: dict[int, int] = {}
+    data_counts: dict[int, dict[int, int]] = {}
+    row = -1
+    for record, payload in records:
+        if record.record_id == 0x00 and record.length >= 4:
+            row = struct.unpack_from("<i", payload, 0)[0]
+            continue
+        if record.record_id not in _CELL_RECORDS or record.length < 8:
+            continue
+        column, style = struct.unpack_from("<II", payload, 0)
+        style &= 0xFFFFFF
+        if style <= 0:
+            continue
+        if headers_provided and row == 0:
+            header_styles.setdefault(column, style)
+        elif row >= 0:
+            counts = data_counts.setdefault(column, {})
+            counts[style] = counts.get(style, 0) + 1
+    return header_styles, dominant_styles(data_counts)

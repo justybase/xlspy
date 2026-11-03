@@ -16,6 +16,7 @@ use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyList, PyString, PyTime, PyTuple, PyType};
+use pyo3::{PyTraverseError, PyVisit};
 
 use crate::bytes::ByteView;
 use crate::dates::serial_datetime;
@@ -283,6 +284,22 @@ struct Model {
     max_column: i64,
     row_max_column: i64,
     current_row: i64,
+}
+
+impl Model {
+    /// Visit every object the model holds, for the reader's `__traverse__`.
+    fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+        self.cell.traverse(visit)?;
+        visit.call(&self.sheet)?;
+        visit.call(&self.cells_dict)?;
+        for number in self.column_numbers.iter().flatten() {
+            visit.call(number)?;
+        }
+        for cell in &self.row_cells {
+            visit.call(cell)?;
+        }
+        Ok(())
+    }
 }
 
 /// Scanner state apart from the byte buffer, so parsing can borrow the
@@ -1153,6 +1170,28 @@ impl XlsxReader {
             self.done = true;
         }
         result
+    }
+
+    // The collector must see what the reader holds: the stream, the shared
+    // strings and, when it builds workbook cells, the sheet and its cells,
+    // which may all refer back to the iterator.
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        visit.call(&self.stream)?;
+        visit.call(&self.state.shared_strings)?;
+        if let Some(model) = &self.state.model {
+            model.traverse(&visit)?;
+        }
+        Ok(())
+    }
+
+    fn __clear__(&mut self) {
+        self.done = true;
+        self.state.model = None;
+        self.state.ss_len = 0;
+        Python::attach(|py| {
+            self.stream = py.None();
+            self.state.shared_strings = PyList::empty(py).unbind();
+        });
     }
 
     /// resume(row_number): continue after a fallback row handled by the caller.

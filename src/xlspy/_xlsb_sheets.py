@@ -11,7 +11,7 @@ are dropped.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from .exceptions import UnsupportedFeatureError
@@ -61,7 +61,7 @@ _EMPTY_SHEET = b"".join((
 class _Entry:
     __slots__ = ("old_index", "state", "tab_id", "rid", "name")
 
-    def __init__(self, old_index, state, tab_id, rid, name):
+    def __init__(self, old_index: int | None, state: int, tab_id: int, rid: str, name: str) -> None:
         self.old_index = old_index
         self.state = state
         self.tab_id = tab_id
@@ -83,7 +83,7 @@ def _bundles(workbook: bytes) -> list[_Entry]:
     return entries
 
 
-def _next_id(taken, prefix: str) -> str:
+def _next_id(taken: Collection[str | None], prefix: str) -> str:
     number = 1
     while f"{prefix}{number}" in taken:
         number += 1
@@ -101,7 +101,7 @@ class XlsbSheetsMixin:
         _package: ZipPackage
         _chartsheets: set[str]
 
-        def _apply_parts(self, parts: dict[str, Any], removed: Any = ()) -> None: ...
+        def _apply_parts(self, parts: Mapping[str, Any], removed: Iterable[str] = ()) -> None: ...
         def _invalidate_calculation(self, updates: Any, removed: Any) -> Any: ...
 
     def get_sheet_states(self) -> dict[str, str]:
@@ -227,7 +227,9 @@ class XlsbSheetsMixin:
         workbook = self._package.get("xl/workbook.bin")
         by_name = {entry.name: entry for entry in _bundles(workbook)}
         entries = [by_name[name] for name in order]
-        if [entry.old_index for entry in entries] == sorted(entry.old_index for entry in entries):
+        # Entries read from workbook.bin always carry their old index.
+        old_indexes = [entry.old_index for entry in entries]
+        if old_indexes == sorted(index for index in old_indexes if index is not None):
             return
         parts: dict[str, Any] = {}
         parts["xl/workbook.bin"] = self._rewrite_sheet_list(workbook, entries, parts)
@@ -258,7 +260,7 @@ class XlsbSheetsMixin:
         if updated != workbook:
             self._apply_parts({"xl/workbook.bin": updated})
 
-    def _rewrite_sheet_list(self, workbook: bytes, entries: list[_Entry], parts) -> bytes:
+    def _rewrite_sheet_list(self, workbook: bytes, entries: list[_Entry], parts: Mapping[str, Any]) -> bytes:
         """``workbook.bin`` with the BrtBundleSh records of ``entries``.
 
         Sheet indexes in the ExternSheet table, local names and book views are
@@ -285,7 +287,7 @@ class XlsbSheetsMixin:
         if not identity:
             count = len(entries)
 
-            def remap_view(first, current):
+            def remap_view(first: int, current: int) -> tuple[int, int]:
                 current = mapping.get(current, min(current, count - 1))
                 first = mapping.get(first, 0)
                 # The active sheet must be visible.
@@ -333,7 +335,7 @@ def _remap_context(context: FormulaContext, mapping: dict[int, int]) -> None:
             name.raw = bytes(raw)
 
 
-def _patch_book_views(workbook: bytes, change) -> bytes:
+def _patch_book_views(workbook: bytes, change: Callable[[int, int], tuple[int, int]]) -> bytes:
     output: list[Any] = []
     for record, payload in records(workbook):
         if record.record_id == BOOK_VIEW and len(payload) >= 28:

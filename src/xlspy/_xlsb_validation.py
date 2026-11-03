@@ -10,7 +10,7 @@ import struct
 
 from ._xlsb_formulas import compile_formula, decode_formula, read_parsed
 from ._xlsb_metadata import read_wide, wide_string
-from .biff_utils import build_record, iter_record_payloads
+from .biff_utils import build_record
 from .data_validation import DataValidation, OPERATORS
 from .refs import column_label, parse_cell_range
 from ._xlsb_print import _NULL_STRING as _NULL_STRING
@@ -149,14 +149,3 @@ def dval_rule(payload: bytes, context) -> DataValidation | None:
         error=error or None,
         error_style=_ERROR_STYLE_NAMES.get((flags >> 4) & 0x07, "stop"),
     )
-
-
-def read_validations(data: bytes, context) -> list[DataValidation]:
-    """The data validation rules of a worksheet part."""
-    rules = []
-    for record_id, payload in iter_record_payloads(data):
-        if record_id == BRT_DVAL:
-            rule = dval_rule(payload, context)
-            if rule is not None:
-                rules.append(rule)
-    return rules

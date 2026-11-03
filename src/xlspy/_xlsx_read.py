@@ -56,7 +56,7 @@ def iter_xlsx_indexed_rows(reader, sheet_name, data_only=True):
         with reader._archive.open(path) as stream:
             probe = _probe_fast(stream)
             if probe is not None:
-                rows = _iter_c(reader, stream, probe)
+                rows = _iter_native(reader, stream, probe)
                 if rows is not None:
                     yield from rows
                     return
@@ -189,7 +189,7 @@ def _probe_fast(stream, with_head=False):
     return result + (head,) if with_head else result
 
 
-def _iter_c(reader, stream, probe):
+def _iter_native(reader, stream, probe):
     """Rows from the native scanner, or None when the extension does not provide it."""
     _text, _decoder, root_tag, ns, raw = probe
     rows = _accel.read_xlsx_worksheet(
@@ -197,10 +197,10 @@ def _iter_c(reader, stream, probe):
         reader._date_1904)
     if rows is None:
         return None
-    return _c_rows(reader, rows, root_tag, ns)
+    return _native_rows(reader, rows, root_tag, ns)
 
 
-def _c_rows(reader, rows, root_tag, ns):
+def _native_rows(reader, rows, root_tag, ns):
     """Resolve the native scanner's fallback rows with the XML parser, as _iter_fast does."""
     next_row = 1
     for item in rows:

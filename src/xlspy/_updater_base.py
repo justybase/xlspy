@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import datetime as _datetime
 import os
+from pathlib import Path
 from typing import Any, Literal
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from .excel_dates import datetime_to_serial
 from .updater_utils import (
@@ -20,10 +21,18 @@ from .updater_utils import (
     TableHeader,
     TableHeaderGuard,
     ZipPackage,
+    copy_stream,
+    date_like_format,
+    header_row_texts,
+    materialize_rows,
     sheet_table_headers,
+    trim_trailing_empty_rows,
 )
 
 StyleFallback = Literal["inherit", "general"]
+
+# Built-in number formats that show a date or time (ECMA-376 18.8.30).
+_BUILT_IN_DATE_FORMATS = frozenset(range(14, 23)) | {45, 46, 47}
 
 
 class _UpdaterBase:
@@ -94,6 +103,102 @@ class _UpdaterBase:
             sheet_table_headers(self._package, sheet_path, self._read_table_header),
         )
 
+    # -- steps shared by replace_sheet_data in both formats ----------------
+
+    def _replacement_sheet_path(self, sheet_name: str, style_fallback: str) -> str:
+        """Check the arguments of a data replacement; return the sheet's part path."""
+
+        if style_fallback not in ("inherit", "general"):
+            raise ValueError("style_fallback must be 'inherit' or 'general'")
+        try:
+            return self._sheets[sheet_name]
+        except KeyError as exc:
+            raise KeyError(f"Worksheet not found: {sheet_name}") from exc
+
+    def _checked_rows(
+        self,
+        sheet_name: str,
+        sheet_path: str,
+        rows: Iterable[Sequence[Any]],
+        headers: Sequence[str] | None,
+    ) -> tuple[list[list[Any]], list[str] | None]:
+        """The rows (materialized, trailing empty rows dropped) and the header
+        values, checked against the header rows of the sheet's tables."""
+
+        materialized = trim_trailing_empty_rows(materialize_rows(rows))
+        header_values = list(headers) if headers is not None else None
+        guard = self._table_header_guard(sheet_name, sheet_path)
+        first_data_row = 0
+        if header_values is not None:
+            guard.check_row(0, header_row_texts(header_values))
+            first_data_row = 1
+        for index, row in enumerate(materialized, start=first_data_row):
+            guard.check_row(index, row)
+        guard.finish()
+        return materialized, header_values
+
+    @staticmethod
+    def _region_size(materialized: list[list[Any]], header_values: list[str] | None) -> tuple[int, int]:
+        """``(rows, columns)`` of the replacement region, the header row included."""
+
+        width = max(
+            [len(row) for row in materialized]
+            + ([len(header_values)] if header_values is not None else [])
+            + [0]
+        )
+        return len(materialized) + (1 if header_values is not None else 0), width
+
+    def _cell_xf_number_formats(self) -> tuple[list[int], dict[int, str]] | None:
+        """The number format id of each cell XF, in order, and the custom format
+        codes by id; None without a styles part (subclass hook)."""
+        raise NotImplementedError
+
+    def _find_date_style(self) -> int | None:
+        """Index of the first cell XF with a date number format, or None.
+
+        Dates written without a style of their own get this one
+        (``style_fallback="inherit"``).
+        """
+
+        found = self._cell_xf_number_formats()
+        if found is None:
+            return None
+        xf_formats, custom_formats = found
+        for index, number_format_id in enumerate(xf_formats):
+            if number_format_id in _BUILT_IN_DATE_FORMATS:
+                return index
+            if date_like_format(custom_formats.get(number_format_id, "")):
+                return index
+        return None
+
+    def _stage_part_copy(self, part: str, suffix: str) -> Path:
+        """A temporary copy of a package part, for a streaming step to read."""
+
+        copy = self._package.temporary_path(suffix=suffix)
+        with self._package.open_entry(part) as source, copy.open("wb") as target:
+            copy_stream(source, target)
+        return copy
+
+    def _rewrite_part_on_disk(self, part: str, suffix: str, rewrite: Callable[[Path, Path], None]) -> None:
+        """Stage ``rewrite(source, output)`` of a part, file to file.
+
+        ``source`` is a temporary copy of the part. The output replaces the
+        part only when ``rewrite`` succeeds; both temporary files are removed
+        otherwise (the source always).
+        """
+
+        source_path = self._stage_part_copy(part, suffix)
+        output_path = self._package.temporary_path(suffix=suffix)
+        output_staged = False
+        try:
+            rewrite(source_path, output_path)
+            self._package.set_file(part, output_path)
+            output_staged = True
+        finally:
+            source_path.unlink(missing_ok=True)
+            if not output_staged:
+                output_path.unlink(missing_ok=True)
+
     def replace_sheet_data_stream(
         self,
         sheet_name: str,
@@ -109,11 +214,7 @@ class _UpdaterBase:
         failure therefore leaves this updater reusable for a later attempt.
         """
 
-        if style_fallback not in ("inherit", "general"):
-            raise ValueError("style_fallback must be 'inherit' or 'general'")
-        if sheet_name not in self._sheets:
-            raise KeyError(f"Worksheet not found: {sheet_name}")
-
+        self._replacement_sheet_path(sheet_name, style_fallback)
         self._ensure_stream_shared_strings()
         store = self._stream_shared_strings
         self._package.begin_transaction()

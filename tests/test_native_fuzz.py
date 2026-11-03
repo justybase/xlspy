@@ -80,8 +80,8 @@ def _rebuild(source, target, part, payload):
 
 def _read_all(path):
     with ExcelReader(str(path)) as reader:
-        sheet = reader.get_sheet_names()[0]
-        return sum(1 for _ in reader.get_rows(sheet))
+        # A mutated workbook part may list no sheets at all.
+        return sum(1 for sheet in reader.get_sheet_names() for _ in reader.get_rows(sheet))
 
 
 @pytest.mark.parametrize("kind", ["xlsb", "xlsx"])
@@ -105,3 +105,42 @@ def test_mutated_worksheets_fail_cleanly(tmp_path, kind):
         slowest = max(slowest, time.perf_counter() - started)
 
     assert slowest < CASE_SECONDS, f"a corrupt {kind} worksheet took {slowest:.1f}s to read"
+
+
+# The other parts every read decodes: shared strings, styles and the workbook.
+# They come from the same untrusted package as the worksheets.
+OTHER_PARTS = {
+    "xlsb": ["xl/sharedStrings.bin", "xl/styles.bin", "xl/workbook.bin"],
+    "xlsx": ["xl/sharedStrings.xml", "xl/styles.xml", "xl/workbook.xml"],
+}
+PART_ITERATIONS = max(1, ITERATIONS // 2)
+
+
+def _load_model(path):
+    from xlspy import load_workbook
+
+    workbook = load_workbook(str(path))
+    return sum(1 for sheet in workbook.worksheets for _ in sheet.iter_rows(values_only=True))
+
+
+@pytest.mark.parametrize("kind,part", [(k, p) for k, parts in OTHER_PARTS.items() for p in parts])
+def test_mutated_workbook_parts_fail_cleanly(tmp_path, kind, part):
+    source = tmp_path / f"seed.{kind}"
+    _write_fixture(source, kind)
+    original = zipfile.ZipFile(source).read(part)
+    target = tmp_path / f"case.{kind}"
+    rng = random.Random(f"{SEED}:{part}")
+
+    slowest = 0.0
+    for _ in range(PART_ITERATIONS):
+        _rebuild(source, target, part, _mutate(original, rng))
+        for read in (_read_all, _load_model):
+            started = time.perf_counter()
+            try:
+                read(target)
+            except InvalidFileError as exc:
+                cause = type(exc.__cause__).__name__
+                assert cause != "PanicException", f"reading {part} panicked: {exc}"
+            slowest = max(slowest, time.perf_counter() - started)
+
+    assert slowest < CASE_SECONDS, f"a corrupt {part} took {slowest:.1f}s to read"

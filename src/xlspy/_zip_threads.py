@@ -1,7 +1,7 @@
 """Deflate ZIP members on a worker thread while the writer encodes more data.
 
 ``zlib`` releases the GIL while it compresses, so a single worker overlaps
-compression with row encoding (C or Python) in the calling thread.
+compression with row encoding (native or Python) in the calling thread.
 
 Two ways in:
 
@@ -51,6 +51,10 @@ class _Pipeline:
     """Feed one ``compressobj`` from the caller and run it on ``executor``."""
 
     def __init__(self, executor: ThreadPoolExecutor, level: int | None):
+        # A compressobj is not thread-safe and its input order is the output:
+        # one worker runs the blocks one at a time, in submission order.
+        if getattr(executor, "_max_workers", 1) != 1:
+            raise ValueError("the deflate pipeline needs a single-worker executor")
         self._executor = executor
         self._deflater = new_deflater(level)
         self._buffer: list[bytes] = []

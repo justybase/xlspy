@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from xlspy import XlsbWriter, XlsxWriter, _accel, _xlsb_writer_bin, _xlsx_writer_sheet
+from xlspy import Font, Style, XlsbWriter, XlsxWriter, _accel, _xlsb_writer_bin, _xlsx_writer_sheet
 
 pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 
@@ -54,3 +54,42 @@ def test_native_rows_match_python_rows(tmp_path, monkeypatch, cls, suffix, share
                 book.write_sheet(rows)
             outputs.append(_sheet(path))
     assert outputs[0] == outputs[1]
+
+
+@pytest.mark.parametrize("cls, suffix", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
+@pytest.mark.parametrize("shared", [True, False])
+def test_styled_date_columns_stay_on_the_native_encoder(tmp_path, monkeypatch, cls, suffix, shared):
+    # A column style on dates needs the style's date variant, which the first
+    # row records; from then on the native encoder writes the rows. XLSB once
+    # sent every such row to the Python encoder (ten times slower).
+    styles = {"A:A": Style(font=Font(name="Arial", italic=True)), "B:C": Style(font=Font(bold=True))}
+    rows = [["date", "datetime", "mixed"]] + [
+        [dt.date(2024, 1, 1) + dt.timedelta(days=i), dt.datetime(2024, 5, 6, 7, 8, i % 60),
+         (dt.date(2024, 2, 3), "yyyy-mm-dd") if i % 3 == 0 else i]
+        for i in range(300)
+    ]
+    outputs, python_rows = [], []
+    for native in (True, False):
+        with monkeypatch.context() as patch:
+            if not native:
+                none = lambda *args, **kwargs: None
+                patch.setattr(_xlsx_writer_sheet, "accel_encode_xlsx_row", none)
+                patch.setattr(_xlsb_writer_bin, "encode_xlsb_row", none)
+                patch.setattr(_xlsb_writer_bin, "encode_xlsb_row_inline", none)
+            calls = []
+            original = _xlsb_writer_bin._XlsbBinMixin._write_python_row
+
+            def counted(self, *args, **kwargs):
+                calls.append(1)
+                return original(self, *args, **kwargs)
+
+            patch.setattr(_xlsb_writer_bin._XlsbBinMixin, "_write_python_row", counted)
+            path = tmp_path / f"{native}.{suffix}"
+            with cls(path, use_shared_strings=shared) as book:
+                book.add_sheet("S")
+                book.write_sheet(rows, styles=styles)
+            outputs.append(_sheet(path))
+            python_rows.append(len(calls))
+    assert outputs[0] == outputs[1]
+    if cls is XlsbWriter:
+        assert python_rows[0] <= 2 < python_rows[1]

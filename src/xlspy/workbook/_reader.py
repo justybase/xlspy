@@ -1465,35 +1465,44 @@ def load_workbook(filename: str | os.PathLike[str], *, read_only: bool = False, 
                               rich_text=rich_text, keep_links=keep_links)
 
 
+def _read_only_workbook(reader: ExcelReader, path: str, *, data_only: bool) -> Workbook:
+    """A read-only Workbook whose sheets stream rows from ``reader`` (already open)."""
+    workbook = Workbook()
+    workbook._sheets.clear()
+    workbook._read_only = True
+    workbook._loaded = True
+    workbook._source_path = path
+    cellless = set(reader.get_chartsheet_names())
+    for index, name in enumerate(reader.get_sheet_names()):
+        if name in cellless:
+            continue  # as in a full load, chartsheets are not worksheets
+        sheet = ReadOnlyWorksheet(
+            workbook, name, reader=reader, data_only=data_only, index=index
+        )
+        if reader._is_xlsb:
+            from .._xlsb_read import sheet_dimension
+            sheet._set_bounds(sheet_dimension(reader, name))
+        else:
+            part = reader._sheet_part(name)
+            if part is not None:
+                sheet._set_bounds(_read_only_bounds(path, part))
+        workbook._sheets.append(sheet)
+    if workbook._sheets:
+        workbook._active_index = 0
+    return workbook
+
+
 def _load_workbook(path: str, *, read_only: bool, data_only: bool, keep_vba: bool, rich_text: bool,
                    keep_links: bool) -> Workbook:
     lower = path.lower()
     if read_only:
         reader = ExcelReader(path)
         reader.open(path)
-        workbook = Workbook()
-        workbook._sheets.clear()
-        workbook._read_only = True
-        workbook._loaded = True
-        workbook._source_path = path
-        cellless = set(reader.get_chartsheet_names())
-        for index, name in enumerate(reader.get_sheet_names()):
-            if name in cellless:
-                continue  # as in a full load, chartsheets are not worksheets
-            sheet = ReadOnlyWorksheet(
-                workbook, name, reader=reader, data_only=data_only, index=index
-            )
-            if reader._is_xlsb:
-                from .._xlsb_read import sheet_dimension
-                sheet._set_bounds(sheet_dimension(reader, name))
-            else:
-                part = reader._sheet_part(name)
-                if part is not None:
-                    sheet._set_bounds(_read_only_bounds(path, part))
-            workbook._sheets.append(sheet)
-        if workbook._sheets:
-            workbook._active_index = 0
-        return workbook
+        try:
+            return _read_only_workbook(reader, path, data_only=data_only)
+        except BaseException:
+            reader.close()  # the workbook is not returned, so nothing else closes it
+            raise
 
     if lower.endswith(".xlsb"):
         from ._xlsb_reader import load_workbook_xlsb

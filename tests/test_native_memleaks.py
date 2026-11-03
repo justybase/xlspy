@@ -246,6 +246,33 @@ def test_prescan_and_widths_no_growth():
 
 
 @needs_native
+def test_width_meter_no_growth():
+    from decimal import Decimal
+
+    from xlspy import Formula, Hyperlink, Style
+    from xlspy._widths import ColumnWidthMeter
+
+    bold = Style(bold=True)
+    extra = ["Zażółć\nline", chr(0xD800), "日本", 1e300, -0.0, 10 ** 30, float("nan"), Decimal("1.25"),
+             (1.5, "0.00%"), (-2.5, "#,##0.00;(#,##0.00)"), ("x", bold), (3, Style(number_format="0.0E+00")),
+             (7, "*@"), Formula("=1+1", 2), Hyperlink("https://example.com", "link")]
+    rows = [_mixed_row(i) + extra for i in range(200)]
+    styles = {1: bold, 3: Style(number_format="0.00"), 4: Style(wrap=True), 8: Style(number_format="0%")}
+
+    def run():
+        meter = ColumnWidthMeter(lambda r, n: styles if r % 2 else {}, None, {0, 3})
+        for idx, row in enumerate(rows):
+            if meter.fast_add is not None and idx not in meter.slow_rows:
+                meter.fast_add(row, styles if idx % 2 else None)
+            else:
+                meter.add(idx, row)
+        meter.widths(16, [(0, 0, 15)])
+
+    assert_no_tracemalloc_growth(run, iters=30, allowance_kb=256.0)
+    assert_no_rss_growth(run, iters=30, allowance_mb=5.0)
+
+
+@needs_native
 def test_worksheet_iterator_no_growth(workbook_parts):
     def run():
         it = read_xlsb_worksheet(SHEET_BLOB, SHARED, STYLES, DATE_FMTS)
@@ -457,7 +484,7 @@ def test_xlsx_fallback_rows_no_growth():
 
     def run():
         rows = read_xlsx_worksheet(io.BytesIO(b""), head, [], [])
-        got = list(_xlsx_read._c_rows(_xlsx_stub(), rows, _XLSX_ROOT, _XLSX_NS))
+        got = list(_xlsx_read._native_rows(_xlsx_stub(), rows, _XLSX_ROOT, _XLSX_NS))
         assert got == [(1, [(0, "a")]), (2, [(0, "a & b")])]
 
     run()
@@ -499,3 +526,49 @@ def test_encoders_with_row_attributes_no_growth():
     run()
     assert_no_tracemalloc_growth(run, iters=100, allowance_kb=256.0)
     assert_no_gc_growth(run, iters=100, allowance=10)
+
+
+class _Sentinel:
+    """A weakly referenceable marker kept alive only by a reader's cycle."""
+
+
+def _cycle_is_collected(make_reader):
+    """A native reader whose shared-string list holds the reader itself (a
+    cycle through the native object) is freed by the collector."""
+    import weakref
+
+    sentinel = _Sentinel()
+    shared = [sentinel]
+    reader = make_reader(shared)
+    shared.append(reader)
+    marker = weakref.ref(sentinel)
+    del sentinel, shared, reader
+    gc.collect()
+    return marker() is None
+
+
+@needs_native
+def test_xlsb_reader_cycle_is_collected(workbook_parts):
+    assert _cycle_is_collected(lambda shared: read_xlsb_worksheet(SHEET_BLOB, shared, STYLES, DATE_FMTS))
+
+
+@needs_native
+def test_xlsx_reader_cycle_is_collected(xlsx_parts):
+    assert _cycle_is_collected(
+        lambda shared: read_xlsx_worksheet(io.BytesIO(XLSX_REST), XLSX_HEAD, shared, XLSX_FLAGS))
+
+
+@needs_native
+def test_registering_a_type_again_takes_no_reference():
+    import sys
+
+    from xlspy import Formula, Hyperlink, Style
+    from xlspy._accel import _native
+    from xlspy._errors import CellError
+
+    for setter, cls in (("set_style_type", Style), ("set_formula_type", Formula),
+                        ("set_hyperlink_type", Hyperlink), ("set_error_type", CellError)):
+        before = sys.getrefcount(cls)
+        for _ in range(100):
+            getattr(_native, setter)(cls)
+        assert sys.getrefcount(cls) == before, setter

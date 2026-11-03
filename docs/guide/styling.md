@@ -161,24 +161,45 @@ Columns you do not size with `column_widths` get an automatic width from the
 first 1000 rows (`autofit_rows`): Excel's own *AutoFit* on a display at 100%
 scaling, plus one spare pixel:
 
-- Text is measured in pixels as Excel measures it: Calibri's glyph widths as
-  Windows (GDI) draws them at 96 DPI, for the cell's font size and weight,
-  plus Excel's margin. Over 11,786 cells measured in Excel (8 to 36 pt,
-  regular and bold, text and numbers) the estimate is Excel's width to the
-  pixel. Chinese, Japanese or Korean characters take about two digits each.
+- Text is measured in pixels as Excel measures it: the glyph widths of the
+  cell's font as Windows (GDI) draws them at 96 DPI, for its size, weight and
+  italic, plus Excel's margin (which grows with the font's digit width) and,
+  for italic text, room for the slant. Over 11,786 Calibri cells measured in
+  Excel (8 to 36 pt, regular and bold, text and numbers) the estimate is
+  Excel's width to the pixel, and so it is for 21 popular fonts in regular,
+  bold, italic and bold italic: Calibri, Calibri Light, Aptos, Aptos Narrow,
+  Arial, Arial Narrow, Arial Black, Times New Roman, Cambria, Consolas,
+  Courier New, Lucida Console, Segoe UI, Tahoma, Verdana, Georgia,
+  Trebuchet MS, Century Gothic, Lucida Sans Unicode, Microsoft Sans Serif
+  and Comic Sans MS.
+- Any other font is measured as Calibri 1.4 times as wide, which covers the
+  text fonts of Windows and Office (Century, Bookman Old Style: up to 1.39)
+  but not display faces such as Cooper Black; a font whose name says it is
+  fixed-pitch (`... Mono`, `... Code`, `... Console`) is measured as
+  Courier New.
+- Characters the font lacks are measured as Excel draws them, from a
+  fallback font: emoji (Segoe UI Emoji), symbols, arrows and box drawing
+  (the widest of the fallback fonts). Unicode spaces (em, en, thin, ...) and
+  tabs take their typographic width. Chinese, Japanese or Korean characters
+  take about two digits each.
+- Rich text (`CellRichText`) is measured run by run, each in its own font: a
+  `TextBlock`'s unset font fields are Excel's default (Calibri 11), not the
+  cell's.
+- An alignment indent (`Alignment(indent=n)`, the indent of outline-style
+  labels) takes 9 pixels per level, twice for centred text.
 - Numbers and dates are measured as Excel shows them: `(1234567.891, "#,##0.00")`
   as `1,234,567.89`, General numbers with at most 11 characters besides the
   sign (with room for a decimal point as wide as a digit, as Excel keeps),
   and dates with their format. Month and day names, `TRUE`/`FALSE`, default
   dates and separators depend on the reader's language, so they get room for
   the long renderings.
-- Bold text, a `Font(size=...)` from the cell's style, and wrapped text (the
-  longest line) are taken into account. Other fonts are measured as Calibri.
+- The cell style's font (name, size, bold, italic) and wrapped text (the
+  longest line) are taken into account.
 - At other display scalings Excel measures text at the scaled size, where
   letters round differently; the widths are then usually a little wider than
   that Excel's own AutoFit.
-- Header cells under a filter or table drop-down button get two extra
-  characters for the button.
+- Header cells under a filter or table drop-down button get 16 more pixels
+  for the button (about 2.3 characters), as Excel's AutoFit does.
 - A column is never narrower than Excel's default width (8.43).
 
 Two options of `write_sheet()` (also `SheetOptions`, `write_dataframe()`,
@@ -194,16 +215,21 @@ writer.write_sheet(
 
 - `autofit_rows` (default `1000`): values past these rows are not measured.
   The rows are measured as they stream past, so `None` costs no memory, only
-  time: measuring takes about 1-2 microseconds per cell, several times what
-  writing the cell costs. On 50,000 rows x 50 columns the XLSB file takes
-  0.5 s with the default and 4.9 s with `None`; 500,000 rows x 6 columns,
-  1.1 s and 3.9 s.
+  time. With the native extension (the default) a cell takes about 0.03
+  microseconds to measure, and a cell that cannot widen its column (a number
+  in a column already as wide as any number can need, text too short to
+  matter) is skipped unmeasured. `None` adds about 30% to the time of an
+  XLSB file (50,000 rows x 50 columns: 0.35 s and 0.45 s; 500,000 rows x 6
+  columns: 0.7 s and 0.9 s) and 10-20% to an XLSX file. Without it
+  (`XLSPY_ACCEL=python`) a cell takes 1-2 microseconds, and `None` adds
+  several seconds to such files.
 - `autofit_padding` (default `0`): extra room, in characters, for each
-  measured column, for example for a font that is not Calibri or for a
-  reader with a wider locale. Columns that stay at the default width and
+  measured column, for example for a font wider than 1.4 times Calibri or
+  for a reader with a wider locale. Columns that stay at the default width and
   columns in `column_widths` do not get it.
 
-`tools/gdi_column_widths.py` regenerates the glyph widths from Windows, and
+`tools/gdi_column_widths.py` regenerates the glyph widths of the fonts from
+Windows (`src/xlspy/_font_metrics.py`), and
 `tools/score_column_widths.py` compares the estimate with Excel's AutoFit
 widths recorded by `tools/calibrate_column_widths.py` (run it on a display at
 100% scaling).

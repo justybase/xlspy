@@ -32,6 +32,11 @@ fn register(type_: &Bound<'_, PyAny>, slot: &AtomicPtr<ffi::PyObject>, what: &st
     let type_ = type_
         .cast::<PyType>()
         .map_err(|_| PyTypeError::new_err(format!("{what} expects a class")))?;
+    if slot.load(Ordering::Acquire) == type_.as_ptr() {
+        return Ok(()); // registered again (a module reload): keep the one reference
+    }
+    // A class replaced by another stays referenced: a borrowed pointer to it
+    // may still be in use, so it is never released (one reference per class).
     slot.store(type_.clone().into_ptr(), Ordering::Release);
     Ok(())
 }

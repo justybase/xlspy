@@ -7,9 +7,10 @@
 //! undersized records are ignored.  A record cut short by the end of the data
 //! raises InvalidFileError.
 
-use pyo3::exceptions::{PyMemoryError, PyTypeError};
+use pyo3::exceptions::{PyMemoryError, PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySet, PyString, PyTuple};
+use pyo3::{PyTraverseError, PyVisit};
 
 use crate::bytes::{ByteView, le_f64, le_u32, read_rk, read_varint};
 use crate::dates::xlsb_date_value;
@@ -122,6 +123,20 @@ pub fn number(py: Python<'_>, value: f64) -> PyResult<Bound<'_, PyAny>> {
     }
 }
 
+/// Date-formatted cell value: the datetime, or the number when the serial is
+/// outside the datetime range (NaN, infinite, past 9999), as Excel shows ####.
+fn date_or_number(py: Python<'_>, value: f64, date_1904: bool) -> PyResult<Bound<'_, PyAny>> {
+    match xlsb_date_value(py, value, date_1904) {
+        Ok(moment) => Ok(moment),
+        Err(e)
+            if e.is_instance_of::<PyValueError>(py) || e.is_instance_of::<PyOverflowError>(py) =>
+        {
+            number(py, value)
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// Context of the cell parser: what a sheet's cells are decoded against.
 pub struct CellContext<'a, 'py> {
     pub shared_strings: &'a Bound<'py, PyList>,
@@ -161,7 +176,7 @@ impl<'py> CellContext<'_, 'py> {
                 }
                 let v = read_rk(data, body + 8);
                 if self.is_date_xf(xf) {
-                    xlsb_date_value(py, v, self.date_1904)?
+                    date_or_number(py, v, self.date_1904)?
                 } else {
                     number(py, v)?
                 }
@@ -181,7 +196,7 @@ impl<'py> CellContext<'_, 'py> {
                 }
                 let v = le_f64(data, body + 8);
                 if self.is_date_xf(xf) {
-                    xlsb_date_value(py, v, self.date_1904)?
+                    date_or_number(py, v, self.date_1904)?
                 } else {
                     number(py, v)?
                 }
@@ -484,6 +499,24 @@ impl XlsbReader {
             self.done = true; // an error ends the iteration, like the reference
         }
         result
+    }
+
+    // The collector must see what the reader holds: a shared-string list or a
+    // cell that refers back to the iterator would otherwise keep both alive.
+    // (The buffer's source is bytes-like and cannot take part in a cycle.)
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        visit.call(&self.shared_strings)?;
+        for cell in self.cur_cells.iter().flatten() {
+            visit.call(cell)?;
+        }
+        Ok(())
+    }
+
+    fn __clear__(&mut self) {
+        self.done = true;
+        self.cur_cells.clear();
+        self.ss_len = 0;
+        Python::attach(|py| self.shared_strings = PyList::empty(py).unbind());
     }
 }
 
