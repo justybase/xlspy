@@ -61,7 +61,8 @@ def _readable_value_cell(kind: int, payload: bytes) -> bool:
     if len(payload) < _VALUE_CELL_MIN[kind]:
         return False
     if kind == 6:
-        return struct.unpack_from('<I', payload, 8)[0] * 2 + 12 <= len(payload)
+        chars: int = struct.unpack_from('<I', payload, 8)[0]
+        return chars * 2 + 12 <= len(payload)
     return True
 
 
