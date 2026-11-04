@@ -121,7 +121,7 @@ class _Parser:
             position = match.end()
             if token.isspace():
                 continue
-            if _TABLE_NAME.fullmatch(token) and text[position:position + 1] == '[':
+            if text[position:position + 1] == '[' and _TABLE_NAME.fullmatch(token):
                 spec, position = _scan_group(text, position)
                 token = _Structured(token, spec)
             self.tokens.append(token)
