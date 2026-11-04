@@ -1,10 +1,33 @@
+import ctypes
 import gc
 import os
 import shutil
+import sys
 
 import pytest
 
 PROJECT_TMP = os.path.join(os.path.dirname(__file__), "..", ".test_tmp")
+
+
+def system_dpi():
+    """The display's real DPI on Windows (96 is 100% scaling), else None.
+
+    Excel's AutoFit depends on it. A process that does not declare DPI awareness
+    is told 96 whatever the scaling, so this asks from a per-monitor aware thread.
+    """
+    if sys.platform != "win32":
+        return None
+    user32 = ctypes.windll.user32
+    if not hasattr(user32, "SetThreadDpiAwarenessContext"):
+        return user32.GetDpiForSystem() if hasattr(user32, "GetDpiForSystem") else None
+    set_context = user32.SetThreadDpiAwarenessContext
+    set_context.restype = ctypes.c_void_p
+    set_context.argtypes = [ctypes.c_void_p]
+    previous = set_context(ctypes.c_void_p(-3))  # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE
+    try:
+        return user32.GetDpiForSystem()
+    finally:
+        set_context(previous)
 
 
 # Marker -> (environment variable that opts in, skip reason). One gate for every

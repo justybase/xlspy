@@ -11,6 +11,8 @@ import datetime
 
 import pytest
 
+from conftest import system_dpi
+
 pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 from xlspy import (  # noqa: E402
@@ -337,6 +339,8 @@ WIDTH_ROWS = [
 
 @pytest.mark.parametrize("writer_cls,ext", WRITERS)
 def test_automatic_widths_are_not_narrower_than_excel_autofit(tmp_path, open_workbook, writer_cls, ext):
+    if system_dpi() != 96:
+        pytest.skip("Excel's AutoFit depends on the display scaling; needs 100% (96 DPI)")
     path = tmp_path / f"widths.{ext}"
     with writer_cls(path) as writer:
         writer.add_sheet("Data")

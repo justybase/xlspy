@@ -4,25 +4,17 @@ dates take the widest locale rendering, so they only must not be narrower.
 Column widths are defined at 96 DPI, and Excel measures AutoFit at the
 display's scaling, so this runs only on a display at 100%."""
 
-import ctypes
 import datetime
-import sys
 
 import pytest
 
+from conftest import system_dpi as _system_dpi
 from test_column_widths import EXCEL_AUTOFIT_100, EXCEL_AUTOFIT_SAMPLES, SPARE
 from xlspy import Alignment, Font, Group, Style, XlsbWriter, XlsxWriter
 from xlspy._widths import cell_width
 from xlspy.refs import column_label
 
 pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
-
-
-def _system_dpi():
-    if sys.platform != "win32":
-        return None
-    user32 = ctypes.windll.user32
-    return user32.GetDpiForSystem() if hasattr(user32, "GetDpiForSystem") else None
 
 
 def test_widths_match_excel_autofit(tmp_path, excel, open_workbook):
