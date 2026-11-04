@@ -252,8 +252,9 @@ class DefinedName:
         elif self.localSheetId is not None:
             scope = f' localSheetId="{self.localSheetId}"'
         hidden = ' hidden="1"' if self.hidden else ""
+        comment = f" comment={quoteattr(self.comment)}" if self.comment else ""
         return (
-            f'<definedName xmlns="{MAIN}" name={quoteattr(self.name)}{scope}{hidden}>'
+            f'<definedName xmlns="{MAIN}" name={quoteattr(self.name)}{scope}{hidden}{comment}>'
             f"{escape(self.formula)}</definedName>"
         )
 
@@ -283,6 +284,7 @@ def read_defined_names(xml: str | bytes, sheets) -> list[DefinedName]:
                     if node.get("hidden") is None
                     else node.get("hidden", "0").lower() in {"1", "true"}
                 ),
+                comment=node.get("comment") or None,
             )
         )
     return result

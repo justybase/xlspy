@@ -435,6 +435,15 @@ def decode_formula(data, context, *, sheet=None, origin=(0, 0), name_formula=Fal
 _NAME_HIDDEN = 0x1
 
 
+def _name_comment(raw: bytes, formula_offset: int) -> str | None:
+    """The comment of a BrtName: the string after its formula, None when there is none."""
+    try:
+        end = read_parsed(raw, formula_offset)[2]
+        return read_wide(raw, end, nullable=True)[0] or None
+    except (ValueError, struct.error):
+        return None
+
+
 @dataclass
 class _Name:
     name: str
@@ -615,7 +624,9 @@ class FormulaContext:
                 definition = entry.definition.resolved(self.sheets)
                 scope_id = 0xFFFFFFFF if definition.scope is None else definition.localSheetId
                 formula = compile_formula(definition.formula, self, sheet=definition.scope, name_formula=True)
-                entry.raw = struct.pack('<IBI', entry.flags, 0, scope_id) + wide_string(definition.name) + formula + b'\xff' * 4
+                # What follows the formula is the name's comment (a null string when there is none).
+                comment = wide_string(definition.comment) if definition.comment else b'\xff' * 4
+                entry.raw = struct.pack('<IBI', entry.flags, 0, scope_id) + wide_string(definition.name) + formula + comment
             if entry.raw is None:
                 raise ValueError(f"formula references undefined name {entry.name!r}")
             index += 1
@@ -635,6 +646,7 @@ class FormulaContext:
                     entry.name, decode_formula(entry.raw[offset:], self, sheet=scope, name_formula=True), scope,
                     localSheetId=None if scope is None else list(self.sheets).index(scope),
                     hidden=True if entry.flags & _NAME_HIDDEN else None,
+                    comment=_name_comment(entry.raw, offset),
                 ))
         return result
 

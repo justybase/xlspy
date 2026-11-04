@@ -306,7 +306,7 @@ def _read_workbook_parts(
     names = reader.get_defined_names()
     workbook._defined_names = DefinedNameList(workbook, names)
     workbook._loaded_defined_names = {
-        (item.name, item.formula, item.scope) for item in names
+        (item.name, item.formula, item.scope, item.hidden, item.comment) for item in names
     }
     workbook._loaded_worksheet_names = set(workbook.sheetnames)
     states = updater.get_sheet_states()

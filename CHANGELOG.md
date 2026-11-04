@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `DefinedName.comment` was dropped by every XLSX and XLSB writer, updater and reader: the attribute
+  existed but was neither written nor read. It is now saved as the `comment` attribute of
+  `<definedName>` and as the comment string of `BrtName` (Excel shows it in the Name Manager and
+  reads what xlspy writes, in both formats), and a changed comment or `hidden` flag of a name of a
+  loaded XLSB is saved by the model. Names without a comment are written as before, byte for byte.
 - `ExcelReader.get_rows()` on XLSB lost data without an error: cells left of the first cell of the
   first row were dropped and the others moved. With a title in B1 over a table from A3, the first
   column of the table was gone, and a sheet starting at E6 read as if it started at A1.
