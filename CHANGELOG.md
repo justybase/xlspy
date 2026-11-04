@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ExcelTable.totals_row_functions` selects each column's totals function (`sum`, `average`, `min`,
+  ...), or `label`; without it the cell decides: text is a label, a number a sum, a formula a custom
+  total.
+
+### Fixed
+
+- An XLSB table with a totals row opens in Excel: the table part sets `fShownTotalRow`, writes every
+  column's totals function or label, keeps the totals row out of its filter, and omits the filter for
+  a headerless table. Moving the range of a loaded totals table recomputes that metadata.
+- An XLSX table with a totals row keeps it when Excel opens the file: `totalsRowCount` and the
+  per-column totals attributes are written instead of `totalsRowShown` alone.
+
 ## [0.13.0] - 2026-11-04
 
 ### Breaking changes

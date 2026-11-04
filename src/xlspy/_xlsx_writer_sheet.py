@@ -56,6 +56,7 @@ from .styles import (
     _style_ids_for_row,
     _xf_for_style_format,
     capture_table_headers,
+    capture_table_totals,
     merge_styles,
     parse_cell_range,
     styles_for_row,
@@ -218,18 +219,19 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             meter = ColumnWidthMeter(
                 lambda r, length: styles_for_row(r, length, *width_styles), spec.autofit[0], button_rows,
             )
+            table_totals: dict = {}
             body = self._write_body(
                 data, row_sink,
                 spec.style_ranges, spec.header_style if has_styles else None,
                 spec.heights, spec.hidden_rows, has_styles,
                 spec.tables,
-                row_outline=spec.row_outline, meter=meter,
+                row_outline=spec.row_outline, meter=meter, table_totals=table_totals,
             )
             same_sheet = self._place_pivots(feeders, sheet_name, row_sink, body)
             if segment is not None:
                 segment.finish()
                 segment = None
-            table_rels, table_bounds = self._register_tables(spec.tables, sheet_id, body)
+            table_rels, table_bounds = self._register_tables(spec.tables, sheet_id, body, table_totals)
             rels, link_rels, drawing_rid, slicer_rids = self._register_sheet_parts(
                 sheet_id, sheet_index, spec, body, table_rels, (pending or []) + same_sheet,
             )
@@ -470,7 +472,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
 
     def _write_body(self, data, spool, style_ranges, header_style, heights,
                     hidden_row_set, has_styles, table_headers=(),
-                    row_outline=None, meter=None):
+                    row_outline=None, meter=None, table_totals=None):
         """Encode every row into ``spool`` and return a ``_SheetBody``.
 
         ``meter`` measures the automatic column widths of the first rows (its
@@ -516,6 +518,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
 
         if table_headers:
             data = capture_table_headers(data, table_headers, header_rows)
+            if table_totals is not None:
+                data = capture_table_totals(data, table_headers, table_totals)
         last_written = -1  # index of the last <row> written
         for row_idx, row in enumerate(data):
             row_styles = (

@@ -21,30 +21,51 @@ from .styles import (
 )
 from ._xlsx_writer_xml import _DEFAULT_MARGINS, _REL_HYPERLINK, _REL_TABLE, _format_number, _outline_col_attr
 from ._xlsx_writer_host import _XlsxWriterHost
+from ._table_totals import totals_choice
 
 
 class _XlsxSheetXmlMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
-    def _table_xml(self, table: ExcelTable, table_id: int, names: list[str]) -> str:
+    def _table_xml(self, table: ExcelTable, table_id: int, names: list[str], totals_cells=None) -> str:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
         ref = (
             f"{self._letters[first_col]}{first_row + 1}:"
             f"{self._letters[last_col]}{last_row + 1}"
+        )
+        filter_last_row = last_row - 1 if table.totals_row else last_row
+        filter_ref = (
+            f"{self._letters[first_col]}{first_row + 1}:"
+            f"{self._letters[last_col]}{filter_last_row + 1}"
         )
         name = saxutils.escape(table.display_name, {'"': '&quot;'})
         # Names must equal the header cells as Excel reads them, so they get the
         # same _xHHHH_ escapes; line feeds and tabs need character references
         # in an attribute, where XML would read them as spaces.
         attr_entities = {'"': '&quot;', '\n': '&#10;', '\t': '&#9;'}
-        columns_xml = "".join(
-            f'<tableColumn id="{i + 1}" name="{xstring_escape(saxutils.escape(nm, attr_entities))}"/>'
-            for i, nm in enumerate(names)
-        )
-        totals = ' totalsRowShown="1"' if table.totals_row else ""
+        explicit = getattr(table, "totals_row_functions", None)
+        columns = []
+        for index, column_name in enumerate(names):
+            attrs = f'id="{index + 1}" name="{xstring_escape(saxutils.escape(column_name, attr_entities))}"'
+            child = ""
+            if table.totals_row:
+                cell = totals_cells[index] if totals_cells is not None and index < len(totals_cells) else None
+                chosen = explicit[index] if explicit is not None and index < len(explicit) else None
+                function, label, formula = totals_choice(cell, chosen)
+                if function == "custom":
+                    attrs += ' totalsRowFunction="custom"'
+                    child = f"<totalsRowFormula>{saxutils.escape(formula or '')}</totalsRowFormula>"
+                elif function in ("label", "none"):
+                    if label is not None:
+                        attrs += f' totalsRowLabel="{saxutils.escape(label, attr_entities)}"'
+                else:
+                    attrs += f' totalsRowFunction="{function}"'
+            columns.append(f"<tableColumn {attrs}>{child}</tableColumn>" if child else f"<tableColumn {attrs}/>")
+        columns_xml = "".join(columns)
+        totals = ' totalsRowCount="1" totalsRowShown="1"' if table.totals_row else ""
         header_count = "1" if table.header_row else "0"
         if table.header_row:
-            auto = f'<autoFilter ref="{ref}"/>'
+            auto = f'<autoFilter ref="{filter_ref}"/>'
         else:
             auto = ""
         style_name = saxutils.escape(table.style_name, {'"': "&quot;"})
@@ -64,7 +85,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             f"{style_xml}</table>"
         )
 
-    def _register_tables(self, table_specs, sheet_id, body):
+    def _register_tables(self, table_specs, sheet_id, body, table_totals=None):
         """Assign table ids and relationships; returns ``(rels, bounds)``."""
         rels = []
         bounds = [parse_cell_range(table.ref) for table in table_specs]
@@ -75,7 +96,12 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             body.table_refs.add(f"{self._letters[c1]}{r1 + 1}:{self._letters[c2]}{r2 + 1}")
             names = table_column_names(table, body.header_rows.get(r1))
             self._table_info[table.display_name.casefold()] = (table_id, list(names))
-            self._tables_xml[table_id] = self._table_xml(table, table_id, names)
+            totals = None
+            if table_totals is not None:
+                totals = table_totals.get(r2)
+                if totals is not None:
+                    totals = totals[c1:c2 + 1]
+            self._tables_xml[table_id] = self._table_xml(table, table_id, names, totals)
             rid = f"rId{position}"
             rels.append((rid, _REL_TABLE, f"../tables/table{table_id}.xml", False))
             sheet_tables.append((rid, table_id))

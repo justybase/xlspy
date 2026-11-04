@@ -247,7 +247,9 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             if totals is not None:
                 totals = totals[first_col:last_col + 1]
             self._table_registry[table_id] = (table.display_name, names, sheet_name)
-            self._tables_bin[table_id] = self._table_bin(table, table_id, names, totals)
+            self._tables_bin[table_id] = self._table_bin(
+                table, table_id, names, totals, self._formula_context(), sheet_name,
+            )
             table_columns[table.display_name.casefold()] = (table_id, names)
         if slicer_rid is not None:
             self._write_slicer_parts(sheet_id, slicer_rid, spec.slicers, table_columns)

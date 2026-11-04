@@ -17,10 +17,13 @@ from dataclasses import dataclass, field
 from ._xlsb_metadata import read_wide, records, wide_string
 from .biff_utils import build_record, iter_record_payloads
 from ._safe_xml import fromstring as safe_fromstring
+from ._table_totals import totals_function, totals_label
+from ._table_totals_names import ILTA_CUSTOM
 from .refs import column_label, parse_cell_range
 
 _BEGIN_LIST, _BEGIN_LIST_COL, _TABLE_STYLE_CLIENT, _BEGIN_AUTO_FILTER = 0x157, 0x15B, 0x201, 0xA1
 _END_LIST = 0x158
+_LIST_TR_FMLA = 0x160
 _TOTALS_FUNCTIONS = {
     1: "average", 2: "count", 3: "countNums", 4: "max", 5: "min",
     6: "sum", 7: "stdDev", 8: "var", 9: "custom",
@@ -37,6 +40,7 @@ class TablePartColumn:
     name: str | None
     totals_function: str | None
     totals_label: str | None
+    totals_formula: bytes | None = None
 
 
 @dataclass
@@ -64,6 +68,7 @@ class TablePart:
 def parse_table_part(data: bytes) -> TablePart | None:
     """The table a part describes, or None when it has no BrtBeginList."""
     table = None
+    current_column = None
     for record_id, payload in iter_record_payloads(data):
         if record_id == _BEGIN_LIST and table is None:
             r1, r2, c1, c2, _kind, ident, header, totals, _flags = struct.unpack_from("<9I", payload, 0)
@@ -84,11 +89,14 @@ def parse_table_part(data: bytes) -> TablePart | None:
             name, offset = read_wide(payload, 24, nullable=True)
             caption, offset = read_wide(payload, offset, nullable=True)
             label, offset = read_wide(payload, offset, nullable=True)
-            table.columns.append(TablePartColumn(
+            current_column = TablePartColumn(
                 id=ident, name=caption or name,
                 totals_function=_TOTALS_FUNCTIONS.get(totals_function),
                 totals_label=label or None,
-            ))
+            )
+            table.columns.append(current_column)
+        elif record_id == _LIST_TR_FMLA and current_column is not None:
+            current_column.totals_formula = payload[1:]
         elif record_id == _TABLE_STYLE_CLIENT:
             flags = struct.unpack_from("<H", payload, 0)[0]
             style, _ = read_wide(payload, 2, nullable=True)
@@ -111,6 +119,7 @@ class TableEdit:
     column_names: list[str]
     auto_filter_ref: str | None = None
     style: TablePartStyle | None = None
+    totals_cells: list | None = None
 
 
 def _nullable(text: str | None) -> bytes:
@@ -141,6 +150,7 @@ def patch_table_part(data: bytes, edit: TableEdit) -> bytes:
     """
     out: list[bytes] = []
     column = 0
+    current_ilta = None
     seen_list = seen_filter = seen_style = False
     for record, payload in records(data):
         kind = record.record_id
@@ -154,8 +164,9 @@ def patch_table_part(data: bytes, edit: TableEdit) -> bytes:
             strings = payload[64:after_display]
             if _name != edit.name or _display != edit.name:
                 strings = _nullable(edit.name) + _nullable(edit.name)
+            flags = head[8] | 0x01 if edit.totals_rows else head[8]
             new = (
-                _rfx(edit.ref) + struct.pack("<5I", head[4], head[5], edit.header_rows, edit.totals_rows, head[8])
+                _rfx(edit.ref) + struct.pack("<5I", head[4], head[5], edit.header_rows, edit.totals_rows, flags)
                 + payload[36:64] + strings + payload[after_display:]
             )
             out.append(build_record(kind, new))
@@ -168,14 +179,37 @@ def patch_table_part(data: bytes, edit: TableEdit) -> bytes:
         elif kind == _BEGIN_LIST_COL:
             name, after_name = read_wide(payload, 24, nullable=True)
             caption, after_caption = read_wide(payload, after_name, nullable=True)
+            label, after_label = read_wide(payload, after_caption, nullable=True)
             wanted = edit.column_names[column]
+            new_name, new_caption = name, caption
+            if (caption or name) != wanted:
+                if caption:
+                    new_caption = wanted
+                else:
+                    new_name = wanted
+            new_ilta = struct.unpack_from("<I", payload, 4)[0]
+            new_label = label
+            if edit.totals_cells is not None:
+                cell = edit.totals_cells[column] if column < len(edit.totals_cells) else None
+                new_ilta = totals_function(cell)
+                new_label = totals_label(cell)
+            current_ilta = new_ilta
             column += 1
-            if (caption or name) == wanted:
+            if (new_ilta, new_name, new_caption, new_label) == (
+                struct.unpack_from("<I", payload, 4)[0], name, caption, label,
+            ):
                 out.append(original)
-            elif caption:
-                out.append(build_record(kind, payload[:after_name] + _nullable(wanted) + payload[after_caption:]))
             else:
-                out.append(build_record(kind, payload[:24] + _nullable(wanted) + payload[after_name:]))
+                column_head = payload[:4] + struct.pack("<I", new_ilta) + payload[8:24]
+                out.append(build_record(
+                    kind,
+                    column_head + _nullable(new_name) + _nullable(new_caption)
+                    + _nullable(new_label) + payload[after_label:],
+                ))
+        elif kind == _LIST_TR_FMLA and edit.totals_cells is not None:
+            if current_ilta == ILTA_CUSTOM:
+                out.append(original)
+            # The new totals function is not custom: its formula record is gone.
         elif kind == _TABLE_STYLE_CLIENT and not seen_style:
             seen_style = True
             if edit.style is None:

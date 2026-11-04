@@ -19,6 +19,7 @@ from .xlsx_updater import XlsxUpdater
 from .xlsb_updater import XlsbUpdater
 
 if TYPE_CHECKING:
+    from ._xlsb_formulas import FormulaContext
     from ._xlsb_sheets import _Entry
     from .updater_utils import ZipPackage
 
@@ -75,6 +76,10 @@ class PackageHandle:
 
     def part_or_none(self, path: str) -> bytes | None:
         return self.package.get(path) if self.package.has(path) else None
+
+    def formula_context(self) -> FormulaContext:
+        """A formula context over this XLSB package and the tables its save writes."""
+        return self._xlsb()._context(self.package.get("xl/workbook.bin"), self.part_or_none)
 
     def tag_prefix(self, xml: str, tag: str) -> str:
         """The namespace prefix (``""`` or ``"x:"``) the XML uses for ``tag``."""

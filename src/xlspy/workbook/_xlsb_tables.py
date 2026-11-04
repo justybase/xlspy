@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from .._xlsb_metadata import read_wide, replace_records, wide_string
 from .._xlsb_table_part import TableEdit, TablePart, TablePartStyle, parse_table_part, patch_table_part, table_catalog
+from .._table_totals import totals_formula
 from ..biff_utils import build_record, iter_record_payloads
 from ..exceptions import UnsupportedFeatureError
 from ..styles.core import table_column_names
@@ -96,10 +97,24 @@ def _listed(package: _Package, path: str, rels: Any, data: bytes) -> list[_Liste
     return listed
 
 
+def _model_column_names(table: Any) -> list[Any]:
+    """The column names the model holds for ``table``.
+
+    A table the workbook loaded keeps its columns in ``tableColumns``; a table added by an earlier
+    save of this session is kept as the ``ExcelTable`` that was added, with ``columns``.
+    """
+    columns = getattr(table, "tableColumns", None)
+    if columns is not None:
+        return [column.name for column in columns]
+    added = getattr(table, "columns", None)
+    return list(added) if added is not None else []
+
+
 def _edit_for(sheet: Worksheet, table: Any, part: TablePart) -> TableEdit:
     """What the part of a loaded table is to say after the edits of the model."""
     excel = _as_excel_table(table)
-    names = [column.name for column in table.tableColumns]
+    totals_changed = bool(excel.totals_row) != bool(part.totals_rows)
+    names = _model_column_names(table)
     if names:
         if len(names) != len(part.columns) or not all(isinstance(name, str) and name for name in names):
             raise ValueError(f"table {excel.display_name!r}: its columns do not match its range")
@@ -110,7 +125,7 @@ def _edit_for(sheet: Worksheet, table: Any, part: TablePart) -> TableEdit:
         wanted = table.autoFilter.ref if table.autoFilter is not None else part.auto_filter_ref
         if wanted != part.auto_filter_ref:
             auto_filter = wanted
-        elif excel.ref != part.ref and part.auto_filter_ref == _data_range(part.ref, part.totals_rows or 0):
+        elif (excel.ref != part.ref or totals_changed) and part.auto_filter_ref == _data_range(part.ref, part.totals_rows or 0):
             auto_filter = _data_range(excel.ref, int(excel.totals_row))
     style = None
     info = table.tableStyleInfo
@@ -119,9 +134,18 @@ def _edit_for(sheet: Worksheet, table: Any, part: TablePart) -> TableEdit:
             name=info.name, first_column=bool(info.showFirstColumn), last_column=bool(info.showLastColumn),
             row_stripes=bool(info.showRowStripes), column_stripes=bool(info.showColumnStripes),
         )
+    totals_cells = None
+    if excel.totals_row and (excel.ref != part.ref or totals_changed):
+        totals_cells = _row_values(sheet, excel, parse_cell_range(excel.ref)[3])
+        if any(totals_formula(cell) is not None for cell in totals_cells):
+            raise UnsupportedFeatureError(
+                f"table {excel.display_name!r}: changing the range of a table with a formula "
+                "totals row cannot be saved into a loaded XLSB workbook yet"
+            )
     return TableEdit(
         ref=excel.ref, name=excel.display_name, header_rows=int(excel.header_row),
         totals_rows=int(excel.totals_row), column_names=names, auto_filter_ref=auto_filter, style=style,
+        totals_cells=totals_cells,
     )
 
 
@@ -207,8 +231,9 @@ def sync_tables(updater: XlsbUpdater, sheet: Worksheet, pending: tuple[PendingTa
     if not (added or removed or edited):
         return
 
+    handle = PackageHandle(updater)
     package = _Package(updater)
-    path = PackageHandle(updater).sheets[sheet.title]
+    path = handle.sheets[sheet.title]
     rels = package.rels(path)
     data = package.get(path) or b""
     listed = _listed(package, path, rels, data)
@@ -283,10 +308,13 @@ def sync_tables(updater: XlsbUpdater, sheet: Worksheet, pending: tuple[PendingTa
                     package.types.remove(node)
     planned = {id(item.table): item.ident for item in pending}
     next_id = max([table.id or 0 for table in others] + [part.id for part in parsed], default=0) + 1
+    formula_context = handle.formula_context()
     for (table, excel), columns, totals in zip(final[len(kept):], new_columns, new_totals):
         part = package.free_part("xl/tables", "table", "bin")
         ident = planned.get(id(table), next_id)
-        package.set(part, cast(Any, XlsbWriter)._table_bin(XlsbWriter, excel, ident, columns, totals))
+        package.set(part, cast(Any, XlsbWriter)._table_bin(
+            XlsbWriter, excel, ident, columns, totals, formula_context, sheet.title,
+        ))
         package.override(part, _TABLE_TYPE)
         rids.append(package.add_rel(rels, path, "table", part))
         next_id = max(next_id, ident) + 1

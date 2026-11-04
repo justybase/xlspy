@@ -281,6 +281,14 @@ Renaming the sheet rewrites the references in a loaded XLSX workbook.
 The library does not shift sparkline or slicer ranges when rows or columns are inserted or deleted
 in a loaded workbook; update those ranges yourself if the layout changes.
 
+### Tables with totals rows
+
+`ExcelTable(..., totals_row=True)` treats the last row of `ref` as the totals row. The cell value
+decides the column's totals function: text is a label, a number is a sum, a formula is a custom
+total. Pass `totals_row_functions=("label", "average")` to choose a function per column instead
+(`sum`, `average`, `count`, `countNums`, `max`, `min`, `stdDev`, `var`, `custom`, `label` or
+`none`); `None` keeps the inference. Both writers record the totals row, so Excel shows it.
+
 ### Table slicers
 
 A slicer filters a table by one of its columns. The table must have a header row and be on the

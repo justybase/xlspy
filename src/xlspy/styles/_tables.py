@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
+from .._table_totals_names import TOTALS_FUNCTION_NAMES
 from ..formats import _unwrap_cell
 from ..hyperlinks import Hyperlink
 from ..refs import column_label, parse_cell_range
@@ -22,6 +23,7 @@ class ExcelTable:
     show_last_column: bool = False
     show_row_stripes: bool = True
     show_column_stripes: bool = False
+    totals_row_functions: tuple[str | None, ...] | None = None
 
     def __post_init__(self):
         if not isinstance(self.display_name, str) or _TABLE_NAME_RE.fullmatch(
@@ -56,6 +58,29 @@ class ExcelTable:
             value = getattr(self, name)
             if not isinstance(value, bool):
                 raise TypeError(f"{name} must be bool")
+        if self.totals_row:
+            _, first_row, _, last_row = parse_cell_range(self.ref)
+            if last_row - first_row + 1 <= (1 if self.header_row else 0) + 1:
+                raise ValueError(
+                    f"table {self.display_name!r}: a totals row needs at least one data row"
+                )
+        if self.totals_row_functions is not None:
+            if not self.totals_row:
+                raise ValueError("totals_row_functions needs totals_row=True")
+            if not isinstance(self.totals_row_functions, (list, tuple)):
+                raise TypeError("totals_row_functions must be a list or tuple")
+            functions = tuple(self.totals_row_functions)
+            if len(functions) != last_col - first_col + 1:
+                raise ValueError(
+                    "len(totals_row_functions) must match the table ref width"
+                )
+            for function in functions:
+                if function is not None and function not in TOTALS_FUNCTION_NAMES:
+                    raise ValueError(
+                        f"invalid totals function {function!r}; expected one of "
+                        f"{sorted(TOTALS_FUNCTION_NAMES)} or None"
+                    )
+            object.__setattr__(self, "totals_row_functions", functions)
         if not isinstance(self.style_name, str):
             raise TypeError("style_name must be a string")
 

@@ -6,7 +6,6 @@ import io
 import re
 import uuid
 import xml.sax.saxutils as saxutils
-from typing import Any
 from ._accel import encode_xlsb_sst as accel_encode_xlsb_sst
 from . import chart_parts
 from .styles import (
@@ -27,12 +26,14 @@ from ._xlsb_pivots import (
 from .pivots import (
     pivot_table_rels_xml,
 )
-from ._xlsb_writer_consts import _ACUID_NAMESPACE, _BRT_AC_BEGIN, _BRT_AC_END, _BRT_BEGIN_AUTOFILTER, _BRT_BEGIN_CF, _BRT_BEGIN_LIST, _BRT_BEGIN_LIST_COL, _BRT_BEGIN_LIST_COLS, _BRT_BEGIN_LIST_PARTS, _BRT_END_AUTOFILTER, _BRT_END_CF, _BRT_END_LIST, _BRT_END_LIST_COL, _BRT_END_LIST_COLS, _BRT_END_LIST_PARTS, _BRT_FRT_BEGIN, _BRT_LIST_PART, _BRT_TABLE_STYLE_CLIENT, _REL_PIVOT_CACHE, _REL_PIVOT_TABLE
+from ._xlsb_writer_consts import _ACUID_NAMESPACE, _BRT_AC_BEGIN, _BRT_AC_END, _BRT_BEGIN_AUTOFILTER, _BRT_BEGIN_CF, _BRT_BEGIN_LIST, _BRT_BEGIN_LIST_COL, _BRT_BEGIN_LIST_COLS, _BRT_BEGIN_LIST_PARTS, _BRT_END_AUTOFILTER, _BRT_END_CF, _BRT_END_LIST, _BRT_END_LIST_COL, _BRT_END_LIST_COLS, _BRT_END_LIST_PARTS, _BRT_FRT_BEGIN, _BRT_LIST_PART, _BRT_LIST_TR_FMLA, _BRT_TABLE_STYLE_CLIENT, _REL_PIVOT_CACHE, _REL_PIVOT_TABLE
 from ._xlsb_writer_host import _XlsbWriterHost
 from .styles import ColorScaleRule, DataBarRule, DifferentialStyle, IconSetRule
 from ._xlsb_metadata import comments_bin
 from .comments import vml_xml
-from .formulas import Formula
+from ._xlsb_formulas import compile_formula
+from ._table_totals import totals_choice
+from ._table_totals_names import ILTA_BY_NAME, ILTA_CUSTOM
 
 
 class _XlsbPartsMixin(_XlsbWriterHost):
@@ -81,24 +82,8 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         out += build_record(_BRT_AC_END, b"")
         return out
 
-    @staticmethod
-    def _totals_function(cell: Any) -> int:
-        """The totals function (``ilta``) a totals-row cell needs.
-
-        Excel refuses a table whose non-empty totals cell is not a label and has
-        no function: ``ilta`` none allows only text or an empty cell. Text is
-        its own label; a number is the cached result of a sum; a formula is a
-        custom total.
-        """
-        if cell is None:
-            return 0
-        if isinstance(cell, Formula):
-            return 9
-        if isinstance(cell, str):
-            return 9 if cell.startswith("=") else 0
-        return 6
-
-    def _table_bin(self, table, table_id: int, names: list[str], totals_cells=None) -> bytes:
+    def _table_bin(self, table, table_id: int, names: list[str], totals_cells=None,
+                   formula_context=None, sheet_name=None) -> bytes:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
         totals_row = bool(table.totals_row)
         out = bytearray()
@@ -126,31 +111,46 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         out.extend(build_record(_BRT_BEGIN_LIST, bytes(payload)))
         out.extend(self._acuid(f"{table_id}:{table.display_name}:list"))
         # AutoFilter range inside the table part; the totals row is not filtered.
-        filter_last_row = last_row - 1 if totals_row else last_row
-        out.extend(build_record(
-            _BRT_BEGIN_AUTOFILTER,
-            self._encode_rfx(first_col, first_row, last_col, filter_last_row),
-        ))
-        out.extend(build_record(_BRT_END_AUTOFILTER, b""))
+        # A table without a header row has no filter.
+        if table.header_row:
+            filter_last_row = last_row - 1 if totals_row else last_row
+            out.extend(build_record(
+                _BRT_BEGIN_AUTOFILTER,
+                self._encode_rfx(first_col, first_row, last_col, filter_last_row),
+            ))
+            out.extend(build_record(_BRT_END_AUTOFILTER, b""))
         # ListCols
         out.extend(build_record(
             _BRT_BEGIN_LIST_COLS, struct.pack("<I", len(names)),
         ))
+        explicit = getattr(table, "totals_row_functions", None)
         for idx, col_name in enumerate(names, start=1):
             cell = totals_cells[idx - 1] if totals_row and totals_cells is not None and idx <= len(totals_cells) else None
+            chosen = explicit[idx - 1] if explicit is not None and idx <= len(explicit) else None
+            function, label, formula = totals_choice(cell, chosen)
+            ilta = ILTA_BY_NAME.get(function, 0)
             out.extend(self._acuid(f"{table_id}:{table.display_name}:{idx}"))
             col_payload = bytearray()
             col_payload.extend(struct.pack("<I", idx))
-            col_payload.extend(struct.pack("<I", self._totals_function(cell)))
+            col_payload.extend(struct.pack("<I", ilta))
             for _ in range(3):
                 col_payload.extend(struct.pack("<i", -1))
             col_payload.extend(struct.pack("<I", 0))  # idqsif
             col_payload.extend(self._encode_nullable_wstring(None))
             col_payload.extend(self._encode_nullable_wstring(col_name))
-            col_payload.extend(self._encode_nullable_wstring(None))
+            col_payload.extend(self._encode_nullable_wstring(label))
             for _ in range(3):
                 col_payload.extend(self._encode_nullable_wstring(None))
             out.extend(build_record(_BRT_BEGIN_LIST_COL, bytes(col_payload)))
+            if ilta == ILTA_CUSTOM:
+                if formula is None or formula_context is None:
+                    raise ValueError(
+                        f"table {table.display_name!r}: the totals formula needs a formula context")
+                parsed = compile_formula(
+                    formula, formula_context, sheet=sheet_name,
+                    origin=(first_col + idx - 1, last_row),
+                )
+                out.extend(build_record(_BRT_LIST_TR_FMLA, b"\x00" + parsed))
             out.extend(build_record(_BRT_END_LIST_COL, b""))
         out.extend(build_record(_BRT_END_LIST_COLS, b""))
         # TableStyleClient
