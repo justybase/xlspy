@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Tables of a loaded XLSB can be changed and removed, as in XLSX: the range, the name, the style and
+  its banding, the filter range and the column names (which must still equal the header cells), and
+  `del ws.tables["Name"]` / `ws.tables.remove(...)`. The part of a changed table keeps every record
+  the model cannot express (totals, column formulas, formats, filter criteria); the parts of other
+  tables keep their bytes. A table with another number of columns, and a rename or removal in a
+  workbook with pivot tables or slicers, raise `UnsupportedFeatureError` before anything is written.
+  Until now any such edit was refused.
+
 ### Changed
 
 - `ExcelReader.get_rows()` on XLSB returns rows of the same shape as on XLSX, by every path (bulk,

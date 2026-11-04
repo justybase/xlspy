@@ -453,9 +453,13 @@ def test_loaded_xlsb_saves_with_formatting_and_tables(formatted, tmp_path):
         loaded.close()
 
 
-def test_table_edits_are_refused(formatted, tmp_path):
-    with pytest.raises(NotImplementedError, match="table"):
-        save_after(formatted, tmp_path, lambda s: s.tables.pop(0))
+def test_a_removed_table_is_saved(formatted, tmp_path):
+    save_after(formatted, tmp_path, lambda s: s.tables.pop(0))
+    loaded = load_workbook(tmp_path / "out.xlsb")
+    try:
+        assert len(loaded.active.tables) == 0
+    finally:
+        loaded.close()
 
 
 def test_conditional_formats_are_added_next_to_the_files_own(formatted, tmp_path):

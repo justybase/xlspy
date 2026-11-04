@@ -16,7 +16,7 @@ from ._drawings import check_removals, remember_drawing_objects, remove_drawing_
 from ._chartsheets import check_chartsheets
 from ._xlsb_chartsheets import add_chartsheets_xlsb
 from ._xlsb_drawings import add_drawing_objects
-from ._xlsb_tables import add_tables
+from ._xlsb_tables import sync_tables
 from ._objects import _object_values, check_unread, object_signatures
 from ._xlsb_layout import changed_groups, layout_state, patch_layout, save_builtin_names
 
@@ -33,6 +33,8 @@ def remember_saved_state(sheet) -> None:
         for name in ("charts", "images", "tables", "data_validations", "conditional_formatting")
     }
     sheet._saved_object_signatures = object_signatures(sheet)
+    # The loaded table objects, by identity: what save compares the sheet's tables with.
+    sheet._saved_table_objects = list(sheet.tables)
     sheet._saved_layout = layout_state(sheet)
     remember_drawing_objects(sheet)
 
@@ -58,10 +60,6 @@ def _reject_unsupported_sheet_edits(sheet) -> None:
     check_removals(sheet)
     saved = sheet._saved_object_signatures
     current = object_signatures(sheet)
-    before = saved.get("tables", ())
-    # Tables can be added; changing or removing a loaded one is not saved yet.
-    if current["tables"][:len(before)] != before:
-        raise _unsupported_loaded_feature("table changes")
     check_unread(sheet, [
         name for name in ("data_validations", "conditional_formatting")
         if current[name] != saved.get(name, ())
@@ -127,12 +125,12 @@ def _sync_sheet_list(workbook, updater) -> None:
 
 
 def _save_defined_names(workbook, updater, renamed) -> None:
-    names = {(item.name, item.formula, item.scope) for item in workbook.defined_names}
+    names = {(item.name, item.formula, item.scope, item.hidden, item.comment) for item in workbook.defined_names}
     previous = getattr(workbook, "_loaded_defined_names", names)
     if names == previous:
         return
     handle = PackageHandle(updater)
-    for name, _formula, scope in previous - names:
+    for name, _formula, scope, _hidden, _comment in previous - names:
         scope = renamed.get(scope, scope)
         # Names local to a removed sheet went with it.
         if scope is None or scope in handle.sheets:
@@ -254,7 +252,7 @@ def save_loaded_xlsb(workbook, filename) -> None:
         remove_drawing_objects(updater, sheet)
         save_chart_edits(updater, sheet)
         add_drawing_objects(updater, sheet)
-        add_tables(updater, sheet)
+        sync_tables(updater, sheet)
     add_chartsheets_xlsb(updater, workbook)
     states = updater.get_sheet_states()
     for chartsheet in workbook._chartsheets:

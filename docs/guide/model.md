@@ -124,7 +124,7 @@ silently.
 | Sheet protection | yes | yes | yes | yes ³ |
 | Print setup (area, titles, page setup, margins, header/footer, breaks) | yes | yes | yes | yes |
 | Conditional formatting | yes | yes | yes ⁴ | yes ⁴ |
-| Tables | yes | yes | yes | add only ⁵ |
+| Tables | yes | yes | yes | yes ⁵ |
 | Charts, images | yes | add, edit ⁶ | yes | add, remove |
 | Auto filter range | yes | yes | yes | yes ⁷ |
 | Document properties | yes | yes | yes | yes |
@@ -148,8 +148,14 @@ data bars and icon sets stay in the file but are not loaded. In XLSB, each
 rule left as it was read keeps its Excel 2010 extension (negative bar colours,
 axes, gradient settings); a changed or removed rule loses its own extension.
 
-⁵ Tables can be added to a loaded XLSB; changing or removing a table that the
-file holds raises `UnsupportedFeatureError`.
+⁵ Tables can be added, removed and changed in a loaded XLSB: the range, the name,
+the style (name and banding), the filter range and the column names. Only the
+records of what changed are re-encoded, so the rest of the table's part (totals,
+column formulas, formats, filter criteria) and the parts of the tables you did not
+touch keep their bytes. Not saved: a table with another number of columns (the
+range's width must stay) raises `UnsupportedFeatureError`, and so does renaming or
+removing a table in a workbook that holds pivot tables or slicers, which would be
+left pointing at the old table. Formulas that use a table's name are not rewritten.
 
 ⁶ The title, axis titles, legend position, series titles and colours of a
 loaded chart can be changed; the rest of its XML is kept.

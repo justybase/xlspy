@@ -11,11 +11,12 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from ._xlsb_metadata import read_wide
-from .biff_utils import iter_record_payloads
-from .refs import column_label
+from ._xlsb_metadata import read_wide, records, wide_string
+from .biff_utils import build_record, iter_record_payloads
+from .refs import column_label, parse_cell_range
 
 _BEGIN_LIST, _BEGIN_LIST_COL, _TABLE_STYLE_CLIENT, _BEGIN_AUTO_FILTER = 0x157, 0x15B, 0x201, 0xA1
+_END_LIST = 0x158
 _TOTALS_FUNCTIONS = {
     1: "average", 2: "count", 3: "countNums", 4: "max", 5: "min",
     6: "sum", 7: "stdDev", 8: "var", 9: "custom",
@@ -93,3 +94,98 @@ def parse_table_part(data: bytes) -> TablePart | None:
                 row_stripes=bool(flags & 0x04), column_stripes=bool(flags & 0x08),
             )
     return table
+
+
+@dataclass
+class TableEdit:
+    """What a table part is to say after an edit; None keeps what the part holds."""
+
+    ref: str
+    name: str
+    header_rows: int
+    totals_rows: int
+    column_names: list[str]
+    auto_filter_ref: str | None = None
+    style: TablePartStyle | None = None
+
+
+def _nullable(text: str | None) -> bytes:
+    return struct.pack("<I", 0xFFFFFFFF) if text is None else wide_string(text)
+
+
+def _rfx(ref: str) -> bytes:
+    first_col, first_row, last_col, last_row = parse_cell_range(ref)
+    return struct.pack("<IIII", first_row, last_row, first_col, last_col)
+
+
+def _style_payload(style: TablePartStyle, rest: bytes, old_flags: int = 0) -> bytes:
+    flags = (old_flags & ~0x0F) | (
+        (0x01 if style.first_column else 0) | (0x02 if style.last_column else 0)
+        | (0x04 if style.row_stripes else 0) | (0x08 if style.column_stripes else 0)
+    )
+    return struct.pack("<H", flags) + _nullable(style.name) + rest
+
+
+def patch_table_part(data: bytes, edit: TableEdit) -> bytes:
+    """``data`` with the records an edit changes re-encoded and every other record kept.
+
+    The range, names, header and totals counts of BrtBeginList, the range of the
+    table's filter, the names of its columns and its style are what the object
+    model can change; the rest of the part (column formulas, totals, formats,
+    filter criteria, extensions) keeps its bytes. The edit must keep the table's
+    number of columns.
+    """
+    out: list[bytes] = []
+    column = 0
+    seen_list = seen_filter = seen_style = False
+    for record, payload in records(data):
+        kind = record.record_id
+        original = data[record.header_start:record.data_end]
+        if kind == _BEGIN_LIST and not seen_list:
+            seen_list = True
+            head = struct.unpack_from("<9I", payload, 0)
+            _name, after_name = read_wide(payload, 64, nullable=True)
+            _display, after_display = read_wide(payload, after_name, nullable=True)
+            _comment, after_comment = read_wide(payload, after_display, nullable=True)
+            strings = payload[64:after_display]
+            if _name != edit.name or _display != edit.name:
+                strings = _nullable(edit.name) + _nullable(edit.name)
+            new = (
+                _rfx(edit.ref) + struct.pack("<5I", head[4], head[5], edit.header_rows, edit.totals_rows, head[8])
+                + payload[36:64] + strings + payload[after_display:]
+            )
+            out.append(build_record(kind, new))
+        elif kind == _BEGIN_AUTO_FILTER and not seen_filter:
+            seen_filter = True
+            if edit.auto_filter_ref is None:
+                out.append(original)
+            else:
+                out.append(build_record(kind, _rfx(edit.auto_filter_ref) + payload[16:]))
+        elif kind == _BEGIN_LIST_COL:
+            name, after_name = read_wide(payload, 24, nullable=True)
+            caption, after_caption = read_wide(payload, after_name, nullable=True)
+            wanted = edit.column_names[column]
+            column += 1
+            if (caption or name) == wanted:
+                out.append(original)
+            elif caption:
+                out.append(build_record(kind, payload[:after_name] + _nullable(wanted) + payload[after_caption:]))
+            else:
+                out.append(build_record(kind, payload[:24] + _nullable(wanted) + payload[after_name:]))
+        elif kind == _TABLE_STYLE_CLIENT and not seen_style:
+            seen_style = True
+            if edit.style is None:
+                out.append(original)
+            else:
+                _style, after_style = read_wide(payload, 2, nullable=True)
+                old_flags = struct.unpack_from("<H", payload, 0)[0]
+                out.append(build_record(kind, _style_payload(edit.style, payload[after_style:], old_flags)))
+        elif kind == _END_LIST and not seen_style and edit.style is not None:
+            seen_style = True
+            out.append(build_record(_TABLE_STYLE_CLIENT, _style_payload(edit.style, b"")))
+            out.append(original)
+        else:
+            out.append(original)
+    if not seen_list or column != len(edit.column_names):
+        raise ValueError("the table part does not match the edit (number of columns)")
+    return b"".join(out)
