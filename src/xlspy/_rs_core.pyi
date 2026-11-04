@@ -40,6 +40,7 @@ __all__ = [
     "ModelCells",
     "xlsb_load_cells",
     "xlsb_sheet_scan",
+    "xlsx_edit_scan",
     "read_xlsx_worksheet",
     "XlsxReader",
     "WidthMeter",
@@ -147,6 +148,12 @@ def xlsb_sheet_scan(data: ReadableBuffer) -> tuple[
     list[tuple[int, int, int, int]],
     tuple[int, int, tuple[int, int, int, int]] | None,
     tuple[int, int, int, int] | None,
+] | None: ...
+def xlsx_edit_scan(body: str, targets: list[str]) -> tuple[
+    tuple[int, int, int, int] | None,
+    list[tuple[str, str | None, bool]],
+    int | None,
+    list[tuple[str, int]],
 ] | None: ...
 def xlsb_load_cells(
     data: ReadableBuffer,

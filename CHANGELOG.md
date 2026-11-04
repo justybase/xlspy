@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   row no longer widens the rows after it, and a sheet of empty rows gives `[[], []]`, not
   `[[None], [None]]`.
 
+- `XlsxUpdater.update_cells`, which the save of a loaded XLSX uses, finds what it needs in a sheet
+  (the bounds of its cells, the cells being edited, the formulas that forbid an edit) with a
+  native scan instead of a parsed element tree and a loop over every cell. On a sheet of 1,000,000
+  cells, 1,000 edits take 0.40 s instead of 1.23 s, and the save of a loaded workbook 0.60 s
+  instead of 1.69 s; the bytes written are the same. Only the plain markup that Excel and the
+  writers produce is scanned that way (unprefixed names, double quotes, references in their normal
+  form); any other part goes through ElementTree as before. A part that is not well formed, has a
+  document type declaration or is not a worksheet is refused as before, before the edits are read.
+
 ### Fixed
 
 - `ExcelReader.get_rows()` on XLSB lost data without an error: cells left of the first cell of the

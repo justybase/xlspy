@@ -18,8 +18,9 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from typing import IO, Any
+from xml.parsers import expat
 
-__all__ = ["fromstring", "iterparse", "harden_expat"]
+__all__ = ["check_well_formed", "fromstring", "iterparse", "harden_expat"]
 
 # Items allowed in the prolog: a byte-order mark, white space, processing
 # instructions (including the XML declaration) and comments.
@@ -71,6 +72,17 @@ def fromstring(text):
     """``ElementTree.fromstring`` that refuses a document type declaration."""
     _refuse_if_doctype(text)
     return ET.fromstring(text)
+
+
+def check_well_formed(text) -> None:
+    """Refuse what ``fromstring`` refuses, without building a tree: a document type
+    declaration or markup that is not well formed (``ET.ParseError``)."""
+    _refuse_if_doctype(text)
+    parser = harden_expat(expat.ParserCreate(None, "}"))
+    try:
+        parser.Parse(text, True)
+    except expat.ExpatError as error:
+        raise ET.ParseError(str(error)) from error
 
 
 class _PrologGuard:

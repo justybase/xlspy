@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from collections.abc import Collection, Iterable, Mapping, MutableMapping, Sequence
@@ -11,7 +12,8 @@ import math
 import numbers
 import re
 from xml.etree import ElementTree as ET
-from ._safe_xml import fromstring as safe_fromstring
+from . import _accel
+from ._safe_xml import check_well_formed, fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
 from ._sheet_data import insert_rows, patch_rows, set_dimension_ref, sheet_data_match
@@ -90,6 +92,21 @@ class XlsxEditMixin:
         if root.tag != f"{{{MAIN}}}worksheet":
             raise ValueError(f"{sheet_name!r} is not a worksheet")
         return path, xml, root
+
+    def _sheet_scan_source(self, sheet_name: str) -> tuple[str, str, Any, _PlainSheet | None]:
+        """What update_cells scans: the XML checked, and either its parsed tree or,
+        for the plain markup the native scan reads, the places in the text. A tree
+        is built only when the text is not plain; a part that is not well formed, or
+        not a worksheet, is refused here either way."""
+        path, xml = self._sheet_text(sheet_name)
+        fast = _fast_sheet(xml) if _accel.xlsx_edit_scan is not None else None
+        if fast is not None:
+            check_well_formed(xml)
+            return path, xml, None, fast
+        root = safe_fromstring(xml)
+        if root.tag != f"{{{MAIN}}}worksheet":
+            raise ValueError(f"{sheet_name!r} is not a worksheet")
+        return path, xml, root, None
 
     def _sheet_xml(self, sheet_name: str) -> tuple[str, str]:
         path, xml, _ = self._sheet_root(sheet_name)
@@ -310,7 +327,7 @@ class XlsxEditMixin:
         """Update sparse cells, preserving styles, notes and untouched cell XML."""
         if not isinstance(cells, Mapping):
             raise TypeError("cells must map cell references to values")
-        path, xml, root = self._sheet_root(sheet_name)
+        path, xml, root, fast = self._sheet_scan_source(sheet_name)
         values = {}
         for ref, value in cells.items():
             ref = cell_ref(ref)
@@ -319,37 +336,13 @@ class XlsxEditMixin:
             values[ref] = unwrap_cell(value)
         if not values:
             return
-        # The cells being edited, and the bounds of all of them: a sheet has far
-        # more cells than an edit has targets.
-        edited_nodes = []
-        edited_rows = {parse_cell_range(ref)[1] + 1 for ref in values}
-        cell_bounds = None
-        next_row = 1
-        for row_node in root.findall(f"{{{MAIN}}}sheetData/{{{MAIN}}}row"):
-            row_number = int(row_node.get("r", next_row))
-            next_row = row_number + 1
-            next_column = 0
-            for cell in row_node.findall(f"{{{MAIN}}}c"):
-                position, column, row = _located_cell(cell.get("r"), next_column, row_number, edited_rows)
-                next_column = column + 1
-                if position in values:
-                    edited_nodes.append((position, cell))
-                if cell_bounds is None:
-                    cell_bounds = [column, row, column, row]
-                else:
-                    if column < cell_bounds[0]:
-                        cell_bounds[0] = column
-                    elif column > cell_bounds[2]:
-                        cell_bounds[2] = column
-                    if row < cell_bounds[1]:
-                        cell_bounds[1] = row
-                    elif row > cell_bounds[3]:
-                        cell_bounds[3] = row
-        merge_nodes = root.findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell")
-        if merge_nodes:
+        scan = None if fast is None else _fast_scan(xml, fast, list(values))
+        if scan is None:
+            scan = _tree_scan(root if root is not None else safe_fromstring(xml), values)
+        if scan.merges:
             merged = RangeIndex()
-            for merge in merge_nodes:
-                merged.add(parse_cell_range(merge.attrib["ref"]))
+            for merge in scan.merges:
+                merged.add(parse_cell_range(merge))
             for ref in values:
                 col, row, _, _ = parse_cell_range(ref)
                 for c1, r1, _, _, _ in merged.overlapping((col, row, col, row)):
@@ -357,19 +350,11 @@ class XlsxEditMixin:
                         raise ValueError("merged cells must be updated through their top-left cell")
         # Refuse edits into array/shared formula groups; writing one member alone
         # would leave the other cells dependent on a missing formula master.
-        shared_ids = {f.get("si") for _, c in edited_nodes
-                      for f in c.findall(f"{{{MAIN}}}f") if f.get("t") == "shared"}
-        for formula in root.iter(f"{{{MAIN}}}f"):
-            if formula.get("t") == "shared" and formula.get("si") in shared_ids:
-                raise ValueError("editing members of shared formula groups is unsupported")
-            if formula.get("t") in {"array", "dataTable"} and formula.get("ref"):
-                c1, r1, c2, r2 = parse_cell_range(formula.attrib["ref"])
-                if any(c1 <= parse_cell_range(ref)[0] <= c2 and r1 <= parse_cell_range(ref)[1] <= r2 for ref in values):
-                    raise ValueError("editing members of array/data-table formulas is unsupported")
+        _refuse_formula_groups(scan, values)
         for ref, value in values.items():
             if isinstance(value, Formula) and value.array_ref is not None:
                 raise ValueError("update_cells supports scalar formulas only")
-        sheet_data = sheet_data_match(xml)
+        sheet_data = fast.sheet_data if fast is not None else sheet_data_match(xml)
         if sheet_data is None:
             raise ValueError("Worksheet sheetData element was not found")
         prefix = sheet_data["prefix"] or ""
@@ -397,18 +382,17 @@ class XlsxEditMixin:
         xml = xml[:sheet_data.start()] + body + xml[sheet_data.end():]
         # Expand dimensions, never shrink existing coverage or filters/tables.
         refs = list(values)
-        dimension = root.find(f"{{{MAIN}}}dimension")
-        if dimension is not None and dimension.get("ref"):
-            refs.extend(dimension.attrib["ref"].split(":"))
+        if scan.dimension:
+            refs.extend(scan.dimension.split(":"))
         spans: list[Sequence[int]] = [parse_cell_range(ref) for ref in refs]
-        if cell_bounds is not None:
-            spans.append(cell_bounds)
+        if scan.bounds is not None:
+            spans.append(scan.bounds)
         first = f"{column_label(min(b[0] for b in spans))}{min(b[1] for b in spans) + 1}"
         last = f"{column_label(max(b[2] for b in spans))}{max(b[3] for b in spans) + 1}"
         xml = set_dimension_ref(xml, f"{first}:{last}")
         updates = {path: xml}
         removed: list[str] = []
-        removed_shared_refs = sum(c.get("t") == "s" for _, c in edited_nodes)
+        removed_shared_refs = sum(kind == "s" for _, kind, _ in scan.edited)
         if removed_shared_refs:
             rels = safe_fromstring(self._package.get("xl/_rels/workbook.xml.rels"))
             for relationship in rels:
@@ -422,7 +406,7 @@ class XlsxEditMixin:
                     if "count" in attrs:
                         updated_tag = replace_or_add_xml_attribute(opening[0], "count", max(0, int(attrs["count"]) - removed_shared_refs))
                         updates[part] = strings[:opening.start()] + updated_tag + strings[opening.end():]
-        old_formula = any(c.find(f"{{{MAIN}}}f") is not None for _, c in edited_nodes)
+        old_formula = any(has_formula for _, _, has_formula in scan.edited)
         if old_formula or any(isinstance(value, Formula) for value in values.values()):
             self._recalculate(updates, removed)
         self._apply_parts(updates, removed)
@@ -470,6 +454,126 @@ class XlsxEditMixin:
                         types.remove(ct)
         updates[rp] = _bytes(rels)
         updates["[Content_Types].xml"] = _bytes(types)
+
+
+@dataclass
+class _EditScan:
+    """What update_cells needs to know of a sheet before it edits it."""
+
+    bounds: tuple[int, int, int, int] | None  # of all cells, zero-based
+    edited: list[tuple[str, str | None, bool]]  # reference, ``t`` and whether it has a formula
+    shared_hit: int | None  # index, among all <f>, of the first shared formula of an edited group
+    arrays: list[tuple[str, int]]  # reference and index of each array / data-table formula
+    merges: list[str]
+    dimension: str | None
+
+
+@dataclass
+class _PlainSheet:
+    """A worksheet part in the plain markup the native scan reads."""
+
+    sheet_data: Any
+    merges: list[str]
+    dimension: str | None
+
+
+_ROOT_OPEN = re.compile(r"\s*(?:<\?[^>]*\?>\s*)?<worksheet(?=[\s>])([^>]*)>")
+_DIMENSION_REF = re.compile(r"<dimension\s[^>]*?\bref=\"([^\"]*)\"")
+_MERGE_CELL = re.compile(r"<mergeCell\s[^>]*?\bref=\"([^\"]*)\"")
+_FORMULA_OPEN = re.compile(r"<f[\s>/]")
+
+
+def _fast_sheet(xml: str) -> _PlainSheet | None:
+    """The places of a worksheet in its text, or None when its markup is not plain:
+    unprefixed names, the main namespace declared once, in the root, and no formula
+    outside the cells. The caller still has to check that it is well formed."""
+    sheet_data = sheet_data_match(xml)
+    if sheet_data is None or sheet_data["prefix"]:
+        return None
+    head, tail = xml[:sheet_data.start()], xml[sheet_data.end():]
+    root = _ROOT_OPEN.match(head)
+    if root is None or f'xmlns="{MAIN}"' not in root[1] or xml.count("xmlns") != root[1].count("xmlns"):
+        return None
+    if _FORMULA_OPEN.search(head) or _FORMULA_OPEN.search(tail):
+        return None
+    dimension = _DIMENSION_REF.search(head)
+    merges = _MERGE_CELL.findall(tail)
+    if (dimension is not None and "&" in dimension[1]) or any("&" in ref for ref in merges):
+        return None
+    return _PlainSheet(sheet_data, merges, None if dimension is None else dimension[1])
+
+
+def _fast_scan(xml: str, fast: _PlainSheet, targets: list[str]) -> _EditScan | None:
+    """The native scan of the cells, or None for markup it leaves to the tree."""
+    scanned = _accel.xlsx_edit_scan(fast.sheet_data[0], targets)
+    if scanned is None:
+        return None
+    bounds, edited, shared_hit, arrays = scanned
+    return _EditScan(bounds, edited, shared_hit, arrays, fast.merges, fast.dimension)
+
+
+def _tree_scan(root: Any, values: Mapping[str, object]) -> _EditScan:
+    """The twin of the native scan, over the element tree: it answers the same for
+    every sheet the native scan reads (tests/test_xlsx_edit_scan.py compares them)."""
+    # The cells being edited, and the bounds of all of them: a sheet has far
+    # more cells than an edit has targets.
+    edited_nodes = []
+    edited_rows = {parse_cell_range(ref)[1] + 1 for ref in values}
+    cell_bounds = None
+    next_row = 1
+    for row_node in root.findall(f"{{{MAIN}}}sheetData/{{{MAIN}}}row"):
+        row_number = int(row_node.get("r", next_row))
+        next_row = row_number + 1
+        next_column = 0
+        for cell in row_node.findall(f"{{{MAIN}}}c"):
+            position, column, row = _located_cell(cell.get("r"), next_column, row_number, edited_rows)
+            next_column = column + 1
+            if position in values:
+                edited_nodes.append((position, cell))
+            if cell_bounds is None:
+                cell_bounds = [column, row, column, row]
+            else:
+                if column < cell_bounds[0]:
+                    cell_bounds[0] = column
+                elif column > cell_bounds[2]:
+                    cell_bounds[2] = column
+                if row < cell_bounds[1]:
+                    cell_bounds[1] = row
+                elif row > cell_bounds[3]:
+                    cell_bounds[3] = row
+    groups = {f.get("si") for _, c in edited_nodes for f in c.findall(f"{{{MAIN}}}f") if f.get("t") == "shared"}
+    first_in_group: dict[str | None, int] = {}
+    arrays = []
+    for index, formula in enumerate(root.iter(f"{{{MAIN}}}f")):
+        kind = formula.get("t")
+        if kind == "shared":
+            first_in_group.setdefault(formula.get("si"), index)
+        elif kind in {"array", "dataTable"} and formula.get("ref"):
+            arrays.append((formula.attrib["ref"], index))
+    hits = [first_in_group[group] for group in groups if group in first_in_group]
+    dimension = root.find(f"{{{MAIN}}}dimension")
+    return _EditScan(
+        None if cell_bounds is None else tuple(cell_bounds),  # type: ignore[arg-type]
+        [(str(position), cell.get("t"), cell.find(f"{{{MAIN}}}f") is not None) for position, cell in edited_nodes],
+        min(hits) if hits else None,
+        arrays,
+        [node.attrib["ref"] for node in root.findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell")],
+        dimension.get("ref") if dimension is not None else None,
+    )
+
+
+def _refuse_formula_groups(scan: _EditScan, values: Mapping[str, object]) -> None:
+    """Refuse an edit inside a shared formula group or an array formula, in the order
+    the formulas come in the sheet (the first one to forbid it gives the message)."""
+    targets = [parse_cell_range(ref) for ref in values]
+    for ref, index in scan.arrays:
+        if scan.shared_hit is not None and scan.shared_hit < index:
+            break
+        c1, r1, c2, r2 = parse_cell_range(ref)
+        if any(c1 <= column <= c2 and r1 <= row <= r2 for column, row, _, _ in targets):
+            raise ValueError("editing members of array/data-table formulas is unsupported")
+    if scan.shared_hit is not None:
+        raise ValueError("editing members of shared formula groups is unsupported")
 
 
 def _cell_xml_value(value: Any, date_1904: bool, prefix: str) -> tuple[str | None, str]:
