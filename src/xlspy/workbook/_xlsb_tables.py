@@ -52,6 +52,17 @@ def _header_row(sheet: Worksheet, table: Any) -> list:
     return row
 
 
+def _row_values(sheet: Worksheet, table: Any, row_index: int) -> list:
+    """The values of one row of ``table``, left to right."""
+
+    first_col, _, last_col, _ = parse_cell_range(table.ref)
+    values: list = []
+    for column in range(first_col, last_col + 1):
+        cell = sheet._existing_cell(row_index + 1, column + 1)
+        values.append(None if cell is None else cell.value)
+    return values
+
+
 def _data_range(ref: str, totals_rows: int) -> str:
     """The range a table's filter covers: the header and the data, not the totals."""
     first_col, first_row, last_col, last_row = parse_cell_range(ref)
@@ -250,6 +261,10 @@ def sync_tables(updater: XlsbUpdater, sheet: Worksheet, pending: tuple[PendingTa
         assert part is not None and readable[index].data is not None
         patched[part] = patch_table_part(cast(bytes, readable[index].data), _edit_for(sheet, saved[index], parsed[index]))
     new_columns = [table_column_names(excel, _header_row(sheet, excel)) for table, excel in final[len(kept):]]
+    new_totals = [
+        _row_values(sheet, excel, parse_cell_range(excel.ref)[3]) if excel.totals_row else None
+        for _, excel in final[len(kept):]
+    ]
 
     for part, body in patched.items():
         package.set(part, body)
@@ -268,10 +283,10 @@ def sync_tables(updater: XlsbUpdater, sheet: Worksheet, pending: tuple[PendingTa
                     package.types.remove(node)
     planned = {id(item.table): item.ident for item in pending}
     next_id = max([table.id or 0 for table in others] + [part.id for part in parsed], default=0) + 1
-    for (table, excel), columns in zip(final[len(kept):], new_columns):
+    for (table, excel), columns, totals in zip(final[len(kept):], new_columns, new_totals):
         part = package.free_part("xl/tables", "table", "bin")
         ident = planned.get(id(table), next_id)
-        package.set(part, cast(Any, XlsbWriter)._table_bin(XlsbWriter, excel, ident, columns))
+        package.set(part, cast(Any, XlsbWriter)._table_bin(XlsbWriter, excel, ident, columns, totals))
         package.override(part, _TABLE_TYPE)
         rids.append(package.add_rel(rels, path, "table", part))
         next_id = max(next_id, ident) + 1

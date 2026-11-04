@@ -135,3 +135,22 @@ def capture_table_headers(rows, tables, store: dict):
             for table in header_tables:
                 table_column_names(table, cells)
         yield row
+
+
+def capture_table_totals(rows, tables, store: dict):
+    """Yield ``rows`` unchanged, keeping the totals row of every table that has one.
+
+    The XLSB writer encodes each totals cell as a label, a sum or a custom
+    formula, so it needs the cells after the row streams past (``store``: row
+    index -> cells).
+    """
+    by_row: set[int] = {
+        parse_cell_range(table.ref)[3] for table in tables if table.totals_row
+    }
+    if not by_row:
+        yield from rows
+        return
+    for row_idx, row in enumerate(rows):
+        if row_idx in by_row:
+            store[row_idx] = [_unwrap_cell(cell) for cell in row]
+        yield row

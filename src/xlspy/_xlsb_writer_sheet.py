@@ -9,6 +9,7 @@ from .styles import (
     Chart,
     Style,
     capture_table_headers,
+    capture_table_totals,
     parse_cell_range,
     table_column_names,
 )
@@ -142,6 +143,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         table_ids: list[int] = []
         table_rel_ids: list[str] = []
         table_header_cells: dict = {}
+        table_totals_cells: dict = {}
         if spec.tables:
             # rId1 is binaryIndex; tables take rId2..; drawing (if any) last.
             for table in spec.tables:
@@ -154,6 +156,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             # Column names must match the header cells, which stream past with
             # the rows; a mismatch fails as soon as the header row is read.
             data = capture_table_headers(data, spec.tables, table_header_cells)
+            data = capture_table_totals(data, spec.tables, table_totals_cells)
         # Pivots aggregate the sheet's own rows as they stream; the cells of pivots
         # from earlier sheets are merged in after, and this sheet's own pivots are
         # appended below the data once the stream has ended.
@@ -205,7 +208,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             self._sheet_link_rels[sheet_id] = link_rids
             self._register_sheet_parts(
                 sheet_id, sheet_name, spec, pivot_renders, pending_pivots, pivot_names,
-                table_ids, table_header_cells, slicer_rid,
+                table_ids, table_header_cells, table_totals_cells, slicer_rid,
             )
             self._zf.writestr(f"xl/worksheets/_rels/sheet{sheet_id}.bin.rels", self._create_worksheet_rels(sheet_id))
             self._zf.writestr(f"xl/worksheets/binaryIndex{sheet_id}.bin", self._binaryIndexBin)
@@ -219,11 +222,11 @@ class _XlsbSheetMixin(_XlsbWriterHost):
     def _register_sheet_parts(
         self, sheet_id: int, sheet_name: str, spec: SheetSpec, pivot_renders: list[Any],
         pending_pivots: list[Any], pivot_names: set[str], table_ids: list[int],
-        table_header_cells: dict, slicer_rid: str | None,
+        table_header_cells: dict, table_totals_cells: dict, slicer_rid: str | None,
     ) -> None:
         """After the sheet part is written: number its pivots and queue those for
-        later sheets, encode its table parts from the header cells seen, and write
-        its slicer parts."""
+        later sheets, encode its table parts from the header and totals cells seen,
+        and write its slicer parts."""
         own_pivots = []
         for render in pivot_renders:
             render.assign_ids(len(self._pivot_renders) + 1)
@@ -238,9 +241,13 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         self._written_sheets.add(self._sheet_count - 1)
         table_columns = {}
         for table, table_id in zip(spec.tables, table_ids):
-            names = table_column_names(table, table_header_cells.get(parse_cell_range(table.ref)[1]))
+            first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
+            names = table_column_names(table, table_header_cells.get(first_row))
+            totals = table_totals_cells.get(last_row)
+            if totals is not None:
+                totals = totals[first_col:last_col + 1]
             self._table_registry[table_id] = (table.display_name, names, sheet_name)
-            self._tables_bin[table_id] = self._table_bin(table, table_id, names)
+            self._tables_bin[table_id] = self._table_bin(table, table_id, names, totals)
             table_columns[table.display_name.casefold()] = (table_id, names)
         if slicer_rid is not None:
             self._write_slicer_parts(sheet_id, slicer_rid, spec.slicers, table_columns)

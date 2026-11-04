@@ -84,6 +84,7 @@ from ._tables import (
     ExcelTable as ExcelTable,
     table_column_names as table_column_names,
     capture_table_headers as capture_table_headers,
+    capture_table_totals as capture_table_totals,
 )
 from ._sheet_checks import (
     explicit_cf_priorities as explicit_cf_priorities,

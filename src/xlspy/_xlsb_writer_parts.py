@@ -6,6 +6,7 @@ import io
 import re
 import uuid
 import xml.sax.saxutils as saxutils
+from typing import Any
 from ._accel import encode_xlsb_sst as accel_encode_xlsb_sst
 from . import chart_parts
 from .styles import (
@@ -31,6 +32,7 @@ from ._xlsb_writer_host import _XlsbWriterHost
 from .styles import ColorScaleRule, DataBarRule, DifferentialStyle, IconSetRule
 from ._xlsb_metadata import comments_bin
 from .comments import vml_xml
+from .formulas import Formula
 
 
 class _XlsbPartsMixin(_XlsbWriterHost):
@@ -79,8 +81,26 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         out += build_record(_BRT_AC_END, b"")
         return out
 
-    def _table_bin(self, table, table_id: int, names: list[str]) -> bytes:
+    @staticmethod
+    def _totals_function(cell: Any) -> int:
+        """The totals function (``ilta``) a totals-row cell needs.
+
+        Excel refuses a table whose non-empty totals cell is not a label and has
+        no function: ``ilta`` none allows only text or an empty cell. Text is
+        its own label; a number is the cached result of a sum; a formula is a
+        custom total.
+        """
+        if cell is None:
+            return 0
+        if isinstance(cell, Formula):
+            return 9
+        if isinstance(cell, str):
+            return 9 if cell.startswith("=") else 0
+        return 6
+
+    def _table_bin(self, table, table_id: int, names: list[str], totals_cells=None) -> bytes:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
+        totals_row = bool(table.totals_row)
         out = bytearray()
         out.extend(self._acuid(f"{table_id}:{table.display_name}"))
         # BrtBeginList
@@ -89,8 +109,8 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         payload.extend(struct.pack("<I", 0))  # lt = LTRANGE
         payload.extend(struct.pack("<I", table_id))
         payload.extend(struct.pack("<I", 1 if table.header_row else 0))
-        payload.extend(struct.pack("<I", 1 if table.totals_row else 0))
-        payload.extend(struct.pack("<I", 0))  # flags
+        payload.extend(struct.pack("<I", 1 if totals_row else 0))
+        payload.extend(struct.pack("<I", 1 if totals_row else 0))  # fShowTotals
         for _ in range(6):
             payload.extend(struct.pack("<i", -1))  # dxfIds
         payload.extend(struct.pack("<I", 0))  # dwConnID
@@ -105,10 +125,11 @@ class _XlsbPartsMixin(_XlsbWriterHost):
             payload.extend(self._encode_nullable_wstring(None))
         out.extend(build_record(_BRT_BEGIN_LIST, bytes(payload)))
         out.extend(self._acuid(f"{table_id}:{table.display_name}:list"))
-        # AutoFilter range inside the table part.
+        # AutoFilter range inside the table part; the totals row is not filtered.
+        filter_last_row = last_row - 1 if totals_row else last_row
         out.extend(build_record(
             _BRT_BEGIN_AUTOFILTER,
-            self._encode_rfx(first_col, first_row, last_col, last_row),
+            self._encode_rfx(first_col, first_row, last_col, filter_last_row),
         ))
         out.extend(build_record(_BRT_END_AUTOFILTER, b""))
         # ListCols
@@ -116,10 +137,11 @@ class _XlsbPartsMixin(_XlsbWriterHost):
             _BRT_BEGIN_LIST_COLS, struct.pack("<I", len(names)),
         ))
         for idx, col_name in enumerate(names, start=1):
+            cell = totals_cells[idx - 1] if totals_row and totals_cells is not None and idx <= len(totals_cells) else None
             out.extend(self._acuid(f"{table_id}:{table.display_name}:{idx}"))
             col_payload = bytearray()
             col_payload.extend(struct.pack("<I", idx))
-            col_payload.extend(struct.pack("<I", 0))  # ilta none
+            col_payload.extend(struct.pack("<I", self._totals_function(cell)))
             for _ in range(3):
                 col_payload.extend(struct.pack("<i", -1))
             col_payload.extend(struct.pack("<I", 0))  # idqsif

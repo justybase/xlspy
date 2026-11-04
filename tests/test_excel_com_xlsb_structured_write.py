@@ -38,6 +38,27 @@ def test_excel_calculates_the_references_xlspy_wrote_to_a_new_workbook(tmp_path,
     assert "Tbl[qty]" in calc.Range("A1").Formula
 
 
+def test_excel_opens_a_table_with_a_numeric_totals_row(tmp_path, excel, open_workbook):
+    path = tmp_path / "totals.xlsb"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Data"
+    for row, values in enumerate([["name", "qty"], ["a", 2], ["b", 3], ["Total", 5]], start=1):
+        for column, value in enumerate(values, start=1):
+            sheet.cell(row=row, column=column, value=value)
+    sheet.add_table(ExcelTable("Tbl", "A1:B4", totals_row=True))
+    workbook.save(path)
+    workbook.close()
+
+    data = open_workbook(path).Worksheets("Data")
+    table = data.ListObjects("Tbl")
+    assert table.Range.Address == "$A$1:$B$4"
+    assert table.ShowTotals
+    assert table.TotalsRowRange.Address == "$A$4:$B$4"
+    assert data.Range("A4").Value2 == "Total"
+    assert data.Range("B4").Value2 == 5
+
+
 def test_excel_calculates_the_references_xlspy_added_to_a_loaded_workbook(tmp_path, excel, open_workbook):
     source = tmp_path / "source.xlsb"
     _sales(source)
