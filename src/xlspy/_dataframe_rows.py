@@ -19,6 +19,8 @@ from decimal import Decimal
 from typing import Any, cast
 from collections.abc import Iterator
 
+from . import _accel
+
 _MISSING = object()
 _SECONDS_PER_DAY = 86400.0
 
@@ -227,5 +229,20 @@ def dataframe_to_rows(
     format_for = _format_lookup(headers, formats)
 
     yield headers
+    native = _accel.convert_frame_row
+    if native is not None:
+        # The plain values are decided in Rust; any other cell comes back here.
+        missing = () if pd is None else (pd.NA, pd.NaT)
+        timestamp = None if pd is None else pd.Timestamp
+
+        def slow(cell: Any, fmt: str | None) -> Any:
+            return _convert_cell(cell, fmt, na_rep, pd, np)
+
+        for row in rows:
+            converted = native(row, format_for, na_rep, missing, timestamp, slow)
+            yield converted if converted is not None else [
+                _convert_cell(cell, fmt, na_rep, pd, np) for cell, fmt in zip(row, format_for)
+            ]
+        return
     for row in rows:
         yield [_convert_cell(cell, fmt, na_rep, pd, np) for cell, fmt in zip(row, format_for)]

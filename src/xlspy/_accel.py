@@ -38,7 +38,7 @@ _NATIVE_NAMES = (
     "read_xlsb_worksheet", "read_xlsx_worksheet", "xlsb_row_has_formatted",
     "encode_xlsb_sst", "read_xlsb_shared_strings", "encode_xlsx_row",
     "read_xlsx_shared_strings",
-    "set_style_type", "set_error_type", "xlsb_load_cells", "xlsb_sheet_scan", "ModelCells", "xlsx_edit_scan",
+    "set_style_type", "set_error_type", "xlsb_load_cells", "xlsb_sheet_scan", "ModelCells", "xlsx_edit_scan", "convert_frame_row",
     "WidthMeter", "general_number_text",
     "encode_update_xlsx_row", "encode_update_xlsb_row", "patch_xlsb_row_headers",
 )
@@ -109,6 +109,8 @@ xlsb_load_cells: Any = _impl.get("xlsb_load_cells")
 xlsb_sheet_scan: Any = _impl.get("xlsb_sheet_scan")
 # One pass over an XLSX sheetData for update_cells (see _xlsx_edit._fast_scan).
 xlsx_edit_scan: Any = _impl.get("xlsx_edit_scan")
+# The cells of one DataFrame row (see _dataframe_rows.dataframe_to_rows).
+convert_frame_row: Any = _impl.get("convert_frame_row")
 # The model's hot loops (see workbook/_cell.py).
 ModelCells: Any = _impl.get("ModelCells")
 # The rows of XlsxUpdater / XlsbUpdater.replace_sheet_data (None: the Python code).

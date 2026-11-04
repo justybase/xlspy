@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   row no longer widens the rows after it, and a sheet of empty rows gives `[[], []]`, not
   `[[None], [None]]`.
 
+- `write_dataframe` and `dataframe_to_rows` decide the plain cells of a row (text, numbers, booleans,
+  missing values, `pd.Timestamp`) in Rust and leave any other cell to the Python normaliser, so the
+  rows are the same. Converting 100,000 rows of five columns: 0.36 s -> 0.25 s; the rest is pandas
+  itself (`itertuples`, iterating Arrow-backed strings).
 - A row with rich text (`CellRichText`) is written by the native XLSB encoder, not cell by cell in
   Python: the cell is an index into the shared-string table, as before. 100,000 rows with a rich cell:
   about 1.0 s -> 0.62 s, the bytes written are the same. With `use_shared_strings=False` the row

@@ -10,6 +10,7 @@ mod autofit;
 mod bytes;
 mod cells;
 mod dates;
+mod frame_rows;
 mod model;
 mod numfmt;
 mod pyseq;
@@ -57,6 +58,7 @@ fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<model::ModelCells>()?;
     m.add_function(wrap_pyfunction!(xlsb_read::xlsb_load_cells, m)?)?;
     m.add_function(wrap_pyfunction!(xlsb_read::xlsb_sheet_scan, m)?)?;
+    m.add_function(wrap_pyfunction!(frame_rows::convert_frame_row, m)?)?;
     m.add_function(wrap_pyfunction!(xlsx_edit_scan::xlsx_edit_scan, m)?)?;
     m.add_function(wrap_pyfunction!(xlsx_read::read_xlsx_worksheet, m)?)?;
     m.add_class::<xlsx_read::XlsxReader>()?;

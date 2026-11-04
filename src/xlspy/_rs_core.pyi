@@ -41,6 +41,7 @@ __all__ = [
     "xlsb_load_cells",
     "xlsb_sheet_scan",
     "xlsx_edit_scan",
+    "convert_frame_row",
     "read_xlsx_worksheet",
     "XlsxReader",
     "WidthMeter",
@@ -149,6 +150,14 @@ def xlsb_sheet_scan(data: ReadableBuffer) -> tuple[
     tuple[int, int, tuple[int, int, int, int]] | None,
     tuple[int, int, int, int] | None,
 ] | None: ...
+def convert_frame_row(
+    row: Any,
+    formats: list[str | None],
+    na_rep: Any,
+    missing: tuple[Any, ...],
+    timestamp: Any,
+    slow: Callable[[Any, str | None], Any],
+) -> list[Any] | None: ...
 def xlsx_edit_scan(body: str, targets: list[str]) -> tuple[
     tuple[int, int, int, int] | None,
     list[tuple[str, str | None, bool]],
