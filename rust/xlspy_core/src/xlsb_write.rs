@@ -9,7 +9,7 @@ use pyo3::types::{
 use crate::bytes::write_varint;
 use crate::cells::{
     Cell, Hooked, Serial, Sst, Styles, call_hook, date_style_xf, excel_serial, fmt_tuple_kind,
-    fmt_xf_value, rollback, text_fits,
+    fmt_xf_value, numpy_item, rollback, text_fits,
 };
 use crate::pyseq::FastSeq;
 use crate::sst::u32_mask;
@@ -289,18 +289,27 @@ fn encode_row<'py>(
         match value_cell(&mut buf, &cell, strings, col, row_idx, style, decimal)? {
             Value::Done => {}
             Value::Fallback => return Ok(None),
-            // A type the encoder does not know: the writer's hook encodes it
-            // (a formula), or gives the value to write in its place.
-            Value::Unknown => match call_hook(hook, &cell, col, hook_style, row_idx)? {
-                Hooked::Fallback => return Ok(None),
-                Hooked::Raw(raw) => buf.out.extend_from_slice(raw.as_bytes()),
-                Hooked::Value(value, xf) => {
-                    match value_cell(&mut buf, &value, strings, col, row_idx, xf, decimal)? {
-                        Value::Done => {}
+            // A type the encoder does not know. A numpy scalar is the value it
+            // holds, as the hook would have said; otherwise the writer's hook
+            // encodes it (a formula), or gives the value to write in its place.
+            Value::Unknown => {
+                if let Some(item) = numpy_item(&cell) {
+                    match value_cell(&mut buf, &item, strings, col, row_idx, hook_style, decimal)? {
+                        Value::Done => continue,
                         Value::Fallback | Value::Unknown => return Ok(None),
                     }
                 }
-            },
+                match call_hook(hook, &cell, col, hook_style, row_idx)? {
+                    Hooked::Fallback => return Ok(None),
+                    Hooked::Raw(raw) => buf.out.extend_from_slice(raw.as_bytes()),
+                    Hooked::Value(value, xf) => {
+                        match value_cell(&mut buf, &value, strings, col, row_idx, xf, decimal)? {
+                            Value::Done => {}
+                            Value::Fallback | Value::Unknown => return Ok(None),
+                        }
+                    }
+                }
+            }
         }
     }
     Ok(Some(buf.out))

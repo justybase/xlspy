@@ -173,6 +173,9 @@ def _other_cells():
     cells = [
         np.int64(-5), np.int32(7), np.uint8(200), np.bool_(True), np.float32(1.5), np.float16(0.25),
         np.datetime64("2024-01-02"), np.str_("numpy text"),
+        # Where the rule for a numpy scalar (integer, unsigned, bool, float16/32) ends.
+        np.uint64(2**63 + 5), np.int8(-3), np.array(7), np.array(2.5, dtype=np.float32),
+        np.array([1, 2]), np.longdouble(1.5), np.complex64(1 + 2j), np.float64(2.5),
         dt.time(3, 4, 5), dt.timedelta(hours=5), b"bytes", _Opaque(), (1, 2, 3), [4, 5],
         (None, "0.00"), (np.int64(3), "0.00"),
     ]

@@ -120,7 +120,7 @@ SCENARIOS: list[Scenario] = [
     Scenario("dataframe with NA and NaT", lambda n: _frame(n, nullable=True), frame=True),
     Scenario("formulas", lambda n: _rows(n, ["x", "f"], lambda i: [i, Formula(f"A{i + 2}*2")]), max_scalar_hook=0),
     Scenario("hyperlinks", lambda n: _rows(n, ["x", "l"], lambda i: [i, Hyperlink(f"https://example.com/{i % 20}", f"l{i % 20}")]), max_python_rows=2),
-    Scenario("numpy scalars", _numpy_rows, max_scalar_hook=None, gap="a numpy int is no int: a Python call per cell"),
+    Scenario("numpy scalars", _numpy_rows),
     Scenario("rich text", lambda n: _rows(n, ["x", "r"], lambda i: [i, CellRichText(["a", "b"])]), max_python_rows=1 << 30, max_scalar_hook=None, gap="the whole row goes to Python"),
 ]
 

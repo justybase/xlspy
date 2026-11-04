@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   row no longer widens the rows after it, and a sheet of empty rows gives `[[], []]`, not
   `[[None], [None]]`.
 
+- The XLSB writer encodes numpy integers, booleans and float16/32 scalars in Rust instead of calling
+  into Python for each cell (the value they hold, as before). 100,000 rows of four numpy columns:
+  0.88 s -> 0.49 s. The bytes written are the same.
 - `XlsxUpdater.update_cells`, which the save of a loaded XLSX uses, finds what it needs in a sheet
   (the bounds of its cells, the cells being edited, the formulas that forbid an edit) with a
   native scan instead of a parsed element tree and a loop over every cell. On a sheet of 1,000,000

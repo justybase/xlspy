@@ -12,6 +12,39 @@ use crate::dates::days_from_civil;
 use crate::text::CELL_TEXT_LIMIT;
 use crate::types::overlay_kind;
 
+/// A numpy integer, unsigned, bool or float16/32 scalar as the Python value it holds
+/// (`.item()`), the rule of `_scalars.numpy_value`: Excel stores them as numbers or
+/// booleans. None for any other value, and for a scalar whose attributes raise (the
+/// writer's hook then decides, as it did before this existed).
+pub fn numpy_item<'py>(cell: &Bound<'py, PyAny>) -> Option<Bound<'py, PyAny>> {
+    let py = cell.py();
+    let module = cell
+        .get_type()
+        .getattr(pyo3::intern!(py, "__module__"))
+        .ok()?;
+    if !module.eq("numpy").ok()? {
+        return None;
+    }
+    let shape = cell.getattr(pyo3::intern!(py, "shape")).ok()?;
+    if !shape.cast::<PyTuple>().ok()?.is_empty() {
+        return None;
+    }
+    let dtype = cell.getattr(pyo3::intern!(py, "dtype")).ok()?;
+    let kind = dtype.getattr(pyo3::intern!(py, "kind")).ok()?;
+    let integral = ["i", "u", "b"].iter().any(|k| kind.eq(*k).unwrap_or(false));
+    let narrow_float = || {
+        kind.eq("f").unwrap_or(false)
+            && dtype
+                .getattr(pyo3::intern!(py, "itemsize"))
+                .and_then(|n| n.extract::<usize>())
+                .is_ok_and(|n| n < 8)
+    };
+    if !(integral || narrow_float()) {
+        return None;
+    }
+    cell.call_method0(pyo3::intern!(py, "item")).ok()
+}
+
 /// Result of encoding one cell: written, or the whole row goes to Python.
 pub enum Cell {
     Done,
