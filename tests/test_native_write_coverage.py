@@ -40,7 +40,7 @@ def test_known_gaps_are_still_gaps(tmp_path, scenario):
 
 
 def test_counters_see_the_python_rows(tmp_path):
-    """The counters are not blind: a workbook of rich text does go through Python."""
-    scenario = next(s for s in SCENARIOS if s.name == "rich text")
+    """The counters are not blind: rich text with inline strings does go through Python."""
+    scenario = next(s for s in SCENARIOS if s.name == "rich text, inline strings")
     counts = write(scenario, 50, tmp_path / "a.xlsb")
     assert counts["python_rows"] >= 50

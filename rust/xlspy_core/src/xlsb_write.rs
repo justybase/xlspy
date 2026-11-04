@@ -302,6 +302,23 @@ fn encode_row<'py>(
                 match call_hook(hook, &cell, col, hook_style, row_idx)? {
                     Hooked::Fallback => return Ok(None),
                     Hooked::Raw(raw) => buf.out.extend_from_slice(raw.as_bytes()),
+                    // Rich text is a shared string with a tuple for its key, written like
+                    // any other string cell; inline strings have no table for it.
+                    Hooked::SstKey(key) => match strings {
+                        Strings::Shared(sst) => {
+                            let idx = sst.index_key(&key)?;
+                            let style_ref = if hook_style != 0 {
+                                hook_style
+                            } else if row_idx == 0 {
+                                3
+                            } else {
+                                0
+                            };
+                            buf.cell([0x07, 0x0C], col, style_ref);
+                            buf.out.extend_from_slice(&idx.to_le_bytes());
+                        }
+                        Strings::Inline => return Ok(None),
+                    },
                     Hooked::Value(value, xf) => {
                         match value_cell(&mut buf, &value, strings, col, row_idx, xf, decimal)? {
                             Value::Done => {}

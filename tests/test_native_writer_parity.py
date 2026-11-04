@@ -6,7 +6,10 @@ import zipfile
 
 import pytest
 
-from xlspy import ExcelReader, Font, Formula, Hyperlink, Style, XlsbWriter, XlsxWriter, _accel, _xlsb_writer_bin, _xlsx_writer_sheet
+from xlspy import (
+    CellRichText, ExcelReader, Font, Formula, Hyperlink, InlineFont, Style, TextBlock, XlsbWriter, XlsxWriter,
+    _accel, _xlsb_writer_bin, _xlsx_writer_sheet,
+)
 
 pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 
@@ -266,3 +269,59 @@ def test_links_are_written_natively(tmp_path, monkeypatch, cls, shared, styled):
     assert _links_part(paths[0]) == _links_part(paths[1])
     with ExcelReader(paths[0]) as first, ExcelReader(paths[1]) as second:
         assert first.read_all("S") == second.read_all("S")
+
+
+def _package(path):
+    """Every part of a package but the core properties (they hold the time)."""
+    with zipfile.ZipFile(path) as archive:
+        return {name: archive.read(name) for name in archive.namelist() if name != "docProps/core.xml"}
+
+
+def _rich_rows():
+    bold, italic = InlineFont(b=True), InlineFont(i=True, sz=14)
+    rich = CellRichText(["plain ", TextBlock(bold, "bold"), " tail"])
+    return [
+        ["head", rich, CellRichText(["only plain"])],                # the first row has the header style
+        [1, CellRichText([TextBlock(italic, "italic")]), "plain"],
+        [2, rich, CellRichText(["only plain"])],                      # the same strings again: one entry each
+        [3, CellRichText(["plain ", TextBlock(bold, "bold"), " tail"]), None],  # equal, not identical
+        [4, (rich, "0.00"), (CellRichText(["x", TextBlock(italic, "y")]), Style(font=Font(bold=True)))],
+        [5, "plain ", CellRichText([TextBlock(bold, "")])],           # the text of the rich cell is a plain cell's
+    ]
+
+
+@pytest.mark.parametrize("styled", [False, True])
+def test_xlsb_rich_text_is_written_natively_as_python_writes_it(tmp_path, monkeypatch, styled):
+    rows = _rich_rows()
+    styles = {"A:ZZ": Style(font=Font(italic=True))} if styled else {}
+    packages, python_rows = [], []
+    for native in (True, False):
+        with monkeypatch.context() as patch:
+            if not native:
+                none = lambda *args, **kwargs: None
+                patch.setattr(_xlsb_writer_bin, "encode_xlsb_row", none)
+            calls = []
+            original = _xlsb_writer_bin._XlsbBinMixin._write_python_row
+
+            def counted(self, *args, _original=original, _calls=calls, **kwargs):
+                _calls.append(1)
+                return _original(self, *args, **kwargs)
+
+            patch.setattr(_xlsb_writer_bin._XlsbBinMixin, "_write_python_row", counted)
+            path = tmp_path / f"{native}.xlsb"
+            with XlsbWriter(path) as book:
+                book.add_sheet("S")
+                book.write_sheet(rows, styles=styles)
+            packages.append(_package(path))
+            python_rows.append(len(calls))
+    assert packages[0] == packages[1]
+    # Only a (rich text, Style) cell may need the Python encoder once, to register its xf.
+    assert python_rows[0] <= 1 < python_rows[1]
+
+
+def test_xlsb_rich_text_with_inline_strings_still_goes_to_the_table(tmp_path):
+    path = tmp_path / "a.xlsb"
+    with XlsbWriter(path, use_shared_strings=False) as book:
+        book.add_sheet("S")
+        book.write_sheet(_rich_rows())
+    assert "xl/sharedStrings.bin" in _package(path)

@@ -61,6 +61,9 @@ pub enum Hooked<'py> {
     Raw(Bound<'py, PyBytes>),
     /// A value to encode in its place, with this xf.
     Value(Bound<'py, PyAny>, u32),
+    /// The key of a rich-text string in the shared-string table (`("rich", text,
+    /// runs)`): the cell is an index to it, in the cell's own style.
+    SstKey(Bound<'py, PyAny>),
 }
 
 /// Ask the writer's hook, `hook(cell, column, xf, row)`, for a cell the
@@ -89,6 +92,9 @@ pub fn call_hook<'py>(
         return Ok(Hooked::Raw(raw.clone()));
     }
     if let Ok(pair) = result.cast_exact::<PyTuple>() {
+        if pair.len() == 3 && pair.get_item(0)?.eq("rich").unwrap_or(false) {
+            return Ok(Hooked::SstKey(result));
+        }
         if pair.len() != 2 {
             return Ok(Hooked::Fallback);
         }
@@ -127,6 +133,11 @@ impl Sst<'_, '_> {
     /// Index of `s`, added to the table when new (list first, so a failed
     /// insert leaves only a list entry, which the rollback removes).
     pub fn index(&mut self, s: &Bound<'_, PyString>) -> PyResult<u32> {
+        self.index_key(s.as_any())
+    }
+
+    /// Index of any hashable key (a rich-text tuple as well as a str).
+    pub fn index_key(&mut self, s: &Bound<'_, PyAny>) -> PyResult<u32> {
         let idx = match self.dict.get_item(s)? {
             // The writer stores the indices it hands out; anything else is a
             // corrupted table, which must not reach the file as index 0xFFFFFFFF.

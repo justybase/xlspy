@@ -229,7 +229,7 @@ impl Row<'_, '_> {
         // before a date's variant (see `hook_style`).
         let style = if is_link { style } else { self.hook_style };
         match call_hook(&self.hook, cell, col, style, self.row_idx)? {
-            Hooked::Fallback => Ok(Cell::Fallback),
+            Hooked::Fallback | Hooked::SstKey(_) => Ok(Cell::Fallback),
             Hooked::Raw(raw) => {
                 self.out.extend_from_slice(raw.as_bytes());
                 Ok(Cell::Done)

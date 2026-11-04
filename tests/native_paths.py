@@ -19,7 +19,7 @@ from decimal import Decimal
 from typing import Any
 from unittest import mock
 
-from xlspy import CellRichText, Formula, Hyperlink, Style, XlsbWriter
+from xlspy import CellRichText, Formula, Hyperlink, InlineFont, Style, TextBlock, XlsbWriter
 from xlspy import _xlsb_writer_bin as writer_module
 
 DATE = dt.date(2024, 5, 6)
@@ -81,6 +81,10 @@ def _rows(n: int, head: list[Any], cell: Callable[[int], list[Any]]) -> Iterator
         yield cell(i)
 
 
+def _rich(i: int) -> CellRichText:
+    return CellRichText(["plain ", TextBlock(InlineFont(b=True), f"bold {i % 30}")])
+
+
 def _numpy_rows(n: int) -> Iterator[list[Any]]:
     import numpy as np
 
@@ -121,7 +125,11 @@ SCENARIOS: list[Scenario] = [
     Scenario("formulas", lambda n: _rows(n, ["x", "f"], lambda i: [i, Formula(f"A{i + 2}*2")]), max_scalar_hook=0),
     Scenario("hyperlinks", lambda n: _rows(n, ["x", "l"], lambda i: [i, Hyperlink(f"https://example.com/{i % 20}", f"l{i % 20}")]), max_python_rows=2),
     Scenario("numpy scalars", _numpy_rows),
-    Scenario("rich text", lambda n: _rows(n, ["x", "r"], lambda i: [i, CellRichText(["a", "b"])]), max_python_rows=1 << 30, max_scalar_hook=None, gap="the whole row goes to Python"),
+    Scenario("rich text", lambda n: _rows(n, ["x", "r"], lambda i: [i, _rich(i)])),
+    Scenario(
+        "rich text, inline strings", lambda n: _rows(n, ["x", "r"], lambda i: [i, _rich(i)]), shared_strings=False,
+        max_python_rows=1 << 30, max_scalar_hook=None, gap="rich text is a shared string: the row stays in Python",
+    ),
 ]
 
 

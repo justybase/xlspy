@@ -253,6 +253,15 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     if cell.array_ref is not None:
                         return NotImplemented
                     return formula_cell(cell, col, style, formula_context(), sheet=sheet_name, row=row)
+                if isinstance(cell, CellRichText) and self._use_shared_strings:
+                    # Rich text is a string of the shared table under a tuple key (see
+                    # _write_rich_str); without runs it is plain text. Inline strings
+                    # have no table for it: that row stays with the Python encoder.
+                    text, runs = self._rich_runs(cell)
+                    if not runs:
+                        return text
+                    self._sst_has_rich = True
+                    return "rich", text, runs
                 if isinstance(cell, Hyperlink):
                     # The link's xf, once the Python encoder has written a link
                     # in this range style (see _write_python_row).
