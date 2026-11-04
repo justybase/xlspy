@@ -28,7 +28,7 @@ from .comments import (
 from .excel_dates import datetime_to_serial
 from .formulas import Formula
 from .hyperlinks import Hyperlink
-from .refs import _column_index, parse_cell_range, column_label
+from .refs import RangeIndex, _column_index, parse_cell_range, column_label
 from .updater_utils import unwrap_cell, replace_or_add_xml_attribute
 from .rich_text import CellRichText
 
@@ -103,13 +103,13 @@ class XlsxEditMixin:
 
     def set_comments(self, sheet_name: str, comments: Mapping[str, Comment | None]) -> None:
         """Set selected classic notes; None removes a note, other notes are kept."""
-        path, sheet = self._sheet_xml(sheet_name)
-        merges = [n.attrib["ref"] for n in safe_fromstring(sheet).findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell")]
+        path, sheet, sheet_root = self._sheet_root(sheet_name)
+        merges = [n.attrib["ref"] for n in sheet_root.findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell")]
         changes = normalize_comments(comments, allow_none=True, merges=merges)
         if not changes:
             return
         names = self._package.names()
-        legacy = safe_fromstring(sheet).find(f"{{{MAIN}}}legacyDrawing")
+        legacy = sheet_root.find(f"{{{MAIN}}}legacyDrawing")
         legacy_rid = None if legacy is None else legacy.get(f"{{{REL}}}id")
         rp, relationships, parts = find_comment_parts(self._package.get, names, path, legacy_rid)
         for relationship in relationships:
@@ -203,6 +203,7 @@ class XlsxEditMixin:
 
         used_ids = {node.get("Id") for node in relationships}
         added = []
+        index = 1  # Ids only get taken here, so the first free one never moves back.
         for ref, link in changes.items():
             if link is None:
                 continue
@@ -210,7 +211,6 @@ class XlsxEditMixin:
             if link.is_internal:
                 text += f" location={quoteattr(xml_text(link.location))}"
             else:
-                index = 1
                 while f"rId{index}" in used_ids:
                     index += 1
                 rid = f"rId{index}"
@@ -230,11 +230,12 @@ class XlsxEditMixin:
         fragment = f"<{prefix}hyperlinks>{''.join(items)}</{prefix}hyperlinks>" if items else ""
         sheet = replace_element(sheet, "hyperlinks", fragment, before=_AFTER_HYPERLINKS)
         # A dropped link's relationship goes unless something else uses it.
-        for node in list(relationships):
-            rid = node.get("Id")
-            if rid in dropped and node.get("Type") == _HYPERLINK_TYPE \
-                    and not re.search(rf"""[\w.-]+:id=["']{re.escape(rid)}["']""", sheet):
-                relationships.remove(node)
+        if dropped:
+            still_used = set(re.findall(r"""[\w.-]+:id=["']([^"']*)["']""", sheet))
+            for node in list(relationships):
+                rid = node.get("Id")
+                if rid in dropped and rid not in still_used and node.get("Type") == _HYPERLINK_TYPE:
+                    relationships.remove(node)
         updates: dict[str, str | bytes] = {path: sheet}
         removed: list[str] = []
         ET.register_namespace("", PKG_REL)
@@ -344,12 +345,16 @@ class XlsxEditMixin:
                         cell_bounds[1] = row
                     elif row > cell_bounds[3]:
                         cell_bounds[3] = row
-        for merge in root.findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell"):
-            bounds = parse_cell_range(merge.attrib["ref"])
+        merge_nodes = root.findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell")
+        if merge_nodes:
+            merged = RangeIndex()
+            for merge in merge_nodes:
+                merged.add(parse_cell_range(merge.attrib["ref"]))
             for ref in values:
                 col, row, _, _ = parse_cell_range(ref)
-                if bounds[0] <= col <= bounds[2] and bounds[1] <= row <= bounds[3] and (col, row) != bounds[:2]:
-                    raise ValueError("merged cells must be updated through their top-left cell")
+                for c1, r1, _, _, _ in merged.overlapping((col, row, col, row)):
+                    if (col, row) != (c1, r1):
+                        raise ValueError("merged cells must be updated through their top-left cell")
         # Refuse edits into array/shared formula groups; writing one member alone
         # would leave the other cells dependent on a missing formula master.
         shared_ids = {f.get("si") for _, c in edited_nodes

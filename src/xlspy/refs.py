@@ -53,6 +53,67 @@ def parse_cell_range(reference: str) -> tuple[int, int, int, int]:
     return bounds
 
 
+class RangeIndex:
+    """Ranges found by the cells they cover, without going through all of them.
+
+    A range goes into a bucket per 64 rows it touches. One that spans more than a
+    few buckets stays on a list checked every time: bounds can come from a damaged
+    file, and four billion rows must not become millions of buckets.
+    """
+
+    __slots__ = ("_buckets", "_wide", "_next")
+    _ROWS = 64
+    _MAX_SPAN = 8
+
+    def __init__(self) -> None:
+        self._buckets: dict[int, list[tuple]] = {}
+        self._wide: list[tuple] = []
+        self._next = 0
+
+    def add(self, bounds: tuple[int, int, int, int], item: object = None) -> None:
+        """Add a range given as ``(first column, first row, last column, last row)``."""
+        c1, r1, c2, r2 = bounds
+        entry = (self._next, c1, r1, c2, r2, item)
+        self._next += 1
+        first, last = r1 // self._ROWS, r2 // self._ROWS
+        if last - first >= self._MAX_SPAN:
+            self._wide.append(entry)
+            return
+        for bucket in range(first, last + 1):
+            self._buckets.setdefault(bucket, []).append(entry)
+
+    def remove(self, bounds: tuple[int, int, int, int], item: object) -> None:
+        """Remove the first range added with these bounds and this item."""
+        c1, r1, c2, r2 = bounds
+        first, last = r1 // self._ROWS, r2 // self._ROWS
+        lists = [self._wide] if last - first >= self._MAX_SPAN else [
+            self._buckets.get(bucket, []) for bucket in range(first, last + 1)]
+        for entries in lists:
+            for entry in entries:
+                if entry[1:] == (c1, r1, c2, r2, item):
+                    entries.remove(entry)
+                    break
+
+    def overlapping(self, bounds: tuple[int, int, int, int]) -> list[tuple]:
+        """``(first column, first row, last column, last row, item)`` of each range
+        that shares a cell with ``bounds``, in the order they were added.
+        """
+        c1, r1, c2, r2 = bounds
+        first, last = r1 // self._ROWS, r2 // self._ROWS
+        buckets = self._buckets
+        if last - first >= len(buckets):
+            lists = list(buckets.values())
+        else:
+            lists = [buckets[bucket] for bucket in range(first, last + 1) if bucket in buckets]
+        lists.append(self._wide)
+        found = {}
+        for entries in lists:
+            for entry in entries:
+                if entry[1] <= c2 and c1 <= entry[3] and entry[2] <= r2 and r1 <= entry[4]:
+                    found[entry[0]] = entry[1:]
+        return [found[order] for order in sorted(found)]
+
+
 _MAX_COLUMN = 16384  # zero-based column indexes run 0 .. 16383
 _MAX_ROW = 1048576
 

@@ -14,7 +14,7 @@ from xml.sax.saxutils import escape
 
 from ._metadata import MAIN, PKG_REL, REL, cell_ref, xml_text, append_child, element_pattern, namespace_of
 from ._text import check_cell_text, xstring_escape, xstring_unescape
-from .refs import parse_cell_range, column_label
+from .refs import RangeIndex, parse_cell_range, column_label
 
 COMMENTS_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"
 VML_TYPE = "application/vnd.openxmlformats-officedocument.vmlDrawing"
@@ -50,6 +50,7 @@ def normalize_comments(comments, *, allow_none=False, merges=()):
     if not isinstance(comments, Mapping):
         raise TypeError("comments must map cell references to Comment objects")
     result: dict[str, Comment | None] = {}
+    merged = None
     for ref, comment in comments.items():
         ref = cell_ref(ref)
         if ref in result:
@@ -58,9 +59,12 @@ def normalize_comments(comments, *, allow_none=False, merges=()):
             raise TypeError("comment values must be Comment objects" + (" or None" if allow_none else ""))
         if comment is not None:
             c, r, _, _ = parse_cell_range(ref)
-            for merge in merges:
-                c1, r1, c2, r2 = parse_cell_range(merge)
-                if c1 <= c <= c2 and r1 <= r <= r2 and (c, r) != (c1, r1):
+            if merged is None:
+                merged = RangeIndex()
+                for merge in merges:
+                    merged.add(parse_cell_range(merge))
+            for c1, r1, _, _, _ in merged.overlapping((c, r, c, r)):
+                if (c, r) != (c1, r1):
                     raise ValueError("comments on merged cells must use the top-left cell")
         result[ref] = comment
     return result
@@ -73,12 +77,21 @@ def comments_xml(comments, existing=None):
     else:
         xml = existing.decode("utf-8") if isinstance(existing, bytes) else existing
     root = safe_fromstring(xml)
-    authors = [n.text or "" for n in root.findall(f"{{{MAIN}}}authors/{{{MAIN}}}author")]
+    # An author's index is its first place in the list.
+    authors: dict[str, int] = {}
+    author_nodes = root.findall(f"{{{MAIN}}}authors/{{{MAIN}}}author")
+    for index, node in enumerate(author_nodes):
+        authors.setdefault(node.text or "", index)
+    count = len(author_nodes)
+    new_authors = []
     for comment in comments.values():
         if comment is not None and xstring_escape(comment.author) not in authors:
             author = xstring_escape(comment.author)
-            authors.append(author)
-            xml = append_child(xml, "authors", f'<author xmlns="{MAIN}">{escape(author)}</author>')
+            authors[author] = count
+            count += 1
+            new_authors.append(f'<author xmlns="{MAIN}">{escape(author)}</author>')
+    if new_authors:
+        xml = append_child(xml, "authors", "".join(new_authors))
     seen = set()
 
     def patch(match):
@@ -91,16 +104,17 @@ def comments_xml(comments, existing=None):
         return _comment_xml(ref, comments[ref], authors)
 
     xml = element_pattern("comment").sub(patch, xml)
-    for ref, comment in comments.items():
-        if ref not in seen and comment is not None:
-            xml = append_child(xml, "commentList", _comment_xml(ref, comment, authors))
+    added = [_comment_xml(ref, comment, authors) for ref, comment in comments.items()
+             if ref not in seen and comment is not None]
+    if added:
+        xml = append_child(xml, "commentList", "".join(added))
     return xml.encode("utf-8")
 
 
 def _comment_xml(ref, comment, authors):
     if comment is None:
         return ""
-    index = authors.index(xstring_escape(comment.author))
+    index = authors[xstring_escape(comment.author)]
     return (f'<comment xmlns="{MAIN}" ref="{ref}" authorId="{index}"><text>'
             f'<t xml:space="preserve">{escape(xstring_escape(comment.text))}</t></text></comment>')
 

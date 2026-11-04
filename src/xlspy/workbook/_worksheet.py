@@ -765,9 +765,9 @@ class Worksheet:
                 f"{_coordinate(end_row, _coerce_column(end_column))}"
             )
         reference = _normalize_range(range_string)
-        for existing in self._merged_cells.ranges:
-            if self._ranges_overlap(existing, reference):
-                raise ValueError(f"merge range {reference!r} overlaps {existing!r}")
+        existing = self._merged_cells.first_overlapping(parse_cell_range(reference))
+        if existing is not None:
+            raise ValueError(f"merge range {reference!r} overlaps {existing!r}")
         self._merged_cells.add(reference)
         self._mark_dirty("merges")
 
@@ -785,21 +785,14 @@ class Worksheet:
         self._merged_cells.remove(range_string)
         self._mark_dirty("merges")
 
-    @staticmethod
-    def _ranges_overlap(a: str, b: str) -> bool:
-        c1, r1, c2, r2 = parse_cell_range(a)
-        d1, s1, d2, s2 = parse_cell_range(b)
-        return not (c2 < d1 or d2 < c1 or r2 < s1 or s2 < r1)
-
     def _is_merged_subcell(self, row: int, column: int) -> bool:
         if not self._merged_cells:
             return False
-        coordinate = _coordinate(row, column)
-        for cell_range in self._merged_cells.ranges:
-            if coordinate in cell_range:
-                c1, r1, _, _ = parse_cell_range(cell_range)
-                return (row, column) != (r1 + 1, c1 + 1)
-        return False
+        cell_range = self._merged_cells.first_overlapping((column - 1, row - 1, column - 1, row - 1))
+        if cell_range is None:
+            return False
+        c1, r1, _, _ = parse_cell_range(cell_range)
+        return (row, column) != (r1 + 1, c1 + 1)
 
     # -- dirty tracking ----------------------------------------------
     def _mark_dirty(self, *parts: str) -> None:

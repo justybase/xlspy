@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and defined names use that pattern too. `update_cells` and the style edit also parsed the sheet up
   to three times, and walked all its cells to find the edited ones. The rows of `<sheetData>` are
   now walked a tag at a time.
+- Other edits also took time in the square of their number, with the same bytes in the file now:
+  4,000 notes on an XLSX in one `set_comments` took 9 s and take 0.2 s (each note copied the whole
+  part); 4,000 `merge_cells` took 13.5 s and take 0.25 s (each compared itself with every range,
+  and `cell()` went through them too); `set_hyperlinks` on an XLSX, from 0.9 s to 0.1 s (each link
+  looked for a free id from 1). Checks of edits and notes against merged ranges now use an index.
+  Still quadratic: adding defined names to a loaded workbook, which rewrites the workbook part at
+  each `add()` so that a bad name is refused there (500 names take 1-2 s, 2,000 take 18-32 s).
 - `XlsbUpdater.update_cells` on a damaged sheet (no sheet data, or a row, cell, dimension or merge
   record too short for what it holds) raises `InvalidFileError` instead of `StopIteration` or
   `struct.error`.

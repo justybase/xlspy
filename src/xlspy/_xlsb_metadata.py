@@ -13,7 +13,7 @@ from collections.abc import Iterator, Sequence
 
 from .biff_utils import Biff12Record, build_record, iter_records, read_utf16
 from .comments import Comment
-from .refs import parse_cell_range, column_label
+from .refs import RangeIndex, parse_cell_range, column_label
 
 _XLSB_COMMENTS_TYPE = "application/vnd.ms-excel.comments"
 BEGIN_COMMENTS, END_COMMENTS = 0x274, 0x275
@@ -184,10 +184,13 @@ def check_merged_refs(data, refs, ranges=None):
     ranges = merge_ranges(data) if ranges is None else ranges
     if not ranges:
         return
-    coordinates = [parse_cell_range(ref)[:2] for ref in refs]
+    merged = RangeIndex()
     for r1, r2, c1, c2 in ranges:
-        for col, row in coordinates:
-            if c1 <= col <= c2 and r1 <= row <= r2 and (col, row) != (c1, r1):
+        merged.add((c1, r1, c2, r2))
+    for ref in refs:
+        col, row = parse_cell_range(ref)[:2]
+        for c1, r1, _, _, _ in merged.overlapping((col, row, col, row)):
+            if (col, row) != (c1, r1):
                 raise ValueError("merged cells must use their top-left cell")
 
 

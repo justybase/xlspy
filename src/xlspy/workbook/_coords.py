@@ -3,7 +3,7 @@
 from __future__ import annotations
 from collections.abc import Iterable, Iterator
 import re
-from ..refs import column_label, parse_cell_range
+from ..refs import RangeIndex, column_label, parse_cell_range
 
 
 _CELL_RE = re.compile(r"^\$?([A-Za-z]{1,3})\$?([1-9][0-9]*)$")
@@ -211,35 +211,70 @@ class MultiCellRange:
     """Several cell ranges, such as a sheet's merged cells, in the order added."""
     def __init__(self, ranges: Iterable[str] | None = None) -> None:
         self.ranges: list[CellRange] = []
+        self._index = RangeIndex()
+        self._present: set[str] = set()
+        self._indexed = 0
+        self._last: CellRange | None = None
         if ranges is not None:
             for value in ranges:
                 self.add(value)
 
+    def _sync(self) -> None:
+        """Catch up with ``ranges``, which is public: code may have changed it."""
+        ranges = self.ranges
+        if len(ranges) == self._indexed and (not ranges or ranges[-1] is self._last):
+            return
+        self._index = RangeIndex()
+        for cell_range in ranges:
+            self._index.add(parse_cell_range(cell_range), cell_range)
+        self._present = set(ranges)
+        self._indexed = len(ranges)
+        self._last = ranges[-1] if ranges else None
+
     def add(self, value: str) -> None:
         """Add a range unless it is already present."""
         cell_range = CellRange(value)
-        if cell_range not in self.ranges:
+        self._sync()
+        if cell_range not in self._present:
             self.ranges.append(cell_range)
+            self._present.add(cell_range)
+            self._index.add(parse_cell_range(cell_range), cell_range)
+            self._indexed += 1
+            self._last = cell_range
 
     def remove(self, value: str) -> None:
         """Remove a range; raises ValueError when it is not present."""
         cell_range = CellRange(value)
-        for index, existing in enumerate(self.ranges):
-            if existing == cell_range:
-                del self.ranges[index]
-                return
-        raise ValueError(f"range {value!r} is not merged")
+        self._sync()
+        if cell_range not in self._present:
+            raise ValueError(f"range {value!r} is not merged")
+        self.ranges.remove(cell_range)
+        self._present.discard(cell_range)
+        self._index.remove(parse_cell_range(cell_range), cell_range)
+        self._indexed -= 1
+        self._last = self.ranges[-1] if self.ranges else None
+
+    def first_overlapping(self, bounds: tuple[int, int, int, int]) -> CellRange | None:
+        """The first range added that shares a cell with zero-based ``bounds``, or None."""
+        self._sync()
+        found = self._index.overlapping(bounds)
+        return found[0][4] if found else None
 
     def __contains__(self, item: object) -> bool:
-        if isinstance(item, str) and ":" not in item:
-            return any(item in cell_range for cell_range in self.ranges)
         if not isinstance(item, str):
             return False
+        if ":" not in item:
+            try:
+                col, row, _, _ = parse_cell_range(item)
+            except (TypeError, ValueError):
+                return False
+            return self.first_overlapping((col, row, col, row)) is not None
         try:
             cell_range = CellRange(item)
         except (TypeError, ValueError):
             return False
-        return cell_range in self.ranges
+        self._sync()
+        return cell_range in self._present
 
     def __iter__(self) -> Iterator[CellRange]:
         return iter(self.ranges)

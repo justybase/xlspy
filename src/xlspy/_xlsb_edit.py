@@ -245,11 +245,12 @@ class XlsbEditMixin(XlsxEditMixin):
         refs = XlsbWriter._normalize_merges(list(ranges)) or []
         block = b""
         if refs:
-            block = build_record(0xB1, struct.pack('<I', len(refs)))
+            pieces = [build_record(0xB1, struct.pack('<I', len(refs)))]
             for ref in refs:
                 c1, r1, c2, r2 = parse_cell_range(ref)
-                block += build_record(0xB0, struct.pack('<IIII', r1, r2, c1, c2))
-            block += build_record(0xB2)
+                pieces.append(build_record(0xB0, struct.pack('<IIII', r1, r2, c1, c2)))
+            pieces.append(build_record(0xB2))
+            block = b"".join(pieces)
         if not block and not any(r.record_id in _MERGE_RECORDS for r, _ in records(data)):
             return
         self._apply_parts({path: replace_records(data, _MERGE_RECORDS, block, before=_AFTER_MERGES)})
@@ -307,12 +308,12 @@ class XlsbEditMixin(XlsxEditMixin):
         taken = {rel.get('Id') for rel in root}
         rels_changed = False
         block = list(kept)
+        number = 1  # Ids only get taken here, so the first free one never moves back.
         for row, col, link in entries:
             rid = None
             if not link.is_internal:
                 rid = by_target.get(link.target)
                 if rid is None:
-                    number = 1
                     while f"rId{number}" in taken:
                         number += 1
                     rid = f"rId{number}"
