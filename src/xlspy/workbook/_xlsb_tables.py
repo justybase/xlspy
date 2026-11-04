@@ -120,8 +120,8 @@ def _is_referred_to(package: _Package, ident: int) -> bool:
     The tokens are looked for in the bytes of the sheets and of the workbook part, so a chance
     match of twelve bytes would refuse a removal that was safe, never allow an unsafe one.
     """
-    # PtgExtend, PtgList, ixti (0), two bytes of flags, the table id.
-    pattern = re.compile(re.escape(b"\x18\x19\x00\x00") + b".." + re.escape(struct.pack("<I", ident)), re.S)
+    # PtgExtend, PtgList, ixti (any extern-sheet index), two bytes of flags, the table id.
+    pattern = re.compile(re.escape(b"\x18\x19") + b"...." + re.escape(struct.pack("<I", ident)), re.S)
     for name in package.names:
         if name == "xl/workbook.bin" or (name.startswith("xl/") and name.endswith(".bin") and "/worksheets/" in name):
             data = package.get(name)

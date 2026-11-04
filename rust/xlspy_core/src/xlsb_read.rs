@@ -244,7 +244,7 @@ fn counts_for_layout(data: &[u8], rec: &Record) -> bool {
     }
     match rec.id {
         0x02 | 0x07 => rec.len >= 12,
-        0x04 | 0x0A => rec.len >= 9,
+        0x03 | 0x04 | 0x0A => rec.len >= 9,
         0x05 | 0x09 => rec.len >= 16,
         0x06 | 0x08 => {
             rec.len >= 12
@@ -899,10 +899,11 @@ mod tests {
             let rec = next_record(&data, &mut pos).unwrap();
             counts_for_layout(&data, &rec)
         };
-        // Blank and error need the header alone; every other kind its value.
+        // Blank needs the header alone; error, bool and the other kinds their value.
         assert!(counts(0x01, &[0; 8]));
         assert!(!counts(0x01, &[0; 7]));
-        assert!(counts(0x03, &[0; 8]));
+        assert!(counts(0x03, &[0; 9]));
+        assert!(!counts(0x03, &[0; 8]));
         assert!(counts(0x02, &[0; 12]));
         assert!(!counts(0x02, &[0; 11]));
         assert!(counts(0x04, &[0; 9]));
