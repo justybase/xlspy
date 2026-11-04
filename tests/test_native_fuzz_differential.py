@@ -6,7 +6,8 @@ mutations keep the part's structure (whole XLSB records, XLSX cells, rows and
 attributes), so they reach the cell decoders, and every case is read twice:
 through the native module and through the pure-Python readers, in-process. Both
 must refuse it (InvalidFileError, no panic) or both must return the same rows,
-with the same types.
+with the same types; and ``load_workbook`` must build the same cells (value,
+type, style, dimensions) on both.
 
 ``XLSPY_FUZZ_ITERATIONS`` and ``XLSPY_FUZZ_SEED`` change the budget and the seed
 (as in ``test_native_fuzz.py``); a failure message names the case's seed.
@@ -22,8 +23,9 @@ import zipfile
 
 import pytest
 
-from xlspy import ExcelReader, XlsbWriter, XlsxWriter, _accel
+from xlspy import ExcelReader, XlsbWriter, XlsxWriter, _accel, load_workbook
 from xlspy import reader as reader_module
+from xlspy.workbook import _xlsb_reader
 from xlspy.exceptions import InvalidFileError
 
 pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
@@ -73,13 +75,45 @@ def _read(path):
         return "refused", None
 
 
+def _python_only(patch):
+    """Turn off every native reader, for the rest of a monkeypatch context."""
+    patch.setattr(reader_module, "HAVE_NATIVE", False)
+    patch.setattr(_accel, "_native_read_xlsx_worksheet", None)
+    patch.setattr(_accel, "_native_read_xlsb_sst", None)
+    patch.setattr(_accel, "_native_read_xlsx_sst", None)
+    patch.setattr(_xlsb_reader, "xlsb_load_cells", None)
+
+
 def _read_python(path, monkeypatch):
     with monkeypatch.context() as patch:
-        patch.setattr(reader_module, "HAVE_NATIVE", False)
-        patch.setattr(_accel, "_native_read_xlsx_worksheet", None)
-        patch.setattr(_accel, "_native_read_xlsb_sst", None)
-        patch.setattr(_accel, "_native_read_xlsx_sst", None)
+        _python_only(patch)
         return _read(path)
+
+
+def _model(path):
+    """("ok", the cells load_workbook builds) or ("refused", None)."""
+    try:
+        workbook = load_workbook(str(path))
+    except InvalidFileError as exc:
+        assert type(exc.__cause__).__name__ != "PanicException", f"the native loader panicked: {exc}"
+        return "refused", None
+    try:
+        return "ok", {
+            sheet.title: sorted(
+                (cell.row, cell.column, _normal(cell.value), cell.data_type, cell._style_id)
+                for row in sheet._cells.values() for cell in row.values()
+            ) + [("max", sheet.max_row, sheet.max_column)]
+            + sorted((row, dim.height, dim.hidden) for row, dim in sheet.row_dimensions.items())
+            for sheet in workbook.worksheets
+        }
+    finally:
+        workbook.close()
+
+
+def _model_python(path, monkeypatch):
+    with monkeypatch.context() as patch:
+        _python_only(patch)
+        return _model(path)
 
 
 def _normal(value):
@@ -102,6 +136,22 @@ def _check_same(path, monkeypatch, case):
     if native != python:
         detail = _first_difference(native, python)
         pytest.fail(f"native and Python readers disagree on {case}: {detail}")
+    native, python = _model(path), _model_python(path, monkeypatch)
+    if native != python:
+        pytest.fail(f"native and Python load_workbook disagree on {case}: {_first_model_difference(native, python)}")
+
+
+def _first_model_difference(native, python):
+    if native[0] != python[0]:
+        return f"native {native[0]}, Python {python[0]}"
+    for title, cells in native[1].items():
+        other = python[1].get(title, [])
+        for left, right in zip(cells, other):
+            if left != right:
+                return f"sheet {title!r}: native {left!r}, Python {right!r}"
+        if len(cells) != len(other):
+            return f"sheet {title!r}: native {len(cells)} entries, Python {len(other)}"
+    return "different sheets"
 
 
 def _first_difference(native, python):

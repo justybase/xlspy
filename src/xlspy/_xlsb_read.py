@@ -28,7 +28,7 @@ def cached_cell(kind, payload, reader):
         value = CellError('error:' + ERRORS.get(payload[8], '#VALUE!'))
         formula_offset = 11 if kind == 11 else None
     elif kind in (4, 10):
-        value = bool(payload[8])
+        value = payload[8] == 1  # only 1 is True, as in the row readers
         formula_offset = 11 if kind == 10 else None
     elif kind in (5, 9):
         value = struct.unpack_from('<d', payload, 8)[0]
@@ -47,6 +47,22 @@ def cached_cell(kind, payload, reader):
         elif value.is_integer():
             value = int(value)
     return value, payload[formula_offset:] if formula_offset is not None else None, style
+
+
+# Shortest body of a value cell (BrtCellBlank..BrtCellIsst) that is read; a
+# shorter one, or a string whose characters overrun its record, is ignored, as
+# by the native loader and the row readers.
+_VALUE_CELL_MIN = {1: 8, 2: 12, 3: 9, 4: 9, 5: 16, 6: 12, 7: 12}
+# Last zero-based row: a row record past it is refused (0xFFFFFFFF: no row).
+_MAX_ROW_INDEX = 1048575
+
+
+def _readable_value_cell(kind: int, payload: bytes) -> bool:
+    if len(payload) < _VALUE_CELL_MIN[kind]:
+        return False
+    if kind == 6:
+        return struct.unpack_from('<I', payload, 8)[0] * 2 + 12 <= len(payload)
+    return True
 
 
 def _date_or_number(serial: float, date_1904: bool) -> Any:
@@ -127,26 +143,42 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
             elif kind == 0x92:
                 break
             elif in_data and kind == 0:
-                if current_row is not None:
+                # A row record too short for its index is ignored: its cells
+                # stay in the row before (as in the native loader).
+                if len(payload) < 4:
+                    continue
+                index = struct.unpack_from('<I', payload)[0]
+                if index != 0xFFFFFFFF and index > _MAX_ROW_INDEX:
+                    raise InvalidFileError(
+                        f"XLSB row record has row index {index}, past the last row ({_MAX_ROW_INDEX})")
+                if current_row is not None and current_row >= 0:
                     yield finish()
-                current_row = struct.unpack_from('<I', payload)[0]
+                current_row = -1 if index == 0xFFFFFFFF else index  # -1: no row, its cells are skipped
                 cells = []
                 previous_column = -1
             elif in_data and 1 <= kind <= 0x12:
+                if current_row is None or current_row < 0:
+                    continue
                 if kind >= 0xC:
+                    if len(payload) < 4:
+                        continue
                     column = previous_column + 1
                     payload = struct.pack('<I', column) + payload
                     kind -= 0xB
                 else:
+                    if len(payload) < 8:
+                        continue
                     column = struct.unpack_from('<I', payload)[0]
                 if not 0 <= column < 16384:
                     raise InvalidFileError("XLSB column exceeds Excel limits")
                 previous_column = column
+                if kind < 8 and not _readable_value_cell(kind, payload):
+                    continue
                 value, formula, style = cached_cell(kind, payload, reader)
                 cells.append((column, value, formula, style))
             elif in_data and kind in (0x1AA, 0x1AB) and not data_only:
                 groups.update(formula_groups([(kind, payload)]))
-        if current_row is not None:
+        if current_row is not None and current_row >= 0:
             yield finish()
 
     if data is not None:

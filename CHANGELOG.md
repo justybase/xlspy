@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The Python shared-strings reader sized its list by the count in `BrtBeginSst`: a damaged
     count allocated gigabytes. The count is not trusted any more, and a cut-short `BrtBeginSst`
     is refused as in the native reader.
+  - `load_workbook` (and `ExcelReader(data_only=False)`, `streaming=True`, read-only sheets) on a
+    damaged XLSB: the Python loader refused a cell record too short for its value, and read any
+    byte but 0 of a boolean as `True`; the native loader dropped the rows of a row record past
+    the last row. Both now follow the row readers: a short cell record is skipped, only 1 is
+    `True`, and a row past the last is refused. The fuzzer compares `load_workbook` too.
 
 ### Added
 

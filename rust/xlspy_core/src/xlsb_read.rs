@@ -662,14 +662,17 @@ pub fn xlsb_load_cells<'py>(
                 break;
             }
             0x00 => {
-                let Some(r) = (rec_len >= 4).then(|| le_u32(data, body)).flatten() else {
+                // A row record too short for its index is ignored (its cells
+                // stay in the row before); row 0xFFFFFFFF is no row (its cells
+                // are skipped), and one past the last row is refused, as in
+                // the row readers.
+                if rec_len < 4 {
                     continue;
-                };
-                current_row = i64::from(r);
+                }
+                current_row = row_index(&data[body..body + rec_len])?;
                 previous_column = -1;
                 row = None;
-                if current_row >= 1_048_576 {
-                    current_row = -1;
+                if current_row < 0 {
                     continue;
                 }
                 // Custom height, hidden flag or outline level.
