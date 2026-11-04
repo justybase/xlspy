@@ -878,6 +878,34 @@ mod tests {
     }
 
     #[test]
+    fn only_records_the_cell_reader_reads_count_for_the_layout() {
+        let counts = |id: u8, body: &[u8]| {
+            let data = record(id, body);
+            let mut pos = 0;
+            let rec = next_record(&data, &mut pos).unwrap();
+            counts_for_layout(&data, &rec)
+        };
+        // Blank and error need the header alone; every other kind its value.
+        assert!(counts(0x01, &[0; 8]));
+        assert!(!counts(0x01, &[0; 7]));
+        assert!(counts(0x03, &[0; 8]));
+        assert!(counts(0x02, &[0; 12]));
+        assert!(!counts(0x02, &[0; 11]));
+        assert!(counts(0x04, &[0; 9]));
+        assert!(!counts(0x04, &[0; 8]));
+        assert!(counts(0x05, &[0; 16]));
+        assert!(!counts(0x05, &[0; 15]));
+        assert!(counts(0x07, &[0; 12]));
+        assert!(!counts(0x07, &[0; 11]));
+        // A string fits its record, or the record is ignored.
+        let mut text = vec![0u8; 12];
+        text[8] = 2;
+        assert!(!counts(0x06, &text));
+        text.extend_from_slice(&[b'a', 0, b'b', 0]);
+        assert!(counts(0x06, &text));
+    }
+
+    #[test]
     fn error_codes_map_to_excel_text() {
         assert_eq!(error_text(0x07), "#DIV/0!");
         assert_eq!(error_text(0x2A), "#N/A");

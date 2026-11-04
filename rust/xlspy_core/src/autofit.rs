@@ -1297,3 +1297,105 @@ impl WidthMeter {
             .extract()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Expected values come from Python: `_formatted_number_text`, `cell_text`.
+    #[test]
+    fn fixed_text_matches_format_and_zfill() {
+        for (value, decimals, thousands, min_digits, expected) in [
+            (0.0, 2, false, 1, "0.00"),
+            (1234567.891, 2, true, 1, "1,234,567.89"),
+            (999.995, 2, true, 1, "1,000.00"),
+            // Exact ties round to even, as in Python's format().
+            (0.125, 2, false, 1, "0.12"),
+            (0.375, 2, false, 1, "0.38"),
+            (1e21, 0, true, 1, "1,000,000,000,000,000,000,000"),
+            // `000`, `0000.0`, `000,000`: zfill counts the commas.
+            (5.0, 0, false, 3, "005"),
+            (12.0, 1, false, 4, "0012.0"),
+            (5.0, 0, false, 6, "000005"),
+            (1234.5, 0, true, 6, "01,234"),
+            (1234.0, 0, true, 5, "1,234"),
+        ] {
+            assert_eq!(
+                fixed_text(value, decimals, thousands, min_digits),
+                expected,
+                "{value} {decimals} {thousands} {min_digits}"
+            );
+        }
+    }
+
+    #[test]
+    fn scientific_text_pads_the_exponent() {
+        for (value, decimals, digits, expected) in [
+            (0.0, 2, 2, "0.00E+00"),
+            (1234.5, 2, 2, "1.23E+03"),
+            (9.995, 2, 2, "9.99E+00"),
+            (1e-5, 0, 1, "1E-5"),
+            (1.5e300, 3, 3, "1.500E+300"),
+            (1e100, 2, 2, "1.00E+100"),
+            (0.000123, 1, 2, "1.2E-04"),
+        ] {
+            assert_eq!(
+                scientific_text(value, decimals, digits).as_deref(),
+                Some(expected),
+                "{value} {decimals} {digits}"
+            );
+        }
+    }
+
+    fn shown(number: Num) -> String {
+        String::from_utf8_lossy(number.general().as_bytes()).into_owned()
+    }
+
+    #[test]
+    fn general_matches_python_for_floats() {
+        for (value, expected) in [
+            (-0.0, "0"),
+            (1e10, "10000000000"),
+            (1e11, "1E+11"),
+            (0.1, "0.1"),
+            (0.1234567890123, "0.123456789"),
+            (1.5e-9, "1.5E-09"),
+            (1e-10, "1E-10"),
+            (123456.7891234, "123456.7891"),
+            (-1234.5678, "-1234.5678"),
+            // Rounding carries into a new digit.
+            (99999999999.5, "100000000000"),
+            (0.000012345678, "1.23457E-05"),
+            (1e100, "1E+100"),
+            (1.23456789e300, "1.23457E+300"),
+            (5e-324, "5E-324"),
+        ] {
+            assert_eq!(shown(Num::Float(value)), expected, "{value}");
+        }
+    }
+
+    #[test]
+    fn general_matches_python_for_ints() {
+        for (value, expected) in [
+            (0, "0"),
+            (-1, "-1"),
+            (12345678901, "12345678901"),
+            (123456789012, "1.23457E+11"),
+            (i64::MAX, "9.22337E+18"),
+            (i64::MIN, "-9.22337E+18"),
+        ] {
+            assert_eq!(shown(Num::Int(value)), expected, "{value}");
+        }
+    }
+
+    #[test]
+    fn scaling_by_percent_stays_in_range() {
+        assert_eq!(Num::Int(5).scaled(1), Some(500.0));
+        assert_eq!(Num::Float(0.5).scaled(2), Some(5000.0));
+        assert_eq!(Num::Float(1.0).scaled(12), None); // 100 ** 12 is not exact
+        assert_eq!(Num::Int(i64::MAX).scaled(40), None); // past i128
+        assert_eq!(Num::Float(1e308).scaled(1), None); // infinite
+        assert_eq!(Num::Int(i64::MIN).negate().map(|n| n.is_negative()), None);
+        assert_eq!(Num::Int(-3).negate().map(|n| n.is_negative()), Some(false));
+    }
+}

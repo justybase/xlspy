@@ -189,7 +189,7 @@ fn declares_utf8(declaration: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{declares_utf8, tag_end};
+    use super::{Finder, Finders, declares_utf8, item_text, tag_end};
 
     #[test]
     fn declarations() {
@@ -207,5 +207,46 @@ mod tests {
         assert_eq!(tag_end(br#"<rPh sb="0" x="a>b">"#), Some(20));
         assert_eq!(tag_end(br#"<r>"#), Some(3));
         assert_eq!(tag_end(br#"<b x="<"/>"#), None);
+    }
+
+    fn text_of(content: &[u8]) -> Option<Vec<u8>> {
+        let finders = Finders {
+            item_open: Finder::new(b"<si"),
+            item_close: Finder::new(b"</si>"),
+            text_close: Finder::new(b"</t>"),
+        };
+        item_text(&finders, content)
+    }
+
+    #[test]
+    fn item_text_joins_the_runs_of_an_item() {
+        assert_eq!(text_of(b"<t>abc</t>").as_deref(), Some(&b"abc"[..]));
+        assert_eq!(
+            text_of(br#"<r><rPr><b/></rPr><t>bo</t></r><r><t xml:space="preserve"> ld</t></r>"#)
+                .as_deref(),
+            Some(&b"bo ld"[..])
+        );
+        assert_eq!(text_of(b"").as_deref(), Some(&b""[..]));
+    }
+
+    #[test]
+    fn item_text_leaves_what_it_cannot_read_to_the_xml_parsers() {
+        for content in [
+            &b"</t>"[..],             // a closing tag with no opening tag
+            b"<t/>",                  // an empty element
+            b"<t\n>x</t>",            // white space in the tag
+            br#"<t other="1">x</t>"#, // another attribute
+            b"<t>x",                  // never closed
+            b"<t>a<b/>c</t>",         // markup in the text
+            b"<si><t>x</t></si>",     // a nested item
+            b"<r x=\"never closed",   // a broken tag
+        ] {
+            assert_eq!(
+                text_of(content),
+                None,
+                "{:?}",
+                String::from_utf8_lossy(content)
+            );
+        }
     }
 }
