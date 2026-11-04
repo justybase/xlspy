@@ -12,6 +12,23 @@
   workbook is being copied in, it holds part of the workbook (see
   [Failure handling](guide/writing.md#failure-handling)).
 
+## Edit and write rounds (2026-11-04)
+
+Full suite at commit `37df71f`, native module / `XLSPY_ACCEL=python`:
+
+| System | Python | Native | Pure Python |
+| :--- | :--- | ---: | ---: |
+| Windows 11 | 3.14 | 9813 passed, 328 skipped, 2 xfailed | 8730 passed, 1423 skipped, 1 xfailed |
+| Ubuntu 26.04 on WSL2 | 3.15 | 9790 passed, 271 skipped, 2 xfailed | 8699 passed, 1363 skipped, 1 xfailed |
+| macOS 27 (Apple M4) | 3.15 | 9790 passed, 271 skipped, 2 xfailed | 8699 passed, 1363 skipped, 1 xfailed |
+
+The previous commit (`02fe4ad`) also passed on Python 3.11, 3.14 and 3.15 on WSL2 and on 3.11 and 3.14 on macOS, and `cargo test` passed on both. The two xfails are the openpyxl harness's image count without Pillow and the known gap of rich text with inline strings (`tests/test_native_write_coverage.py`). The Excel COM subset for the new table edits and defined-name comments passes with Excel 16.0 (`XLSPY_RUN_EXCEL_COM=1`). What changed in these rounds:
+
+- Edit-sequence fuzzing (`tests/test_edit_sequences_fuzz.py`) compares a loaded workbook's saved edits with what was edited, in both formats; it found six cases where data was lost without an error (see the changelog).
+- The XLSB write paths are counted (`tests/test_native_write_coverage.py`, `benchmarks/bench_xlsb_paths.py`): typical writes keep every row in the native encoder.
+- Tables of a loaded XLSB can be changed and removed, and `DefinedName.comment` is written and read; both are checked against XLSX and in Excel.
+- Not covered by a test: macOS and Linux have no Excel, so the COM checks run on Windows only.
+
 ## Quality round (2026-11-02)
 
 Full suite on Windows 11 (Python 3.14, release build of the Rust module):
