@@ -13,6 +13,7 @@ from xlspy.biff_utils import build_record
 SHEET_PART = "xl/worksheets/sheet1.bin"
 BRT_ROW_HDR = 0x00
 BRT_CELL_ERROR = 0x03
+BRT_FMLA_ERROR = 0x0B
 VALUE_CELLS = (0x02, 0x05)  # BrtCellRk, BrtCellReal
 NA = 0x2A  # the error code for #N/A
 
@@ -37,8 +38,8 @@ def _records(data):
         pos += size
 
 
-def _with_error_cell(payload, *, row, code):
-    """Turn the first value cell of ``row`` into a BrtCellError with ``code``."""
+def _with_error_cell(payload, *, row, code, record=BRT_CELL_ERROR, length=9):
+    """Turn the first value cell of ``row`` into an error cell of ``record`` and ``length`` bytes with ``code``."""
     out = []
     current = -1
     replaced = False
@@ -47,7 +48,7 @@ def _with_error_cell(payload, *, row, code):
             current += 1
         elif current == row and not replaced and rec_id in VALUE_CELLS and len(body) >= 8:
             # The cell header (column and style) stays; the error code follows it.
-            rec_id, body = BRT_CELL_ERROR, body[:8] + bytes([code])
+            rec_id, body = record, body[:8] + bytes([code])[:length - 8]
             replaced = True
         out.append(build_record(rec_id, body))
     assert replaced, "no value cell to replace in the generated sheet"
@@ -108,3 +109,34 @@ def test_reader_accepts_path_objects(error_workbook):
         assert reader.read_all("S")[1][0] == CellError("error:#N/A")
     finally:
         reader.close()
+
+
+@pytest.mark.parametrize("length", [8, 9])
+def test_a_formula_error_cell_is_read_the_same_by_both_readers(tmp_path, monkeypatch, length):
+    """A BrtFmlaError is a cell only with its 9-byte header and error code, as in the Python reader."""
+    # One value per row, so the replaced cell has no compact neighbours in its row.
+    source = tmp_path / "numbers.xlsb"
+    with XlsbWriter(str(source)) as writer:
+        writer.add_sheet("S")
+        writer.write_sheet([[10.0], [40.0], [70.0]])
+    path = tmp_path / "formula-errors.xlsb"
+    with zipfile.ZipFile(source) as zin, zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zout:
+        for name in zin.namelist():
+            payload = zin.read(name)
+            if name == SHEET_PART:
+                payload = _with_error_cell(payload, row=1, code=NA, record=BRT_FMLA_ERROR, length=length)
+            zout.writestr(name, payload)
+    results = {}
+    for native in (True, False):
+        if native and not reader_module.HAVE_NATIVE:
+            pytest.skip("native extension not built")
+        monkeypatch.setattr(reader_module, "HAVE_NATIVE", native)
+        with ExcelReader(str(path)) as reader:
+            results[native] = reader.read_all("S")
+    assert results[True] == results[False]
+    assert results[False][0] == [10]
+    assert results[False][2] == [70]
+    if length == 8:
+        assert not any(isinstance(value, CellError) for value in results[False][1])
+    else:
+        assert results[False][1] == [CellError("error:#N/A")]

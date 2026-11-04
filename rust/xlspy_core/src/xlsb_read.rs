@@ -162,16 +162,15 @@ impl<'py> CellContext<'_, 'py> {
         let body = rec.body;
         Ok(Some(match rec.id {
             0x01 => py.None().into_bound(py),
-            // BrtCellError / BrtFmlaError: an error value, not a blank cell.
+            // BrtCellError / BrtFmlaError: an error value, not a blank cell; shorter, not a cell.
             0x03 | 0x0B => {
                 if rec.len < 9 {
-                    py.None().into_bound(py)
-                } else {
-                    let text = PyString::new(py, &format!("error:{}", error_text(data[body + 8])));
-                    match error_type(py) {
-                        Some(t) => t.call1((text,))?,
-                        None => text.into_any(),
-                    }
+                    return Ok(None);
+                }
+                let text = PyString::new(py, &format!("error:{}", error_text(data[body + 8])));
+                match error_type(py) {
+                    Some(t) => t.call1((text,))?,
+                    None => text.into_any(),
                 }
             }
             0x02 => {
@@ -244,7 +243,7 @@ fn counts_for_layout(data: &[u8], rec: &Record) -> bool {
     }
     match rec.id {
         0x02 | 0x07 => rec.len >= 12,
-        0x03 | 0x04 | 0x0A => rec.len >= 9,
+        0x03 | 0x04 | 0x0A | 0x0B => rec.len >= 9,
         0x05 | 0x09 => rec.len >= 16,
         0x06 | 0x08 => {
             rec.len >= 12
@@ -904,6 +903,8 @@ mod tests {
         assert!(!counts(0x01, &[0; 7]));
         assert!(counts(0x03, &[0; 9]));
         assert!(!counts(0x03, &[0; 8]));
+        assert!(counts(0x0B, &[0; 9]));
+        assert!(!counts(0x0B, &[0; 8]));
         assert!(counts(0x02, &[0; 12]));
         assert!(!counts(0x02, &[0; 11]));
         assert!(counts(0x04, &[0; 9]));

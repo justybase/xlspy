@@ -51,10 +51,10 @@ def cached_cell(kind, payload, reader):
     return value, payload[formula_offset:] if formula_offset is not None else None, style
 
 
-# Shortest body of a value cell (BrtCellBlank..BrtCellIsst) that is read; a
-# shorter one, or a string whose characters overrun its record, is ignored, as
-# by the native loader and the row readers.
-_VALUE_CELL_MIN = {1: 8, 2: 12, 3: 9, 4: 9, 5: 16, 6: 12, 7: 12}
+# Shortest body of a value cell (BrtCellBlank..BrtCellIsst, and the formula cells
+# BrtFmlaString..BrtFmlaError) that is read; a shorter one, or a string whose
+# characters overrun its record, is ignored, as by the native loader and the row readers.
+_VALUE_CELL_MIN = {1: 8, 2: 12, 3: 9, 4: 9, 5: 16, 6: 12, 7: 12, 8: 12, 9: 16, 10: 9, 11: 9}
 # Last zero-based row: a row record past it is refused (0xFFFFFFFF: no row).
 _MAX_ROW_INDEX = 1048575
 
@@ -62,7 +62,7 @@ _MAX_ROW_INDEX = 1048575
 def _readable_value_cell(kind: int, payload: bytes) -> bool:
     if len(payload) < _VALUE_CELL_MIN[kind]:
         return False
-    if kind == 6:
+    if kind in (6, 8):
         chars: int = struct.unpack_from('<I', payload, 8)[0]
         return chars * 2 + 12 <= len(payload)
     return True
@@ -178,7 +178,7 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
                 if not 0 <= column < 16384:
                     raise InvalidFileError("XLSB column exceeds Excel limits")
                 previous_column = column
-                if kind < 8 and not _readable_value_cell(kind, payload):
+                if kind in _VALUE_CELL_MIN and not _readable_value_cell(kind, payload):
                     continue
                 value, formula, style = cached_cell(kind, payload, reader)
                 cells.append((column, value, formula, style))

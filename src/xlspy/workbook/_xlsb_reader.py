@@ -18,7 +18,7 @@ from itertools import chain as _chain
 
 from .._accel import xlsb_load_cells
 from .._errors import CellError
-from .._xlsb_read import cached_cell, formula_groups, formula_text, iter_xlsb_indexed_rows
+from .._xlsb_read import _readable_value_cell, cached_cell, formula_groups, formula_text, iter_xlsb_indexed_rows
 from ._xlsb_styles import XlsbStyleTable
 from .._xlsb_validation import dval_rule
 from ..biff_utils import iter_record_payloads
@@ -85,6 +85,9 @@ def _load_cells(sheet, reader, name, sheet_data, data_only):
         )
         shared = formula_groups(groups)
         for row, kind, payload in formulas:
+            # A formula cell shorter than its header is not a cell, as in the Python reader.
+            if not _readable_value_cell(kind, payload):
+                continue
             value, formula, style = cached_cell(kind, payload, reader)
             column = struct.unpack_from("<I", payload)[0]
             text = None

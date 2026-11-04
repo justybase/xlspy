@@ -12,7 +12,8 @@ from __future__ import annotations
 import datetime as _datetime
 import os
 from pathlib import Path
-from typing import Any, Literal
+from types import TracebackType
+from typing import Any, Literal, Self
 from collections.abc import Callable, Iterable, Sequence
 
 from .excel_dates import datetime_to_serial
@@ -77,6 +78,15 @@ class _UpdaterBase:
         if self._stream_shared_strings is not None:
             self._stream_shared_strings.close()
         self._package.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None,
+                 exc_tb: TracebackType | None) -> Literal[False]:
+        # Leaving the block releases the updater's files; changes are kept only by save().
+        self.close()
+        return False
 
     def __del__(self) -> None:
         # An exception raised in __del__ cannot reach a caller; it would only be
