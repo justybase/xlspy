@@ -15,6 +15,7 @@ from typing import Any, cast
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from xml.parsers import expat
 from ._safe_xml import harden_expat
+from ._text import xml_space_attribute
 
 from .updater_utils import (
     DiskStringIndex,
@@ -38,7 +39,6 @@ from .updater_utils import (
     unescape_xml_text,
     unwrap_cell,
     xml_attribute,
-    xml_space_attribute,
     xml_table_header,
 )
 from ._text import check_cell_text
@@ -63,6 +63,12 @@ def _tag_attribute(opening_tag: str, wanted: str) -> str | None:
     )
     match = pattern.search(opening_tag)
     return match.group(2) if match else None
+
+
+def _number_text(value: float) -> str:
+    """The shortest digits that read back as ``value``, as the native encoder writes them."""
+    text = repr(float(value))
+    return text[:-2] if text.endswith(".0") else text
 
 
 class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
@@ -590,12 +596,12 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             return f'{cell_prefix} t="b"><{prefix}v>{1 if value else 0}</{prefix}v></{prefix}c>'
         if isinstance(value, (_datetime.datetime, _datetime.date)):
             serial = self._date_to_serial(value)
-            return f"{cell_prefix}><{prefix}v>{serial:.15g}</{prefix}v></{prefix}c>"
+            return f"{cell_prefix}><{prefix}v>{_number_text(serial)}</{prefix}v></{prefix}c>"
         if isinstance(value, numbers.Real) or isinstance(value, Decimal):
             numeric_value = float(value)
             if not math.isfinite(numeric_value):
                 raise ValueError("numeric cell values must be finite")
-            return f"{cell_prefix}><{prefix}v>{numeric_value:.15g}</{prefix}v></{prefix}c>"
+            return f"{cell_prefix}><{prefix}v>{_number_text(numeric_value)}</{prefix}v></{prefix}c>"
 
         text = str(value)
         check_cell_text(text)

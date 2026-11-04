@@ -266,7 +266,7 @@ def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
         if row_attrs is not None:
             _apply_row_attributes(sheet, row_number, row_attrs)
         state["next_row"] = row_number + 1
-        max_row = max(state["max_row"], row_number)
+        max_row = state["max_row"]  # A row without cells has no place in the sheet's size.
         max_column = state["max_column"]
         for row, column, value, data_type, style_id in cells:
             if value is None and style_id == 0:

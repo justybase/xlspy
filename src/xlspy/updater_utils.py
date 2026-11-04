@@ -33,7 +33,7 @@ from ._safe_xml import fromstring as safe_fromstring, harden_expat
 from xml.parsers import expat
 from xml.sax import saxutils
 
-from ._text import check_cell_text, xstring_escape
+from ._text import check_cell_text, xml_space_attribute, xstring_escape
 from .exceptions import UnsupportedFeatureError
 from .comments import rels_path
 from .refs import parse_cell_range
@@ -62,15 +62,6 @@ def copy_file_range(source_path: str | os.PathLike[str], target: IO[bytes], star
             remaining -= len(chunk)
 
 
-def xml_space_attribute(value: str) -> str:
-    """Return the XML space-preservation attribute used for text nodes."""
-
-    preserve = (
-        value[:1].isspace()
-        or value[-1:].isspace()
-        or any(character in value for character in "\t\n\r")
-    )
-    return ' xml:space="preserve"' if preserve else ""
 
 
 def xml_attribute(attrs: dict[str, str], wanted: str) -> str | None:

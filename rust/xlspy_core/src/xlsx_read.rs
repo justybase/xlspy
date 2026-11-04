@@ -893,7 +893,10 @@ impl State {
         }
         self.next_row = row_number + 1;
         self.next_row_valid = true;
-        m.max_row = m.max_row.max(row_number);
+        // A row without cells has no place in the sheet's size, as in XLSB.
+        if m.row_max_column > 0 {
+            m.max_row = m.max_row.max(row_number);
+        }
         m.max_column = m.max_column.max(m.row_max_column);
         Ok(Some(()))
     }

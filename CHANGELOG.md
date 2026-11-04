@@ -7,8 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `ExcelReader.get_rows()` on XLSB returns rows of the same shape as on XLSX, by every path (bulk,
+  `streaming=True`, `data_only=False`): each value at its own position, and rows padded to the
+  width of the first row with cells. Rows before that one are now `[]` (they were padded), a wider
+  row no longer widens the rows after it, and a sheet of empty rows gives `[[], []]`, not
+  `[[None], [None]]`.
+
 ### Fixed
 
+- `ExcelReader.get_rows()` on XLSB lost data without an error: cells left of the first cell of the
+  first row were dropped and the others moved. With a title in B1 over a table from A3, the first
+  column of the table was gone, and a sheet starting at E6 read as if it started at A1.
+  `load_workbook` and all XLSX readers were right.
+- `XlsbUpdater.replace_sheet_data` on a sheet without rows put them after the end of its sheet data,
+  where nothing reads them.
+- `XlsxUpdater.replace_sheet_data` rounded numbers to 15 digits: 0.30000000000000004 became 0.3 and
+  1234567890123456 became 1234567890123460. It now writes the digits that read back as the same
+  number, like the writers and the XLSB updater. Dates with a time of day are exact too.
+- Assigning a value to a cell removed its link in memory only: `ws["A1"].hyperlink = link` followed
+  by `ws["A1"].value = 1` lost the link, while the same assignment on a loaded link kept it in the
+  file and reported `None`. A value now keeps the link, as openpyxl does; `hyperlink = None` removes
+  it.
+- `Worksheet.max_row` of a loaded XLSX counted `<row>` elements without cells and the `<dimension>`
+  of the sheet, which XLSB did not, so `append()` wrote to a different row in the two formats. Only
+  cells and merged ranges count now, and a saved sheet's `<dimension>` is the range of its cells.
+- XLSX writers dropped the spaces at the end of a text, and a tab or a line break inside one: the
+  `<t>` had no `xml:space="preserve"` (only a leading space was kept), and Excel trims such a text.
+  `"trail "` read back as `"trail"` in Excel. Both backends and both string tables now mark every
+  text that needs it, as the updaters always did.
 - Saving a loaded XLSX after cell edits took time in the square of the sheet's size: 86 s after
   1,000 edits of a 4,000 x 20 sheet, and hours at 50,000 rows. The same save takes 0.33 s now, with
   the same bytes in the file. The pattern for an XML element (`element_pattern`) ran to the end of
@@ -52,10 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `load_workbook` on a damaged XLSB: the Python loader refused a cell record too short for its
     value, and read any byte but 0 of a boolean as `True`; the native loader dropped the cells of
     a row record past the last row. Both backends now skip a short value cell, read only 1 as
-    `True`, and refuse a row past the last. The fuzzer compares `load_workbook` too. (The
-    formula-aware path, `ExcelReader(data_only=False)` and `streaming=True`, shares these rules
-    but keeps its own row layout: on a sheet with records out of order it can still return other
-    rows than the default path, or refuse a short formula record the default path ignores.)
+    `True`, and refuse a row past the last. The fuzzer compares `load_workbook` too.
 
 - `XlsxUpdater` and `XlsbUpdater` meant different things by the same call:
   - `DefinedName(..., localSheetId=n)` became a global name in XLSB and could add a second entry

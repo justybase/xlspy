@@ -89,3 +89,15 @@ def xstring_unescape(text: str) -> str:
     if "_x" not in text:
         return text
     return _XSTRING_ESCAPE.sub(_unescape_match, text)
+
+
+def xml_space_attribute(value: str) -> str:
+    """The xml:space attribute a text node needs: Excel drops the spaces at the
+    ends of a text without it, so a text that starts or ends with a space (as
+    str.isspace has it) or holds a tab or a line break gets it."""
+    preserve = (
+        value[:1].isspace()
+        or value[-1:].isspace()
+        or any(character in value for character in "\t\n\r")
+    )
+    return ' xml:space="preserve"' if preserve else ""

@@ -613,10 +613,10 @@ class ExcelReader:
         rule for rule, so both backends read even a damaged sheet the same way
         (tests/test_native_fuzz_differential.py checks it):
 
-        - The first row with cells fixes the layout: its first column and its
-          width. Leading and gap rows get that width, and a cell left of the
-          first column is dropped. A later cell past the width widens the rows
-          from there on.
+        - Each cell is at its own column and each row at its own place, as
+          ``_xlsx_read.rows_in_place`` has it for XLSX: the rows before the first
+          row record are empty lists, the first row's width is the least any
+          later row has, and a row is as long as its last cell needs.
         - A cell goes to its column's index in the row, wherever its record is;
           a duplicate replaces the earlier value.
         - The rows between two row records (a gap) are empty rows; a row record
@@ -624,18 +624,19 @@ class ExcelReader:
         - Cells before any row record form a row of their own.
         - The data ends at BrtEndSheetData.
         """
-        first_col, cols_per_row = _xlsb_layout(raw)
+        first_width: int | None = None
         reader = BiffReader(_MemoryStream(raw))
         strings = self._shared_string_array
         styles = self._styles_cell_xfs_array
         formats = self._number_formats_type_dict
         date_1904 = self._date_1904
 
-        def width(cells_len: int) -> int:
-            return max(cells_len, 1) if cols_per_row == -1 else max(cols_per_row, 0)
-
-        def empty_row() -> list[Any]:
-            return [None] * (1 if cols_per_row == -1 else max(cols_per_row, 0))
+        def finished(row: list[Any]) -> list[Any]:
+            nonlocal first_width
+            row.extend([None] * ((first_width or 0) - len(row)))
+            if first_width is None and row:
+                first_width = len(row)
+            return row
 
         def value() -> Any:
             kind = reader.cell_type
@@ -664,6 +665,8 @@ class ExcelReader:
             while reader.read_worksheet():
                 if reader.record_id == BiffReader._row:
                     cur_row, seen_row = reader.row_index, True
+                    for _ in range(cur_row):
+                        yield []
                     break
                 if reader.read_cell:
                     pending_cell = True
@@ -675,77 +678,24 @@ class ExcelReader:
             while pending_cell or reader.read_worksheet():
                 pending_cell = False
                 if reader.record_id == BiffReader._row:
-                    n = width(len(cells))
-                    yield cells[:n] + [None] * (n - len(cells))
+                    yield finished(cells)
                     new_row = reader.row_index
                     gap = new_row - cur_row - 1 if seen_row else 0
                     cur_row, seen_row, cells = new_row, True, []
                     for _ in range(gap):
-                        yield empty_row()
+                        yield [None] * (first_width or 0)
                     continue
                 if not reader.read_cell:
                     continue
                 col = reader.column_num
-                if cols_per_row != -1:
-                    if (cols_per_row <= 0 or cols_per_row > _MAX_COLUMNS or col < first_col
-                            or col - first_col >= cols_per_row):
-                        # Valid later rows may be wider than the first: keep their cells.
-                        if 0 < cols_per_row <= _MAX_COLUMNS and col >= first_col:
-                            cols_per_row = col - first_col + 1
-                        else:
-                            continue
-                else:
-                    if first_col < 0:
-                        first_col = col
-                    if col < first_col or col - first_col > _MAX_COLUMNS:
-                        continue
-                idx = col - first_col
-                if idx >= len(cells):
-                    cells.extend([None] * (idx + 1 - len(cells)))
-                cells[idx] = value()
+                if col >= len(cells):
+                    cells.extend([None] * (col + 1 - len(cells)))
+                cells[col] = value()
 
-            if cells:
-                n = width(len(cells))
-                yield cells[:n] + [None] * (n - len(cells))
-            elif cur_row >= 0:
-                yield empty_row()
+            if cells or cur_row >= 0:
+                yield finished(cells)
         finally:
             reader.close()
-
-
-_MAX_COLUMNS = 16384
-
-
-def _xlsb_layout(raw: bytes) -> tuple[int, int]:
-    """(first column, width) of the first row with cells, or (-1, -1) when the
-    sheet has none: the native reader's prescan.
-
-    A damaged record stops the scan; the row reader raises when it gets there.
-    """
-    reader = BiffReader(_MemoryStream(raw))
-    cur_row, span_row = -1, -2  # the row of the first row with cells (-2: none yet)
-    first, last = -1, -1
-    try:
-        while reader.read_worksheet():
-            if reader.record_id == BiffReader._row:
-                if span_row != -2 and cur_row != span_row:
-                    break
-                cur_row = reader.row_index
-            elif reader.read_cell:
-                if span_row == -2:
-                    span_row = cur_row
-                if cur_row == span_row:
-                    if first < 0:
-                        first = reader.column_num
-                    last = reader.column_num
-    except InvalidFileError:
-        pass
-    finally:
-        reader.close()
-    if span_row == -2 or first < 0:
-        return -1, -1
-    # May be <= 0 for a first row out of column order: its rows are then empty.
-    return first, last - first + 1
 
 
 class _MemoryStream:

@@ -129,7 +129,7 @@ def _set_1904_date_system(path):
             zout.writestr(info, payload)
 
 
-def test_native_reader_drops_cells_left_of_first_data_column(tmp_path, monkeypatch):
+def test_native_reader_keeps_cells_at_their_columns(tmp_path, monkeypatch):
     source = tmp_path / "source.xlsb"
     _numeric_workbook(source)
 
@@ -153,7 +153,7 @@ def test_native_reader_drops_cells_left_of_first_data_column(tmp_path, monkeypat
     c_grid = _read(mutated, monkeypatch=monkeypatch)
     py_grid = _read(mutated, force_python=True, monkeypatch=monkeypatch)
     _same_typed_grid(c_grid, py_grid)
-    assert c_grid == [[10, 20, 30], [60, None, None]]
+    assert c_grid == [[None, None, 10, 20, 30], [40, 50, 60, None, None]]
 
 
 def test_native_reader_matches_python_for_first_row_record_order(tmp_path, monkeypatch):
@@ -177,9 +177,8 @@ def test_native_reader_matches_python_for_first_row_record_order(tmp_path, monke
     c_grid = _read(mutated, monkeypatch=monkeypatch)
     py_grid = _read(mutated, force_python=True, monkeypatch=monkeypatch)
     _same_typed_grid(c_grid, py_grid)
-    # The reference computes first/last columns in record order (2 then 1),
-    # giving a non-positive width and therefore an empty visible row.
-    assert c_grid == [[], []]
+    # Each cell is at its own column, whatever the order of the records.
+    assert c_grid == [[20, 30, 10], [40, 50, 60]]
 
 
 def test_native_reader_ignores_short_and_overrunning_records(tmp_path, monkeypatch):

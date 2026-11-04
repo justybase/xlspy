@@ -8,8 +8,11 @@ For XLSX/XLSM, `get_rows()` parses worksheet XML incrementally. It does not load
 the complete worksheet or retain previously returned rows. Shared strings and
 styles are still loaded separately; shared-formula definitions are retained when
 reading formula text. `read_all()` explicitly collects all rows in memory.
-Rows wider than the first row retain all cells; shorter rows retain the historical
-padding to the first row's width. Missing worksheet row numbers are not synthesized.
+
+XLSX and XLSB return rows of the same shape, by every read mode. Each value is at its
+own position: `row[2]` is column C, and rows absent from the file are there as empty
+rows. The first row with cells fixes the width that later rows are padded to, rows
+before it are `[]`, and a wider row keeps all its cells without widening the ones after it.
 
 The default `data_only=True` returns stored values, including formula caches.
 `get_rows(sheet_name, data_only=False)` and `read_all(..., data_only=False)` return

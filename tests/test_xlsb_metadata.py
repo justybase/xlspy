@@ -222,7 +222,7 @@ def test_later_wider_binary_rows_not_truncated(tmp_path,force_python,monkeypatch
     with XlsbWriter(path) as writer:
         writer.write_sheet([[1],[2,3,4],[5]])
     with ExcelReader(str(path)) as reader:
-        assert reader.read_all('Sheet1')==[[1],[2,3,4],[5,None,None]]
+        assert reader.read_all('Sheet1')==[[1],[2,3,4],[5]]
 
 
 def test_streamed_binary_rows_are_incremental(tmp_path,monkeypatch):
@@ -327,7 +327,7 @@ def test_streaming_and_formula_rows_match_bulk_shape(tmp_path, monkeypatch, nati
         bulk = reader.read_all('Data')
         assert reader.read_all('Data', streaming=True) == bulk
         assert reader.read_all('Data', data_only=False) == bulk
-    assert bulk[6] == [None, 5, None] and len(bulk) == 9
+    assert bulk[6] == [None, 5] and len(bulk) == 9
 
 
 def test_sheet_qualified_local_name_may_be_defined_after_use(tmp_path):

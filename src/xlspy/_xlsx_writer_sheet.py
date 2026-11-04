@@ -12,7 +12,7 @@ import xml.sax.saxutils as saxutils
 from collections.abc import Iterable, Mapping
 from . import _zip_threads
 from ._accel import encode_xlsx_row as accel_encode_xlsx_row
-from ._text import check_cell_text, xstring_escape
+from ._text import check_cell_text, xml_space_attribute, xstring_escape
 from .charts import Chart
 from .data_validation import DataValidation
 from .excel_dates import datetime_to_serial
@@ -899,7 +899,5 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 style_ref = f' s="{xf_index}"'
             else:
                 style_ref = ' s="3"' if is_header else ''
-            if cell_value and (cell_value[0] == ' ' or cell_value[0] == '\t'):
-                buffer.write(f'<c t="inlineStr"{style_ref}><is><t xml:space="preserve">{escaped_value}</t></is></c>')
-            else:
-                buffer.write(f'<c t="inlineStr"{style_ref}><is><t>{escaped_value}</t></is></c>')
+            space = xml_space_attribute(cell_value)
+            buffer.write(f'<c t="inlineStr"{style_ref}><is><t{space}>{escaped_value}</t></is></c>')

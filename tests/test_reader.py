@@ -421,16 +421,17 @@ def test_xlsb_empty_rows_roundtrip(tmp_path, monkeypatch, use_native, data):
         monkeypatch.setattr(xlspy_reader, 'HAVE_NATIVE', False)
 
     path = _write_workbook(tmp_path / 'empty_rows.xlsb', data)
-    assert _read_workbook(path) == data
+    # Rows before the first with cells are empty lists, as for XLSX.
+    first = next(index for index, row in enumerate(data) if any(cell is not None for cell in row))
+    assert _read_workbook(path) == [[]] * first + data[first:]
 
 
 @pytest.mark.parametrize('use_native', [False, True], ids=['python', 'native'])
 def test_xlsb_sheet_with_only_empty_rows_keeps_rows(tmp_path, monkeypatch, use_native):
     """An all-empty sheet keeps one row per written row.
 
-    Cell widths fall back to a single column for the python reader: XLSB row
-    records carry no width information and the writer emits no cell records
-    for all-empty rows.
+    XLSB row records carry no width information and the writer emits no cell
+    records for all-empty rows, so they are empty lists, as for XLSX.
     """
     if use_native:
         if not xlspy_reader.HAVE_NATIVE:
@@ -439,7 +440,7 @@ def test_xlsb_sheet_with_only_empty_rows_keeps_rows(tmp_path, monkeypatch, use_n
         monkeypatch.setattr(xlspy_reader, 'HAVE_NATIVE', False)
 
     path = _write_workbook(tmp_path / 'only_empty.xlsb', [[None, None], [None, None]])
-    assert _read_workbook(path) == [[None], [None]]
+    assert _read_workbook(path) == [[], []]
 
 
 def test_xlsx_empty_rows_roundtrip(tmp_path):

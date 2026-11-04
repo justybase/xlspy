@@ -276,7 +276,7 @@ def test_write_dataframe_creates_default_sheet(tmp_dir):
 def test_empty_dataframe_shapes_roundtrip(tmp_dir, ext, shortcut):
     pd = _pd()
     cases = [
-        (pd.DataFrame(), [[None]] if ext == "xlsb" else [[]]),
+        (pd.DataFrame(), [[]]),
         (pd.DataFrame(columns=["a", "b"]), [["a", "b"]]),
         (pd.DataFrame({"a": pd.Series(dtype="int64")}), [["a"]]),
     ]

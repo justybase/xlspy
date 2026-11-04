@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import io
+import re
 import xml.sax.saxutils as saxutils
 from typing import Any
 from . import chart_parts
-from ._text import xstring_escape
+from ._text import xml_space_attribute, xstring_escape
 from .comments import comments_xml, vml_xml, COMMENTS_TYPE
 from ._extlst import (
     EXT_WORKBOOK_SLICER_CACHES,
@@ -28,6 +29,10 @@ from .refs import quote_sheet_name
 from ._xlsx_writer_xml import _ATTR_ENTITIES, _CT_PIVOT_CACHE, _CT_PIVOT_TABLE, _REL_PIVOT_CACHE, _SST_CHUNK_STRINGS
 from ._xlsx_writer_host import _XlsxWriterHost
 
+
+# A chunk joined on NUL: a text that starts or ends with whitespace, or holds a
+# tab or a line break, sits next to a NUL or at an end of the chunk.
+_NEEDS_PRESERVE = re.compile(r"[\t\n\r]|\A\s|\s\Z|\s\x00|\x00\s")
 
 class _XlsxPartsMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
@@ -337,21 +342,21 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             chunk: Any = strings[start:start + _SST_CHUNK_STRINGS]
             # Plain-text chunks are escaped in one pass: joined on NUL (which a
             # string could only hold as a control character), then split again.
-            # Rich runs (tuples) make join() fail; those chunks go item by item.
+            # Rich runs (tuples) make join() fail; those chunks go item by item,
+            # and so do chunks with a text that needs xml:space="preserve".
             try:
                 joined = '\0'.join(chunk)
             except TypeError:
                 joined = None
-            if joined is None or joined.count('\0') != len(chunk) - 1:
+            if (joined is None or joined.count('\0') != len(chunk) - 1
+                    or _NEEDS_PRESERVE.search(joined)):
                 self._write_shared_strings_items(sst_file, chunk)
                 continue
             body = '</t></si><si><t>'.join(
                 joined.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').split('\0')
             )
             # Escaped text holds no '<', so "<si><t>" only ever starts an item.
-            body = ('<si><t>' + body + '</t></si>').replace(
-                '<si><t> ', '<si><t xml:space="preserve"> ').replace(
-                '<si><t>\t', '<si><t xml:space="preserve">\t')
+            body = '<si><t>' + body + '</t></si>'
             sst_file.write(xstring_escape(body).encode('utf-8'))
         sst_file.write(b'</sst>')
 
@@ -368,10 +373,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
                 continue
             # The same three replacements as xml.sax.saxutils.escape, minus its call overhead.
             text = s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            if s and (s[0] == ' ' or s[0] == '\t'):
-                parts.append(f'<si><t xml:space="preserve">{text}</t></si>')
-            else:
-                parts.append(f'<si><t>{text}</t></si>')
+            parts.append(f'<si><t{xml_space_attribute(s)}>{text}</t></si>')
         if parts:
             # The markup holds no escapable characters, so a chunk is escaped at once.
             sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))

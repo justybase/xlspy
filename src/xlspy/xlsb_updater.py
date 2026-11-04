@@ -567,30 +567,42 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                     stream.seek(record.data_end)
 
     @staticmethod
-    def _find_rows_region_stream(sheet_path: str | os.PathLike[str]) -> _RowsRegion:
+    def _rows_region(records: Iterable[Any], size: int) -> _RowsRegion:
+        """Where a sheet's rows are, from its records: what new rows replace. A sheet
+        without rows gets them at BrtEndSheetData; records past it are not cells, and
+        the wrapper records there belong to other parts of the sheet."""
         rows_start = -1
         last_cell_end = -1
         last_row_header_end = -1
         last_wrapper = -1
-        with open(sheet_path, "rb") as stream:
-            for record, _ in iter_records_stream(stream):
-                if record.record_id == 0x00:
-                    if rows_start == -1:
-                        rows_start = record.header_start
-                    last_row_header_end = record.data_end
-                elif 0x01 <= record.record_id <= 0x0B:
-                    last_cell_end = record.data_end
-                elif record.record_id == 0x25 and record.length == 6:
-                    last_wrapper = record.header_start
+        end_of_data = -1
+        auto_filter_ranges: list[int] = []
+        for record in records:
+            kind = record.record_id
+            if kind == 0xA1 and record.length >= 16:
+                auto_filter_ranges.append(record.data_start)
+            elif end_of_data >= 0:
+                continue
+            elif kind == 0x00:
+                if rows_start == -1:
+                    rows_start = record.header_start
+                last_row_header_end = record.data_end
+            elif 0x01 <= kind <= 0x12:
+                last_cell_end = record.data_end
+            elif kind == 0x25 and record.length == 6:
+                last_wrapper = record.header_start
+            elif kind == 0x92:
+                end_of_data = record.header_start
 
         if rows_start == -1:
-            size = os.path.getsize(sheet_path)
-            insert_at = last_wrapper if last_wrapper >= 0 else size
-            return _RowsRegion(insert_at, insert_at, [])
-        rows_end = max(last_cell_end, last_row_header_end)
-        if rows_end < 0:
-            rows_end = last_wrapper if last_wrapper >= 0 else os.path.getsize(sheet_path)
-        return _RowsRegion(rows_start, rows_end, [])
+            insert_at = end_of_data if end_of_data >= 0 else (last_wrapper if last_wrapper >= 0 else size)
+            return _RowsRegion(insert_at, insert_at, auto_filter_ranges)
+        return _RowsRegion(rows_start, max(last_cell_end, last_row_header_end), auto_filter_ranges)
+
+    @classmethod
+    def _find_rows_region_stream(cls, sheet_path: str | os.PathLike[str]) -> _RowsRegion:
+        with open(sheet_path, "rb") as stream:
+            return cls._rows_region((record for record, _ in iter_records_stream(stream)), os.path.getsize(sheet_path))
 
     @staticmethod
     def _patch_sheet_file(
@@ -622,30 +634,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                     stream.seek(record.data_end)
 
     def _find_rows_region(self, sheet_data: bytes) -> _RowsRegion:
-        rows_start = -1
-        last_cell_end = -1
-        last_row_header_end = -1
-        last_wrapper = -1
-        auto_filter_ranges: list[int] = []
-        for record in iter_records(sheet_data):
-            if record.record_id == 0x00:
-                if rows_start == -1:
-                    rows_start = record.header_start
-                last_row_header_end = record.data_end
-            elif 0x01 <= record.record_id <= 0x0B:
-                last_cell_end = record.data_end
-            elif record.record_id == 0x25 and record.length == 6:
-                last_wrapper = record.header_start
-            elif record.record_id == 0xA1 and record.length >= 16:
-                auto_filter_ranges.append(record.data_start)
-
-        if rows_start == -1:
-            insert_at = last_wrapper if last_wrapper >= 0 else len(sheet_data)
-            return _RowsRegion(insert_at, insert_at, auto_filter_ranges)
-        rows_end = max(last_cell_end, last_row_header_end)
-        if rows_end < 0:
-            rows_end = last_wrapper if last_wrapper >= 0 else len(sheet_data)
-        return _RowsRegion(rows_start, rows_end, auto_filter_ranges)
+        return self._rows_region(iter_records(sheet_data), len(sheet_data))
 
     @staticmethod
     def _patch_dimension(sheet_data: bytearray, last_row: int, last_col: int) -> None:

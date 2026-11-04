@@ -758,7 +758,7 @@ def _load_row(sheet: Worksheet, node: ET.Element, next_row: int, style_table: Xl
               rich_text: bool):
     """Load one ``<row>`` element into the sheet; return ``(row, max_row, max_column)``."""
     row_number = int(node.get("r", next_row) or next_row)
-    max_row = row_number
+    max_row = 0  # A row without cells has no place in the sheet's size, as in XLSB.
     max_column = 0
     _apply_row_attributes(sheet, row_number, node.attrib)
     next_column = 0
@@ -1150,14 +1150,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                 node.clear()
                 stack.pop()
                 continue
-            if tag == "dimension" and node.get("ref"):
-                try:
-                    c1, r1, c2, r2 = parse_cell_range(node.get("ref"))
-                    max_row = max(max_row, r2 + 1)
-                    max_column = max(max_column, c2 + 1)
-                except ValueError:
-                    pass
-            elif tag == "mergeCell" and node.get("ref"):
+            if tag == "mergeCell" and node.get("ref"):
                 try:
                     sheet._merged_cells.add(_normalize_range(node.get("ref")))
                 except ValueError:

@@ -8,18 +8,16 @@
 //! shared-string index (`string_index`), which counts every use.
 
 use pyo3::exceptions::{PyOSError, PyTypeError, PyValueError};
-use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDate, PyDateAccess, PyDateTime, PyFloat, PyInt, PyString};
 use pyo3::types::{PyTimeAccess, PyTuple};
-use std::ffi::CStr;
 use std::fs::OpenOptions;
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 
 use crate::bytes::write_varint;
 use crate::cells::text_fits;
 use crate::dates::days_from_civil;
-use crate::numfmt::write_u32;
+use crate::numfmt::{write_repr, write_u32};
 use crate::pyseq::FastSeq;
 use crate::text::{CELL_TEXT_LIMIT, CodePoints};
 use crate::types::int_as_i64;
@@ -83,18 +81,11 @@ fn serial(cell: &Bound<'_, PyAny>, date_1904: bool) -> Option<f64> {
     Some(total_us as f64 / 1_000_000.0 / 86_400.0)
 }
 
-/// `format(v, ".15g")`, through CPython's own routine.
-fn write_g15(py: Python<'_>, out: &mut Vec<u8>, v: f64) -> PyResult<()> {
-    // SAFETY: PyOS_double_to_string returns a PyMem-allocated C string (or
-    // NULL with MemoryError set); the GIL is held.
-    unsafe {
-        let s =
-            ffi::PyOS_double_to_string(v, b'g' as std::ffi::c_char, 15, 0, std::ptr::null_mut());
-        if s.is_null() {
-            return Err(PyErr::fetch(py));
-        }
-        out.extend_from_slice(CStr::from_ptr(s).to_bytes());
-        ffi::PyMem_Free(s.cast());
+/// The shortest digits that read back as `v`, without a trailing `.0`.
+fn write_number(py: Python<'_>, out: &mut Vec<u8>, v: f64) -> PyResult<()> {
+    write_repr(py, out, v)?;
+    if out.ends_with(b".0") {
+        out.truncate(out.len() - 2);
     }
     Ok(())
 }
@@ -212,7 +203,7 @@ pub fn encode_update_xlsx_row<'py>(
         if let Some(v) = number {
             open(&mut out, style);
             value_open(&mut out);
-            write_g15(py, &mut out, v)?;
+            write_number(py, &mut out, v)?;
             value_close(&mut out);
             continue;
         }
@@ -222,7 +213,7 @@ pub fn encode_update_xlsx_row<'py>(
             }
             open(&mut out, style);
             value_open(&mut out);
-            write_g15(py, &mut out, v)?;
+            write_number(py, &mut out, v)?;
             value_close(&mut out);
             continue;
         }

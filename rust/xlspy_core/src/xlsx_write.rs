@@ -85,6 +85,13 @@ fn write_plain_escaped(out: &mut Vec<u8>, s: &[u8]) {
     out.extend_from_slice(&s[run..]);
 }
 
+/// Whether `<t>` needs xml:space="preserve", as `updater_utils.xml_space_attribute`
+/// decides it: Excel drops the spaces at the ends of a text without it.
+fn needs_preserve(text: &str) -> bool {
+    let is_space = |c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c);
+    text.starts_with(is_space) || text.ends_with(is_space) || text.contains(['\t', '\n', '\r'])
+}
+
 fn style_attr(out: &mut Vec<u8>, style: u32) {
     if style != 0 {
         out.extend_from_slice(b" s=\"");
@@ -138,15 +145,15 @@ impl Row<'_, '_> {
             self.out.extend_from_slice(b"</v></c>");
             return Ok(Cell::Done);
         }
-        let Ok(utf8) = s.to_str() else {
+        let Ok(text) = s.to_str() else {
             return Ok(Cell::Fallback); // lone surrogates
         };
-        let utf8 = utf8.as_bytes();
+        let utf8 = text.as_bytes();
         let start = self.out.len();
         self.out.extend_from_slice(b"<c t=\"inlineStr\"");
         self.style_or_header(style);
         self.out.extend_from_slice(b"><is><t");
-        if matches!(utf8.first(), Some(b' ' | b'\t')) {
+        if needs_preserve(text) {
             self.out.extend_from_slice(b" xml:space=\"preserve\"");
         }
         self.out.push(b'>');

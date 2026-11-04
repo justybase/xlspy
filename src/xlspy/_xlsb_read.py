@@ -9,6 +9,7 @@ from ._errors import CellError
 from ._untrusted import check_column_span
 from ._xlsb_formulas import FormulaContext, ERRORS, decode_formula, read_parsed
 from ._xlsb_metadata import read_wide
+from ._xlsx_read import rows_in_place
 from .biff_reader import BiffReader
 from .biff_utils import iter_record_payloads, iter_records_stream
 from .excel_dates import serial_to_datetime
@@ -212,39 +213,11 @@ def sheet_dimension(reader, sheet_name):
 
 
 def read_xlsb_rows(reader, sheet_name, *, data_only=True):
-    """Yield rows shaped like the bulk reader: the first data row fixes the first
-    column, missing and empty rows are synthesized, and later wider rows widen."""
-    first_row_record = None
-    last_row_record = None
-    first_column = None
-    width = 0
-    previous_row = None
-    for row_number, cells in iter_xlsb_indexed_rows(reader, sheet_name, data_only=data_only):
-        if first_row_record is None:
-            first_row_record = row_number
-        last_row_record = row_number
-        if cells:
-            check_column_span(first_column if first_column is not None else cells[0][0], cells[-1][0])
-        if first_column is None:
-            if not cells:
-                continue
-            first_column = cells[0][0]
-            width = cells[-1][0] - first_column + 1
-            # Leading row records without cells become empty rows.
-            for _ in range(row_number - first_row_record):
-                yield [None] * width
-        else:
-            for _ in range(row_number - previous_row - 1):
-                yield [None] * width
-        previous_row = row_number
-        if cells and cells[-1][0] - first_column + 1 > width:
-            width = cells[-1][0] - first_column + 1
-        row = [None] * width
-        for column, value in cells:
-            if column >= first_column:
-                row[column - first_column] = value
-        yield row
-    if first_column is None and first_row_record is not None:
-        # Only all-empty row records, as in the bulk reader.
-        for _ in range(last_row_record - first_row_record + 1):
-            yield [None]
+    """Yield rows with each value at its own position, as the bulk reader and XLSX."""
+    def checked():
+        for row_number, cells in iter_xlsb_indexed_rows(reader, sheet_name, data_only=data_only):
+            if cells:
+                check_column_span(0, max(column for column, _ in cells))
+            yield row_number, cells
+
+    return rows_in_place(checked())

@@ -94,8 +94,9 @@ class Cell:
         """The cell value; a formula reads back as text that starts with ``=``.
 
         Assigning text that starts with ``=`` or a Formula sets a formula, and a Hyperlink
-        sets the link and shows its text. A date, time or timedelta gets a default number
-        format when the cell's format is ``General``.
+        sets the link and shows its text; any other value keeps the cell's link, as in
+        Excel (``hyperlink = None`` removes it). A date, time or timedelta gets a default
+        number format when the cell's format is ``General``.
         """
         if isinstance(self._formula, Formula):
             return "=" + self._formula.text
@@ -109,7 +110,6 @@ class Cell:
         if plain is not None and not (plain == "s" and value.startswith("=")):
             # Exact int/float/bool/str: no formula, hyperlink or date handling.
             self._formula = None
-            self._hyperlink = None
             self._value = value
             self._data_type = plain
             sheet = self._sheet
@@ -135,7 +135,6 @@ class Cell:
                 self._data_type = "s"
                 self._sheet._dirty_hyperlinks.add(self.coordinate)
             else:
-                self._hyperlink = None
                 self._value = value
                 self._data_type = self._type_for(value)
         if isinstance(value, _datetime.time) and self.number_format == "General":

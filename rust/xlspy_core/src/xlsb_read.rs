@@ -7,7 +7,7 @@
 //! undersized records are ignored.  A record cut short by the end of the data
 //! raises InvalidFileError.
 
-use pyo3::exceptions::{PyMemoryError, PyOverflowError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySet, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
@@ -19,10 +19,6 @@ use crate::text::decode_utf16le;
 use crate::types::{error_type, invalid_file_error};
 
 const XLSB_MAX_ROW_INDEX: u32 = 1_048_575;
-/// Bound of the dense per-row cell array: the format maximum of 16384 columns
-/// (XFD).  Wider spans are refused, so a crafted row cannot make the reader
-/// allocate a million-cell row per record; the Python reader refuses them too.
-pub const MAX_COL_SPAN: i64 = 16_384;
 
 /// One record header: id, body start and the claimed body length.
 pub struct Record {
@@ -240,8 +236,8 @@ impl<'py> CellContext<'_, 'py> {
     }
 }
 
-/// Whether a cell record counts as a cell for the layout: the reference
-/// ignores undersized bodies and overrunning strings, and so must the prescan.
+/// Whether a cell record counts as a cell: the row reader ignores undersized
+/// bodies and overrunning strings, so such a record starts no row either.
 fn counts_for_layout(data: &[u8], rec: &Record) -> bool {
     if rec.len < 8 || rec.body.saturating_add(rec.len) > data.len() {
         return false;
@@ -272,99 +268,31 @@ pub struct XlsbReader {
     cur_cells: Vec<Option<Py<PyAny>>>,
     cur_row_num: i64,
     gap_rows_remaining: i64,
-    /// Layout frozen from the first row with cells; -1 means unset, and the
-    /// first streamed cell then freezes `first_col`, like the reference.
-    first_col: i64,
-    cols_per_row: i64,
+    /// The width of the first row with cells, which later rows are padded to, as in
+    /// `_xlsx_read.rows_in_place`.
+    first_width: Option<usize>,
     is_initialized: bool,
     seen_row_record: bool,
     date_1904: bool,
 }
 
 impl XlsbReader {
-    /// Determine the column layout of the first row that contains a cell,
-    /// so empty leading rows get the data width.  Returns false when the
-    /// layout is too wide for the dense row array (the caller uses Python).
-    fn prescan(&mut self) -> bool {
-        let data = self.view.as_slice();
-        let mut pos = 0usize;
-        let mut cur_row = -1i64;
-        let mut span_row = -2i64; // row of the first row with cells (-2: none)
-        let (mut first_c, mut last_c) = (-1i64, -1i64);
-        while pos < data.len() {
-            // A cut-short record raises later, when iteration reaches it.
-            let Ok(rec) = next_record(data, &mut pos) else {
-                break;
-            };
-            match rec.id {
-                0x00 => {
-                    if span_row != -2 && cur_row != span_row {
-                        break;
-                    }
-                    // A bad row index raises later, when iteration reaches it.
-                    let Ok(row) = row_index(rec.bytes(data)) else {
-                        break;
-                    };
-                    cur_row = row;
-                }
-                0x01..=0x0B => {
-                    if !counts_for_layout(data, &rec) {
-                        continue;
-                    }
-                    if span_row == -2 {
-                        span_row = cur_row;
-                    }
-                    if cur_row == span_row
-                        && let Some(col) = le_u32(data, rec.body)
-                    {
-                        let col = i64::from(col);
-                        if first_c < 0 {
-                            first_c = col;
-                        }
-                        last_c = col;
-                    }
-                }
-                0x92 => break,
-                _ => {}
-            }
-        }
-        if span_row != -2 && first_c >= 0 {
-            self.first_col = first_c;
-            // May be <= 0 for unordered first rows: the reference then yields
-            // empty rows, which build_row reproduces.
-            self.cols_per_row = last_c - first_c + 1;
-            if self.cols_per_row > MAX_COL_SPAN {
-                return false;
-            }
-        }
-        true
-    }
-
+    /// The row read so far, as long as the first row or its own last cell.
     fn take_row(&mut self, py: Python<'_>) -> PyResult<Py<PyList>> {
         let cells = std::mem::take(&mut self.cur_cells);
-        let out_cols = if self.cols_per_row == -1 {
-            cells.len().max(1) as i64
-        } else {
-            self.cols_per_row.max(0)
-        };
-        if out_cols > MAX_COL_SPAN {
-            return Err(PyMemoryError::new_err(()));
+        let width = self.first_width.unwrap_or(0).max(cells.len());
+        if width > 0 {
+            self.first_width.get_or_insert(width);
         }
         let mut cells = cells.into_iter();
-        let items = (0..out_cols).map(|_| cells.next().flatten().unwrap_or_else(|| py.None()));
+        let items = (0..width).map(|_| cells.next().flatten().unwrap_or_else(|| py.None()));
         Ok(PyList::new(py, items)?.unbind())
     }
 
+    /// A row with no record: as long as the first row, which it may come before.
     fn empty_row(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
-        let cols = if self.cols_per_row == -1 {
-            1
-        } else {
-            self.cols_per_row.max(0)
-        };
-        if cols > MAX_COL_SPAN {
-            return Err(PyMemoryError::new_err(()));
-        }
-        Ok(PyList::new(py, (0..cols).map(|_| py.None()))?.unbind())
+        let width = self.first_width.unwrap_or(0);
+        Ok(PyList::new(py, (0..width).map(|_| py.None()))?.unbind())
     }
 
     fn process_cell(&mut self, py: Python<'_>, rec: &Record) -> PyResult<()> {
@@ -399,40 +327,11 @@ impl XlsbReader {
             ));
         }
 
-        if self.cols_per_row != -1 {
-            if self.cols_per_row <= 0
-                || self.cols_per_row > MAX_COL_SPAN
-                || col < self.first_col
-                || col - self.first_col >= self.cols_per_row
-            {
-                // Valid later rows may be wider than the first: keep their cells.
-                if self.cols_per_row > 0
-                    && self.cols_per_row <= MAX_COL_SPAN
-                    && col >= self.first_col
-                    && col < 16384
-                    && col - self.first_col >= self.cols_per_row
-                {
-                    self.cols_per_row = col - self.first_col + 1;
-                } else {
-                    return Ok(());
-                }
-            }
-        } else {
-            // Unset layout: freeze on the first stored cell; absurd spans are
-            // corrupt-input noise the reference never shows.
-            if self.first_col < 0 {
-                self.first_col = col;
-            }
-            if col < self.first_col || col - self.first_col > MAX_COL_SPAN {
-                return Ok(());
-            }
-        }
-        let idx = (col - self.first_col) as usize;
+        let idx = col as usize;
         if idx >= self.cur_cells.len() {
-            if self.cols_per_row > 0 && self.cols_per_row <= MAX_COL_SPAN {
-                self.cur_cells
-                    .reserve((self.cols_per_row as usize).saturating_sub(self.cur_cells.len()));
-            }
+            let width = self.first_width.unwrap_or(0).max(idx + 1);
+            self.cur_cells
+                .reserve(width.saturating_sub(self.cur_cells.len()));
             self.cur_cells.resize_with(idx + 1, || None);
         }
         self.cur_cells[idx] = Some(value.unbind());
@@ -443,10 +342,6 @@ impl XlsbReader {
         if self.done {
             return Ok(None);
         }
-        if self.gap_rows_remaining > 0 {
-            self.gap_rows_remaining -= 1;
-            return self.empty_row(py).map(Some);
-        }
         // On the first call, skip metadata to the first Row record or the first
         // cell record (cells before any Row record form a phantom row).
         if !self.is_initialized {
@@ -456,6 +351,8 @@ impl XlsbReader {
                 let rec = next_record(self.view.as_slice(), &mut self.pos)?;
                 if rec.id == 0x00 {
                     self.cur_row_num = row_index(rec.bytes(self.view.as_slice()))?;
+                    // The rows before the first one are there too, and empty.
+                    self.gap_rows_remaining = self.cur_row_num;
                     self.seen_row_record = true;
                     self.is_initialized = true;
                     break;
@@ -474,6 +371,10 @@ impl XlsbReader {
                 self.done = true;
                 return Ok(None);
             }
+        }
+        if self.gap_rows_remaining > 0 {
+            self.gap_rows_remaining -= 1;
+            return self.empty_row(py).map(Some);
         }
         while self.pos < self.view.as_slice().len() {
             let rec = next_record(self.view.as_slice(), &mut self.pos)?;
@@ -497,11 +398,8 @@ impl XlsbReader {
             }
         }
         self.done = true;
-        if !self.cur_cells.is_empty() {
+        if !self.cur_cells.is_empty() || self.cur_row_num >= 0 {
             return self.take_row(py).map(Some);
-        }
-        if self.cur_row_num >= 0 {
-            return self.empty_row(py).map(Some);
         }
         Ok(None)
     }
@@ -540,8 +438,8 @@ impl XlsbReader {
     }
 }
 
-/// Read an XLSB worksheet from raw bytes.  Returns an iterator of rows, or
-/// None when the layout is too wide (the Python reader then handles it).
+/// Read an XLSB worksheet from raw bytes.  Returns an iterator of rows, each
+/// cell at its own column and each row at its own place, as for XLSX.
 #[pyfunction]
 #[pyo3(signature = (data, shared_strings, styles_list, date_num_fmts, date_1904=None))]
 pub fn read_xlsb_worksheet<'py>(
@@ -551,7 +449,7 @@ pub fn read_xlsb_worksheet<'py>(
     styles_list: &Bound<'py, PyAny>,
     date_num_fmts: &Bound<'py, PyAny>,
     date_1904: Option<&Bound<'py, PyAny>>,
-) -> PyResult<Option<Bound<'py, XlsbReader>>> {
+) -> PyResult<Bound<'py, XlsbReader>> {
     let view = ByteView::new(data)?;
     let shared_strings = shared_strings
         .cast::<PyList>()
@@ -566,7 +464,7 @@ pub fn read_xlsb_worksheet<'py>(
         Some(flag) => flag.is_truthy()?,
         None => false,
     };
-    let mut reader = XlsbReader {
+    let reader = XlsbReader {
         view,
         pos: 0,
         done: false,
@@ -576,16 +474,12 @@ pub fn read_xlsb_worksheet<'py>(
         cur_cells: Vec::new(),
         cur_row_num: -1,
         gap_rows_remaining: 0,
-        first_col: -1,
-        cols_per_row: -1,
+        first_width: None,
         is_initialized: false,
         seen_row_record: false,
         date_1904,
     };
-    if !reader.prescan() {
-        return Ok(None);
-    }
-    Ok(Some(Bound::new(py, reader)?))
+    Bound::new(py, reader)
 }
 
 /// Load an XLSB sheet's data into Cell objects of the workbook model.

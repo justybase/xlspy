@@ -204,9 +204,10 @@ def test_binary_streaming_and_read_only_match_excel(tmp_path, excel):
         bulk = reader.read_all("Data")
         assert reader.read_all("Data", streaming=True) == bulk
         formulas = reader.read_all("Data", data_only=False)
-    # The bulk shape starts at the first data cell (B3).
-    assert bulk[0][:2] == ["head", 1] and bulk[1][1] == 10 and bulk[5][3] == 5
-    assert formulas[1][1] == "=C3*10"
+    # Rows before the first with cells are empty; each value is at its own column.
+    assert bulk[0] == [] and bulk[1] == []
+    assert bulk[2][1:3] == ["head", 1] and bulk[3][2] == 10 and bulk[7][4] == 5
+    assert formulas[3][2] == "=C3*10"
     assert [len(row) for row in formulas] == [len(row) for row in bulk]
 
     workbook = load_workbook(path, read_only=True)

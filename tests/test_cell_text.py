@@ -258,7 +258,8 @@ def test_xlsx_escapes_follow_ooxml():
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         sheet = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert "<t>bell_x0007_</t>" in sheet
-    assert "<t>crlf_x000D_\n</t>" in sheet
+    # A line break in the text needs xml:space="preserve", as a space at its end does.
+    assert '<t xml:space="preserve">crlf_x000D_\n</t>' in sheet
     assert "<t>lit _x005F_x0041_</t>" in sheet
 
 
