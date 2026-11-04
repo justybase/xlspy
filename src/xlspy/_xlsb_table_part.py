@@ -8,12 +8,15 @@ header. Both use this module, so the updater does not load the object model.
 
 from __future__ import annotations
 
+import posixpath
 import struct
-from collections.abc import Callable, Iterable
+import xml.etree.ElementTree as ET
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 from ._xlsb_metadata import read_wide, records, wide_string
 from .biff_utils import build_record, iter_record_payloads
+from ._safe_xml import fromstring as safe_fromstring
 from .refs import column_label, parse_cell_range
 
 _BEGIN_LIST, _BEGIN_LIST_COL, _TABLE_STYLE_CLIENT, _BEGIN_AUTO_FILTER = 0x157, 0x15B, 0x201, 0xA1
@@ -192,14 +195,41 @@ def patch_table_part(data: bytes, edit: TableEdit) -> bytes:
     return b"".join(out)
 
 
-def table_catalog(names: Iterable[str], read: Callable[[str], bytes | None]) -> dict[int, tuple[str, list[str]]]:
-    """The tables of a package by id: ``{id: (display name, column names)}``.
+_REL_TABLE_SUFFIX = "/relationships/table"
 
-    ``names`` are the package's part names and ``read(name)`` gives a part's bytes.
-    A structured reference in a formula names its table by this id and its columns
-    by their positions. A part that cannot be read contributes nothing.
+
+def _table_sheets(read: Callable[[str], bytes | None], sheets: Mapping[str, str]) -> dict[str, str]:
+    """The sheet title of each table part, from the worksheets' relationships (``sheets``: title -> part)."""
+    owners: dict[str, str] = {}
+    for title, path in sheets.items():
+        directory, base = posixpath.split(path)
+        rels = read(posixpath.join(directory, "_rels", base + ".rels"))
+        if not rels:
+            continue
+        try:
+            nodes = list(safe_fromstring(rels))
+        except (ET.ParseError, ValueError):
+            continue
+        for node in nodes:
+            target = node.get("Target") or ""
+            if node.get("Type", "").endswith(_REL_TABLE_SUFFIX) and target:
+                part = target.lstrip("/") if target.startswith("/") else posixpath.join(directory, target)
+                owners[posixpath.normpath(part)] = title
+    return owners
+
+
+def table_catalog(names: Iterable[str], read: Callable[[str], bytes | None],
+                  sheets: Mapping[str, str] | None = None) -> dict[int, tuple[str, list[str], str | None]]:
+    """The tables of a package by id: ``{id: (display name, column names, sheet title)}``.
+
+    ``names`` are the package's part names and ``read(name)`` gives a part's bytes;
+    ``sheets`` (sheet title -> part path) gives each table's sheet, which a formula
+    that writes a reference to the table needs. A structured reference in a formula
+    names its table by this id and its columns by their positions. A part that cannot
+    be read contributes nothing.
     """
-    catalog: dict[int, tuple[str, list[str]]] = {}
+    owners = _table_sheets(read, sheets) if sheets else {}
+    catalog: dict[int, tuple[str, list[str], str | None]] = {}
     for name in names:
         if not (name.startswith("xl/tables/") and name.endswith(".bin")):
             continue
@@ -209,5 +239,5 @@ def table_catalog(names: Iterable[str], read: Callable[[str], bytes | None]) -> 
         except (struct.error, IndexError, TypeError, ValueError):
             part = None
         if part is not None and part.name:
-            catalog[part.id] = (part.name, [column.name or "" for column in part.columns])
+            catalog[part.id] = (part.name, [column.name or "" for column in part.columns], owners.get(name))
     return catalog

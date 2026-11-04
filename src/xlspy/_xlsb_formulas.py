@@ -64,23 +64,67 @@ def read_parsed(data, offset=0):
 def _syntax_error(text, end):
     message = f"unsupported XLSB formula syntax near {text[end:end + 24]!r}"
     if "[" in text[max(end - 1, 0):end + 24]:
-        message += " (a reference to a table, Table[Column], is read from an XLSB but cannot be written yet)"
+        message += (" (a structured reference is written Table[Column], Table[[#Totals],[Column]] or "
+                    "Table[@Column]: a bare [Column] needs its table name)")
     return UnsupportedFeatureError(message)
+
+
+_TABLE_NAME = re.compile(r'[^\W\d][\w.]*')
+# Characters a structured reference escapes with an apostrophe.
+_ESCAPABLE = "'#[]@"
+# The row keywords of a structured reference and their PtgList bits ([MS-XLSB] 2.5.97.52).
+_KEYWORD_BITS = {'#ALL': 0x04, '#HEADERS': 0x08, '#DATA': 0x10, '#TOTALS': 0x20, '#THIS ROW': 0x40}
+
+
+class _Structured:
+    """A token ``Table[spec]``; ``spec`` is the text between the outer brackets."""
+
+    def __init__(self, name, spec):
+        self.name = name
+        self.spec = spec
+
+    def __repr__(self):
+        return f"{self.name}[{self.spec}]"
+
+
+def _scan_group(text, start):
+    """The text inside the brackets that open at ``start``, and the index after them.
+
+    An escaped character (``'[``, ``''``) does not count as a bracket.
+    """
+    depth = 0
+    index = start
+    while index < len(text):
+        char = text[index]
+        if char == "'":
+            index += 2
+            continue
+        if char == '[':
+            depth += 1
+        elif char == ']':
+            depth -= 1
+            if depth == 0:
+                return text[start + 1:index], index + 1
+        index += 1
+    raise _syntax_error(text, start)
 
 
 class _Parser:
     def __init__(self, text):
-        self.tokens: list[str | None] = []
-        end = 0
-        for match in _LEX.finditer(text):
-            if match.start() != end:
-                raise _syntax_error(text, end)
-            token = match[0]
-            end = match.end()
-            if not token.isspace():
-                self.tokens.append(token)
-        if end != len(text):
-            raise _syntax_error(text, end)
+        self.tokens: list[Any] = []
+        position = 0
+        while position < len(text):
+            match = _LEX.match(text, position)
+            if match is None:
+                raise _syntax_error(text, position)
+            token: Any = match[0]
+            position = match.end()
+            if token.isspace():
+                continue
+            if _TABLE_NAME.fullmatch(token) and text[position:position + 1] == '[':
+                spec, position = _scan_group(text, position)
+                token = _Structured(token, spec)
+            self.tokens.append(token)
         self.tokens.append(None)
         self.index = 0
 
@@ -96,8 +140,10 @@ class _Parser:
 
     def expression(self, minimum=0):
         token = self.pop()
-        if token in ('+', '-'):
-            left: tuple[Any, ...] = ('unary', token, self.expression(7))
+        if isinstance(token, _Structured):
+            left: tuple[Any, ...] = ('table', token.name, token.spec)
+        elif token in ('+', '-'):
+            left = ('unary', token, self.expression(7))
         elif token == '(':
             left = ('paren', self.expression())
             if self.pop() != ')':
@@ -224,6 +270,14 @@ def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=Fa
     references = 0
     volatile = False
 
+    def table_token(table, spec, operand_class):
+        nonlocal references
+        references += 1
+        if name_formula:
+            raise UnsupportedFeatureError(
+                "a defined name cannot refer to a table: Excel does not accept a structured reference in a name")
+        return encode_table(table, spec, context, operand_class)
+
     def emit(node, operand='V'):
         kind = node[0]
         if kind == 'number':
@@ -246,7 +300,11 @@ def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=Fa
             nonlocal references
             references += 1
             return encode_reference(node[1], node[2], context, operand, origin, name_formula, cell_relative)
+        if kind == 'table':
+            return table_token(node[1], node[2], operand)
         if kind == 'name':
+            if node[2] is None and context.has_table(node[1]):
+                return table_token(node[1], None, operand)  # a table alone is the whole table
             index = context.name_reference(node[1], node[2] or sheet, qualified=node[2] is not None)
             return bytes([0x23 if operand == 'R' else 0x63 if operand == 'A' else 0x43]) + struct.pack('<I', index + 1)
         if kind == 'paren':
@@ -476,6 +534,113 @@ def structured_reference(table, columns, flags, first, last):
     return table + '[' + ','.join(parts) + ']'
 
 
+def _unescape_column(raw):
+    """A column name as a structured reference writes it: ``'`` escapes the next character."""
+    chars = []
+    index = 0
+    while index < len(raw):
+        char = raw[index]
+        if char == "'":
+            if index + 1 >= len(raw) or raw[index + 1] not in _ESCAPABLE:
+                raise ValueError(f"invalid escape in the structured reference column {raw!r}")
+            chars.append(raw[index + 1])
+            index += 2
+            continue
+        if char in '[]':
+            raise ValueError(f"a bracket in the structured reference column {raw!r} must be escaped")
+        chars.append(char)
+        index += 1
+    if not chars:
+        raise ValueError("an empty column name in a structured reference")
+    return ''.join(chars)
+
+
+def _bracket_groups(text):
+    """The groups of a bracketed spec: ``[a]`` or ``[a]:[b]`` (a range), separated by commas."""
+    groups = []
+    position = 0
+    while True:
+        if text[position:position + 1] != '[':
+            raise ValueError(f"invalid structured reference [{text}]")
+        item, position = _scan_group(text, position)
+        group = [item]
+        if text[position:position + 1] == ':':
+            if text[position + 1:position + 2] != '[':
+                raise ValueError(f"invalid structured reference [{text}]")
+            item, position = _scan_group(text, position + 1)
+            group.append(item)
+        groups.append(group)
+        if position == len(text):
+            return groups
+        if text[position:position + 1] != ',':
+            raise ValueError(f"invalid structured reference [{text}]")
+        position += 1
+
+
+def _parse_spec(spec):
+    """``(row keywords, column names or None)`` of the text inside a structured reference's brackets.
+
+    Takes ``#Data``, ``Col``, ``[Col1]:[Col2]``, ``[#Headers],[Col]`` and ``@Col`` as Excel writes
+    them; the keywords come back in upper case, the names unescaped.
+    """
+    this_row = spec.startswith('@')
+    if this_row:
+        spec = spec[1:]
+    keywords = ['#THIS ROW'] if this_row else []
+    if spec == '':
+        if this_row:
+            return keywords, None  # Table[@]: the whole of this row
+        raise ValueError("an empty structured reference")
+    groups = _bracket_groups(spec) if spec.startswith('[') else [[spec]]
+    columns = None
+    for group in groups:
+        if len(group) == 1 and group[0].startswith('#'):
+            keyword = group[0].upper()
+            if keyword not in _KEYWORD_BITS:
+                raise ValueError(f"unknown keyword {group[0]!r} in a structured reference")
+            if keyword not in keywords:
+                keywords.append(keyword)
+            continue
+        if any(item.startswith('#') for item in group):
+            raise ValueError(f"a keyword cannot be part of a range of columns: [{spec}]")
+        if columns is not None:
+            raise ValueError("a structured reference names one column, or one range of columns")
+        columns = [_unescape_column(item) for item in group]
+    return keywords, columns
+
+
+def encode_table(name, spec, context, operand):
+    """The PtgExtend/PtgList token of ``name[spec]`` ([MS-XLSB] 2.5.97.52).
+
+    The token names the table by its id, its sheet by an XTI index and its columns by
+    their positions. ``spec`` is None for the table alone. The flags follow Excel: #This
+    Row sets 0x0200, and a reference used as a value (not as the argument of a function
+    that takes references) sets 0x0400.
+    """
+    ident, columns, sheet = context.table_for_formula(name)
+    keywords, names = _parse_spec(spec) if spec is not None else ([], None)
+    mode = first = last = 0
+    if names is not None:
+        positions = []
+        for column in names:
+            index = next((i for i, known in enumerate(columns) if known.casefold() == column.casefold()), None)
+            if index is None:
+                raise ValueError(f"table {name!r} has no column {column!r}")
+            positions.append(index)
+        if len(positions) == 1:
+            mode, first, last = 1, positions[0], positions[0]
+        else:
+            if positions[0] > positions[1]:
+                raise ValueError(f"the columns of {name}[{spec}] are out of order")
+            mode, first, last = 2, positions[0], positions[1]
+    flags = mode | sum(_KEYWORD_BITS[keyword] for keyword in keywords)
+    if '#THIS ROW' in keywords:
+        flags |= 0x0200
+    if operand != 'R':
+        flags |= 0x0400
+    return b'\x18\x19' + struct.pack('<HHIHH', context.sheet_reference(sheet), flags, ident, first, last)
+
+
 # BrtName's fHidden flag ([MS-XLSB] 2.4.691).
 _NAME_HIDDEN = 0x1
 
@@ -516,11 +681,13 @@ def external_sheet_names(part: bytes | None) -> list[str]:
 class FormulaContext:
     """``parts`` (path -> bytes or None) lets references to other workbooks show their sheet names."""
 
-    def __init__(self, sheets, workbook=None, parts=None, *, tables=None):
+    def __init__(self, sheets, workbook=None, parts=None, *, tables=None, cache_tables=True):
         self._sheets = sheets
-        # ``tables()`` gives {table id: (name, column names)}, for structured references.
+        # ``tables()`` gives {table id: (name, column names, sheet title or None)}, for structured
+        # references. A writer adds tables while it streams, so it asks for a fresh catalog each time.
         self._tables = tables
-        self._table_catalog: dict[int, tuple[str, list[str]]] | None = None
+        self._cache_tables = cache_tables
+        self._table_catalog: dict[int, tuple[str, list[str], str | None]] | None = None
         self.names = []
         self.links = []
         self.xti = []
@@ -609,14 +776,36 @@ class FormulaContext:
     def _scope(self, entry):
         return self.sheets[entry.scope] if isinstance(entry.scope, int) else entry.scope
 
+    def _catalog(self):
+        if self._tables is None:
+            return {}
+        if not self._cache_tables:
+            return self._tables()
+        if self._table_catalog is None:
+            self._table_catalog = self._tables()
+        return self._table_catalog
+
     def table_reference(self, ident, flags, first, last):
         """The text of a structured reference (PtgList) to the table with id ``ident``."""
-        if self._table_catalog is None:
-            self._table_catalog = self._tables() if self._tables is not None else {}
-        if ident not in self._table_catalog:
+        catalog = self._catalog()
+        if ident not in catalog:
             raise UnsupportedFeatureError(f"a formula refers to a table (id {ident}) that the workbook does not hold")
-        name, columns = self._table_catalog[ident]
+        name, columns = catalog[ident][:2]
         return structured_reference(name, columns, flags, first, last)
+
+    def has_table(self, name):
+        """True when a table of the workbook has this name."""
+        return any(entry[0].casefold() == name.casefold() for entry in self._catalog().values())
+
+    def table_for_formula(self, name):
+        """``(id, column names, sheet title)`` of the table ``name``, for a formula that refers to it."""
+        for ident, entry in self._catalog().items():
+            if entry[0].casefold() == name.casefold():
+                if entry[2] is None:
+                    raise UnsupportedFeatureError(f"the sheet of table {name!r} is not known")
+                return ident, list(entry[1]), entry[2]
+        raise UnsupportedFeatureError(
+            f"table {name!r} is not in the workbook, or its header row is not written yet")
 
     def name_reference(self, title, scope=None, *, qualified=False):
         if scope is not None:

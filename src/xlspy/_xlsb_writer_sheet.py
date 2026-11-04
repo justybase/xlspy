@@ -177,6 +177,8 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         # The sheet's slicer part comes next; its id is known before the rows stream.
         slicer_rid = f"rId{link_rid_start}" if spec.slicers else None
         link_rid_start += int(slicer_rid is not None)
+        # Formulas written while the rows stream may refer to this sheet's tables.
+        self._sheet_table_scope = (sheet_name, spec.tables, table_ids, table_header_cells) if spec.tables else None
         try:
             self._write_worksheet_bin(
                 f"xl/worksheets/sheet{sheet_id}.bin", data, self._sheet_count - 1,
@@ -211,6 +213,8 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             # The sheet part is incomplete, so the workbook cannot be saved.
             self._aborted = True
             raise
+        finally:
+            self._sheet_table_scope = None
 
     def _register_sheet_parts(
         self, sheet_id: int, sheet_name: str, spec: SheetSpec, pivot_renders: list[Any],
@@ -235,6 +239,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         table_columns = {}
         for table, table_id in zip(spec.tables, table_ids):
             names = table_column_names(table, table_header_cells.get(parse_cell_range(table.ref)[1]))
+            self._table_registry[table_id] = (table.display_name, names, sheet_name)
             self._tables_bin[table_id] = self._table_bin(table, table_id, names)
             table_columns[table.display_name.casefold()] = (table_id, names)
         if slicer_rid is not None:

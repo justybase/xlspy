@@ -32,6 +32,12 @@ binary_updater.save("result.xlsb")
 macro_updater = XlsxUpdater("template.xlsm")
 macro_updater.replace_sheet_data("Data", rows, headers=["Name", "Amount"])
 macro_updater.save("result.xlsm")
+
+# An updater is a context manager: leaving the block releases its files.
+# Changes are kept only by a save() made inside the block.
+with XlsxUpdater("template.xlsx") as updater:
+    updater.replace_sheet_data("Data", rows, headers=["Name", "Amount"])
+    updater.save("result.xlsx")
 ```
 
 `XlsmUpdater` is an explicit alias of `XlsxUpdater` for `.xlsm` inputs.  The

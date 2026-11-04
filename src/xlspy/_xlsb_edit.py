@@ -201,12 +201,16 @@ class XlsbEditMixin(XlsxEditMixin):
         updates['[Content_Types].xml'] = ET.tostring(types, encoding='utf-8')
         self._apply_parts(updates, removed)
 
+    def _context(self, workbook: bytes | None, parts: Callable[[str], bytes | None] | None = None) -> FormulaContext:
+        """A formula context over ``workbook`` whose structured references see this package's tables."""
+        return FormulaContext(
+            self._sheets, workbook, parts,
+            tables=lambda: table_catalog(self._package.names(), self._part_or_none, sheets=self._sheets),
+        )
+
     def get_defined_names(self) -> list[DefinedName]:
         """The workbook's defined names."""
-        return FormulaContext(
-            self._sheets, self._package.get('xl/workbook.bin'), self._part_or_none,
-            tables=lambda: table_catalog(self._package.names(), self._part_or_none),
-        ).defined_names()
+        return self._context(self._package.get('xl/workbook.bin'), self._part_or_none).defined_names()
 
     def set_defined_name(self, definition: DefinedName) -> None:
         """Add a defined name, replacing one with the same name and scope."""
@@ -214,7 +218,7 @@ class XlsbEditMixin(XlsxEditMixin):
             raise TypeError("definition must be DefinedName")
         definition = definition.resolved(self._sheets)
         original = self._package.get('xl/workbook.bin')
-        context = FormulaContext(self._sheets, original)
+        context = self._context(original)
         context.set_name(definition)
         updates = {'xl/workbook.bin': context.write_workbook(original)}
         removed: list[str] = []
@@ -226,7 +230,7 @@ class XlsbEditMixin(XlsxEditMixin):
         if scope is not None and scope not in self._sheets:
             raise KeyError(f"Worksheet not found: {scope}")
         original = self._package.get('xl/workbook.bin')
-        context = FormulaContext(self._sheets, original)
+        context = self._context(original)
         if not context.remove_name(name, scope):
             return
         updates = {'xl/workbook.bin': context.write_workbook(original)}
@@ -361,7 +365,7 @@ class XlsbEditMixin(XlsxEditMixin):
         if not rules and not any(r.record_id in targets for r, _ in records(data)):
             return
         original_workbook = self._package.get('xl/workbook.bin')
-        context = FormulaContext(self._sheets, original_workbook)
+        context = self._context(original_workbook)
         block = validations_bin(rules, context)
         self._apply_parts({
             path: replace_records(data, targets, block, before=(0x1EE,) + _BRT_AFTER_HYPERLINKS),
@@ -379,7 +383,7 @@ class XlsbEditMixin(XlsxEditMixin):
 
         path, data = self._sheet_bin(sheet_name)
         original_workbook = self._package.get('xl/workbook.bin')
-        context = FormulaContext(self._sheets, original_workbook)
+        context = self._context(original_workbook)
         block = conditional_formats_bin(formats, context, dxf_id, links)
         data, groups = without_conditional_formats(data, frozenset((links or {}).values()))
         if block:
@@ -446,7 +450,7 @@ class XlsbEditMixin(XlsxEditMixin):
                 raise ValueError("editing members of array/shared/data-table formulas is unsupported")
         has_formulas = any(isinstance(value, Formula) for value in values.values())
         original_workbook = self._package.get('xl/workbook.bin') if has_formulas else None
-        context = FormulaContext(self._sheets, original_workbook) if has_formulas else None
+        context = self._context(original_workbook) if has_formulas else None
         # Encode everything before staging any changes, including all formulas.
         for ref, value in values.items():
             col, row, _, _ = parse_cell_range(ref)

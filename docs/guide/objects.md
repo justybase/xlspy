@@ -628,11 +628,14 @@ a clickable link from a formula, `Formula('HYPERLINK("#Other!A1","Go")')`. A
 `Hyperlink` cell works in XLSB as well. See [Hyperlinks](#hyperlinks) for the
 differences and an example.
 
-Structured table references (`Table1[Col]`, `Table1[[#Totals],[Col]]`, including
-the `[@Col]` form and the formulas of a totals row or a calculated column) are
-read from a binary workbook as the text a file stores (`Table1[[#This Row],[Col]]`);
-writing a formula with one raises an explicit error. External-workbook references, inline array
-constants and unsupported BIFF12 formula tokens raise an explicit error.
+Structured table references (`Table1[Col]`, `Table1[[#Totals],[Col]]`, `Table1[[#Data],[Col]]`,
+column ranges such as `Table1[[Qty]:[Price]]`, and the `[@Col]` form) are read from a binary
+workbook as the text a file stores (`Table1[[#This Row],[Col]]`), and written back in the
+same form, as Excel writes them. A formula that refers to a table must name a table of the
+workbook that is already there: a table of a sheet written later, or one added in the same
+session to a loaded workbook, raises `UnsupportedFeatureError`, and so does a header row
+that is not written yet. A defined name cannot refer to a table, as in Excel. External-workbook
+references, inline array constants and unsupported BIFF12 formula tokens raise an explicit error.
 `LET` and the `LAMBDA` family remain unsupported. These limits also apply
 when reading formula text; reading cached values does not parse formula tokens.
 Point edits into grouped formulas are refused. Sparse edits discard the

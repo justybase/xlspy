@@ -5,6 +5,8 @@ from ._metadata import DefinedName
 from ._xlsb_writer_host import _XlsbWriterHost
 from ._xlsb_formulas import FormulaContext, _Name
 from ._xlsb_metadata import replace_records, request_recalculation, workbook_protection_bin
+from .refs import parse_cell_range
+from .styles import table_column_names
 from .refs import quote_sheet_name, column_label
 from .printing import print_area_name, print_titles_name
 
@@ -13,8 +15,26 @@ class XlsbWriterMetadata(_XlsbWriterHost):
 
     def _formula_context(self) -> FormulaContext:
         if self._xlsb_formula_context is None:
-            self._xlsb_formula_context = FormulaContext(lambda: [name for name, _, _ in self._worksheet_data])
+            self._xlsb_formula_context = FormulaContext(
+                lambda: [name for name, _, _ in self._worksheet_data],
+                tables=self._table_catalog, cache_tables=False,
+            )
         return self._xlsb_formula_context
+
+    def _table_catalog(self) -> dict[int, tuple[str, list[str], str]]:
+        """The tables a formula can refer to now: those of the sheets written, and those of the
+        sheet being written whose header row has streamed past (their columns are known then)."""
+        catalog = dict(self._table_registry)
+        scope = self._sheet_table_scope
+        if scope is not None:
+            title, tables, ids, header_rows = scope
+            for table, table_id in zip(tables, ids):
+                row = parse_cell_range(table.ref)[1]
+                if table.header_row and row not in header_rows:
+                    continue
+                names = table_column_names(table, header_rows.get(row))
+                catalog[table_id] = (table.display_name, names, title)
+        return catalog
 
     def set_defined_name(self, definition: DefinedName) -> None:
         """Add a defined name, replacing one with the same name and scope."""

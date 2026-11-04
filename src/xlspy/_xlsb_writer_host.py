@@ -48,6 +48,10 @@ class _XlsbWriterHost:
         _next_chart_id: int
         _next_numfmt_id: int
         _next_table_id: int
+        # table id -> (display name, column names, sheet title), for tables of written sheets.
+        _table_registry: dict[int, tuple[str, list[str], str]]
+        # The sheet being written: (title, tables, table ids, captured header rows), or None.
+        _sheet_table_scope: tuple | None
         _next_xf_index: int
         _pending_pivots: dict[str, list[Any]]
         _pivot_names: set[str]

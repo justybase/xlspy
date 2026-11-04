@@ -113,16 +113,6 @@ def test_an_edit_of_another_cell_keeps_the_formulas(tmp_path):
         reloaded.close()
 
 
-def test_a_new_reference_to_a_table_is_refused_with_a_reason(tmp_path):
-    workbook = load_workbook(DATA / "structured_refs.xlsb")
-    try:
-        workbook["Data"]["Z2"] = "=SUM(Tbl[qty])"
-        with pytest.raises(UnsupportedFeatureError, match="cannot be written yet"):
-            workbook.save(tmp_path / "out.xlsb")
-    finally:
-        workbook.close()
-
-
 def test_values_load_without_reading_formulas():
     workbook = load_workbook(DATA / "structured_refs.xlsb", data_only=True)
     try:

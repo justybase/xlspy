@@ -208,6 +208,8 @@ class XlsbWriter(_XlsbStylesMixin, _XlsbPartsMixin, _XlsbSheetMixin, _XlsbViewsM
         # BrtDXF payload -> index, for conditional formats with a style.
         self._dxf_index: dict[bytes, int] = {}
         self._next_table_id = 1
+        self._table_registry: dict[int, tuple[str, list[str], str]] = {}
+        self._sheet_table_scope: tuple | None = None
         self._table_names: set[str] = set()
         self._sheet_tables: dict[int, list[tuple]] = {}
         self._tables_bin: dict[int, bytes] = {}

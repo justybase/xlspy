@@ -39,9 +39,18 @@ Migration from 0.12:
   `Table1[[#Totals],[Qty]]`, `Table1[[#Headers],[#Data],[Qty]]`, column ranges and `[@Col]` (as
   `Table1[[#This Row],[Col]]`, the text an XLSX file holds), with the escapes Excel uses in a column
   name. This includes the totals row and the calculated columns of every table that Excel saves.
-  Writing such a formula to an XLSB still raises `UnsupportedFeatureError`, now with that reason.
   Removing a table that a formula refers to is refused; renaming one is safe, because a binary
   workbook names the table by its id.
+
+- Formulas that refer to a table are written to an XLSB: `SUM(Table1[Qty])`, `Table1[[#Totals],[Qty]]`,
+  `Table1[[#Data],[Qty]]`, column ranges and `[@Col]`, as the PtgList tokens Excel writes. Excel
+  calculates them, and a formula that is loaded back reads as it was written. A formula can refer
+  only to a table that is already in the workbook: a table of a sheet written later, a table of a
+  loaded workbook added in the same session, or a table whose header row is not written yet raises
+  `UnsupportedFeatureError`. A defined name cannot refer to a table, as in Excel.
+
+- `XlsxUpdater` and `XlsbUpdater` work as context managers: leaving the `with` block closes the
+  updater, and changes are kept only by a `save()` made inside it.
 
 - `tools/rust_coverage.py`: line and region coverage of the native module (`cargo llvm-cov`),
   from the Rust unit tests and the pytest suite run against an instrumented build.
@@ -92,6 +101,9 @@ Migration from 0.12:
 
 ### Fixed
 
+- An 8-byte BrtFmlaError (a formula cell with an error, shorter than its 9-byte header) is not a cell,
+  as an 8-byte BrtCellError already was: the native reader stored it as a blank value and the Python
+  reader read past the end of the record.
 - `load_workbook()` and `ExcelReader.get_rows(data_only=False)` failed on a binary workbook from Excel
   with a table that has a totals row or a calculated column (`unsupported XLSB formula token 0x18`),
   and so on any formula that uses a table by name. `data_only=True` was not affected.
