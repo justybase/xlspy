@@ -45,6 +45,9 @@ _DEFAULT_FAMILY = _fonts.DEFAULT_FAMILY
 _SPARE_PX = 1
 # The autofilter (or table) drop-down button covers the end of a header cell:
 # Excel's AutoFit adds 16 pixels for it at any font size (measured at 100%).
+# Centred text keeps clear of the button on both sides: AutoFit adds 32. (For
+# right-aligned and distributed text Excel adds nothing and lets the button
+# cover the text's end; the 16 pixels are kept there.)
 _FILTER_BUTTON_PX = 16
 FILTER_BUTTON = _FILTER_BUTTON_PX / _DIGIT_PX  # in characters
 # Each level of an alignment indent: 9 pixels at any font size (Excel sizes
@@ -448,6 +451,22 @@ def _indent_pixels(alignment: Alignment | None) -> int:
     return sides * _INDENT_PX * alignment.indent
 
 
+def _centred_columns(row, row_styles) -> set[int]:
+    """Columns of a row whose cell is centred (``horizontal="center"``), by
+    the row's style and a ``(value, Style)`` cell's own, as the cell shows it."""
+    centred = set()
+    for col, cell in enumerate(row):
+        if cell is None:
+            continue
+        style = row_styles.get(col) if row_styles else None
+        if type(cell) is tuple and _is_formatted_cell(cell) and not isinstance(cell[1], str):
+            style = merge_styles(style, cell[1])
+        alignment = style.alignment if style is not None else None
+        if alignment is not None and alignment.horizontal == "center":
+            centred.add(col)
+    return centred
+
+
 _PLAIN_PROPS = (None, False, None, False, 0, _DEFAULT_FAMILY, False)
 _HEADER_PROPS = (None, True, None, False, 0, _DEFAULT_FAMILY, False)
 
@@ -494,6 +513,7 @@ class ColumnWidthMeter:
         self._button_rows = frozenset(button_rows)
         self._best: list[int] = []  # column pixels
         self._cells: dict[int, dict[int, int]] = {}  # button row -> {column: pixels}
+        self._centred: dict[int, set[int]] = {}  # button row -> its centred columns
         self._style_cache: dict = {}
         self._fonts: dict = {}  # (family, bold, italic, size) -> (advances, pixels, margin, slant)
         self._constant: dict[tuple, int] = {}  # (type, number format, font) -> pixels of dates and booleans
@@ -516,6 +536,8 @@ class ColumnWidthMeter:
         if row_styles is None:
             styles_at = self._styles_at
             row_styles = styles_at(row_idx, len(row)) if styles_at is not None else None
+        if row_idx in self._button_rows:
+            self._centred[row_idx] = _centred_columns(row, row_styles)
         native = self._native
         if native is not None and (not row_styles or type(row_styles) is dict):
             kept = native.add(row, row_styles or None, row_idx == 0, row_idx in self._button_rows)
@@ -684,10 +706,11 @@ class ColumnWidthMeter:
             for col, px in enumerate(self._native.best()[:max_cols]):
                 if px > best[col]:
                     best[col] = px
-        button = _FILTER_BUTTON_PX
         for r, c1, c2 in filter_cells:
             kept = self._cells.get(r)
+            centred = self._centred.get(r, ())
             for col in range(max(c1, 0), min(c2 + 1, max_cols)):
+                button = 2 * _FILTER_BUTTON_PX if col in centred else _FILTER_BUTTON_PX
                 if kept is not None:
                     width = kept.get(col)
                 elif r < self.limit and r not in self._button_rows:

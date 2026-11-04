@@ -64,11 +64,17 @@ def test_filter_button_widths_match_excel_autofit(tmp_path, excel, open_workbook
     """Headers under an autofilter button: Excel's AutoFit plus one spare pixel."""
     if _system_dpi() != 96:
         pytest.skip("Excel's AutoFit depends on the display scaling; needs 100% (96 DPI)")
-    headers = ["COLUMN_NAME", "WWWWWWWW", "Customer name", "Kwota brutto", "Zażółć gęślą jaźń", "ID_0123456789"]
+    plain = ["COLUMN_NAME", "WWWWWWWW", "Customer name", "Kwota brutto", "Zażółć gęślą jaźń", "ID_0123456789"]
+    # Centred headers (Excel keeps them clear of the button on both sides),
+    # on one line and on two.
+    centred = Style(font=Font(bold=True), alignment=Alignment(horizontal="center", wrap_text=True))
+    headers = plain + ["Szacowana kwota premii* łącznie MTD", "łącznie\nSzacowana kwota premii* łącznie MTD",
+                       "Kwota brutto", "MTD"]
+    first_row = plain + [(text, centred) for text in headers[len(plain):]]
     path = tmp_path / "filtered.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Probe")
-        writer.write_sheet([headers, [1] * len(headers), [2] * len(headers), [3] * len(headers)], auto_filter=True)
+        writer.write_sheet([first_row, [1] * len(headers), [2] * len(headers), [3] * len(headers)], auto_filter=True)
     sheet = open_workbook(path).Worksheets(1)
     ours = [sheet.Columns(i + 1).ColumnWidth for i in range(len(headers))]
     assert sheet.AutoFilterMode

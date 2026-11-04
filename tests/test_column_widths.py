@@ -392,6 +392,43 @@ def test_filter_button_gets_excels_room(tmp_path, writer_cls, ext, read, header,
     assert cell_width(header, bold=True) + FILTER_BUTTON == pytest.approx(excel + SPARE)
 
 
+# Excel at 100% scaling: AutoFit of bold, centred headers under an autofilter
+# button, in pixels. Centred text keeps clear of the button on both sides, so
+# Excel adds 32 pixels, not 16 (one line or two, wrapped or not).
+EXCEL_AUTOFIT_FILTERED_CENTRED = [
+    ("Szacowana kwota premii* łącznie MTD", 277), ("Kwota brutto", 115), ("WWWWWWWW", 148),
+    ("MTD", 63), ("łącznie\nSzacowana kwota premii* łącznie MTD", 277), ("Szacowana kwota\nMTD", 143),
+]
+CENTRED = Style(font=Font(bold=True), alignment=Alignment(horizontal="center", wrap_text=True))
+
+
+@pytest.mark.parametrize("writer_cls,ext,read", [
+    (XlsxWriter, "xlsx", _xlsx_widths), (XlsbWriter, "xlsb", _xlsb_widths),
+])
+@pytest.mark.parametrize("how", ["cell", "header_style"])
+@pytest.mark.parametrize("header,excel_px", EXCEL_AUTOFIT_FILTERED_CENTRED)
+def test_centred_filter_header_gets_room_for_the_button_on_both_sides(
+        tmp_path, writer_cls, ext, read, how, header, excel_px):
+    path = tmp_path / f"centred.{ext}"
+    with writer_cls(path) as writer:
+        writer.add_sheet("Data")
+        if how == "cell":
+            writer.write_sheet([[(header, CENTRED)], [1], [2]], auto_filter=True)
+        else:
+            writer.write_sheet([[header], [1], [2]], auto_filter=True, header_style=CENTRED)
+    assert read(path)[0] == pytest.approx(file_width((excel_px + 1) / 7), abs=0.01)
+
+
+def test_only_the_centred_header_under_a_button_gets_two_buttons():
+    left = Style(alignment=Alignment(horizontal="left"))
+    rows = [[("Kwota brutto", CENTRED), ("Kwota brutto", left), ("Kwota brutto", CENTRED)], [1, 2, 3]]
+    widths = estimate_column_widths(rows, 3, filter_cells=[(0, 0, 1)])
+    plain = estimate_column_widths(rows, 3)
+    assert widths[0] == pytest.approx(plain[0] + 2 * FILTER_BUTTON)
+    assert widths[1] == pytest.approx(plain[1] + FILTER_BUTTON)
+    assert widths[2] == pytest.approx(plain[2])  # no button over column C
+
+
 def test_xlsb_counts_columns_after_empty_cells(tmp_path):
     path = tmp_path / "gaps.xlsb"
     with XlsbWriter(path) as writer:

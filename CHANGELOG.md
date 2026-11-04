@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A centred header under an autofilter or table drop-down button (`Alignment(horizontal="center")`)
+  got room for the button on one side only, so its text ran into the button. Excel's *AutoFit*
+  keeps centred text clear of the button on both sides (32 pixels, not 16: measured at 100%
+  scaling, on one line and on two); the estimate now does the same, for a centred header style
+  and for a `(value, Style)` header cell. Right-aligned and distributed headers keep the
+  16 pixels (Excel adds none and lets the button cover the end of the text).
+
 ## [0.12.0] - 2026-11-03
 
 ### Fixed
