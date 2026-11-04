@@ -73,3 +73,21 @@ def test_excel_refuses_a_defined_name_that_refers_to_a_structured_reference(exce
             book.Names.Add("Qty", "=Tbl[qty]")
     finally:
         book.Close(False)
+
+
+def test_excel_calculates_a_formula_that_refers_to_a_table_added_in_the_same_loaded_session(tmp_path, excel, open_workbook):
+    source = tmp_path / "source.xlsb"
+    _sales(source)
+    workbook = load_workbook(source)
+    try:
+        sheet = workbook["Data"]
+        sheet["F1"], sheet["G1"], sheet["F2"], sheet["G2"] = "name", "qty", "x", 10
+        sheet.add_table(ExcelTable("Added", "F1:G2"))
+        sheet["H1"] = "=SUM(Added[qty])*2"
+        out = tmp_path / "out.xlsb"
+        workbook.save(out)
+    finally:
+        workbook.close()
+
+    opened = open_workbook(out)
+    assert opened.Worksheets("Data").Range("H1").Value2 == 20

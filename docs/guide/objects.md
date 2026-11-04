@@ -631,10 +631,11 @@ differences and an example.
 Structured table references (`Table1[Col]`, `Table1[[#Totals],[Col]]`, `Table1[[#Data],[Col]]`,
 column ranges such as `Table1[[Qty]:[Price]]`, and the `[@Col]` form) are read from a binary
 workbook as the text a file stores (`Table1[[#This Row],[Col]]`), and written back in the
-same form, as Excel writes them. A formula that refers to a table must name a table of the
-workbook that is already there: a table of a sheet written later, or one added in the same
-session to a loaded workbook, raises `UnsupportedFeatureError`, and so does a header row
-that is not written yet. A defined name cannot refer to a table, as in Excel. External-workbook
+same form, as Excel writes them. In a new workbook, a formula can refer to a table of its own
+sheet or of a sheet written earlier, once that sheet's header row is written; a table of a
+sheet written later raises `UnsupportedFeatureError`, and so does a header row that is not
+written yet. In a loaded workbook, a formula can also refer to a table added in the same save.
+A defined name cannot refer to a table, as in Excel. External-workbook
 references, inline array constants and unsupported BIFF12 formula tokens raise an explicit error.
 `LET` and the `LAMBDA` family remain unsupported. These limits also apply
 when reading formula text; reading cached values does not parse formula tokens.

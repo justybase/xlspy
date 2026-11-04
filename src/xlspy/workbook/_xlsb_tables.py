@@ -12,11 +12,11 @@ from .._package_handle import PackageHandle
 
 import re
 import struct
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast
 
 from .._xlsb_metadata import read_wide, replace_records, wide_string
-from .._xlsb_table_part import TableEdit, TablePart, TablePartStyle, parse_table_part, patch_table_part
+from .._xlsb_table_part import TableEdit, TablePart, TablePartStyle, parse_table_part, patch_table_part, table_catalog
 from ..biff_utils import build_record, iter_record_payloads
 from ..exceptions import UnsupportedFeatureError
 from ..styles.core import table_column_names
@@ -144,7 +144,43 @@ def _other_tables(package: _Package, own: set[str | None]) -> list[Any]:
     return others
 
 
-def sync_tables(updater: XlsbUpdater, sheet: Worksheet) -> None:
+@dataclass
+class PendingTable:
+    """A table the save adds: its id, name, column names and sheet, known before its part is written."""
+
+    table: Any
+    ident: int
+    name: str
+    columns: list[str] | None
+    sheet: str
+
+
+def plan_new_tables(workbook: Any, updater: XlsbUpdater) -> tuple[PendingTable, ...]:
+    """Give each table the sheets gain an id, in workbook order, before any formula is written.
+
+    A formula refers to a table by its id, and the formulas of a sheet are written before the
+    sheet's tables are; so the ids are fixed first, and the table parts are written with them.
+    """
+    package = _Package(updater)
+    catalog = table_catalog(package.names, package.get)
+    next_id = max(catalog, default=0) + 1
+    pending: list[PendingTable] = []
+    for sheet in workbook._sheets:
+        saved = {id(table) for table in getattr(sheet, "_saved_table_objects", ())}
+        for table in sheet.tables:
+            if id(table) in saved:
+                continue
+            excel = _as_excel_table(table)
+            try:
+                columns: list[str] | None = table_column_names(excel, _header_row(sheet, excel) if excel.header_row else None)
+            except ValueError:
+                columns = None  # the save reports it, in its own order of checks
+            pending.append(PendingTable(table, next_id, excel.display_name, columns, sheet.title))
+            next_id += 1
+    return tuple(pending)
+
+
+def sync_tables(updater: XlsbUpdater, sheet: Worksheet, pending: tuple[PendingTable, ...] = ()) -> None:
     """Save the tables the sheet gained, changed or lost since it was loaded or last saved."""
     saved = list(getattr(sheet, "_saved_table_objects", ()))
     signatures = (getattr(sheet, "_saved_object_signatures", None) or {}).get("tables", ())
@@ -230,13 +266,15 @@ def sync_tables(updater: XlsbUpdater, sheet: Worksheet) -> None:
             for node in list(package.types):
                 if node.get("PartName") == "/" + item.part:
                     package.types.remove(node)
+    planned = {id(item.table): item.ident for item in pending}
     next_id = max([table.id or 0 for table in others] + [part.id for part in parsed], default=0) + 1
-    for (_, excel), columns in zip(final[len(kept):], new_columns):
+    for (table, excel), columns in zip(final[len(kept):], new_columns):
         part = package.free_part("xl/tables", "table", "bin")
-        package.set(part, cast(Any, XlsbWriter)._table_bin(XlsbWriter, excel, next_id, columns))
+        ident = planned.get(id(table), next_id)
+        package.set(part, cast(Any, XlsbWriter)._table_bin(XlsbWriter, excel, ident, columns))
         package.override(part, _TABLE_TYPE)
         rids.append(package.add_rel(rels, path, "table", part))
-        next_id += 1
+        next_id = max(next_id, ident) + 1
 
     block = b""
     if rids:

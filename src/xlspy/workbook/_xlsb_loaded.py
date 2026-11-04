@@ -16,7 +16,7 @@ from ._drawings import check_removals, remember_drawing_objects, remove_drawing_
 from ._chartsheets import check_chartsheets
 from ._xlsb_chartsheets import add_chartsheets_xlsb
 from ._xlsb_drawings import add_drawing_objects
-from ._xlsb_tables import sync_tables
+from ._xlsb_tables import plan_new_tables, sync_tables
 from ._objects import _object_values, check_unread, object_signatures
 from ._xlsb_layout import changed_groups, layout_state, patch_layout, save_builtin_names
 
@@ -247,12 +247,17 @@ def save_loaded_xlsb(workbook, filename) -> None:
     renamed = {sheet._original_title: sheet.title for sheet in workbook._sheets if not _is_new(sheet)}
     _sync_sheet_list(workbook, updater)
     _save_defined_names(workbook, updater, renamed)
-    for sheet in workbook._sheets:
-        _save_sheet(sheet, updater)
-        remove_drawing_objects(updater, sheet)
-        save_chart_edits(updater, sheet)
-        add_drawing_objects(updater, sheet)
-        sync_tables(updater, sheet)
+    pending = plan_new_tables(workbook, updater)
+    updater.set_pending_tables(pending)
+    try:
+        for sheet in workbook._sheets:
+            _save_sheet(sheet, updater)
+            remove_drawing_objects(updater, sheet)
+            save_chart_edits(updater, sheet)
+            add_drawing_objects(updater, sheet)
+            sync_tables(updater, sheet, pending)
+    finally:
+        updater.set_pending_tables(())
     add_chartsheets_xlsb(updater, workbook)
     states = updater.get_sheet_states()
     for chartsheet in workbook._chartsheets:

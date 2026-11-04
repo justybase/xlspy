@@ -191,3 +191,21 @@ def test_a_defined_name_cannot_refer_to_a_table(tmp_path):
             writer.set_defined_name(DefinedName("Qty", "Tbl[qty]"))
             writer.save()
     assert not (tmp_path / "name.xlsb").exists()
+
+
+def test_a_formula_refers_to_a_table_added_in_the_same_loaded_session(tmp_path):
+    workbook = load_workbook(FIXTURE)
+    try:
+        sheet = workbook["Data"]
+        sheet["Y1"], sheet["Z1"], sheet["Y2"], sheet["Z2"] = "name", "qty", "a", 1
+        sheet.add_table(ExcelTable("New", "Y1:Z2"))
+        sheet["AB2"] = "=SUM(New[qty])+SUM(Tbl[qty])"
+        workbook.save(tmp_path / "out.xlsb")
+    finally:
+        workbook.close()
+    reloaded = load_workbook(tmp_path / "out.xlsb")
+    try:
+        assert reloaded["Data"]["AB2"].value == "=SUM(New[qty])+SUM(Tbl[qty])"
+        assert [table.displayName for table in reloaded["Data"].tables] == ["Tbl", "Other", "New"]
+    finally:
+        reloaded.close()

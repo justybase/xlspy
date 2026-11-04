@@ -114,6 +114,13 @@ _AFTER_MERGES = (0x1CD, 0x23D, 0x1EE) + _BRT_AFTER_HYPERLINKS
 
 
 class XlsbEditMixin(XlsxEditMixin):
+    # Tables the save in progress adds, planned before any formula is written (see _xlsb_tables).
+    _pending_tables: tuple = ()
+
+    def set_pending_tables(self, pending: Iterable[Any]) -> None:
+        """The tables a save is about to add, each with its id (empty when the save is done)."""
+        self._pending_tables = tuple(pending)
+
     # Set by XlsbUpdater; None until the shared strings part is read.
     _shared_strings_data: bytes | None
 
@@ -205,8 +212,16 @@ class XlsbEditMixin(XlsxEditMixin):
         """A formula context over ``workbook`` whose structured references see this package's tables."""
         return FormulaContext(
             self._sheets, workbook, parts,
-            tables=lambda: table_catalog(self._package.names(), self._part_or_none, sheets=self._sheets),
+            tables=self._table_catalog,
         )
+
+    def _table_catalog(self) -> dict[int, tuple[str, list[str], str | None]]:
+        """The package's tables, and those the save in progress adds, by id."""
+        catalog = table_catalog(self._package.names(), self._part_or_none, sheets=self._sheets)
+        for pending in self._pending_tables:
+            if pending.columns is not None:  # a header that cannot be read is refused by the save itself
+                catalog[pending.ident] = (pending.name, pending.columns, pending.sheet)
+        return catalog
 
     def get_defined_names(self) -> list[DefinedName]:
         """The workbook's defined names."""

@@ -44,10 +44,11 @@ Migration from 0.12:
 
 - Formulas that refer to a table are written to an XLSB: `SUM(Table1[Qty])`, `Table1[[#Totals],[Qty]]`,
   `Table1[[#Data],[Qty]]`, column ranges and `[@Col]`, as the PtgList tokens Excel writes. Excel
-  calculates them, and a formula that is loaded back reads as it was written. A formula can refer
-  only to a table that is already in the workbook: a table of a sheet written later, a table of a
-  loaded workbook added in the same session, or a table whose header row is not written yet raises
-  `UnsupportedFeatureError`. A defined name cannot refer to a table, as in Excel.
+  calculates them, and a formula that is loaded back reads as it was written. In a new workbook a
+  formula can refer to a table of its own sheet or of an earlier sheet; a table of a later sheet, or
+  one whose header row is not written yet, raises `UnsupportedFeatureError`. In a loaded workbook a
+  formula can also refer to a table added in the same save. A defined name cannot refer to a table,
+  as in Excel.
 
 - `XlsxUpdater` and `XlsbUpdater` work as context managers: leaving the `with` block closes the
   updater, and changes are kept only by a `save()` made inside it.

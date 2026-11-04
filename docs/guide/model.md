@@ -157,8 +157,7 @@ range's width must stay) raises `UnsupportedFeatureError`, and so does renaming 
 removing a table in a workbook that holds pivot tables or slicers, which would be
 left pointing at the old table, and removing a table that a formula refers to. A
 binary workbook names a table in a formula by its id, so renaming one is safe. A new
-formula can refer only to a table that is already in the workbook: a table added in the same
-session raises `UnsupportedFeatureError` until the workbook is saved and loaded again.
+formula can refer to a table added in the same save, as well as to the tables already there.
 
 ⁶ The title, axis titles, legend position, series titles and colours of a
 loaded chart can be changed; the rest of its XML is kept.
