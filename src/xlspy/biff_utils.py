@@ -187,6 +187,37 @@ def read_utf16(data: bytes, offset: int, character_count: int) -> tuple[str, int
     return data[offset:end].decode("utf-16le", errors="surrogatepass"), end
 
 
+def iter_xlsb_sheets(workbook_bin: bytes) -> Iterator[tuple[str | None, str]]:
+    """``(relationship id, name)`` of every BrtBundleSh in ``workbook.bin``, in
+    order; the id is None when the record has none. InvalidFileError for a
+    record cut short."""
+    for record in iter_records(workbook_bin):
+        if record.record_id != 0x9C:
+            continue
+        payload = workbook_bin[record.data_start:record.data_end]
+        if len(payload) < 12:
+            raise InvalidFileError("Malformed BrtBundleSh record")
+        relationship: str | None = None
+        offset = 12
+        length = struct.unpack_from("<I", payload, 8)[0]
+        if length != 0xFFFFFFFF:
+            relationship, offset = read_utf16(payload, offset, length)
+        if offset + 4 > len(payload):
+            raise InvalidFileError("Malformed BrtBundleSh sheet name")
+        length = struct.unpack_from("<I", payload, offset)[0]
+        name, _ = read_utf16(payload, offset + 4, length)
+        yield relationship, name
+
+
+def xlsb_date_1904(workbook_bin: bytes) -> bool:
+    """Whether ``workbook.bin`` selects the 1904 date system: bit 0 (``f1904``)
+    of the BrtWbProp record (0x99)."""
+    for record in iter_records(workbook_bin):
+        if record.record_id == 0x99 and record.length >= 4:
+            return bool(workbook_bin[record.data_start] & 0x01)
+    return False
+
+
 @dataclass
 class SharedStringsBin:
     values: list[str]

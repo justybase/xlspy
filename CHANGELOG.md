@@ -39,6 +39,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     but keeps its own row layout: on a sheet with records out of order it can still return other
     rows than the default path, or refuse a short formula record the default path ignores.)
 
+- `XlsxUpdater` and `XlsbUpdater` meant different things by the same call:
+  - `DefinedName(..., localSheetId=n)` became a global name in XLSB and could add a second entry
+    in XLSX; `hidden=True` was lost in XLSB. Either `scope` or `localSheetId` now names the sheet
+    in both formats (`KeyError` for a sheet that is not there, `ValueError` when the two disagree),
+    and both report both.
+  - Changing or removing a name left stale formula results in XLSX, where it did not ask for a
+    recalculation on load; XLSB did. Removing a name that does not exist rewrote `workbook.bin`.
+  - `XlsbUpdater.set_comments` refused to remove a classic note on a cell with a threaded comment;
+    as in XLSX, only adding one there is refused.
+  - `XlsxUpdater.set_hyperlinks` with an empty mapping accepted a sheet that does not exist.
+- XLSB notes got a random GUID, so two saves of the same workbook differed. The GUID now comes from
+  the comments part and the cell (checked in Excel).
+
+### Changed
+
+- **Breaking:** `XlsbUpdater.set_hyperlinks` works as in `XlsxUpdater`: it sets the given cells,
+  `None` removes a cell's link, and every other link is kept. It used to replace all of the
+  sheet's links and refuse `None`. To clear a sheet, pass `None` for each link. Saving a loaded
+  XLSB now rewrites only the links that changed, so one over a range survives an edit of another.
+- `workbook.bin`'s sheet list and date system have one parser (`biff_utils`), shared by
+  `ExcelReader` and `XlsbUpdater`. A sheet record whose strings overrun it is now refused by
+  `ExcelReader` too, instead of giving a cut-off name.
+
 ### Added
 
 - `tools/rust_coverage.py`: line and region coverage of the native module (`cargo llvm-cov`),

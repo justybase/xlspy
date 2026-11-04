@@ -337,7 +337,7 @@ def test_sheet_qualified_local_name_may_be_defined_after_use(tmp_path):
         writer.write_sheet([[Formula('Data!Rate*2'), 3]])
         writer.set_defined_name(DefinedName('Rate', 'Data!$B$1', 'Data'))
     with ExcelReader(str(path)) as reader:
-        assert reader.get_defined_names() == [DefinedName('Rate', "'Data'!$B$1", 'Data')]
+        assert reader.get_defined_names() == [DefinedName('Rate', "'Data'!$B$1", 'Data', localSheetId=0)]
         assert reader.read_all('Data', data_only=False) == [['=Rate*2', 3]]
 
 

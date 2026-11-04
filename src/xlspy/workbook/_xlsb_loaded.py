@@ -11,7 +11,7 @@ import tempfile
 
 from ..refs import parse_cell_range
 from . import _props
-from ._loaded import _value_for_save
+from ._loaded import _save_hyperlinks, _value_for_save
 from ._drawings import check_removals, remember_drawing_objects, remove_drawing_objects, save_chart_edits
 from ._chartsheets import check_chartsheets
 from ._xlsb_chartsheets import add_chartsheets_xlsb
@@ -213,14 +213,16 @@ def _save_sheet(sheet, updater) -> None:
         sheet._cf_extensions = {
             key: getattr(sheet, "_cf_extensions", {})[key] for key in kept
         }
-    if new or sheet._dirty_hyperlinks:
+    if new:
         links = {
             cell.coordinate: cell._hyperlink
             for row in sheet._cells.values() for cell in row.values()
             if cell._hyperlink is not None
         }
-        if links or not new:
+        if links:
             updater.set_hyperlinks(sheet.title, links)
+    else:
+        _save_hyperlinks(updater, sheet, sheet.title)
     if new:
         comments = {
             cell.coordinate: cell._comment

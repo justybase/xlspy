@@ -431,6 +431,10 @@ def decode_formula(data, context, *, sheet=None, origin=(0, 0), name_formula=Fal
     return stack[0][0]
 
 
+# BrtName's fHidden flag ([MS-XLSB] 2.4.691).
+_NAME_HIDDEN = 0x1
+
+
 @dataclass
 class _Name:
     name: str
@@ -579,14 +583,18 @@ class FormulaContext:
     def set_name(self, definition):
         if not isinstance(definition, DefinedName):
             raise TypeError("definition must be DefinedName")
-        match = next((i for i, n in enumerate(self.names) if n.name.casefold() == definition.name.casefold() and self._scope(n) == definition.scope), None)
-        entry = _Name(definition.name, definition.scope, definition=definition)
+        scope = definition.scope
+        if scope is None and definition.localSheetId is not None and definition.localSheetId < len(self.sheets):
+            scope = list(self.sheets)[definition.localSheetId]
+        match = next((i for i, n in enumerate(self.names) if n.name.casefold() == definition.name.casefold() and self._scope(n) == scope), None)
+        entry = _Name(definition.name, scope, flags=_NAME_HIDDEN if definition.hidden else 0, definition=definition)
         if match is None:
             self.names.append(entry)
         else:
             self.names[match] = entry
 
-    def remove_name(self, title, scope):
+    def remove_name(self, title, scope) -> bool:
+        """Remove a name; False when there was no such name."""
         DefinedName(title, '0', scope)
         for index, entry in enumerate(self.names):
             if entry.name.casefold() == title.casefold() and self._scope(entry) == scope:
@@ -596,15 +604,16 @@ class FormulaContext:
                 entry.name, entry.flags, entry.definition = name, 1, None
                 scope_id = 0xFFFFFFFF if scope is None else self.sheets.index(scope)
                 entry.raw = struct.pack('<IBI', 1, 0, scope_id) + wide_string(name) + parsed_formula(b'\x1c\x1d') + b'\xff' * 4
-                return
+                return True
+        return False
 
     def name_payloads(self):
         index = 0
         while index < len(self.names):
             entry = self.names[index]
             if entry.definition is not None:
-                definition = entry.definition
-                scope_id = 0xFFFFFFFF if definition.scope is None else self.sheets.index(definition.scope)
+                definition = entry.definition.resolved(self.sheets)
+                scope_id = 0xFFFFFFFF if definition.scope is None else definition.localSheetId
                 formula = compile_formula(definition.formula, self, sheet=definition.scope, name_formula=True)
                 entry.raw = struct.pack('<IBI', entry.flags, 0, scope_id) + wide_string(definition.name) + formula + b'\xff' * 4
             if entry.raw is None:
@@ -618,11 +627,15 @@ class FormulaContext:
             if entry.flags & (0x20 | 0x20000) or entry.name.startswith('_xlspy_deleted_'):
                 continue
             if entry.definition is not None:
-                result.append(entry.definition)
+                result.append(entry.definition.resolved(self.sheets))
             elif entry.raw is not None:
                 _, offset = read_wide(entry.raw, 9)
                 scope = self._scope(entry)
-                result.append(DefinedName(entry.name, decode_formula(entry.raw[offset:], self, sheet=scope, name_formula=True), scope))
+                result.append(DefinedName(
+                    entry.name, decode_formula(entry.raw[offset:], self, sheet=scope, name_formula=True), scope,
+                    localSheetId=None if scope is None else list(self.sheets).index(scope),
+                    hidden=True if entry.flags & _NAME_HIDDEN else None,
+                ))
         return result
 
     def external_records(self):

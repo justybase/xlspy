@@ -228,7 +228,8 @@ class _XlsbPartsMixin(_XlsbWriterHost):
                 self._write_empty_sheet(sheet_index)
         if self._sheet_comments:
             for sheet_id, comments in self._sheet_comments.items():
-                self._zf.writestr(f'xl/comments/comment{sheet_id}.bin', comments_bin(comments))
+                part = f'xl/comments/comment{sheet_id}.bin'
+                self._zf.writestr(part, comments_bin(comments, part=part))
                 self._zf.writestr(f'xl/drawings/commentsDrawing{sheet_id}.vml', vml_xml(comments))
         for sheet_id in sorted(self._sheet_drawings):
             if sheet_id in self._sheet_chart_ids:

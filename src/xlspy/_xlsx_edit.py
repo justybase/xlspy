@@ -161,6 +161,7 @@ class XlsxEditMixin:
         Only the link changes: the cell's value and style stay as they are. A
         link whose range starts at a given cell is replaced as a whole.
         """
+        path, sheet = self._sheet_xml(sheet_name)
         changes = {}
         for ref, link in links.items():
             if link is not None and not isinstance(link, Hyperlink):
@@ -168,7 +169,6 @@ class XlsxEditMixin:
             changes[cell_ref(ref)] = link
         if not changes:
             return
-        path, sheet = self._sheet_xml(sheet_name)
         rp = rels_path(path)
         names = self._package.names()
         relationships = (
@@ -243,6 +243,7 @@ class XlsxEditMixin:
         """Add a defined name, replacing one with the same name and scope."""
         if not isinstance(definition, DefinedName):
             raise TypeError("definition must be a DefinedName")
+        definition = definition.resolved(self._sheets)
         fragment = definition.to_xml(self._sheets)
         xml = self._package.get("xl/workbook.xml").decode("utf-8")
         xml = self._remove_name(xml, definition.name, definition.scope)
@@ -250,7 +251,15 @@ class XlsxEditMixin:
             xml = append_child(xml, "definedNames", fragment)
         else:
             xml = replace_element(xml, "definedNames", f'<definedNames xmlns="{MAIN}">{fragment}</definedNames>', before=("calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"))
-        self._apply_parts({"xl/workbook.xml": xml})
+        self._apply_name_change(xml)
+
+    def _apply_name_change(self, xml: str) -> None:
+        """Save a changed workbook part. Formulas may use the name, so their
+        cached values are stale: recalculate on load, as for XLSB."""
+        updates: dict[str, Any] = {"xl/workbook.xml": xml}
+        removed: list[str] = []
+        self._recalculate(updates, removed)
+        self._apply_parts(updates, removed)
 
     def _remove_name(self, xml: str, name: str, scope: str | None) -> str:
         scope_id = None if scope is None else str(list(self._sheets).index(scope))
@@ -269,7 +278,7 @@ class XlsxEditMixin:
         xml = self._package.get("xl/workbook.xml").decode("utf-8")
         updated = self._remove_name(xml, name, scope)
         if updated != xml:
-            self._apply_parts({"xl/workbook.xml": updated})
+            self._apply_name_change(updated)
 
     def set_sheet_protection(self, sheet_name: str, protection: SheetProtection) -> None:
         """Set or replace the protection of a sheet."""
@@ -410,7 +419,7 @@ class XlsxEditMixin:
             self._package.remove(path)
 
     def _recalculate(self, updates: MutableMapping[str, Any], removed: list[str]) -> None:
-        xml = self._package.get("xl/workbook.xml").decode("utf-8")
+        xml = updates.get("xl/workbook.xml") or self._package.get("xl/workbook.xml").decode("utf-8")
         existing = element_pattern("calcPr").search(xml)
         attrs = tag_attributes(existing[0]) if existing else {}
         attrs.update(fullCalcOnLoad="1", forceFullCalc="1", calcMode="auto")

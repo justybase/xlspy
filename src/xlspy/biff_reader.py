@@ -52,11 +52,6 @@ class BiffReader:
         self._stream = stream
         self._buffer = bytearray(128)
 
-        self.workbook_id = 0
-        self.rec_id = ""
-        self.workbook_name = ""
-        self.is_sheet = False
-
         self.in_cell_xf = False
         self.in_cell_style_xf = False
         self.in_number_format = False
@@ -188,21 +183,6 @@ class BiffReader:
     @staticmethod
     def _get_double(buffer, offset):
         return struct.unpack_from('<d', buffer, offset)[0]
-
-    def read_workbook(self):
-        ok, record_id, buffer = self._read_record()
-        if not ok:
-            return False
-
-        self.is_sheet = False
-        if record_id == self._sheet:
-            self.workbook_id = self._get_dword(buffer, 4)
-            offset = 8
-            self.rec_id, offset = self._get_nullable_string(buffer, offset)
-            name_length = self._get_dword(buffer, offset)
-            self.workbook_name = self._get_string(buffer, offset + 4, name_length)
-            self.is_sheet = True
-        return True
 
     def read_styles(self):
         ok, record_id, buffer = self._read_record()

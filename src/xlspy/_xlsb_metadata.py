@@ -106,7 +106,12 @@ def parse_comments(data):
     return notes, authors, blocks
 
 
-def comments_bin(changes, existing=None):
+# Comment GUIDs are made from the part and the cell, so a save is reproducible
+# and no two notes of a workbook share one.
+_COMMENT_NAMESPACE = uuid.UUID("c1f3a9d2-5e47-4b8c-a6d1-7f20e94b3c58")
+
+
+def comments_bin(changes, existing=None, *, part=""):
     if existing is None:
         existing = b"".join(build_record(kind) for kind in
                             (BEGIN_COMMENTS, BEGIN_AUTHORS, END_AUTHORS, BEGIN_LIST, END_LIST, END_COMMENTS))
@@ -122,7 +127,8 @@ def comments_bin(changes, existing=None):
             replacement_blocks[ref] = b""
             continue
         col, row, _, _ = parse_cell_range(ref)
-        header = struct.pack("<iIIII", authors.index(comment.author), row, row, col, col) + uuid.uuid4().bytes_le
+        guid = uuid.uuid5(_COMMENT_NAMESPACE, f"{part}:{ref}")
+        header = struct.pack("<iIIII", authors.index(comment.author), row, row, col, col) + guid.bytes_le
         # RichStr: no formatting runs and no phonetic information.
         replacement_blocks[ref] = (build_record(BEGIN_COMMENT, header)
                                    + build_record(TEXT, b"\0" + wide_string(comment.text))

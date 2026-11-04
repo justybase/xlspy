@@ -563,7 +563,7 @@ Deleting the last note removes unused comment parts and drawing references;
 VML parts containing controls are retained.
 
 `set_hyperlinks(sheet_name, {"A2": Hyperlink(...), "B5": None})` sets or
-removes the links of the given XLSX cells and keeps the others; a link whose
+removes the links of the given cells and keeps the others; a link whose
 range starts at a given cell is replaced whole. Only the link changes, not the
 cell's value or style, and a removed link's relationship goes with it.
 

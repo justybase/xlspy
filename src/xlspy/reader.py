@@ -15,7 +15,7 @@ from ._safe_xml import harden_expat, fromstring as safe_fromstring
 
 from ._errors import CellError
 from .biff_reader import BiffReader, CellType
-from .biff_utils import iter_records as _iter_biff_records
+from .biff_utils import iter_xlsb_sheets, xlsb_date_1904
 from ._accel import HAVE_NATIVE, read_xlsb_worksheet as _accel_read_xlsb_worksheet
 from ._accel import read_xlsb_shared_strings as _accel_read_sst
 from ._accel import read_xlsx_shared_strings as _accel_read_xlsx_sst
@@ -92,18 +92,6 @@ def _looks_like_date_format(fmt_code: str) -> bool:
     date_indicators = sum([has_y, has_m and not has_h and not has_s, has_d])
     return date_indicators >= 2
 
-
-def _xlsb_date_1904(workbook_bin: bytes) -> bool:
-    """Return whether ``workbook.bin`` selects the 1904 date system.
-
-    The flag lives in the BrtWbProp record (0x99); bit 0 is the
-    ``f1904`` flag.
-    """
-
-    for record in _iter_biff_records(workbook_bin):
-        if record.record_id == 0x99 and record.length >= 4:
-            return bool(workbook_bin[record.data_start] & 0x01)
-    return False
 
 _default_number_formats_type_dict: dict[int, type] = {
     0: str,
@@ -356,14 +344,11 @@ class ExcelReader:
 
         with self._zip().open('xl/workbook.bin') as f:
             raw = f.read()
-            stream = _MemoryStream(raw)
-            reader = BiffReader(stream)
-            while reader.read_workbook():
-                if reader.is_sheet:
-                    self._worksheet_id_to_name[reader.rec_id] = reader.workbook_name
-                    self._worksheet_name_to_id[reader.workbook_name] = reader.rec_id
-            reader.close()
-            self._date_1904 = _xlsb_date_1904(raw)
+        for relationship, name in iter_xlsb_sheets(raw):
+            # A sheet without a relationship is listed, and has no part to read.
+            self._worksheet_id_to_name[relationship or ""] = name
+            self._worksheet_name_to_id[name] = relationship or ""
+        self._date_1904 = xlsb_date_1904(raw)
 
         self._fill_rels('bin')
 

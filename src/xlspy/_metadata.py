@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 import re
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
@@ -216,6 +216,25 @@ class DefinedName:
         if self.comment is not None and not isinstance(self.comment, str):
             raise TypeError("comment must be a string or None")
         object.__setattr__(self, "formula", self.formula.removeprefix("="))
+
+    def resolved(self, sheets: Collection[str]) -> DefinedName:
+        """This name with ``scope`` and ``localSheetId`` both set for the sheets
+        in ``sheets`` (either one names the sheet). KeyError for a sheet that is
+        not there, ValueError when the two name different sheets."""
+        if self.scope is None and self.localSheetId is None:
+            return self
+        titles = list(sheets)
+        if self.scope is not None:
+            if self.scope not in titles:
+                raise KeyError(f"Worksheet not found: {self.scope}")
+            index = titles.index(self.scope)
+            if self.localSheetId is not None and self.localSheetId != index:
+                raise ValueError(f"scope {self.scope!r} is not sheet number {self.localSheetId}")
+            return replace(self, localSheetId=index)
+        assert self.localSheetId is not None
+        if self.localSheetId >= len(titles):
+            raise KeyError(f"Worksheet not found: number {self.localSheetId}")
+        return replace(self, scope=titles[self.localSheetId])
 
     def to_xml(self, sheets: Collection[str]) -> str:
         """The ``<definedName>`` element.

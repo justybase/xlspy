@@ -26,7 +26,9 @@ from .biff_utils import (
     build_record,
     iter_records,
     iter_records_stream,
+    iter_xlsb_sheets,
     parse_shared_strings_bin,
+    xlsb_date_1904,
     read_utf16,
 )
 from .updater_utils import (
@@ -272,24 +274,8 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         workbook_data = self._package.get("xl/workbook.bin")
         sheets: dict[str, str] = {}
 
-        for record in iter_records(workbook_data):
-            if record.record_id != 0x9C:
-                continue
-            payload = workbook_data[record.data_start : record.data_end]
-            if len(payload) < 12:
-                raise ValueError("Malformed BrtBundleSh record")
-            relationship_length = struct.unpack_from("<I", payload, 8)[0]
-            relationship_start = 12
-            relationship_id, name_length_offset = read_utf16(
-                payload, relationship_start, relationship_length
-            )
-            if name_length_offset + 4 > len(payload):
-                raise ValueError("Malformed BrtBundleSh sheet name")
-            name_length = struct.unpack_from("<I", payload, name_length_offset)[0]
-            sheet_name, _ = read_utf16(
-                payload, name_length_offset + 4, name_length
-            )
-            target = relationships.get(relationship_id)
+        for relationship_id, sheet_name in iter_xlsb_sheets(workbook_data):
+            target = relationships.get(relationship_id or "")
             if target is None:
                 raise InvalidFileError(f"Relationship {relationship_id!r} for sheet is missing")
             sheet_path = resolve_zip_target(target, "xl")
@@ -304,13 +290,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         return sheets
 
     def _load_date_system(self) -> bool:
-        for record in iter_records(self._package.get("xl/workbook.bin")):
-            if record.record_id == 0x99 and record.length >= 4:
-                payload = self._package.get("xl/workbook.bin")[
-                    record.data_start : record.data_end
-                ]
-                return bool(struct.unpack_from("<I", payload, 0)[0] & 0x01)
-        return False
+        return xlsb_date_1904(self._package.get("xl/workbook.bin"))
 
     def _ensure_shared_strings_loaded(self) -> None:
         if self._shared_strings_loaded:

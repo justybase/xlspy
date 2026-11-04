@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .exceptions import UnsupportedFeatureError
+from .exceptions import InvalidFileError, UnsupportedFeatureError
 from collections.abc import Callable, Iterable, Mapping, Sequence
 import datetime
 from decimal import Decimal
@@ -28,7 +28,7 @@ from .biff_utils import build_record
 from .comments import Comment, NotePartsEdit, V, VML_TYPE, comment_part_targets, find_comment_parts, normalize_comments, vml_xml, rels_path, resolve_part
 from .excel_dates import datetime_to_serial
 from .formulas import Formula
-from .refs import parse_cell_range
+from .refs import column_label, parse_cell_range
 from .updater_utils import unwrap_cell
 from .writer import XlsbWriter, _hlink_payload
 from .hyperlinks import Hyperlink
@@ -88,8 +88,8 @@ class XlsbEditMixin(XlsxEditMixin):
             if node.get('Type', '').rsplit('/', 1)[-1] in {'threadedComment', 'threadedComments'}:
                 root = safe_fromstring(self._package.get(resolve_part(path, node.attrib['Target'])))
                 occupied = {cell_ref(n.attrib['ref']) for n in root if 'ref' in n.attrib}
-                if occupied & changes.keys():
-                    raise ValueError("threaded comment editing is unsupported")
+                if any(ref in occupied and value is not None for ref, value in changes.items()):
+                    raise ValueError("a classic note cannot replace a threaded comment")
         current = parse_comments(self._package.get(parts['comments'][0]))[0] if 'comments' in parts else {}
         changes = {ref: value for ref, value in changes.items() if value is not None or ref in current}
         if not changes:
@@ -105,7 +105,7 @@ class XlsbEditMixin(XlsxEditMixin):
         edit = NotePartsEdit(path, relationships, parts, names)
         cp = edit.ensure('comments', 'xl/comments', 'comment', 'bin')
         vp = edit.ensure('vmlDrawing', 'xl/drawings', 'commentsDrawing', 'vml')
-        note_data = comments_bin(changes, self._package.get(cp) if cp in names else None)
+        note_data = comments_bin(changes, self._package.get(cp) if cp in names else None, part=cp)
         drawing = vml_xml(changes, self._package.get(vp) if vp in names else None)
         remaining = parse_comments(note_data)[0]
         types = safe_fromstring(self._package.get('[Content_Types].xml'))
@@ -140,8 +140,7 @@ class XlsbEditMixin(XlsxEditMixin):
         """Add a defined name, replacing one with the same name and scope."""
         if not isinstance(definition, DefinedName):
             raise TypeError("definition must be DefinedName")
-        if definition.scope is not None and definition.scope not in self._sheets:
-            raise KeyError(f"Worksheet not found: {definition.scope}")
+        definition = definition.resolved(self._sheets)
         original = self._package.get('xl/workbook.bin')
         context = FormulaContext(self._sheets, original)
         context.set_name(definition)
@@ -156,7 +155,8 @@ class XlsbEditMixin(XlsxEditMixin):
             raise KeyError(f"Worksheet not found: {scope}")
         original = self._package.get('xl/workbook.bin')
         context = FormulaContext(self._sheets, original)
-        context.remove_name(name, scope)
+        if not context.remove_name(name, scope):
+            return
         updates = {'xl/workbook.bin': context.write_workbook(original)}
         removed: list[str] = []
         self._invalidate_calculation(updates, removed)
@@ -186,22 +186,48 @@ class XlsbEditMixin(XlsxEditMixin):
             return
         self._apply_parts({path: replace_records(data, _MERGE_RECORDS, block, before=_AFTER_MERGES)})
 
-    def set_hyperlinks(self, sheet_name: str,  # type: ignore[override]  # XLSB replaces every link
-                       links: Mapping[str, Hyperlink]) -> None:
-        """Replace all of the sheet's hyperlinks with ``links`` ({cell: Hyperlink}).
+    def set_hyperlinks(self, sheet_name: str, links: Mapping[str, Hyperlink | None]) -> None:
+        """Set selected cells' hyperlinks; None removes one, other links are kept.
 
-        External targets reuse the sheet's hyperlink relationships, new ones get
-        fresh ids and relationships no longer used are dropped.
+        Only the link changes: the cell's value and style stay as they are. A
+        link whose range starts at a given cell is replaced as a whole. External
+        targets reuse the sheet's hyperlink relationships, new ones get fresh
+        ids, and a removed link's relationship goes unless another link uses it.
         """
 
         path, data = self._sheet_bin(sheet_name)
-        entries = []
+        changes = {}
         for ref, link in links.items():
-            if not isinstance(link, Hyperlink):
-                raise TypeError("hyperlinks must be xlspy Hyperlink objects")
-            col, row, _, _ = parse_cell_range(cell_ref(ref))
-            entries.append((row, col, link))
-        entries.sort(key=lambda entry: entry[:2])
+            if link is not None and not isinstance(link, Hyperlink):
+                raise TypeError("hyperlinks must be xlspy Hyperlink objects or None")
+            changes[cell_ref(ref)] = link
+        if not changes:
+            return
+        # (row, column, payload) of the links that stay, as they are in the file.
+        kept: list[tuple[int, int, bytes]] = []
+        dropped = set()
+        used = set()
+        had_links = False
+        for record, payload in records(data):
+            if record.record_id != 0x1EE:
+                continue
+            had_links = True
+            if len(payload) < 16:
+                raise InvalidFileError("XLSB hyperlink record is cut short")
+            first_row, _, first_col, _ = struct.unpack_from('<4I', payload)
+            relationship = read_wide(payload, 16)[0]
+            if f"{column_label(first_col)}{first_row + 1}" in changes:
+                dropped.add(relationship)
+            else:
+                used.add(relationship)
+                kept.append((first_row, first_col, payload))
+        entries = []
+        for ref, link in changes.items():
+            if link is not None:
+                col, row, _, _ = parse_cell_range(ref)
+                entries.append((row, col, link))
+        if not entries and not dropped:
+            return  # nothing to remove
 
         rels_name = rels_path(path)
         has_rels = self._package.has(rels_name)
@@ -211,9 +237,8 @@ class XlsbEditMixin(XlsxEditMixin):
             if rel.get('Type') == _HYPERLINK_TYPE and rel.get('TargetMode') == 'External'
         }
         taken = {rel.get('Id') for rel in root}
-        used = set()
         rels_changed = False
-        block = []
+        block = list(kept)
         for row, col, link in entries:
             rid = None
             if not link.is_internal:
@@ -231,21 +256,25 @@ class XlsbEditMixin(XlsxEditMixin):
                     by_target[link.target] = rid
                     rels_changed = True
                 used.add(rid)
-            block.append(build_record(0x1EE, _hlink_payload(row, col, link, rid)))
+            block.append((row, col, _hlink_payload(row, col, link, rid)))
         for rel in list(root):
-            if rel.get('Type') == _HYPERLINK_TYPE and rel.get('Id') not in used:
+            if rel.get('Type') == _HYPERLINK_TYPE and rel.get('Id') in dropped and rel.get('Id') not in used:
                 root.remove(rel)
                 rels_changed = True
-        if not block and not any(r.record_id == 0x1EE for r, _ in records(data)):
-            return
-        parts = {path: replace_records(data, {0x1EE}, b''.join(block), before=_BRT_AFTER_HYPERLINKS)}
-        if rels_changed:
+        block.sort(key=lambda item: item[:2])
+        records_block = b''.join(build_record(0x1EE, payload) for _, _, payload in block)
+        parts = {path: replace_records(data, {0x1EE} if had_links else (), records_block, before=_BRT_AFTER_HYPERLINKS)}
+        removed: list[str] = []
+        if rels_changed and not len(root):
+            if has_rels:
+                removed.append(rels_name)
+        elif rels_changed:
             ET.register_namespace("", PKG_REL)
             parts[rels_name] = (
                 b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
                 + ET.tostring(root, encoding='utf-8', xml_declaration=False)
             )
-        self._apply_parts(parts)
+        self._apply_parts(parts, removed)
 
     def set_data_validations(self, sheet_name: str, rules: Sequence[DataValidation]) -> None:
         """Replace the sheet's data validation rules with ``rules``."""
