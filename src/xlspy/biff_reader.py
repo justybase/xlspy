@@ -7,6 +7,8 @@ from .exceptions import InvalidFileError
 # Last zero-based row Excel can hold. Row 0xFFFFFFFF reads as -1, the same as
 # a row record too short to hold an index.
 MAX_ROW_INDEX = 1048575
+# Last zero-based column (XFD).
+MAX_COLUMN_INDEX = 16383
 
 
 class CellType(IntEnum):
@@ -44,6 +46,7 @@ class BiffReader:
     _formulaNumber = 0x09
     _formulaBool = 0x0A
     _formulaError = 0x0B
+    _endSheetData = 0x92
 
     def __init__(self, stream):
         self._stream = stream
@@ -75,6 +78,8 @@ class BiffReader:
         self.xf_index = 0
         self.read_cell = False
         self.row_index = -1
+        # Id of the record read_worksheet read last.
+        self.record_id = -1
 
     def _try_read_variable_value(self):
         """``(True, value)``, or ``(False, 0)`` when the data ends before its first byte."""
@@ -237,7 +242,10 @@ class BiffReader:
             length = self._get_dword(buffer, 1)
             self.shared_string_value = self._get_string(buffer, 1 + 4, length)
         elif record_id == self._sharedStringStart:
-            self.shared_string_unique_count = self._get_dword(buffer, 4)
+            # Only a hint: the readers never size anything by it.
+            if len(buffer) < 5:
+                raise IndexError("truncated BrtBeginSst record")
+            self.shared_string_unique_count = self._get_dword(buffer, 4) if len(buffer) >= 8 else 0
             self.shared_string_value = None
         else:
             self.shared_string_value = None
@@ -251,7 +259,12 @@ class BiffReader:
 
         self.read_cell = False
         self.column_num = -1
+        self.record_id = record_id
 
+        # BrtEndSheetData ends the cells: records after it are not cells of
+        # the sheet (the native reader and load_workbook stop there too).
+        if record_id == self._endSheetData:
+            return False
         if record_id == self._row:
             if len(buffer) >= 4:
                 self.row_index = self._get_int32(buffer, 0)
@@ -308,6 +321,10 @@ class BiffReader:
 
         if self.read_cell:
             self.column_num = self._get_dword(buffer, 0)
+            # A cell past column XFD is corrupt (load_workbook refuses it too);
+            # the row readers would pad up to it with billions of None.
+            if self.column_num > MAX_COLUMN_INDEX:
+                raise InvalidFileError("XLSB column exceeds Excel limits")
             self.xf_index = self._get_dword(buffer, 4) & 0xFFFFFF
 
         return True

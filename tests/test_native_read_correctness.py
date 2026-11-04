@@ -246,11 +246,11 @@ def test_native_reader_refuses_unusually_wide_layout_like_python(tmp_path, monke
     mutated = tmp_path / "wide-first-row.xlsb"
     _rewrite_sheet(source, mutated, widen_first_row)
 
-    # A row wider than Excel's 16,384 columns is refused, not built as a
-    # two-million-cell list. The native path declines it (returns None) and the
-    # Python reader raises, so both backends agree.
-    with pytest.raises(ValueError, match="wider than"):
+    # A cell past Excel's 16,384 columns is refused, not built as a
+    # two-million-cell list. The native path declines the layout (returns None)
+    # and the Python reader raises, so both backends agree.
+    with pytest.raises(ValueError, match="column exceeds Excel limits"):
         _first_row(mutated, monkeypatch=monkeypatch)
 
-    with pytest.raises(ValueError, match="wider than"):
+    with pytest.raises(ValueError, match="column exceeds Excel limits"):
         _first_row(mutated, force_python=True, monkeypatch=monkeypatch)

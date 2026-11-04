@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scaling, on one line and on two); the estimate now does the same, for a centred header style
   and for a `(value, Style)` header cell. Right-aligned and distributed headers keep the
   16 pixels (Excel adds none and lets the button cover the end of the text).
+- Damaged XLSB worksheets, found by a new differential fuzzer that reads each corrupted case through
+  the native and the pure-Python reader (`tests/test_native_fuzz_differential.py`):
+  - A cell past column XFD made the Python reader (`XLSPY_ACCEL=python`, or no native module) pad
+    its row up to that column: minutes and gigabytes for one cell in column 2,147,483,647. The
+    native reader dropped the cell. `ExcelReader` now refuses it in both, with the
+    `InvalidFileError` `load_workbook` already raised ("XLSB column exceeds Excel limits").
+  - A row record shorter than 4 bytes made the native reader take its row index from the bytes
+    of the next record, so a readable sheet could be refused as having a row past the last.
+  - The Python reader read cells after `BrtEndSheetData` (the native one stops there), and lost
+    or misplaced cells whose records came out of column order. Its row decoder is now the
+    twin of the native one, so both read a damaged sheet the same way.
+  - A record the cell reader ignores (an overrunning string, say) before the first row made the
+    native reader start a phantom empty row.
+  - The Python shared-strings reader sized its list by the count in `BrtBeginSst`: a damaged
+    count allocated gigabytes. The count is not trusted any more, and a cut-short `BrtBeginSst`
+    is refused as in the native reader.
+
+### Added
+
+- `tools/rust_coverage.py`: line and region coverage of the native module (`cargo llvm-cov`),
+  from the Rust unit tests and the pytest suite run against an instrumented build.
 
 ## [0.12.0] - 2026-11-03
 

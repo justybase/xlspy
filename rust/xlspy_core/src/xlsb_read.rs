@@ -31,6 +31,13 @@ pub struct Record {
     pub len: usize,
 }
 
+impl Record {
+    /// The record's body in `data` (the buffer `next_record` read it from).
+    pub fn bytes<'a>(&self, data: &'a [u8]) -> &'a [u8] {
+        &data[self.body..self.body + self.len]
+    }
+}
+
 /// A record cut short: its header or body runs past the end of the data.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Truncated;
@@ -56,10 +63,11 @@ pub fn next_record(data: &[u8], pos: &mut usize) -> Result<Record, Truncated> {
     Ok(Record { id, body, len })
 }
 
-/// Row index of a BrtRowHdr body, like the reference: a short body and row
-/// 0xFFFFFFFF both read as -1.  A row past Excel's last raises ValueError.
-pub fn row_index(data: &[u8], pos: usize) -> PyResult<i64> {
-    match le_u32(data, pos) {
+/// Row index of a BrtRowHdr body (the record's bytes only), like the
+/// reference: a body shorter than 4 bytes and row 0xFFFFFFFF both read as -1.
+/// A row past Excel's last raises ValueError.
+pub fn row_index(body: &[u8]) -> PyResult<i64> {
+    match le_u32(body, 0) {
         None | Some(u32::MAX) => Ok(-1),
         Some(raw) if raw > XLSB_MAX_ROW_INDEX => Err(invalid_file_error(format!(
             "XLSB row record has row index {raw}, past the last row ({XLSB_MAX_ROW_INDEX})"
@@ -294,7 +302,7 @@ impl XlsbReader {
                         break;
                     }
                     // A bad row index raises later, when iteration reaches it.
-                    let Ok(row) = row_index(data, rec.body) else {
+                    let Ok(row) = row_index(rec.bytes(data)) else {
                         break;
                     };
                     cur_row = row;
@@ -383,6 +391,13 @@ impl XlsbReader {
         let Some(value) = ctx.value(data, rec, xf & 0xFF_FFFF)? else {
             return Ok(());
         };
+        // A cell past column XFD is corrupt, as in load_workbook and the
+        // Python reader (BiffReader).
+        if col >= 16384 {
+            return Err(invalid_file_error(
+                "XLSB column exceeds Excel limits".to_string(),
+            ));
+        }
 
         if self.cols_per_row != -1 {
             if self.cols_per_row <= 0
@@ -440,14 +455,19 @@ impl XlsbReader {
                 let start = self.pos;
                 let rec = next_record(self.view.as_slice(), &mut self.pos)?;
                 if rec.id == 0x00 {
-                    self.cur_row_num = row_index(self.view.as_slice(), rec.body)?;
+                    self.cur_row_num = row_index(rec.bytes(self.view.as_slice()))?;
                     self.seen_row_record = true;
                     self.is_initialized = true;
                     break;
-                } else if (0x01..=0x0B).contains(&rec.id) {
+                } else if (0x01..=0x0B).contains(&rec.id)
+                    && counts_for_layout(self.view.as_slice(), &rec)
+                {
+                    // A record the cell reader ignores starts no row either.
                     self.pos = start; // let the loop below consume this cell
                     self.is_initialized = true;
                     break;
+                } else if rec.id == 0x92 {
+                    break; // BrtEndSheetData: no rows (records after it are not cells)
                 }
             }
             if !self.is_initialized {
@@ -460,7 +480,7 @@ impl XlsbReader {
             match rec.id {
                 0x00 => {
                     let row = self.take_row(py)?;
-                    let new_row = row_index(self.view.as_slice(), rec.body)?;
+                    let new_row = row_index(rec.bytes(self.view.as_slice()))?;
                     // No gap rows before the first Row record was seen.
                     self.gap_rows_remaining = if self.seen_row_record {
                         new_row - self.cur_row_num - 1
@@ -832,13 +852,26 @@ mod tests {
 
     #[test]
     fn row_index_of_short_and_sentinel_bodies_is_minus_one() {
-        assert_eq!(row_index(&[1, 0], 0).unwrap(), -1);
-        assert_eq!(row_index(&[0xFF; 4], 0).unwrap(), -1);
-        assert_eq!(row_index(&[5, 0, 0, 0], 0).unwrap(), 5);
+        assert_eq!(row_index(&[1, 0]).unwrap(), -1);
+        assert_eq!(row_index(&[0xFF; 4]).unwrap(), -1);
+        assert_eq!(row_index(&[5, 0, 0, 0]).unwrap(), 5);
         assert_eq!(
-            row_index(&XLSB_MAX_ROW_INDEX.to_le_bytes(), 0).unwrap(),
+            row_index(&XLSB_MAX_ROW_INDEX.to_le_bytes()).unwrap(),
             i64::from(XLSB_MAX_ROW_INDEX)
         );
+    }
+
+    #[test]
+    fn a_short_row_record_does_not_read_the_next_record_as_its_index() {
+        // A 2-byte BrtRowHdr followed by a record whose bytes would make a
+        // row index past the last row if read as part of it.
+        let mut data = record(0x00, &[1, 0]);
+        data.extend(record(0x26, &[]));
+        data.extend(record(0x07, &[0; 12]));
+        let mut pos = 0;
+        let rec = next_record(&data, &mut pos).unwrap();
+        assert_eq!(rec.bytes(&data), &[1, 0]);
+        assert_eq!(row_index(rec.bytes(&data)).unwrap(), -1);
     }
 
     #[test]

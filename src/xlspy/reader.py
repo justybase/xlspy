@@ -5,7 +5,7 @@ import os
 import re
 import zipfile
 
-from ._untrusted import SafeZipFile, check_column_span
+from ._untrusted import SafeZipFile
 from .exceptions import InvalidFileError, reading, reading_rows
 from typing import Any, TYPE_CHECKING, Literal
 from collections.abc import Generator
@@ -488,22 +488,14 @@ class ExcelReader:
         stream = _MemoryStream(raw)
         reader = BiffReader(stream)
         reader.read_shared_strings()
-        if reader.shared_string_unique_count != 0:
-            self._shared_string_array = [""] * reader.shared_string_unique_count
-        else:
-            self._shared_string_array = []
-
-        idx = 0
+        # The unique count in BrtBeginSst is not trusted to size the list (a
+        # damaged count would allocate gigabytes); the items are what counts.
+        strings: list[str] = []
         while reader.read_shared_strings():
             val = reader.shared_string_value
             if val is not None:
-                if idx >= len(self._shared_string_array):
-                    self._shared_string_array.append(val)
-                else:
-                    self._shared_string_array[idx] = val
-                idx += 1
-        if idx < len(self._shared_string_array):
-            self._shared_string_array = self._shared_string_array[:idx]
+                strings.append(val)
+        self._shared_string_array = strings
         reader.close()
 
     def _fill_styles(self) -> None:
@@ -630,160 +622,145 @@ class ExcelReader:
 
     def _decode_rows_xlsb(self, raw: bytes) -> Generator[list[Any], None, None]:
         """The Python path of _get_rows_xlsb: decode the worksheet records of
-        ``raw`` into rows, padding empty rows and columns with None."""
+        ``raw`` into rows, padding empty rows and columns with None.
+
+        The twin of the native ``XlsbReader`` (rust/xlspy_core/src/xlsb_read.rs),
+        rule for rule, so both backends read even a damaged sheet the same way
+        (tests/test_native_fuzz_differential.py checks it):
+
+        - The first row with cells fixes the layout: its first column and its
+          width. Leading and gap rows get that width, and a cell left of the
+          first column is dropped. A later cell past the width widens the rows
+          from there on.
+        - A cell goes to its column's index in the row, wherever its record is;
+          a duplicate replaces the earlier value.
+        - The rows between two row records (a gap) are empty rows; a row record
+          with a lower index than the one before starts a row without gap rows.
+        - Cells before any row record form a row of their own.
+        - The data ends at BrtEndSheetData.
+        """
+        first_col, cols_per_row = _xlsb_layout(raw)
         reader = BiffReader(_MemoryStream(raw))
-        first_row_record_index, last_row_record_index = _scan_to_first_cell(reader)
-        if not reader.read_cell:
-            reader.close()
-            # A sheet with only all-empty rows (no cell records at all).
-            if first_row_record_index != -1:
-                for _ in range(last_row_record_index - first_row_record_index + 1):
-                    yield [None]
-            return
+        strings = self._shared_string_array
+        styles = self._styles_cell_xfs_array
+        formats = self._number_formats_type_dict
+        date_1904 = self._date_1904
 
-        prev_row = -1
-        row_num = reader.row_index
-        col_num = reader.column_num
-        number_of_first_column_with_data = -1
-        number_of_last_column_with_data = -1
-        columns_cnt_from_first_row = -1
-        leading_empty_rows = (
-            row_num - first_row_record_index
-            if first_row_record_index != -1 and row_num > first_row_record_index
-            else 0
-        )
-        is_first_row = True
-        return_value = True
-        prev_col_num = -1
+        def width(cells_len: int) -> int:
+            return max(cells_len, 1) if cols_per_row == -1 else max(cols_per_row, 0)
 
-        inner_row: dict[int, Any] = {}
+        def empty_row() -> list[Any]:
+            return [None] * (1 if cols_per_row == -1 else max(cols_per_row, 0))
 
-        while True:
-            if not return_value:
-                break
+        def value() -> Any:
+            kind = reader.cell_type
+            if kind == CellType.sharedString:
+                idx = reader.int_value
+                return strings[idx] if 0 <= idx < len(strings) else None
+            if kind == CellType.stringVal:
+                return reader.string_value
+            if kind == CellType.boolVal:
+                return reader.bool_value
+            if kind == CellType.errorVal:
+                return CellError("error:" + _XLSB_ERRORS.get(reader.error_code, "#VALUE!"))
+            if kind == CellType.doubleVal:
+                number = reader.double_val
+                xf = reader.xf_index
+                if (xf != 0 and xf < len(styles)
+                        and formats.get(styles[xf]['numFmtId'], str) is datetime.datetime):
+                    return _date_or_number(number, date_1904)
+                return int(number) if number.is_integer() else number
+            return None
 
-            if number_of_first_column_with_data != -1:
-                check_column_span(number_of_first_column_with_data, col_num)
-            if not is_first_row and col_num > number_of_first_column_with_data:
-                for i in range(col_num - number_of_first_column_with_data):
-                    inner_row[i] = None
-
-            if prev_row != -1 and row_num > prev_row + 1 and columns_cnt_from_first_row > 0:
-                how_many_empty = row_num - prev_row - 1
-                prev_row = row_num - 1
-                for _ in range(how_many_empty):
-                    yield [None] * columns_cnt_from_first_row
-                continue
-
-            prev_row = row_num
-
-            for i in range(columns_cnt_from_first_row if columns_cnt_from_first_row > 0 else 0):
-                inner_row[i] = None
-
-            while row_num == prev_row and return_value:
+        try:
+            # Skip the metadata to the first row record or the first cell.
+            cur_row = -1
+            seen_row = pending_cell = False
+            while reader.read_worksheet():
+                if reader.record_id == BiffReader._row:
+                    cur_row, seen_row = reader.row_index, True
+                    break
                 if reader.read_cell:
-                    if number_of_first_column_with_data != -1:
-                        check_column_span(number_of_first_column_with_data, col_num)
-                    if is_first_row:
-                        if number_of_first_column_with_data == -1:
-                            number_of_first_column_with_data = col_num
-                        number_of_last_column_with_data = col_num
-                        columns_cnt_from_first_row = number_of_last_column_with_data - number_of_first_column_with_data + 1
+                    pending_cell = True
+                    break
+            else:
+                return
 
-                    tmp_len = col_num - number_of_first_column_with_data
-
-                    if reader.cell_type == CellType.sharedString:
-                        idx = reader.int_value
-                        if 0 <= idx < len(self._shared_string_array):
-                            inner_row[tmp_len] = self._shared_string_array[idx]
+            cells: list[Any] = []
+            while pending_cell or reader.read_worksheet():
+                pending_cell = False
+                if reader.record_id == BiffReader._row:
+                    n = width(len(cells))
+                    yield cells[:n] + [None] * (n - len(cells))
+                    new_row = reader.row_index
+                    gap = new_row - cur_row - 1 if seen_row else 0
+                    cur_row, seen_row, cells = new_row, True, []
+                    for _ in range(gap):
+                        yield empty_row()
+                    continue
+                if not reader.read_cell:
+                    continue
+                col = reader.column_num
+                if cols_per_row != -1:
+                    if (cols_per_row <= 0 or cols_per_row > _MAX_COLUMNS or col < first_col
+                            or col - first_col >= cols_per_row):
+                        # Valid later rows may be wider than the first: keep their cells.
+                        if 0 < cols_per_row <= _MAX_COLUMNS and col >= first_col:
+                            cols_per_row = col - first_col + 1
                         else:
-                            inner_row[tmp_len] = None
-                    elif reader.cell_type == CellType.stringVal:
-                        inner_row[tmp_len] = reader.string_value
-                    elif reader.cell_type == CellType.boolVal:
-                        inner_row[tmp_len] = reader.bool_value
-                    elif reader.cell_type == CellType.errorVal:
-                        inner_row[tmp_len] = CellError("error:" + _XLSB_ERRORS.get(reader.error_code, "#VALUE!"))
-                    elif reader.cell_type == CellType.doubleVal:
-                        double_val = reader.double_val
-                        style_index = reader.xf_index
-                        if (
-                            style_index != 0 and style_index < len(self._styles_cell_xfs_array)
-                            and self._number_formats_type_dict.get(
-                                self._styles_cell_xfs_array[style_index]['numFmtId'], str,
-                            ) is datetime.datetime
-                        ):
-                            inner_row[tmp_len] = _date_or_number(double_val, self._date_1904)
-                        elif double_val.is_integer():
-                            inner_row[tmp_len] = int(double_val)
-                        else:
-                            inner_row[tmp_len] = double_val
-                    else:
-                        inner_row[tmp_len] = None
+                            continue
+                else:
+                    if first_col < 0:
+                        first_col = col
+                    if col < first_col or col - first_col > _MAX_COLUMNS:
+                        continue
+                idx = col - first_col
+                if idx >= len(cells):
+                    cells.extend([None] * (idx + 1 - len(cells)))
+                cells[idx] = value()
 
-                # The result must be kept: at the end of the stream read_worksheet
-                # returns False and leaves read_cell set, so ignoring it repeats the
-                # same cell forever.
-                return_value = reader.read_worksheet()
-                while return_value and not reader.read_cell:
-                    return_value = reader.read_worksheet()
+            if cells:
+                n = width(len(cells))
+                yield cells[:n] + [None] * (n - len(cells))
+            elif cur_row >= 0:
+                yield empty_row()
+        finally:
+            reader.close()
 
-                prev_col_num = col_num
-                row_num = reader.row_index
-                col_num = reader.column_num
 
-                if not is_first_row:
-                    if col_num > prev_col_num + 1 and row_num == prev_row:
-                        for i in range(prev_col_num + 1, col_num):
-                            idx = i - number_of_first_column_with_data
-                            inner_row[idx] = None
-                    elif row_num > prev_row and prev_col_num < number_of_last_column_with_data:
-                        for i in range(1, number_of_last_column_with_data - prev_col_num + 1):
-                            idx = prev_col_num + i - number_of_first_column_with_data
-                            inner_row[idx] = None
+_MAX_COLUMNS = 16384
 
-            if is_first_row:
-                is_first_row = False
-                # Leading all-empty rows: emit them now that the column width
-                # of the first row with data is known.
-                if leading_empty_rows > 0 and columns_cnt_from_first_row > 0:
-                    for _ in range(leading_empty_rows):
-                        yield [None] * columns_cnt_from_first_row
-                    leading_empty_rows = 0
 
-            if (prev_col_num > number_of_last_column_with_data and prev_col_num < 16384
-                    and columns_cnt_from_first_row > 0):
-                number_of_last_column_with_data = prev_col_num
-                columns_cnt_from_first_row = number_of_last_column_with_data - number_of_first_column_with_data + 1
-            row_list = [inner_row.get(c, None) for c in range(columns_cnt_from_first_row)]
-            yield row_list
+def _xlsb_layout(raw: bytes) -> tuple[int, int]:
+    """(first column, width) of the first row with cells, or (-1, -1) when the
+    sheet has none: the native reader's prescan.
 
-        # Trailing all-empty rows: the read-ahead consumed their Row records
-        # before hitting EOF, so they are recovered from the last row index.
-        if columns_cnt_from_first_row > 0 and reader.row_index > prev_row:
-            for _ in range(reader.row_index - prev_row):
-                yield [None] * columns_cnt_from_first_row
-
+    A damaged record stops the scan; the row reader raises when it gets there.
+    """
+    reader = BiffReader(_MemoryStream(raw))
+    cur_row, span_row = -1, -2  # the row of the first row with cells (-2: none yet)
+    first, last = -1, -1
+    try:
+        while reader.read_worksheet():
+            if reader.record_id == BiffReader._row:
+                if span_row != -2 and cur_row != span_row:
+                    break
+                cur_row = reader.row_index
+            elif reader.read_cell:
+                if span_row == -2:
+                    span_row = cur_row
+                if cur_row == span_row:
+                    if first < 0:
+                        first = reader.column_num
+                    last = reader.column_num
+    except InvalidFileError:
+        pass
+    finally:
         reader.close()
-
-
-def _scan_to_first_cell(reader: BiffReader) -> tuple[int, int]:
-    """Read up to the first cell record; return the indexes of the first and the
-    last Row record seen on the way (-1 when there was none).
-
-    Rows without any cell record are not visible to the cell-driven loop, so
-    the row records are the only source of truth for leading and trailing
-    all-empty rows."""
-    first_row_record_index = -1
-    last_row_record_index = -1
-    while not reader.read_cell:
-        if not reader.read_worksheet():
-            break
-        if reader.row_index != -1:
-            if first_row_record_index == -1:
-                first_row_record_index = reader.row_index
-            last_row_record_index = reader.row_index
-    return first_row_record_index, last_row_record_index
+    if span_row == -2 or first < 0:
+        return -1, -1
+    # May be <= 0 for a first row out of column order: its rows are then empty.
+    return first, last - first + 1
 
 
 class _MemoryStream:

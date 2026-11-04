@@ -83,6 +83,24 @@ cargo test --release --locked
 Every `unsafe` block needs a `// SAFETY:` comment that says why it is sound; the
 crate's lints reject one without it.
 
+Coverage of the Rust code, from its unit tests and the pytest suite (needs
+`cargo install cargo-llvm-cov` and `rustup component add llvm-tools-preview`; CI's
+`rust-coverage` job runs it too). It builds an instrumented module into a copy of the
+package, so the installed one is left as it was:
+
+```bash
+python tools/rust_coverage.py                 # the whole suite; --html for a browsable report
+python tools/rust_coverage.py tests/test_native_fuzz_differential.py
+```
+
+The fuzzers (`tests/test_native_fuzz.py`, and `tests/test_native_fuzz_differential.py`,
+which reads each damaged part through both backends and wants the same rows) run 300
+cases per part in CI. Before changing a reader, run them deeper:
+
+```bash
+XLSPY_FUZZ_ITERATIONS=5000 python -m pytest tests/test_native_fuzz*.py
+```
+
 The documentation site, when you change `docs/` or a docstring:
 
 ```bash

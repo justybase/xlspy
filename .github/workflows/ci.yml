@@ -177,6 +177,54 @@ jobs:
         working-directory: rust/xlspy_core
         run: cargo audit
 
+  rust-coverage:
+    name: Coverage of the native module (cargo llvm-cov)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Install the test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      # The Rust unit tests and the pytest suite against an instrumented build
+      # of xlspy._rs_core (a copy of the package; the installed module is not
+      # touched). Reported only: no threshold yet.
+      - name: Measure
+        run: |
+          python tools/rust_coverage.py --lcov | tee rust-coverage.txt
+          { echo '```'; sed -n '/^Filename/,/^TOTAL/p' rust-coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the report
+        uses: actions/upload-artifact@v6
+        with:
+          name: rust-coverage
+          path: build/rust-coverage/lcov.info
+
   test-fallback:
     name: Pure-Python fallback (${{ matrix.os }}, ${{ matrix.python-version }})
     strategy:
