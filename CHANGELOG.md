@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+Migration from 0.12:
+
+- `ExcelReader.get_rows()` on XLSB returns rows of the XLSX shape (see Changed). Code that relied on the
+  old shape, rows padded from the first column or a wider row widening the rows after it, should read
+  each value by its position in the row.
+- `Worksheet.max_row` of a loaded XLSX no longer counts `<row>` elements without cells or the stored
+  `<dimension>`. Code that sized a loop by `max_row` may see fewer rows. `append()` now writes to the
+  same row in XLSX and XLSB.
+- `XlsbUpdater.set_hyperlinks` sets the cells it is given and keeps the others; pass `None` for each
+  link to clear a sheet (see Changed).
+- `DefinedName(localSheetId=n)` and `scope=` on a loaded XLSB name a sheet, where they made a global
+  name before; `hidden=True` is kept.
+- `load_workbook` and `ExcelReader` raise `InvalidFileError` for a row record past the last row or a
+  cell past column XFD, in both backends; they dropped or padded such data before. A damaged value
+  cell is skipped. A valid file reads as before.
+
 ### Added
 
 - Tables of a loaded XLSB can be changed and removed, as in XLSX: the range, the name, the style and
@@ -24,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Writing such a formula to an XLSB still raises `UnsupportedFeatureError`, now with that reason.
   Removing a table that a formula refers to is refused; renaming one is safe, because a binary
   workbook names the table by its id.
+
+- `tools/rust_coverage.py`: line and region coverage of the native module (`cargo llvm-cov`),
+  from the Rust unit tests and the pytest suite run against an instrumented build.
 
 ### Changed
 
@@ -52,6 +73,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writers produce is scanned that way (unprefixed names, double quotes, references in their normal
   form); any other part goes through ElementTree as before. A part that is not well formed, has a
   document type declaration or is not a worksheet is refused as before, before the edits are read.
+
+- The workbook model is faster and smaller, with the same bytes in the files (50,000 x 20, measured
+  in turns against the code before): saving a loaded XLSB after edits 2.87 s -> 0.33 s, because one
+  native pass over the sheet's records replaces a Python object per record and the save no longer
+  visits every cell; building and saving a model 1.51 s -> 1.03 s (XLSX) and 1.40 s -> 0.92 s (XLSB);
+  `load_workbook` 7-19% faster. `Worksheet.append` and the rows handed to the writers run natively
+  for plain values, and leave any other row or value to the Python code they stand in for. Peak
+  memory while building a model falls from 323 MB to 212 MB: a new workbook no longer records which
+  cells changed, which only the save of a loaded workbook reads, and `Cell` lost a flag nothing read.
+- **Breaking:** `XlsbUpdater.set_hyperlinks` works as in `XlsxUpdater`: it sets the given cells,
+  `None` removes a cell's link, and every other link is kept. It used to replace all of the
+  sheet's links and refuse `None`. To clear a sheet, pass `None` for each link. Saving a loaded
+  XLSB now rewrites only the links that changed, so one over a range survives an edit of another.
+- `workbook.bin`'s sheet list and date system have one parser (`biff_utils`), shared by
+  `ExcelReader` and `XlsbUpdater`. A sheet record whose strings overrun it is now refused by
+  `ExcelReader` too, instead of giving a cut-off name.
 
 ### Fixed
 
@@ -140,29 +177,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `XlsxUpdater.set_hyperlinks` with an empty mapping accepted a sheet that does not exist.
 - XLSB notes got a random GUID, so two saves of the same workbook differed. The GUID now comes from
   the comments part and the cell (checked in Excel).
-
-### Changed
-
-- The workbook model is faster and smaller, with the same bytes in the files (50,000 x 20, measured
-  in turns against the code before): saving a loaded XLSB after edits 2.87 s -> 0.33 s, because one
-  native pass over the sheet's records replaces a Python object per record and the save no longer
-  visits every cell; building and saving a model 1.51 s -> 1.03 s (XLSX) and 1.40 s -> 0.92 s (XLSB);
-  `load_workbook` 7-19% faster. `Worksheet.append` and the rows handed to the writers run natively
-  for plain values, and leave any other row or value to the Python code they stand in for. Peak
-  memory while building a model falls from 323 MB to 212 MB: a new workbook no longer records which
-  cells changed, which only the save of a loaded workbook reads, and `Cell` lost a flag nothing read.
-- **Breaking:** `XlsbUpdater.set_hyperlinks` works as in `XlsxUpdater`: it sets the given cells,
-  `None` removes a cell's link, and every other link is kept. It used to replace all of the
-  sheet's links and refuse `None`. To clear a sheet, pass `None` for each link. Saving a loaded
-  XLSB now rewrites only the links that changed, so one over a range survives an edit of another.
-- `workbook.bin`'s sheet list and date system have one parser (`biff_utils`), shared by
-  `ExcelReader` and `XlsbUpdater`. A sheet record whose strings overrun it is now refused by
-  `ExcelReader` too, instead of giving a cut-off name.
-
-### Added
-
-- `tools/rust_coverage.py`: line and region coverage of the native module (`cargo llvm-cov`),
-  from the Rust unit tests and the pytest suite run against an instrumented build.
 
 ## [0.12.0] - 2026-11-03
 
