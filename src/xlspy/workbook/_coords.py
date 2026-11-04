@@ -3,6 +3,7 @@
 from __future__ import annotations
 from collections.abc import Iterable, Iterator
 import re
+from typing import Any, Self, SupportsIndex
 from ..refs import RangeIndex, column_label, parse_cell_range
 
 
@@ -220,42 +221,43 @@ class _RangeList(list):
     def _changed(self) -> None:
         self.version += 1
 
-    def __setitem__(self, index, value) -> None:
+    def __setitem__(self, index: SupportsIndex | slice, value: Any) -> None:
         super().__setitem__(index, value)
         self._changed()
 
-    def __delitem__(self, index) -> None:
+    def __delitem__(self, index: SupportsIndex | slice) -> None:
         super().__delitem__(index)
         self._changed()
 
-    def __iadd__(self, other):
+    # list.__add__ takes only a list, so mypy objects to a wider __iadd__; ``+=`` must still count.
+    def __iadd__(self, other: Iterable[CellRange]) -> Self:  # type: ignore[misc, override]
         result = super().__iadd__(other)
         self._changed()
         return result
 
-    def __imul__(self, count):
+    def __imul__(self, count: SupportsIndex) -> Self:
         result = super().__imul__(count)
         self._changed()
         return result
 
-    def append(self, value) -> None:
+    def append(self, value: CellRange) -> None:
         super().append(value)
         self._changed()
 
-    def extend(self, values) -> None:
+    def extend(self, values: Iterable[CellRange]) -> None:
         super().extend(values)
         self._changed()
 
-    def insert(self, index, value) -> None:
+    def insert(self, index: SupportsIndex, value: CellRange) -> None:
         super().insert(index, value)
         self._changed()
 
-    def remove(self, value) -> None:
+    def remove(self, value: CellRange) -> None:
         super().remove(value)
         self._changed()
 
-    def pop(self, index=-1):
-        value = super().pop(index)
+    def pop(self, index: SupportsIndex = -1) -> CellRange:
+        value: CellRange = super().pop(index)
         self._changed()
         return value
 
@@ -263,7 +265,7 @@ class _RangeList(list):
         super().clear()
         self._changed()
 
-    def sort(self, *args, **kwargs) -> None:
+    def sort(self, *args: Any, **kwargs: Any) -> None:
         super().sort(*args, **kwargs)
         self._changed()
 
