@@ -30,13 +30,18 @@ def updater_case(request):
 
 @pytest.fixture
 def closes(monkeypatch):
-    """Counts the close() calls of both updater classes."""
+    """Records the updater instances whose close() ran, for both updater classes.
+
+    Instances are recorded, not class names: an updater from an earlier test that
+    is garbage-collected while this fixture is active calls close() from __del__,
+    and that call must not count here.
+    """
     calls = []
     for cls in (XlsxUpdater, XlsbUpdater):
         original = cls.close
 
         def spy(self, _original=original):
-            calls.append(type(self).__name__)
+            calls.append(self)
             _original(self)
 
         monkeypatch.setattr(cls, "close", spy)
@@ -58,7 +63,7 @@ def test_saving_inside_the_block_keeps_the_changes_and_releases_the_updater(tmp_
     with cls(source) as updater:
         updater.replace_sheet_data(updater.get_sheet_names()[0], [["changed"]])
         updater.save(out)
-    assert closes == [cls.__name__]
+    assert closes.count(updater) == 1
     assert _value(out) == "changed"
 
 
@@ -68,7 +73,7 @@ def test_leaving_the_block_without_saving_discards_the_changes(tmp_path, updater
     before = source.read_bytes()
     with cls(source) as updater:
         updater.replace_sheet_data(updater.get_sheet_names()[0], [["changed"]])
-    assert closes == [cls.__name__]
+    assert closes.count(updater) == 1
     assert source.read_bytes() == before
 
 
@@ -80,7 +85,7 @@ def test_an_exception_in_the_block_releases_the_updater_and_propagates(tmp_path,
         with cls(source) as updater:
             updater.replace_sheet_data(updater.get_sheet_names()[0], [["changed"]])
             raise RuntimeError("stop")
-    assert closes == [cls.__name__]
+    assert closes.count(updater) == 1
     assert not out.exists()
 
 
