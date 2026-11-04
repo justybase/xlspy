@@ -626,7 +626,6 @@ pub fn xlsb_load_cells<'py>(
     let intern = |s: &str| PyString::intern(py, s).into_any();
     let (type_n, type_s, type_b, type_e) = (intern("n"), intern("s"), intern("b"), intern("e"));
     let none = py.None().into_bound(py);
-    let false_ = PyBool::new(py, false).to_owned().into_any();
     let mut columns: Vec<Option<Bound<'py, PyAny>>> = vec![None; 16384];
     let date_xf = date_xf_flags(styles_list, date_num_fmts);
     let ctx = CellContext {
@@ -791,7 +790,6 @@ pub fn xlsb_load_cells<'py>(
                 Some(&none),
                 Some(&none),
                 Some(&none),
-                Some(&false_),
             ],
         )?;
         let stored = row_dict.set_item(col_obj, &cell);
@@ -816,6 +814,128 @@ pub fn xlsb_load_cells<'py>(
             data_end.into_pyobject(py)?.into_any(),
         ],
     )
+}
+
+/// A range record's `r1, r2, c1, c2`.
+fn range_of(data: &[u8], rec: &Record) -> Option<[u32; 4]> {
+    let body = rec.bytes(data);
+    if body.len() < 16 {
+        return None;
+    }
+    Some([
+        le_u32(body, 0)?,
+        le_u32(body, 4)?,
+        le_u32(body, 8)?,
+        le_u32(body, 12)?,
+    ])
+}
+
+/// One pass over an XLSB worksheet for `XlsbUpdater.update_cells`, the twin of
+/// `_scan_sheet` in xlspy/_xlsb_edit.py: `(begin start, begin end, end start,
+/// [(row record start, row)], merged ranges, formula group ranges, (dimension
+/// start, its end, its range) or None, (first column, first row, last column,
+/// last row) of the cells or None)`.
+///
+/// None for anything unusual (a record cut short, a body too short for what it
+/// holds, no sheet data): Python then decides, and its error is the one raised.
+#[pyfunction]
+pub fn xlsb_sheet_scan<'py>(
+    py: Python<'py>,
+    data: &Bound<'py, PyAny>,
+) -> PyResult<Option<Bound<'py, PyTuple>>> {
+    let view = ByteView::new(data)?;
+    let data = view.as_slice();
+    let mut pos = 0usize;
+    let mut begin: Option<(usize, usize)> = None;
+    let mut end: Option<usize> = None;
+    let mut rows: Vec<(usize, u32)> = Vec::new();
+    let mut merges: Vec<[u32; 4]> = Vec::new();
+    let mut groups: Vec<[u32; 4]> = Vec::new();
+    let mut dimension: Option<(usize, usize, [u32; 4])> = None;
+    let mut current_row: Option<u32> = None;
+    let mut previous_column = -1i64;
+    let mut bounds: Option<[i64; 4]> = None;
+    while pos < data.len() {
+        let start = pos;
+        let Ok(rec) = next_record(data, &mut pos) else {
+            return Ok(None);
+        };
+        let in_data = begin.is_some() && end.is_none();
+        match rec.id {
+            0x00 if in_data => {
+                let Some(row) = le_u32(rec.bytes(data), 0) else {
+                    return Ok(None);
+                };
+                rows.push((start, row));
+                current_row = Some(row);
+                previous_column = -1;
+            }
+            0x01..=0x12 if in_data => {
+                let Some(row) = current_row else { continue };
+                let column = if rec.id >= 0x0C {
+                    previous_column + 1
+                } else {
+                    let Some(column) = le_u32(rec.bytes(data), 0) else {
+                        return Ok(None);
+                    };
+                    i64::from(column)
+                };
+                previous_column = column;
+                if column < 16384 {
+                    let row = i64::from(row);
+                    bounds = Some(match bounds {
+                        None => [column, row, column, row],
+                        Some([c1, r1, c2, r2]) => {
+                            [c1.min(column), r1.min(row), c2.max(column), r2.max(row)]
+                        }
+                    });
+                }
+            }
+            0x91 if begin.is_none() => begin = Some((start, pos)),
+            0x92 if end.is_none() => end = Some(start),
+            0x94 if dimension.is_none() => {
+                if rec.len != 16 {
+                    return Ok(None);
+                }
+                let Some(range) = range_of(data, &rec) else {
+                    return Ok(None);
+                };
+                dimension = Some((start, pos, range));
+            }
+            0xB0 => {
+                let Some(range) = range_of(data, &rec) else {
+                    return Ok(None);
+                };
+                merges.push(range);
+            }
+            0x1AA..=0x1AC => {
+                let Some(range) = range_of(data, &rec) else {
+                    return Ok(None);
+                };
+                groups.push(range);
+            }
+            _ => {}
+        }
+    }
+    let (Some((begin_start, begin_end)), Some(end_start)) = (begin, end) else {
+        return Ok(None);
+    };
+    let rows = PyList::new(py, rows)?;
+    let merges = PyList::new(py, merges.iter().map(|r| (r[0], r[1], r[2], r[3])))?;
+    let groups = PyList::new(py, groups.iter().map(|r| (r[0], r[1], r[2], r[3])))?;
+    let dimension = dimension.map(|(s, e, r)| (s, e, (r[0], r[1], r[2], r[3])));
+    let bounds = bounds.map(|b| (b[0], b[1], b[2], b[3]));
+    let result = (
+        begin_start,
+        begin_end,
+        end_start,
+        rows,
+        merges,
+        groups,
+        dimension,
+        bounds,
+    );
+    result.into_pyobject(py).map(Some)
 }
 
 #[cfg(test)]

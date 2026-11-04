@@ -23,7 +23,7 @@ import zipfile
 
 import pytest
 
-from xlspy import ExcelReader, XlsbWriter, XlsxWriter, _accel, load_workbook
+from xlspy import ExcelReader, XlsbWriter, XlsxWriter, _accel, _xlsb_edit, load_workbook
 from xlspy import reader as reader_module
 from xlspy.workbook import _xlsb_reader
 from xlspy.exceptions import InvalidFileError
@@ -381,6 +381,30 @@ _MUTATORS = {
     ("xlsb", "sst"): _mutate_xlsb_sst,
     ("xlsx", "sst"): _mutate_xlsx_sst,
 }
+
+
+def test_mutated_sheets_scan_the_same_for_update_cells(tmp_path, monkeypatch):
+    # xlsb_sheet_scan leaves anything unusual to Python (it returns None); what
+    # it does answer must be what Python answers.
+    source = tmp_path / "seed.xlsb"
+    _write_fixture(source, "xlsb", shared_strings=True)
+    original = _parts(source)[_SHEET["xlsb"]]
+    native = _accel.xlsb_sheet_scan
+    answered = 0
+    for case in range(ITERATIONS):
+        data = _mutate_xlsb_sheet(original, random.Random(f"{SEED}:scan:{case}"))
+        result = native(data)
+        with monkeypatch.context() as patch:
+            patch.setattr(_accel, "xlsb_sheet_scan", None)
+            try:
+                python = _xlsb_edit._scan_sheet(data)
+            except InvalidFileError:
+                assert result is None, f"Python refuses case {case}, the native scan does not"
+                continue
+        if result is not None:
+            answered += 1
+            assert result == python, f"scan case {case}"
+    assert answered > ITERATIONS // 2
 
 
 @pytest.mark.parametrize("kind", ["xlsb", "xlsx"])

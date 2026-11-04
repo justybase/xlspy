@@ -23,6 +23,7 @@ from ..styles import (
     Style,
 )
 from ._coords import _coerce_column, _coerce_row, _coordinate
+from .. import _accel
 
 if TYPE_CHECKING:
     from ._worksheet import Worksheet
@@ -40,7 +41,7 @@ class Cell:
     """
     __slots__ = (
         "_sheet", "_row", "_column", "_value", "_data_type",
-        "_style_id", "_comment", "_hyperlink", "_dirty", "_formula",
+        "_style_id", "_comment", "_hyperlink", "_formula",
         "_named_style",
     )
 
@@ -55,10 +56,8 @@ class Cell:
         self._comment: Comment | None = None
         self._hyperlink: Hyperlink | None = None
         self._named_style: str | None = None
-        self._dirty = False
         if value is not None:
             self.value = value
-            self._dirty = False
 
     # -- identity -----------------------------------------------------
     @property
@@ -113,9 +112,9 @@ class Cell:
             self._hyperlink = None
             self._value = value
             self._data_type = plain
-            self._dirty = True
             sheet = self._sheet
-            sheet._dirty_cells.add((self._row, self._column))
+            if sheet._workbook._loaded:
+                sheet._dirty_cells.add((self._row, self._column))
             sheet._dirty = True
             return
         if isinstance(value, Cell):
@@ -370,15 +369,11 @@ class Cell:
         self._value = value
         self._formula = formula_text
         self._data_type = data_type
-        self._dirty = False
 
     def _mark_dirty(self):
-        self._dirty = True
-        self._sheet._dirty_cells.add((self._row, self._column))
+        if self._sheet._workbook._loaded:
+            self._sheet._dirty_cells.add((self._row, self._column))
         self._sheet._mark_dirty()
-
-    def _clear_dirty(self):
-        self._dirty = False
 
     # -- convenience --------------------------------------------------
     def offset(self, row: int = 0, column: int = 0) -> Cell:
@@ -392,8 +387,10 @@ class Cell:
 # Slot descriptors, in the order the native loaders fill them (see rust/xlspy_core/src/model.rs).
 CELL_SLOTS = tuple(Cell.__dict__[name] for name in (
     "_sheet", "_row", "_column", "_value", "_formula", "_data_type",
-    "_style_id", "_comment", "_hyperlink", "_named_style", "_dirty",
+    "_style_id", "_comment", "_hyperlink", "_named_style",
 ))
+# The model's hot loops, or None: _append_new_row and workbook/_writer.py then do them.
+NATIVE_CELLS = None if _accel.ModelCells is None else _accel.ModelCells(Cell, CELL_SLOTS)
 
 
 class MergedCell(Cell):

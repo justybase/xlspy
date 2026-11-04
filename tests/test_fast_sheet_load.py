@@ -108,7 +108,7 @@ def _cell_state(sheet):
         sorted(sheet._dirty_styles), sorted(sheet._dirty_meta), sheet._workbook._styles_dirty,
         {
             (row, column): (cell._value, cell._data_type, str(cell._formula),
-                            cell._style_id, cell._hyperlink, cell._dirty, cell.number_format)
+                            cell._style_id, cell._hyperlink, cell.number_format)
             for row, cells in sheet._cells.items() for column, cell in cells.items()
         },
     )

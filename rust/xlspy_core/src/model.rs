@@ -7,14 +7,21 @@
 use pyo3::exceptions::PyTypeError;
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple, PyType};
+use pyo3::types::{
+    PyBool, PyDate, PyDateTime, PyDict, PyFloat, PyInt, PyList, PySet, PyString, PyTuple, PyType,
+};
 
 /// Slot indices used after creation; `CELL_SLOTS` (workbook/_model.py) is
 /// _sheet, _row, _column, _value, _formula, _data_type, _style_id, _comment,
-/// _hyperlink, _named_style, _dirty.
+/// _hyperlink, _named_style.
 pub const ROW: usize = 1;
 pub const COLUMN: usize = 2;
-const COUNT: usize = 11;
+const VALUE: usize = 3;
+const FORMULA: usize = 4;
+const STYLE_ID: usize = 6;
+const COMMENT: usize = 7;
+const HYPERLINK: usize = 8;
+const COUNT: usize = 10;
 
 /// The Cell class and the byte offsets of its slots.
 pub struct CellClass {
@@ -134,6 +141,204 @@ pub fn as_row_dict<'py>(row_dict: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDi
         .map_err(|_| pyo3::exceptions::PySystemError::new_err("bad argument to internal function"))
 }
 
+/// A row of plain values as `Worksheet.append` stores them, the rows of a
+/// workbook as the writers take them, and the cells that need more than that.
+/// Each leaves what it does not handle to the Python code it stands in for
+/// (`workbook/_worksheet.py::_append_new_row`, `workbook/_writer.py`).
+#[pyclass(module = "xlspy._rs_core", frozen)]
+pub struct ModelCells {
+    class: CellClass,
+    number: Py<PyString>,
+    text: Py<PyString>,
+    boolean: Py<PyString>,
+}
+
+#[pymethods]
+impl ModelCells {
+    #[new]
+    fn new(
+        py: Python<'_>,
+        cell_type: &Bound<'_, PyAny>,
+        descriptors: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        Ok(ModelCells {
+            class: CellClass::new(cell_type, descriptors)?,
+            number: PyString::intern(py, "n").unbind(),
+            text: PyString::intern(py, "s").unbind(),
+            boolean: PyString::intern(py, "b").unbind(),
+        })
+    }
+
+    fn __traverse__(&self, visit: pyo3::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
+        self.class.traverse(&visit)
+    }
+
+    /// Store `values[start..]` in `row_cells`, up to the first value that is not
+    /// None or an exact int, float, bool or str without a leading `=`. Returns
+    /// its index (`len(values)` when there is none).
+    fn append_plain<'py>(
+        &self,
+        sheet: &Bound<'py, PyAny>,
+        row: &Bound<'py, PyAny>,
+        values: &Bound<'py, PyList>,
+        start: usize,
+        row_cells: &Bound<'py, PyDict>,
+        dirty: Option<&Bound<'py, PySet>>,
+    ) -> PyResult<usize> {
+        let py = sheet.py();
+        let none = py.None().into_bound(py);
+        let zero = 0i64.into_pyobject(py)?.into_any();
+        let (number, text, boolean) = (
+            self.number.bind(py).as_any(),
+            self.text.bind(py).as_any(),
+            self.boolean.bind(py).as_any(),
+        );
+        let mut position = start;
+        while position < values.len() {
+            let value = values.get_item(position)?;
+            if value.is_none() {
+                position += 1;
+                continue;
+            }
+            let data_type = if value.is_exact_instance_of::<PyInt>()
+                || value.is_exact_instance_of::<PyFloat>()
+            {
+                number
+            } else if value.is_exact_instance_of::<PyBool>() {
+                boolean
+            } else if let Ok(string) = value.cast_exact::<PyString>() {
+                match string.to_str() {
+                    Ok(content) if !content.starts_with('=') => text,
+                    _ => return Ok(position),
+                }
+            } else {
+                return Ok(position);
+            };
+            let column = (position + 1).into_pyobject(py)?.into_any();
+            let cell = self.class.new_cell(
+                py,
+                [
+                    Some(sheet),
+                    Some(row),
+                    Some(&column),
+                    Some(&value),
+                    Some(&none),
+                    Some(data_type),
+                    Some(&zero),
+                    Some(&none),
+                    Some(&none),
+                    Some(&none),
+                ],
+            )?;
+            row_cells.set_item(&column, cell)?;
+            if let Some(dirty) = dirty {
+                dirty.add((row, &column))?;
+            }
+            position += 1;
+        }
+        Ok(position)
+    }
+
+    /// One row for the writers: each value, or `(value, Style)` for a styled one,
+    /// up to the row's last cell. None for a row with a formula, a hyperlink or
+    /// any other value than None, int, float, bool, str, date and datetime.
+    fn row_values<'py>(
+        &self,
+        py: Python<'py>,
+        row_cells: &Bound<'py, PyDict>,
+        styles: &Bound<'py, PyDict>,
+        style_at: &Bound<'py, PyAny>,
+    ) -> PyResult<Option<Bound<'py, PyList>>> {
+        let none = py.None().into_bound(py);
+        let cell_type = self.class.type_.bind(py);
+        let mut row: Vec<Bound<'py, PyAny>> = Vec::new();
+        for (key, cell) in row_cells.iter() {
+            if !cell.is_instance(cell_type)? {
+                return Ok(None);
+            }
+            let (Some(value), Some(formula), Some(link), Some(style_id)) = (
+                self.class.get(&cell, VALUE),
+                self.class.get(&cell, FORMULA),
+                self.class.get(&cell, HYPERLINK),
+                self.class.get(&cell, STYLE_ID),
+            ) else {
+                return Ok(None);
+            };
+            if !formula.is_none() || !link.is_none() {
+                return Ok(None);
+            }
+            let plain = value.is_none()
+                || value.is_exact_instance_of::<PyString>()
+                || value.is_exact_instance_of::<PyFloat>()
+                || value.is_exact_instance_of::<PyInt>()
+                || value.is_exact_instance_of::<PyBool>()
+                || value.is_exact_instance_of::<PyDateTime>()
+                || value.is_exact_instance_of::<PyDate>();
+            let Ok(column) = key.extract::<usize>() else {
+                return Ok(None);
+            };
+            if !plain || !(1..=16384).contains(&column) {
+                return Ok(None);
+            }
+            let item = if !value.is_none() && style_id.is_truthy()? {
+                let style = match styles.get_item(&style_id)? {
+                    Some(style) => style,
+                    None => {
+                        let style = style_at.call1((&style_id,))?;
+                        styles.set_item(&style_id, &style)?;
+                        style
+                    }
+                };
+                PyTuple::new(py, [value, style])?.into_any()
+            } else {
+                value
+            };
+            if column > row.len() {
+                row.resize(column, none.clone());
+            }
+            row[column - 1] = item;
+        }
+        PyList::new(py, row).map(Some)
+    }
+
+    /// The cells of a sheet with a style and nothing else, and those with a note.
+    /// None for anything but rows of Cells.
+    fn styled_and_commented<'py>(
+        &self,
+        py: Python<'py>,
+        cells: &Bound<'py, PyDict>,
+    ) -> PyResult<Option<(Bound<'py, PyList>, Bound<'py, PyList>)>> {
+        let cell_type = self.class.type_.bind(py);
+        let (styled, commented) = (PyList::empty(py), PyList::empty(py));
+        for row_cells in cells.values() {
+            let Ok(row_cells) = row_cells.cast::<PyDict>() else {
+                return Ok(None);
+            };
+            for cell in row_cells.values() {
+                if !cell.is_instance(cell_type)? {
+                    return Ok(None);
+                }
+                let (Some(value), Some(formula), Some(link), Some(style_id), Some(comment)) = (
+                    self.class.get(&cell, VALUE),
+                    self.class.get(&cell, FORMULA),
+                    self.class.get(&cell, HYPERLINK),
+                    self.class.get(&cell, STYLE_ID),
+                    self.class.get(&cell, COMMENT),
+                ) else {
+                    return Ok(None);
+                };
+                if value.is_none() && formula.is_none() && link.is_none() && style_id.is_truthy()? {
+                    styled.append(&cell)?;
+                }
+                if !comment.is_none() {
+                    commented.append(&cell)?;
+                }
+            }
+        }
+        Ok(Some((styled, commented)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{COLUMN, COUNT, CellClass, ROW};
@@ -152,7 +357,6 @@ mod tests {
         "_comment",
         "_hyperlink",
         "_named_style",
-        "_dirty",
     ];
 
     /// A class with the Cell slot layout, a subclass of it, an unrelated

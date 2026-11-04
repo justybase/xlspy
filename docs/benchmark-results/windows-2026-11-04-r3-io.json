@@ -1,0 +1,260 @@
+{
+  "python": "3.14.2",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "rows": 50000,
+  "cols": 20,
+  "repeat": 3,
+  "accel": {
+    "mode": "auto",
+    "have_native": true,
+    "backends": {
+      "encode_xlsb_row": "rust",
+      "encode_xlsb_row_inline": "rust",
+      "read_xlsb_worksheet": "rust",
+      "read_xlsx_worksheet": "rust",
+      "xlsb_row_has_formatted": "rust",
+      "encode_xlsb_sst": "rust",
+      "read_xlsb_shared_strings": "rust",
+      "encode_xlsx_row": "rust",
+      "read_xlsx_shared_strings": "rust",
+      "set_style_type": "rust",
+      "set_error_type": "rust",
+      "xlsb_load_cells": "rust",
+      "xlsb_sheet_scan": "rust",
+      "ModelCells": "rust",
+      "WidthMeter": "rust",
+      "general_number_text": "rust",
+      "encode_update_xlsx_row": "rust",
+      "encode_update_xlsb_row": "rust",
+      "patch_xlsb_row_headers": "rust"
+    }
+  },
+  "results": {
+    "write_xlsx": {
+      "seconds": 0.3994284999998854,
+      "size_mb": 2.996870994567871,
+      "peak_rss_delta_mb": 20.93359375,
+      "iqr": 0.0025353000000905013,
+      "runs": [
+        0.399,
+        0.404,
+        0.399
+      ]
+    },
+    "write_xlsb": {
+      "seconds": 0.3220586999996158,
+      "size_mb": 2.6458778381347656,
+      "peak_rss_delta_mb": 20.59765625,
+      "iqr": 0.006006049999996321,
+      "runs": [
+        0.325,
+        0.322,
+        0.313
+      ]
+    },
+    "read_xlsx": {
+      "seconds": 0.26497459999973216,
+      "cells": 1000000,
+      "peak_rss_delta_mb": 1.56640625,
+      "iqr": 0.0023904499998934625,
+      "runs": [
+        0.261,
+        0.266,
+        0.265
+      ]
+    },
+    "read_xlsb": {
+      "seconds": 0.051054499999736436,
+      "cells": 1000000,
+      "peak_rss_delta_mb": 0.0,
+      "iqr": 0.0016484500001752167,
+      "runs": [
+        0.051,
+        0.052,
+        0.049
+      ]
+    },
+    "load_xlsx": {
+      "seconds": 0.3330348999998023,
+      "peak_rss_delta_mb": 169.2734375,
+      "iqr": 0.005168400000002293,
+      "runs": [
+        0.336,
+        0.333,
+        0.325
+      ]
+    },
+    "load_xlsb": {
+      "seconds": 0.16193790000033914,
+      "peak_rss_delta_mb": 162.85546875,
+      "iqr": 0.0032220999996752653,
+      "runs": [
+        0.162,
+        0.168,
+        0.162
+      ]
+    },
+    "load_xlsx_styled": {
+      "seconds": 0.3791460000002189,
+      "peak_rss_delta_mb": 166.9921875,
+      "iqr": 0.05542684999954872,
+      "runs": [
+        0.379,
+        0.379,
+        0.49
+      ]
+    },
+    "load_xlsb_styled": {
+      "seconds": 0.22828730000037467,
+      "peak_rss_delta_mb": 163.76171875,
+      "iqr": 0.017041149999840854,
+      "runs": [
+        0.22,
+        0.228,
+        0.254
+      ]
+    },
+    "save_loaded_xlsx_styled": {
+      "seconds": 1.689851400000407,
+      "peak_rss_delta_mb": 4.671875,
+      "iqr": 0.020196049999867682,
+      "runs": [
+        1.671,
+        1.69,
+        1.711
+      ]
+    },
+    "save_loaded_xlsb_styled": {
+      "seconds": 0.3294202999995832,
+      "peak_rss_delta_mb": 6.20703125,
+      "iqr": 0.0015745499999866297,
+      "runs": [
+        0.33,
+        0.327,
+        0.329
+      ]
+    },
+    "write_model_xlsx": {
+      "seconds": 1.0251660999992964,
+      "size_mb": 2.997516632080078,
+      "peak_rss_delta_mb": 213.66015625,
+      "iqr": 0.011612599999807571,
+      "runs": [
+        1.022,
+        1.025,
+        1.045
+      ]
+    },
+    "write_model_xlsb": {
+      "seconds": 0.9009723999997732,
+      "size_mb": 2.641572952270508,
+      "peak_rss_delta_mb": 213.11328125,
+      "iqr": 0.015795100000104867,
+      "runs": [
+        0.901,
+        0.886,
+        0.917
+      ]
+    },
+    "write_formula_hyperlink_xlsx": {
+      "seconds": 2.457108999999946,
+      "size_mb": 5.8186798095703125,
+      "peak_rss_delta_mb": 55.0703125,
+      "iqr": 0.030035750000024564,
+      "runs": [
+        2.517,
+        2.457,
+        2.456
+      ]
+    },
+    "read_xlsx_entities": {
+      "seconds": 0.29408389999935025,
+      "cells": 1000000,
+      "peak_rss_delta_mb": 0.42578125,
+      "iqr": 0.001009650000014517,
+      "runs": [
+        0.294,
+        0.295,
+        0.293
+      ]
+    },
+    "load_xlsx_entities": {
+      "seconds": 0.421630599999844,
+      "peak_rss_delta_mb": 196.5546875,
+      "iqr": 0.01102919999993901,
+      "runs": [
+        0.407,
+        0.429,
+        0.422
+      ]
+    },
+    "xlsx_fallback_rate": {
+      "rows": 50000,
+      "fallback_rows": 0,
+      "fallback_pct": 0.0,
+      "peak_rss_delta_mb": 21.26171875
+    },
+    "xlsx_fallback_rate_model": {
+      "rows": 50000,
+      "fallback_rows": 0,
+      "fallback_pct": 0.0,
+      "peak_rss_delta_mb": 190.125
+    },
+    "xlsx_entities_fallback_rate": {
+      "rows": 50000,
+      "fallback_rows": 0,
+      "fallback_pct": 0.0,
+      "peak_rss_delta_mb": 20.5546875
+    },
+    "xlsx_entities_fallback_rate_model": {
+      "rows": 50000,
+      "fallback_rows": 0,
+      "fallback_pct": 0.0,
+      "peak_rss_delta_mb": 217.53125
+    },
+    "zlib1": {
+      "seconds": 0.3934896000000663,
+      "size_mb": 4.325458526611328,
+      "peak_rss_delta_mb": 20.765625,
+      "iqr": 0.0011896999999407853,
+      "runs": [
+        0.393,
+        0.395,
+        0.393
+      ]
+    },
+    "zlib3": {
+      "seconds": 0.41270390000045154,
+      "size_mb": 2.996870994567871,
+      "peak_rss_delta_mb": 20.8515625,
+      "iqr": 0.003071099999942817,
+      "runs": [
+        0.413,
+        0.411,
+        0.417
+      ]
+    },
+    "zlib6": {
+      "seconds": 0.46859459999996034,
+      "size_mb": 2.4524641036987305,
+      "peak_rss_delta_mb": 20.77734375,
+      "iqr": 0.013444950000121025,
+      "runs": [
+        0.469,
+        0.465,
+        0.492
+      ]
+    },
+    "zlib9": {
+      "seconds": 0.6148188999995909,
+      "size_mb": 2.216618537902832,
+      "peak_rss_delta_mb": 19.9375,
+      "iqr": 0.0075560499999483,
+      "runs": [
+        0.615,
+        0.615,
+        0.6
+      ]
+    }
+  }
+}

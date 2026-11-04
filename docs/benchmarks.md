@@ -49,19 +49,20 @@ The 50,000 × 50 file each writer produced, read back right after writing (warm 
 
 ### Read modes and the workbook model
 
-`benchmarks/bench_io.py`, 50,000 × 20 (1 million cells), median of three runs, each in its own process ([`windows-2026-11-02-rust-io.json`](benchmark-results/windows-2026-11-02-rust-io.json)):
+`benchmarks/bench_io.py`, 50,000 × 20 (1 million cells), median of three runs, each in its own process ([`windows-2026-11-04-r3-io.json`](benchmark-results/windows-2026-11-04-r3-io.json)):
 
 | Case | XLSX | XLSB |
 | :--- | ---: | ---: |
 | `ExcelReader.get_rows()` (values, no styles) | 0.27 s | 0.05 s |
-| `load_workbook()` | 0.37 s | 0.23 s |
-| `load_workbook()`, every 10th row bold | 0.42 s | 0.27 s |
-| Save a loaded styled workbook after 1,000 value and style edits | — | 2.57 s |
-| Build the model and save it | 1.48 s | 1.41 s |
-| Write rows with `XlsxWriter` / `XlsbWriter` | 0.40 s | 0.31 s |
+| `load_workbook()` | 0.33 s | 0.16 s |
+| `load_workbook()`, every 10th row bold | 0.38 s | 0.23 s |
+| Save a loaded styled workbook after 1,000 value and style edits | 1.69 s | 0.33 s |
+| Build the model and save it | 1.03 s | 0.90 s |
+| Write rows with `XlsxWriter` / `XlsbWriter` | 0.40 s | 0.32 s |
 
-- `load_workbook()` builds its `Cell` objects natively. It costs **1.4–1.6×** an `ExcelReader` pass for XLSX and **4.5–5.4×** for XLSB, whose plain read is much faster; `ExcelReader` creates no `Cell` objects, so use it when you only need values.
-- A loaded XLSB is saved by patching the binary worksheet in place: the time depends mostly on the size of the edited sheet, not on the number of edits.
+- `load_workbook()` builds its `Cell` objects natively. It costs **1.3–1.4×** an `ExcelReader` pass for XLSX and **3.2–4.5×** for XLSB, whose plain read is much faster; `ExcelReader` creates no `Cell` objects, so use it when you only need values.
+- A loaded workbook is saved by patching the worksheet in place: the time depends mostly on the size of the edited sheet, not on the number of edits. XLSX costs more because the sheet's XML is parsed once to check the edit.
+- Compared with the code just before this work, measured in turns on one machine: saving a loaded XLSB 2.87 s → 0.33 s, building and saving the model 1.51 s → 1.03 s (XLSX) and 1.40 s → 0.92 s (XLSB), peak memory of that case 323 MB → 212 MB. The XLSX save after edits had no row here because it took hours at this size: 86 s at 4,000 rows, growing with the square of the rows.
 
 ### macOS and WSL2 (xlspy 0.11.0)
 
@@ -417,7 +418,7 @@ Known limitations:
 
 Current results (Rust module):
 
-- Windows: [`windows-2026-11-02-rust-write.json`](benchmark-results/windows-2026-11-02-rust-write.json) (write), [`read-windows-2026-11-02-rust.log`](benchmark-results/read-windows-2026-11-02-rust.log) (read) and [`windows-2026-11-02-rust-io.json`](benchmark-results/windows-2026-11-02-rust-io.json) (read modes and model)
+- Windows: [`windows-2026-11-02-rust-write.json`](benchmark-results/windows-2026-11-02-rust-write.json) (write), [`read-windows-2026-11-02-rust.log`](benchmark-results/read-windows-2026-11-02-rust.log) (read) and [`windows-2026-11-02-rust-io.json`](benchmark-results/windows-2026-11-02-rust-io.json) (read modes and model; since then [`windows-2026-11-04-r3-io.json`](benchmark-results/windows-2026-11-04-r3-io.json))
 - macOS (Apple M4): [`mac-m4-2026-11-02-rust-write.json`](benchmark-results/mac-m4-2026-11-02-rust-write.json), [`read-mac-m4-2026-11-02-rust.log`](benchmark-results/read-mac-m4-2026-11-02-rust.log) and [`mac-m4-2026-11-02-rust-io.json`](benchmark-results/mac-m4-2026-11-02-rust-io.json)
 - WSL2: [`wsl2-2026-11-02-rust-write.json`](benchmark-results/wsl2-2026-11-02-rust-write.json), [`read-wsl2-2026-11-02-rust.log`](benchmark-results/read-wsl2-2026-11-02-rust.log) and [`wsl2-2026-11-02-rust-io.json`](benchmark-results/wsl2-2026-11-02-rust-io.json)
 
@@ -478,7 +479,7 @@ slower than `--max-slowdown` times its baseline:
 
 ```bash
 py -3.14 benchmarks/bench_io.py --out results.json
-py -3.14 benchmarks/bench_io.py --compare docs/benchmark-results/windows-2026-11-02-rust-io.json --max-slowdown 1.03
+py -3.14 benchmarks/bench_io.py --compare docs/benchmark-results/windows-2026-11-04-r3-io.json --max-slowdown 1.03
 ```
 
 For correctness checks and platform test results, see [Validation](validation.md).

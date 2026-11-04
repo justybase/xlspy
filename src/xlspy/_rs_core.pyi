@@ -37,7 +37,9 @@ __all__ = [
     "patch_xlsb_row_headers",
     "read_xlsb_worksheet",
     "XlsbReader",
+    "ModelCells",
     "xlsb_load_cells",
+    "xlsb_sheet_scan",
     "read_xlsx_worksheet",
     "XlsxReader",
     "WidthMeter",
@@ -125,6 +127,27 @@ def read_xlsb_worksheet(
     date_num_fmts: set[int],
     date_1904: bool | None = None,
 ) -> XlsbReader | None: ...
+@final
+class ModelCells:
+    def __new__(cls, cell_type: type, descriptors: tuple[Any, ...]) -> ModelCells: ...
+    def append_plain(
+        self, sheet: Any, row: int, values: list[Any], start: int,
+        row_cells: dict[int, Any], dirty: set[tuple[int, int]] | None,
+    ) -> int: ...
+    def row_values(
+        self, row_cells: dict[int, Any], styles: dict[int, Any], style_at: Callable[[int], Any],
+    ) -> list[Any] | None: ...
+    def styled_and_commented(
+        self, cells: dict[int, dict[int, Any]],
+    ) -> tuple[list[Any], list[Any]] | None: ...
+def xlsb_sheet_scan(data: ReadableBuffer) -> tuple[
+    int, int, int,
+    list[tuple[int, int]],
+    list[tuple[int, int, int, int]],
+    list[tuple[int, int, int, int]],
+    tuple[int, int, tuple[int, int, int, int]] | None,
+    tuple[int, int, int, int] | None,
+] | None: ...
 def xlsb_load_cells(
     data: ReadableBuffer,
     shared_strings: list[Any],

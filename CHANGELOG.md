@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and defined names use that pattern too. `update_cells` and the style edit also parsed the sheet up
   to three times, and walked all its cells to find the edited ones. The rows of `<sheetData>` are
   now walked a tag at a time.
+- `XlsbUpdater.update_cells` on a damaged sheet (no sheet data, or a row, cell, dimension or merge
+  record too short for what it holds) raises `InvalidFileError` instead of `StopIteration` or
+  `struct.error`.
 - A centred header under an autofilter or table drop-down button (`Alignment(horizontal="center")`)
   got room for the button on one side only, so its text ran into the button. Excel's *AutoFit*
   keeps centred text clear of the button on both sides (32 pixels, not 16: measured at 100%
@@ -62,6 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The workbook model is faster and smaller, with the same bytes in the files (50,000 x 20, measured
+  in turns against the code before): saving a loaded XLSB after edits 2.87 s -> 0.33 s, because one
+  native pass over the sheet's records replaces a Python object per record and the save no longer
+  visits every cell; building and saving a model 1.51 s -> 1.03 s (XLSX) and 1.40 s -> 0.92 s (XLSB);
+  `load_workbook` 7-19% faster. `Worksheet.append` and the rows handed to the writers run natively
+  for plain values, and leave any other row or value to the Python code they stand in for. Peak
+  memory while building a model falls from 323 MB to 212 MB: a new workbook no longer records which
+  cells changed, which only the save of a loaded workbook reads, and `Cell` lost a flag nothing read.
 - **Breaking:** `XlsbUpdater.set_hyperlinks` works as in `XlsxUpdater`: it sets the given cells,
   `None` removes a cell's link, and every other link is kept. It used to replace all of the
   sheet's links and refuse `None`. To clear a sheet, pass `None` for each link. Saving a loaded

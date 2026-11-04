@@ -22,7 +22,7 @@ from ._print import (
     PageSetup,
     PrintOptions,
 )
-from ._cell import Cell, MergedCell, WriteOnlyCell, _CELL_TYPE_KINDS, _new_cell
+from ._cell import Cell, MergedCell, NATIVE_CELLS, WriteOnlyCell, _CELL_TYPE_KINDS, _new_cell
 from ._coords import MultiCellRange, _CELL_RE, _coerce_column, _coerce_row, _coordinate, _normalize_range
 from ._dimensions import ColumnDimension, DimensionHolder, RowDimension, _column_key, _row_key
 from ._properties import AutoFilter, ColBreak, Pane, RowBreak, Selection, SheetFormatProperties, SheetProperties, SheetView, WorksheetProtection, _as_model_page_margins, _as_model_protection
@@ -507,7 +507,6 @@ class Worksheet:
         cell._comment = None
         cell._hyperlink = None
         cell._named_style = None
-        cell._dirty = False
         row_cells = self._cells.get(row)
         if row_cells is None:
             row_cells = self._cells[row] = {}
@@ -617,11 +616,22 @@ class Worksheet:
         through ``cell()``.
         """
         row_cells = self._cells[row] = {}
-        dirty = self._dirty_cells
+        # Only the save of a loaded workbook reads what changed; a new one is written whole.
+        dirty = self._dirty_cells if self._workbook._loaded else None
         plain_types = _CELL_TYPE_KINDS
         date_styles = None
         dated = False
-        for column, value in enumerate(values, 1):
+        native = NATIVE_CELLS
+        position = 0
+        count = len(values)
+        while position < count:
+            if native is not None:
+                position = native.append_plain(self, row, values, position, row_cells, dirty)
+                if position == count:
+                    break
+            value = values[position]
+            position += 1
+            column = position
             if value is None:
                 continue
             kind = type(value)
@@ -654,9 +664,9 @@ class Worksheet:
             cell._comment = None
             cell._hyperlink = None
             cell._named_style = None
-            cell._dirty = True
             row_cells[column] = cell
-            dirty.add((row, column))
+            if dirty is not None:
+                dirty.add((row, column))
         if dated:
             self._workbook._styles_dirty = True
             self._dirty_meta.add("styles")
@@ -804,9 +814,6 @@ class Worksheet:
         self._dirty_comments.clear()
         self._dirty_hyperlinks.clear()
         self._dirty_meta.clear()
-        for row in self._cells.values():
-            for cell in row.values():
-                cell._clear_dirty()
 
 
 class WriteOnlyWorksheet(Worksheet):

@@ -53,7 +53,9 @@ fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(update_rows::patch_xlsb_row_headers, m)?)?;
     m.add_function(wrap_pyfunction!(xlsb_read::read_xlsb_worksheet, m)?)?;
     m.add_class::<xlsb_read::XlsbReader>()?;
+    m.add_class::<model::ModelCells>()?;
     m.add_function(wrap_pyfunction!(xlsb_read::xlsb_load_cells, m)?)?;
+    m.add_function(wrap_pyfunction!(xlsb_read::xlsb_sheet_scan, m)?)?;
     m.add_function(wrap_pyfunction!(xlsx_read::read_xlsx_worksheet, m)?)?;
     m.add_class::<xlsx_read::XlsxReader>()?;
     Ok(())

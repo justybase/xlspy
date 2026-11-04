@@ -20,6 +20,7 @@ from ..xlsx_writer import XlsxWriter
 from ._loaded import save_loaded
 from ._objects import _as_excel_table
 from ._print import print_settings_for
+from ._cell import NATIVE_CELLS
 from ._model import Workbook, Worksheet, WriteOnlyWorksheet
 from ..hyperlinks import Hyperlink
 from ._chartsheets import add_chartsheets, check_chartsheets, pending_chartsheets
@@ -72,12 +73,19 @@ def _cell_values(sheet: Worksheet):
     styles: dict[int, Style] = {}
     plain_types = _WRITER_PLAIN_TYPES
     cells = sheet._cells
+    native = NATIVE_CELLS
     for row_number in range(1, max_row + 1):
         row_cells = cells.get(row_number)
         if not row_cells:
             # An empty row: the writers count rows by position, so it is still yielded.
             yield []
             continue
+        # Not the first row, whose text has its own rule below.
+        if native is not None and row_number != 1:
+            plain_row = native.row_values(row_cells, styles, style_at)
+            if plain_row is not None:
+                yield plain_row
+                continue
         # Each row stops at its last cell (styled empty cells are in
         # ``_cells`` too, so their columns are kept). A missing trailing
         # value is an empty cell, so the row never builds a list the width of
@@ -104,27 +112,25 @@ def _cell_values(sheet: Worksheet):
         yield row
 
 
-def _styles(sheet: Worksheet):
-    """Styles of empty cells, which ``_cell_values`` cannot carry."""
+def _styles_and_comments(sheet: Worksheet):
+    """Styles of empty cells, which ``_cell_values`` cannot carry, and the notes."""
     if isinstance(sheet, WriteOnlyWorksheet):
-        return None
-    result = {}
-    for row in sheet._cells.values():
-        for cell in row.values():
-            if cell._style_id and _value_for_new(cell) is None:
-                result[cell.coordinate] = sheet._workbook._styles.style_at(cell._style_id)
-    return result or None
-
-
-def _comments(sheet: Worksheet):
-    if isinstance(sheet, WriteOnlyWorksheet):
-        return None
-    result = {}
-    for row in sheet._cells.values():
-        for cell in row.values():
-            if cell.comment is not None:
-                result[cell.coordinate] = cell.comment
-    return result or None
+        return None, None
+    found = None if NATIVE_CELLS is None else NATIVE_CELLS.styled_and_commented(sheet._cells)
+    if found is not None:
+        styled, commented = found
+    else:
+        styled, commented = [], []
+        for row in sheet._cells.values():
+            for cell in row.values():
+                if cell._style_id and cell._value is None and cell._formula is None and cell._hyperlink is None:
+                    styled.append(cell)
+                if cell._comment is not None:
+                    commented.append(cell)
+    style_at = sheet._workbook._styles.style_at
+    styles = {cell.coordinate: style_at(cell._style_id) for cell in styled}
+    comments = {cell.coordinate: cell._comment for cell in commented}
+    return styles or None, comments or None
 
 
 def _sheet_protection(sheet: Worksheet):
@@ -163,15 +169,16 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
             heights[row - 1] = dimension.height
         if dimension.hidden:
             hidden_rows.append(row - 1)
+    styles, comments = _styles_and_comments(sheet)
     options = {
-        "styles": _styles(sheet),
+        "styles": styles,
         "merges": [str(value) for value in sheet.merged_cells.ranges] or None,
         "column_widths": widths or None,
         "hidden_columns": hidden_columns or None,
         "row_heights": heights or None,
         "hidden_rows": hidden_rows or None,
         "freeze_panes": sheet.freeze_panes or "",
-        "comments": _comments(sheet),
+        "comments": comments,
         "sheet_protection": _sheet_protection(sheet),
         "show_grid_lines": sheet.sheet_view.showGridLines is not False,
         "show_row_col_headers": sheet.sheet_view.showRowColHeaders is not False,

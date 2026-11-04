@@ -38,7 +38,7 @@ _NATIVE_NAMES = (
     "read_xlsb_worksheet", "read_xlsx_worksheet", "xlsb_row_has_formatted",
     "encode_xlsb_sst", "read_xlsb_shared_strings", "encode_xlsx_row",
     "read_xlsx_shared_strings",
-    "set_style_type", "set_error_type", "xlsb_load_cells",
+    "set_style_type", "set_error_type", "xlsb_load_cells", "xlsb_sheet_scan", "ModelCells",
     "WidthMeter", "general_number_text",
     "encode_update_xlsx_row", "encode_update_xlsb_row", "patch_xlsb_row_headers",
 )
@@ -105,6 +105,10 @@ _native_read_xlsx_sst: Any = _impl.get("read_xlsx_shared_strings")
 _native_encode_xlsx_row: Any = _impl.get("encode_xlsx_row")
 # Workbook model loader for XLSB sheet data (see workbook/_xlsb_reader.py).
 xlsb_load_cells: Any = _impl.get("xlsb_load_cells")
+# One pass over an XLSB sheet for update_cells (see _xlsb_edit._scan_sheet).
+xlsb_sheet_scan: Any = _impl.get("xlsb_sheet_scan")
+# The model's hot loops (see workbook/_cell.py).
+ModelCells: Any = _impl.get("ModelCells")
 # The rows of XlsxUpdater / XlsbUpdater.replace_sheet_data (None: the Python code).
 encode_update_xlsx_row: Any = _impl.get("encode_update_xlsx_row")
 encode_update_xlsb_row: Any = _impl.get("encode_update_xlsb_row")

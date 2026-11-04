@@ -24,7 +24,8 @@ from ._xlsb_metadata import (
 )
 from ._xlsb_formulas import FormulaContext, formula_cell
 from ._xlsx_edit import XlsxEditMixin, _HYPERLINK_TYPE as _HYPERLINK_TYPE
-from .biff_utils import build_record
+from . import _accel
+from .biff_utils import build_record, iter_records
 from .comments import Comment, NotePartsEdit, V, VML_TYPE, comment_part_targets, find_comment_parts, normalize_comments, vml_xml, rels_path, resolve_part
 from .excel_dates import datetime_to_serial
 from .formulas import Formula
@@ -38,6 +39,73 @@ from ._xlsb_cf import conditional_formats_bin, insert_extension, without_conditi
 
 
 _MERGE_RECORDS = frozenset({0xB0, 0xB1, 0xB2})
+def _scan_sheet(data: bytes) -> tuple[Any, ...]:
+    """What ``update_cells`` needs of a sheet, from one pass over its records (a
+    sheet has a record per cell): the start and end of BrtBeginSheetData, the
+    start of BrtEndSheetData, ``(start, row)`` of its row records, the merged
+    ranges and formula group ranges as ``(r1, r2, c1, c2)``, the first BrtWsDim as
+    ``(start, end, range)`` or None, and the cells' ``(c1, r1, c2, r2)`` or None.
+
+    The twin of the native ``xlsb_sheet_scan``, which leaves anything unusual here.
+    """
+    if _accel.xlsb_sheet_scan is not None:
+        scanned: tuple[Any, ...] | None = _accel.xlsb_sheet_scan(data)
+        if scanned is not None:
+            return scanned
+    begin = None
+    end = None
+    rows = []
+    merges: list[tuple[int, ...]] = []
+    groups: list[tuple[int, ...]] = []
+    dimension = None
+    current_row = None
+    previous_column = -1
+    bounds: list[int] | None = None
+    unpack = struct.Struct('<I').unpack_from
+    unpack_range = struct.Struct('<IIII').unpack_from
+    for record in iter_records(data):
+        kind, start, length = record.record_id, record.data_start, record.length
+        if kind > 0x12:
+            if kind == 0x91:
+                begin = begin or (record.header_start, record.data_end)
+            elif kind == 0x92:
+                end = record.header_start if end is None else end
+            elif kind == 0x94 and dimension is None:
+                if length != 16:
+                    raise InvalidFileError("XLSB dimension record has the wrong size")
+                dimension = (record.header_start, record.data_end, unpack_range(data, start))
+            elif kind == 0xB0 or 0x1AA <= kind <= 0x1AC:
+                if length < 16:
+                    raise InvalidFileError(f"XLSB record 0x{kind:X} is cut short")
+                (merges if kind == 0xB0 else groups).append(unpack_range(data, start))
+            continue
+        if begin is None or end is not None:
+            continue
+        if kind == 0:
+            if length < 4:
+                raise InvalidFileError("XLSB row record is cut short")
+            current_row = unpack(data, start)[0]
+            previous_column = -1
+            rows.append((record.header_start, current_row))
+        elif current_row is not None:
+            if kind >= 0xC:
+                column = previous_column + 1
+            elif length < 4:
+                raise InvalidFileError("XLSB cell record is cut short")
+            else:
+                column = unpack(data, start)[0]
+            previous_column = column
+            if column < 16384:
+                if bounds is None:
+                    bounds = [column, current_row, column, current_row]
+                else:
+                    bounds = [min(bounds[0], column), min(bounds[1], current_row),
+                              max(bounds[2], column), max(bounds[3], current_row)]
+    if begin is None or end is None:
+        raise InvalidFileError("XLSB worksheet has no complete sheet data")
+    return begin[0], begin[1], end, rows, merges, groups, dimension, bounds and tuple(bounds)
+
+
 # Worksheet records that follow the merged cells / the hyperlinks in schema
 # order ([MS-XLSB] 2.1.7.62): a new block is inserted before the first one found.
 _BRT_AFTER_HYPERLINKS = (0x1DD, 0x1DC, 0x1DE, 0x1DF, 0x188, 0x18A, 0x226, 0x227, 0x294, 0x82)
@@ -366,15 +434,11 @@ class XlsbEditMixin(XlsxEditMixin):
             targets.setdefault(ref, KEEP)
         if not targets:
             return
-        all_records = list(records(data))
-        check_merged_refs(data, values, [
-            struct.unpack_from('<IIII', payload) for record, payload in all_records if record.record_id == 0xB0
-        ])
-        for record, payload in all_records:
-            if record.record_id in (0x1AA, 0x1AB, 0x1AC):
-                r1, r2, c1, c2 = struct.unpack_from('<IIII', payload)
-                if any(c1 <= parse_cell_range(ref)[0] <= c2 and r1 <= parse_cell_range(ref)[1] <= r2 for ref in values):
-                    raise ValueError("editing members of array/shared/data-table formulas is unsupported")
+        begin_start, begin_end, end_start, row_starts, merges, groups, dimension, cell_bounds = _scan_sheet(data)
+        check_merged_refs(data, values, merges)
+        for r1, r2, c1, c2 in groups:
+            if any(c1 <= parse_cell_range(ref)[0] <= c2 and r1 <= parse_cell_range(ref)[1] <= r2 for ref in values):
+                raise ValueError("editing members of array/shared/data-table formulas is unsupported")
         has_formulas = any(isinstance(value, Formula) for value in values.values())
         original_workbook = self._package.get('xl/workbook.bin') if has_formulas else None
         context = FormulaContext(self._sheets, original_workbook) if has_formulas else None
@@ -382,64 +446,49 @@ class XlsbEditMixin(XlsxEditMixin):
         for ref, value in values.items():
             col, row, _, _ = parse_cell_range(ref)
             encode_cell(value, col, 0, context, sheet_name, row, self._date_1904)
-        begin = next(r for r, _ in all_records if r.record_id == 0x91)
-        end = next(r for r, _ in all_records if r.record_id == 0x92)
-        row_starts = [(r, payload) for r, payload in all_records if r.record_id == 0 and begin.data_end <= r.header_start < end.header_start]
         by_row: dict[Any, Any] = {}
         for ref, value in targets.items():
             col, row, _, _ = parse_cell_range(ref)
             by_row.setdefault(row, {})[col] = (value, style_ids.get(ref))
-        output = [data[:begin.data_end]]
-        cursor = begin.data_end
+        output = [data[:begin_end]]
+        cursor = begin_end
         removed_shared_refs = 0
         pending = sorted(by_row)
         next_pending = 0
-        for index, (row_record, payload) in enumerate(row_starts):
-            row = struct.unpack_from('<I', payload)[0]
-            row_end = row_starts[index + 1][0].header_start if index + 1 < len(row_starts) else end.header_start
-            output.append(data[cursor:row_record.header_start])
+        for index, (row_start, row) in enumerate(row_starts):
+            row_end = row_starts[index + 1][0] if index + 1 < len(row_starts) else end_start
+            output.append(data[cursor:row_start])
             while next_pending < len(pending) and pending[next_pending] < row:
                 new_row = pending[next_pending]
                 next_pending += 1
                 if new_row in by_row:
                     output.append(new_row_bytes(new_row, by_row.pop(new_row), context, sheet_name, self._date_1904))
             if row in by_row:
-                edited, count = patch_row(data[row_record.header_start:row_end], by_row.pop(row), context, sheet_name, row, self._date_1904)
+                edited, count = patch_row(data[row_start:row_end], by_row.pop(row), context, sheet_name, row, self._date_1904)
                 output.append(edited)
                 removed_shared_refs += count
             else:
-                output.append(data[row_record.header_start:row_end])
+                output.append(data[row_start:row_end])
             cursor = row_end
-        output.append(data[cursor:end.header_start])
+        output.append(data[cursor:end_start])
         for row in sorted(by_row):
             output.append(new_row_bytes(row, by_row[row], context, sheet_name, self._date_1904))
-        output.append(data[end.header_start:])
+        output.append(data[end_start:])
         patched = b''.join(output)
         coordinates = [parse_cell_range(ref) for ref in targets]
         # Existing cells count too: xlspy before 0.11 wrote an A1:A1 placeholder.
-        current_row, previous_column = None, -1
-        for record, payload in all_records:
-            if not begin.data_end <= record.header_start < end.header_start:
-                continue
-            if record.record_id == 0:
-                current_row, previous_column = struct.unpack_from('<I', payload)[0], -1
-            elif current_row is not None and 1 <= record.record_id <= 0x12:
-                column = previous_column + 1 if record.record_id >= 0xC else struct.unpack_from('<I', payload)[0]
-                previous_column = column
-                if column < 16384:
-                    coordinates.append((column, current_row, column, current_row))
-        dimension = next(((record, payload) for record, payload in all_records if record.record_id == 0x94), None)
+        if cell_bounds is not None:
+            coordinates.append(cell_bounds)
         if dimension is not None:
-            r1, r2, c1, c2 = struct.unpack('<IIII', dimension[1])
+            r1, r2, c1, c2 = dimension[2]
             # (0, 0, 0, 0) is an empty sheet (or A1 alone, which the scan above
             # finds): keeping it would stretch a new sheet's range to A1.
             if (r1, r2, c1, c2) != (0, 0, 0, 0):
                 coordinates.append((c1, r1, c2, r2))
         bounds = struct.pack('<IIII', min(v[1] for v in coordinates), max(v[3] for v in coordinates), min(v[0] for v in coordinates), max(v[2] for v in coordinates))
-        if dimension is not None and dimension[0].data_end <= begin.header_start:
+        if dimension is not None and dimension[1] <= begin_start:
             # Before the sheet data, so its offsets are unchanged in ``patched``.
-            record = dimension[0]
-            patched = patched[:record.header_start] + build_record(0x94, bounds) + patched[record.data_end:]
+            patched = patched[:dimension[0]] + build_record(0x94, bounds) + patched[dimension[1]:]
         else:
             patched = replace_records(patched, {0x94}, build_record(0x94, bounds), before=(0x85, 0x91))
         updates: dict[str, Any] = {path: patched}

@@ -605,7 +605,6 @@ impl State {
         };
         let none = py.None().into_bound(py);
         let style = style.into_pyobject(py)?.into_any();
-        let dirty = PyBool::new(py, false).to_owned().into_any();
         let sheet = m.sheet.bind(py);
         // The row slot is set once the whole row parsed.
         let cell = m.cell.new_cell(
@@ -621,7 +620,6 @@ impl State {
                 Some(&none),
                 Some(&none),
                 Some(&none),
-                Some(&dirty),
             ],
         )?;
         m.row_cells.push(cell.unbind());
