@@ -9,6 +9,7 @@ from ._errors import CellError
 from ._untrusted import check_column_span
 from ._xlsb_formulas import FormulaContext, ERRORS, decode_formula, read_parsed
 from ._xlsb_metadata import read_wide
+from ._xlsb_table_part import table_catalog
 from ._xlsx_read import rows_in_place
 from .biff_reader import BiffReader
 from .biff_utils import iter_record_payloads, iter_records_stream
@@ -111,7 +112,10 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
         path = reader._sheet_part(sheet_name)
         if path is None:
             return  # a chartsheet: no cells
-    context = FormulaContext(reader.get_sheet_names(), reader._archive.read('xl/workbook.bin'), reader.read_part) if not data_only else None
+    context = FormulaContext(
+        reader.get_sheet_names(), reader._archive.read('xl/workbook.bin'), reader.read_part,
+        tables=lambda: table_catalog(reader._archive.namelist(), reader.read_part),
+    ) if not data_only else None
     groups: dict[Any, Any] = {}
     current_row: int | None = None
     cells: list[Any] = []

@@ -155,7 +155,8 @@ column formulas, formats, filter criteria) and the parts of the tables you did n
 touch keep their bytes. Not saved: a table with another number of columns (the
 range's width must stay) raises `UnsupportedFeatureError`, and so does renaming or
 removing a table in a workbook that holds pivot tables or slicers, which would be
-left pointing at the old table. Formulas that use a table's name are not rewritten.
+left pointing at the old table, and removing a table that a formula refers to. A
+binary workbook names a table in a formula by its id, so renaming one is safe.
 
 ⁶ The title, axis titles, legend position, series titles and colours of a
 loaded chart can be changed; the rest of its XML is kept.

@@ -61,19 +61,26 @@ def read_parsed(data, offset=0):
     return data[offset + 4:end], data[end + 4:end + 4 + extra_length], end + 4 + extra_length
 
 
+def _syntax_error(text, end):
+    message = f"unsupported XLSB formula syntax near {text[end:end + 24]!r}"
+    if "[" in text[max(end - 1, 0):end + 24]:
+        message += " (a reference to a table, Table[Column], is read from an XLSB but cannot be written yet)"
+    return UnsupportedFeatureError(message)
+
+
 class _Parser:
     def __init__(self, text):
         self.tokens: list[str | None] = []
         end = 0
         for match in _LEX.finditer(text):
             if match.start() != end:
-                raise UnsupportedFeatureError(f"unsupported XLSB formula syntax near {text[end:end + 24]!r}")
+                raise _syntax_error(text, end)
             token = match[0]
             end = match.end()
             if not token.isspace():
                 self.tokens.append(token)
         if end != len(text):
-            raise UnsupportedFeatureError(f"unsupported XLSB formula syntax near {text[end:end + 24]!r}")
+            raise _syntax_error(text, end)
         self.tokens.append(None)
         self.index = 0
 
@@ -375,6 +382,11 @@ def decode_formula(data, context, *, sheet=None, origin=(0, 0), name_formula=Fal
             push(str(struct.unpack('<H', take(2))[0]))
         elif token == 0x1F:
             push(format(struct.unpack('<d', take(8))[0], '.15g'))
+        elif token == 0x18:
+            if take(1)[0] != 0x19:  # PtgList; the other extended tokens are not read
+                raise UnsupportedFeatureError("unsupported XLSB formula token 0x18")
+            _ixti, list_flags, ident, first, last = struct.unpack('<HHIHH', take(12))
+            push(context.table_reference(ident, list_flags, first, last))
         elif token == 0x19:
             flags = take(1)[0]
             value = struct.unpack('<H', take(2))[0]
@@ -431,6 +443,39 @@ def decode_formula(data, context, *, sheet=None, origin=(0, 0), name_formula=Fal
     return stack[0][0]
 
 
+# PtgList flags ([MS-XLSB] 2.5.97.52): bits 0-1 say how the columns are given, the others
+# which rows. Excel lists the rows in this order.
+_LIST_ROWS = ((0x08, '#Headers'), (0x10, '#Data'), (0x20, '#Totals'), (0x04, '#All'), (0x40, '#This Row'))
+_LIST_ESCAPE = re.compile(r"(['#\[\]@])")
+
+
+def structured_reference(table, columns, flags, first, last):
+    """``Table[[#Data],[Col]]`` as Excel writes it to a file (``[@Col]`` is ``[[#This Row],[Col]]``).
+
+    ``first`` and ``last`` are the 0-based positions of the columns in the table.
+    """
+    mode = flags & 3
+    if mode == 3:
+        raise ValueError("invalid XLSB structured reference")
+    parts = [f'[{label}]' for bit, label in _LIST_ROWS if flags & bit]
+    if mode:
+        if not (0 <= first < len(columns) and first <= last < len(columns)):
+            raise ValueError("invalid XLSB structured reference column")
+        labels = [_LIST_ESCAPE.sub(r"'\1", columns[index]) for index in ((first,) if mode == 1 else (first, last))]
+        parts.append('[' + labels[0] + ']' if mode == 1 else '[' + labels[0] + ']:[' + labels[1] + ']')
+    if not parts:
+        return table
+    if len(parts) == 1:
+        text = parts[0]
+        # A single column is [Col]; a name that begins or ends with a space needs its own brackets.
+        if mode == 1 and (text[1:-1] != text[1:-1].strip()):
+            text = '[' + text + ']'
+        elif mode == 2:
+            text = '[' + text + ']'
+        return table + text
+    return table + '[' + ','.join(parts) + ']'
+
+
 # BrtName's fHidden flag ([MS-XLSB] 2.4.691).
 _NAME_HIDDEN = 0x1
 
@@ -471,8 +516,11 @@ def external_sheet_names(part: bytes | None) -> list[str]:
 class FormulaContext:
     """``parts`` (path -> bytes or None) lets references to other workbooks show their sheet names."""
 
-    def __init__(self, sheets, workbook=None, parts=None):
+    def __init__(self, sheets, workbook=None, parts=None, *, tables=None):
         self._sheets = sheets
+        # ``tables()`` gives {table id: (name, column names)}, for structured references.
+        self._tables = tables
+        self._table_catalog: dict[int, tuple[str, list[str]]] | None = None
         self.names = []
         self.links = []
         self.xti = []
@@ -560,6 +608,15 @@ class FormulaContext:
 
     def _scope(self, entry):
         return self.sheets[entry.scope] if isinstance(entry.scope, int) else entry.scope
+
+    def table_reference(self, ident, flags, first, last):
+        """The text of a structured reference (PtgList) to the table with id ``ident``."""
+        if self._table_catalog is None:
+            self._table_catalog = self._tables() if self._tables is not None else {}
+        if ident not in self._table_catalog:
+            raise UnsupportedFeatureError(f"a formula refers to a table (id {ident}) that the workbook does not hold")
+        name, columns = self._table_catalog[ident]
+        return structured_reference(name, columns, flags, first, last)
 
     def name_reference(self, title, scope=None, *, qualified=False):
         if scope is not None:

@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workbook with pivot tables or slicers, raise `UnsupportedFeatureError` before anything is written.
   Until now any such edit was refused.
 
+- Formulas that refer to tables are read from an XLSB: `SUM(Table1[Qty])`,
+  `Table1[[#Totals],[Qty]]`, `Table1[[#Headers],[#Data],[Qty]]`, column ranges and `[@Col]` (as
+  `Table1[[#This Row],[Col]]`, the text an XLSX file holds), with the escapes Excel uses in a column
+  name. This includes the totals row and the calculated columns of every table that Excel saves.
+  Writing such a formula to an XLSB still raises `UnsupportedFeatureError`, now with that reason.
+  Removing a table that a formula refers to is refused; renaming one is safe, because a binary
+  workbook names the table by its id.
+
 ### Changed
 
 - `ExcelReader.get_rows()` on XLSB returns rows of the same shape as on XLSX, by every path (bulk,
@@ -47,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `load_workbook()` and `ExcelReader.get_rows(data_only=False)` failed on a binary workbook from Excel
+  with a table that has a totals row or a calculated column (`unsupported XLSB formula token 0x18`),
+  and so on any formula that uses a table by name. `data_only=True` was not affected.
 - `DefinedName.comment` was dropped by every XLSX and XLSB writer, updater and reader: the attribute
   existed but was neither written nor read. It is now saved as the `comment` attribute of
   `<definedName>` and as the comment string of `BrtName` (Excel shows it in the Name Manager and

@@ -9,6 +9,7 @@ header. Both use this module, so the updater does not load the object model.
 from __future__ import annotations
 
 import struct
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 from ._xlsb_metadata import read_wide, records, wide_string
@@ -189,3 +190,24 @@ def patch_table_part(data: bytes, edit: TableEdit) -> bytes:
     if not seen_list or column != len(edit.column_names):
         raise ValueError("the table part does not match the edit (number of columns)")
     return b"".join(out)
+
+
+def table_catalog(names: Iterable[str], read: Callable[[str], bytes | None]) -> dict[int, tuple[str, list[str]]]:
+    """The tables of a package by id: ``{id: (display name, column names)}``.
+
+    ``names`` are the package's part names and ``read(name)`` gives a part's bytes.
+    A structured reference in a formula names its table by this id and its columns
+    by their positions. A part that cannot be read contributes nothing.
+    """
+    catalog: dict[int, tuple[str, list[str]]] = {}
+    for name in names:
+        if not (name.startswith("xl/tables/") and name.endswith(".bin")):
+            continue
+        try:
+            data = read(name)
+            part = parse_table_part(data) if data else None
+        except (struct.error, IndexError, TypeError, ValueError):
+            part = None
+        if part is not None and part.name:
+            catalog[part.id] = (part.name, [column.name or "" for column in part.columns])
+    return catalog

@@ -21,6 +21,7 @@ from ._accel import read_xlsb_shared_strings as _accel_read_sst
 from ._accel import read_xlsx_shared_strings as _accel_read_xlsx_sst
 from ._text import xstring_unescape
 from ._xlsb_formulas import ERRORS as _XLSB_ERRORS, FormulaContext
+from ._xlsb_table_part import table_catalog
 from ._xlsb_read import _date_or_number
 from ._xlsb_metadata import parse_comments
 from .comments import find_comment_parts, read_comments
@@ -321,7 +322,10 @@ class ExcelReader:
     def get_defined_names(self) -> list[DefinedName]:
         """Return global and worksheet-local user names (not built-in names)."""
         if self._is_xlsb:
-            return FormulaContext(self.get_sheet_names(), self._zip().read('xl/workbook.bin'), self.read_part).defined_names()
+            return FormulaContext(
+                self.get_sheet_names(), self._zip().read('xl/workbook.bin'), self.read_part,
+                tables=lambda: table_catalog(self._zip().namelist(), self.read_part),
+            ).defined_names()
         return read_defined_names(self._zip().read("xl/workbook.xml"), self.get_sheet_names())
 
     def _open_xlsx(self, path: str) -> None:

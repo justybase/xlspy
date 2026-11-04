@@ -7,10 +7,11 @@ from xlspy import ExcelTable, load_workbook
 pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 XL_XLSB = 50
+XL_TOTALS_SUM = 1
 
 
 def _excel_file(excel, path):
-    """Two tables written by Excel; the first has no filter buttons."""
+    """Two tables written by Excel; the first has a totals row, a calculated column and no filter buttons."""
     book = excel.Workbooks.Add()
     try:
         sheet = book.Worksheets(1)
@@ -21,6 +22,9 @@ def _excel_file(excel, path):
         first = sheet.ListObjects.Add(1, sheet.Range("A1:C6"), None, 1)
         first.Name = "First"
         first.ShowAutoFilterDropDown = False
+        first.ListColumns(3).DataBodyRange.Formula = "=[@qty]*2"
+        first.ShowTotals = True
+        first.ListColumns(2).TotalsCalculation = XL_TOTALS_SUM
         sheet.Range("E1:F1").Value = ("code", "n")
         for row in range(2, 5):
             sheet.Range(f"E{row}:F{row}").Value = (f"c{row}", row)
@@ -51,7 +55,9 @@ def test_excel_opens_the_edited_tables_and_keeps_their_totals_and_formulas(tmp_p
     data = book.Worksheets("Data")
     assert data.ListObjects.Count == 3
     sales = data.ListObjects("Sales")
-    assert sales.Range.Address == "$A$1:$C$6"
+    assert sales.Range.Address == "$A$1:$C$7"
+    assert sales.ShowTotals and sales.ListColumns(2).TotalsCalculation == XL_TOTALS_SUM
+    assert sales.ListColumns(3).DataBodyRange.Cells(1, 1).Formula == "=[@qty]*2"
     assert not sales.ShowAutoFilterDropDown  # a record the edit did not touch
     second = data.ListObjects("Second")
     assert second.Range.Address == "$E$1:$F$6"
@@ -63,10 +69,12 @@ def test_excel_opens_a_file_whose_tables_were_removed(tmp_path, excel, open_work
     source = tmp_path / "excel.xlsb"
     _excel_file(excel, source)
     workbook = load_workbook(source)
-    workbook.active.tables.remove("First")
+    workbook.active.tables.remove("Second")
     out = tmp_path / "out.xlsb"
     workbook.save(out)
     workbook.close()
     data = open_workbook(out).Worksheets("Data")
-    assert data.ListObjects.Count == 1 and data.ListObjects(1).Name == "Second"
+    assert data.ListObjects.Count == 1 and data.ListObjects(1).Name == "First"
     assert data.Range("A2").Value == "r2"
+    assert data.ListObjects(1).ShowTotals  # the formulas of the table still calculate
+    assert data.Range("B7").Value == sum(range(2, 7))

@@ -23,6 +23,7 @@ from ._xlsb_metadata import (
     workbook_protection_bin, check_merged_refs, request_recalculation,
 )
 from ._xlsb_formulas import FormulaContext, formula_cell
+from ._xlsb_table_part import table_catalog
 from ._xlsx_edit import XlsxEditMixin, _HYPERLINK_TYPE as _HYPERLINK_TYPE
 from . import _accel
 from .biff_utils import build_record, iter_records
@@ -202,7 +203,10 @@ class XlsbEditMixin(XlsxEditMixin):
 
     def get_defined_names(self) -> list[DefinedName]:
         """The workbook's defined names."""
-        return FormulaContext(self._sheets, self._package.get('xl/workbook.bin'), self._part_or_none).defined_names()
+        return FormulaContext(
+            self._sheets, self._package.get('xl/workbook.bin'), self._part_or_none,
+            tables=lambda: table_catalog(self._package.names(), self._part_or_none),
+        ).defined_names()
 
     def set_defined_name(self, definition: DefinedName) -> None:
         """Add a defined name, replacing one with the same name and scope."""

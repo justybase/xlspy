@@ -12,6 +12,7 @@ import struct
 from .._safe_xml import fromstring as safe_fromstring
 
 from .._xlsb_formulas import FormulaContext
+from .._xlsb_table_part import table_catalog
 from .._xlsb_metadata import read_wide
 from itertools import chain as _chain
 
@@ -80,6 +81,7 @@ def _load_cells(sheet, reader, name, sheet_data, data_only):
     if formulas:
         context = None if data_only else FormulaContext(
             reader.get_sheet_names(), reader._archive.read("xl/workbook.bin"), reader.read_part,
+            tables=lambda: table_catalog(reader._archive.namelist(), reader.read_part),
         )
         shared = formula_groups(groups)
         for row, kind, payload in formulas:
@@ -290,7 +292,7 @@ def _load_sheet(
     if (records.validations or records.conditional) and formula_context is None:
         formula_context = FormulaContext(
             updater.get_sheet_names(), handle.package.get("xl/workbook.bin"),
-            handle.part_or_none,
+            handle.part_or_none, tables=lambda: table_catalog(handle.package.names(), handle.part_or_none),
         )
     _read_rules(sheet, records, formula_context, workbook._styles)
     _attach_xlsb_comments(sheet, reader, name)

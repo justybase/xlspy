@@ -10,6 +10,7 @@ bytes; a removed table takes its part, relationship and content type with it.
 from __future__ import annotations
 from .._package_handle import PackageHandle
 
+import re
 import struct
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
@@ -113,6 +114,22 @@ def _edit_for(sheet: Worksheet, table: Any, part: TablePart) -> TableEdit:
     )
 
 
+def _is_referred_to(package: _Package, ident: int) -> bool:
+    """True when a formula of the workbook holds a structured reference (PtgList) to table ``ident``.
+
+    The tokens are looked for in the bytes of the sheets and of the workbook part, so a chance
+    match of twelve bytes would refuse a removal that was safe, never allow an unsafe one.
+    """
+    # PtgExtend, PtgList, ixti (0), two bytes of flags, the table id.
+    pattern = re.compile(re.escape(b"\x18\x19\x00\x00") + b".." + re.escape(struct.pack("<I", ident)), re.S)
+    for name in package.names:
+        if name == "xl/workbook.bin" or (name.startswith("xl/") and name.endswith(".bin") and "/worksheets/" in name):
+            data = package.get(name)
+            if data and pattern.search(data):
+                return True
+    return False
+
+
 def _other_tables(package: _Package, own: set[str | None]) -> list[Any]:
     """The tables of the workbook's other sheets, whose names and ids are taken."""
     others = []
@@ -166,6 +183,13 @@ def sync_tables(updater: XlsbUpdater, sheet: Worksheet) -> None:
             raise UnsupportedFeatureError(
                 f"table {parsed[index].name!r}: changing its number of columns cannot be saved "
                 "into a loaded XLSB workbook yet"
+            )
+
+    for index in sorted(removed):
+        if _is_referred_to(package, parsed[index].id):
+            raise UnsupportedFeatureError(
+                f"table {parsed[index].name!r} is used by a formula, so removing it cannot be saved "
+                "into a loaded XLSB workbook yet: the formula would refer to a table that is gone"
             )
 
     # Every check comes before the first change.

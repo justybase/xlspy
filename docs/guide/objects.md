@@ -628,7 +628,10 @@ a clickable link from a formula, `Formula('HYPERLINK("#Other!A1","Go")')`. A
 `Hyperlink` cell works in XLSB as well. See [Hyperlinks](#hyperlinks) for the
 differences and an example.
 
-Structured table references, external-workbook references, inline array
+Structured table references (`Table1[Col]`, `Table1[[#Totals],[Col]]`, including
+the `[@Col]` form and the formulas of a totals row or a calculated column) are
+read from a binary workbook as the text a file stores (`Table1[[#This Row],[Col]]`);
+writing a formula with one raises an explicit error. External-workbook references, inline array
 constants and unsupported BIFF12 formula tokens raise an explicit error.
 `LET` and the `LAMBDA` family remain unsupported. These limits also apply
 when reading formula text; reading cached values does not parse formula tokens.
