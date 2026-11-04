@@ -132,3 +132,14 @@ def test_grouping_columns_and_rows_as_openpyxl_does() -> None:
     sheet.row_dimensions.group(2, 4, hidden=True)
     assert all(sheet.row_dimensions[row].hidden for row in (2, 3, 4))
     assert sheet.row_dimensions[5].hidden is False
+
+
+def test_a_range_replaced_in_place_is_found_at_its_new_place():
+    from xlspy.workbook._coords import CellRange, MultiCellRange
+
+    merged = MultiCellRange(["A1:B2", "D1:E2", "G1:H2"])
+    assert merged.first_overlapping((3, 0, 3, 0)) is not None
+    merged.ranges[1] = CellRange("C1:C3")  # same length, middle item, no change of the last one
+    assert merged.first_overlapping((3, 0, 3, 0)) is None
+    assert merged.first_overlapping((2, 0, 2, 0)) == CellRange("C1:C3")
+    assert "D1" not in merged and "C2" in merged

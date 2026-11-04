@@ -207,40 +207,111 @@ class CellRange(str):
         return other.issubset(self)
 
 
+class _RangeList(list):
+    """A list that counts its changes, so an index built from it knows when it is stale.
+
+    Any change, including a replacement of one item in place, moves ``version`` on.
+    """
+
+    def __init__(self, items: Iterable[CellRange] = ()) -> None:
+        super().__init__(items)
+        self.version = 0
+
+    def _changed(self) -> None:
+        self.version += 1
+
+    def __setitem__(self, index, value) -> None:
+        super().__setitem__(index, value)
+        self._changed()
+
+    def __delitem__(self, index) -> None:
+        super().__delitem__(index)
+        self._changed()
+
+    def __iadd__(self, other):
+        result = super().__iadd__(other)
+        self._changed()
+        return result
+
+    def __imul__(self, count):
+        result = super().__imul__(count)
+        self._changed()
+        return result
+
+    def append(self, value) -> None:
+        super().append(value)
+        self._changed()
+
+    def extend(self, values) -> None:
+        super().extend(values)
+        self._changed()
+
+    def insert(self, index, value) -> None:
+        super().insert(index, value)
+        self._changed()
+
+    def remove(self, value) -> None:
+        super().remove(value)
+        self._changed()
+
+    def pop(self, index=-1):
+        value = super().pop(index)
+        self._changed()
+        return value
+
+    def clear(self) -> None:
+        super().clear()
+        self._changed()
+
+    def sort(self, *args, **kwargs) -> None:
+        super().sort(*args, **kwargs)
+        self._changed()
+
+    def reverse(self) -> None:
+        super().reverse()
+        self._changed()
+
+
 class MultiCellRange:
     """Several cell ranges, such as a sheet's merged cells, in the order added."""
     def __init__(self, ranges: Iterable[str] | None = None) -> None:
-        self.ranges: list[CellRange] = []
+        self._ranges = _RangeList()
         self._index = RangeIndex()
         self._present: set[str] = set()
-        self._indexed = 0
-        self._last: CellRange | None = None
+        self._synced = -1
         if ranges is not None:
             for value in ranges:
                 self.add(value)
 
+    @property
+    def ranges(self) -> list[CellRange]:
+        """The ranges in the order added. Code may change the list; the index follows it."""
+        return self._ranges
+
+    @ranges.setter
+    def ranges(self, value: Iterable[CellRange]) -> None:
+        self._ranges = _RangeList(value)
+
     def _sync(self) -> None:
-        """Catch up with ``ranges``, which is public: code may have changed it."""
-        ranges = self.ranges
-        if len(ranges) == self._indexed and (not ranges or ranges[-1] is self._last):
+        """Rebuild the index when ``ranges`` changed since it was last built."""
+        ranges = self._ranges
+        if self._synced == ranges.version:
             return
         self._index = RangeIndex()
         for cell_range in ranges:
             self._index.add(parse_cell_range(cell_range), cell_range)
         self._present = set(ranges)
-        self._indexed = len(ranges)
-        self._last = ranges[-1] if ranges else None
+        self._synced = ranges.version
 
     def add(self, value: str) -> None:
         """Add a range unless it is already present."""
         cell_range = CellRange(value)
         self._sync()
         if cell_range not in self._present:
-            self.ranges.append(cell_range)
+            self._ranges.append(cell_range)
             self._present.add(cell_range)
             self._index.add(parse_cell_range(cell_range), cell_range)
-            self._indexed += 1
-            self._last = cell_range
+            self._synced = self._ranges.version
 
     def remove(self, value: str) -> None:
         """Remove a range; raises ValueError when it is not present."""
@@ -248,11 +319,10 @@ class MultiCellRange:
         self._sync()
         if cell_range not in self._present:
             raise ValueError(f"range {value!r} is not merged")
-        self.ranges.remove(cell_range)
+        self._ranges.remove(cell_range)
         self._present.discard(cell_range)
         self._index.remove(parse_cell_range(cell_range), cell_range)
-        self._indexed -= 1
-        self._last = self.ranges[-1] if self.ranges else None
+        self._synced = self._ranges.version
 
     def first_overlapping(self, bounds: tuple[int, int, int, int]) -> CellRange | None:
         """The first range added that shares a cell with zero-based ``bounds``, or None."""
