@@ -35,7 +35,7 @@ CASES = [
     "write_xlsx", "write_xlsb",
     "read_xlsx", "read_xlsb",
     "load_xlsx", "load_xlsb",
-    "load_xlsx_styled", "load_xlsb_styled", "save_loaded_xlsb_styled",
+    "load_xlsx_styled", "load_xlsb_styled", "save_loaded_xlsx_styled", "save_loaded_xlsb_styled",
     "write_model_xlsx", "write_model_xlsb",
     "write_formula_hyperlink_xlsx",
     "read_xlsx_entities", "load_xlsx_entities",
@@ -287,8 +287,8 @@ def run_case(case, path, count, cols):
         workbook = load_workbook(path)
         result["seconds"] = time.perf_counter() - start
         workbook.close()
-    elif case == "save_loaded_xlsb_styled":
-        # Restyle every 50th row of a loaded styled XLSB, then time the in-place save.
+    elif case in ("save_loaded_xlsx_styled", "save_loaded_xlsb_styled"):
+        # Restyle every 50th row of a loaded styled workbook, then time the in-place save.
         from xlspy import Font, load_workbook
         _styled(path, count, cols)
         workbook = load_workbook(path)
@@ -299,7 +299,7 @@ def run_case(case, path, count, cols):
             sheet.cell(row=row, column=2).value = -row
         before = rss_mb()
         start = time.perf_counter()
-        workbook.save(path[:-5] + "-out.xlsb")
+        workbook.save(path[:-5] + "-out" + path[-5:])
         result["seconds"] = time.perf_counter() - start
         workbook.close()
     elif case in ("load_xlsx", "load_xlsb", "load_xlsx_styled", "load_xlsb_styled"):

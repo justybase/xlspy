@@ -85,7 +85,8 @@ def test_patch_cells_gives_cells_without_r_their_position() -> None:
         refs.append(ref)
         return cell_xml.replace("<c", f'<c s="{len(refs)}"', 1)
 
-    result = patch_cells(xml, patch)
+    assert patch_cells(xml, patch, set()) == xml
+    result = patch_cells(xml, patch, {2, 3})
     assert refs == ["B2", "C2", "A3"]
     assert '<c s="2"/>' in result and result.startswith(f"<worksheet {NS}>")
 

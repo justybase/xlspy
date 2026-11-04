@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Saving a loaded XLSX after cell edits took time in the square of the sheet's size: 86 s after
+  1,000 edits of a 4,000 x 20 sheet, and hours at 50,000 rows. The same save takes 0.33 s now, with
+  the same bytes in the file. The pattern for an XML element (`element_pattern`) ran to the end of
+  the part for every element of a sheet without a namespace prefix (a backreference to a prefix that
+  was not there), and `update_cells` went through every pending edit for every row. Notes, links
+  and defined names use that pattern too. `update_cells` and the style edit also parsed the sheet up
+  to three times, and walked all its cells to find the edited ones. The rows of `<sheetData>` are
+  now walked a tag at a time.
 - A centred header under an autofilter or table drop-down button (`Alignment(horizontal="center")`)
   got room for the button on one side only, so its text ran into the button. Excel's *AutoFit*
   keeps centred text clear of the button on both sides (32 pixels, not 16: measured at 100%

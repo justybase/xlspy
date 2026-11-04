@@ -106,9 +106,12 @@ def serialize_like(root, original) -> bytes:
 
 
 def element_pattern(tag: str) -> re.Pattern[str]:
+    # The prefix is asked for only when the opening tag has one: a backreference to
+    # an unset group never matches, so ".*?" would run to the end of the document
+    # for every element of an unprefixed part.
     return re.compile(
         rf"<(?P<prefix>[A-Za-z_][\w.-]*:)?{tag}\b[^>]*?"
-        rf"(?:/>|>.*?</(?P=prefix){tag}\s*>|>.*?</{tag}\s*>)", re.DOTALL,
+        rf"(?:/>|>.*?</(?(prefix)(?P=prefix)){tag}\s*>|(?(prefix)>.*?</{tag}\s*>|(?!)))", re.DOTALL,
     )
 
 

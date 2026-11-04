@@ -63,6 +63,12 @@ class PackageHandle:
         """The part path and XML of an XLSX worksheet."""
         return self._xlsx()._sheet_xml(name)
 
+    def sheet_text(self, name: str) -> tuple[str, str]:
+        """``sheet_xml`` without parsing the sheet to check it: for a sheet the model
+        has loaded, or that an edit has just parsed.
+        """
+        return self._xlsx()._sheet_text(name)
+
     def sheet_bin(self, name: str) -> tuple[str, bytes]:
         """The part path and records of an XLSB worksheet."""
         return self._xlsb()._sheet_bin(name)

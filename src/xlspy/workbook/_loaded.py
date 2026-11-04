@@ -649,27 +649,25 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
     if not styles:
         return
     handle = PackageHandle(updater)
-    path, xml = handle.sheet_xml(name)
+    path, xml = handle.sheet_text(name)
     existing: set[str] = set()
-
-    def collect_ref(ref, cell_xml):
-        existing.add(ref)
-        return cell_xml
-
-    patch_cells(xml, collect_ref)
-    missing = [ref for ref in styles if ref not in existing]
-    if missing:
-        updater.update_cells(name, dict.fromkeys(missing))
-        path, xml = handle.sheet_xml(name)
+    rows = {parse_cell_range(ref)[1] + 1 for ref in styles}
 
     def patch_cell(ref, cell_xml):
+        existing.add(ref)
         if ref not in styles:
             return cell_xml
         opening = _required_match(re.match(r"<[^>]+>", cell_xml), "cell element")[0]
         return _set_attr(opening, "s", styles[ref]) + cell_xml[len(opening):]
 
-    xml = patch_cells(xml, patch_cell)
-    handle.apply_parts({path: xml})
+    patched = patch_cells(xml, patch_cell, rows)
+    missing = [ref for ref in styles if ref not in existing]
+    if missing:
+        # Cells the sheet does not have yet: made empty, then styled like the rest.
+        updater.update_cells(name, dict.fromkeys(missing))
+        path, xml = handle.sheet_text(name)
+        patched = patch_cells(xml, patch_cell, rows)
+    handle.apply_parts({path: patched})
 
 
 def _value_for_save(cell, date_1904: bool):

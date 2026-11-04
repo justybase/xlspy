@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from collections.abc import Iterable, Mapping, MutableMapping
+from collections.abc import Collection, Iterable, Mapping, MutableMapping, Sequence
 import datetime
 from decimal import Decimal
 import math
@@ -28,7 +28,7 @@ from .comments import (
 from .excel_dates import datetime_to_serial
 from .formulas import Formula
 from .hyperlinks import Hyperlink
-from .refs import parse_cell_range, column_label
+from .refs import _column_index, parse_cell_range, column_label
 from .updater_utils import unwrap_cell, replace_or_add_xml_attribute
 from .rich_text import CellRichText
 
@@ -76,14 +76,23 @@ class XlsxEditMixin:
         # The package owns the write-back transaction (ZipPackage.apply_parts).
         self._package.apply_parts(parts, removed)
 
-    def _sheet_xml(self, sheet_name: str) -> tuple[str, str]:
+    def _sheet_text(self, sheet_name: str) -> tuple[str, str]:
+        """The part path and XML of a sheet, unchecked and unparsed."""
         try:
             path = self._sheets[sheet_name]
         except KeyError as exc:
             raise KeyError(f"Worksheet not found: {sheet_name}") from exc
-        xml = self._package.get(path).decode("utf-8")
-        if safe_fromstring(xml).tag != f"{{{MAIN}}}worksheet":
+        return path, self._package.get(path).decode("utf-8")
+
+    def _sheet_root(self, sheet_name: str) -> tuple[str, str, Any]:
+        path, xml = self._sheet_text(sheet_name)
+        root = safe_fromstring(xml)
+        if root.tag != f"{{{MAIN}}}worksheet":
             raise ValueError(f"{sheet_name!r} is not a worksheet")
+        return path, xml, root
+
+    def _sheet_xml(self, sheet_name: str) -> tuple[str, str]:
+        path, xml, _ = self._sheet_root(sheet_name)
         return path, xml
 
     def get_comments(self, sheet_name: str) -> dict[str, Comment]:
@@ -300,7 +309,7 @@ class XlsxEditMixin:
         """Update sparse cells, preserving styles, notes and untouched cell XML."""
         if not isinstance(cells, Mapping):
             raise TypeError("cells must map cell references to values")
-        path, xml = self._sheet_xml(sheet_name)
+        path, xml, root = self._sheet_root(sheet_name)
         values = {}
         for ref, value in cells.items():
             ref = cell_ref(ref)
@@ -309,17 +318,32 @@ class XlsxEditMixin:
             values[ref] = unwrap_cell(value)
         if not values:
             return
-        root = safe_fromstring(xml)
-        cell_nodes = []
+        # The cells being edited, and the bounds of all of them: a sheet has far
+        # more cells than an edit has targets.
+        edited_nodes = []
+        edited_rows = {parse_cell_range(ref)[1] + 1 for ref in values}
+        cell_bounds = None
         next_row = 1
         for row_node in root.findall(f"{{{MAIN}}}sheetData/{{{MAIN}}}row"):
             row_number = int(row_node.get("r", next_row))
             next_row = row_number + 1
             next_column = 0
             for cell in row_node.findall(f"{{{MAIN}}}c"):
-                ref = cell_ref(cell.get("r", f"{column_label(next_column)}{row_number}"))
-                next_column = parse_cell_range(ref)[0] + 1
-                cell_nodes.append((ref, cell))
+                position, column, row = _located_cell(cell.get("r"), next_column, row_number, edited_rows)
+                next_column = column + 1
+                if position in values:
+                    edited_nodes.append((position, cell))
+                if cell_bounds is None:
+                    cell_bounds = [column, row, column, row]
+                else:
+                    if column < cell_bounds[0]:
+                        cell_bounds[0] = column
+                    elif column > cell_bounds[2]:
+                        cell_bounds[2] = column
+                    if row < cell_bounds[1]:
+                        cell_bounds[1] = row
+                    elif row > cell_bounds[3]:
+                        cell_bounds[3] = row
         for merge in root.findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell"):
             bounds = parse_cell_range(merge.attrib["ref"])
             for ref in values:
@@ -328,8 +352,8 @@ class XlsxEditMixin:
                     raise ValueError("merged cells must be updated through their top-left cell")
         # Refuse edits into array/shared formula groups; writing one member alone
         # would leave the other cells dependent on a missing formula master.
-        shared_ids = {f.get("si") for ref, c in cell_nodes
-                      if ref in values for f in c.findall(f"{{{MAIN}}}f") if f.get("t") == "shared"}
+        shared_ids = {f.get("si") for _, c in edited_nodes
+                      for f in c.findall(f"{{{MAIN}}}f") if f.get("t") == "shared"}
         for formula in root.iter(f"{{{MAIN}}}f"):
             if formula.get("t") == "shared" and formula.get("si") in shared_ids:
                 raise ValueError("editing members of shared formula groups is unsupported")
@@ -347,14 +371,15 @@ class XlsxEditMixin:
         # Validate and encode all input before staging any mutation.
         encoded = {ref: _cell_xml_value(value, self._date_1904, prefix) for ref, value in values.items()}
         pending = dict(encoded)
+        by_row_targets: dict[int, dict[str, Any]] = {}
+        for ref, value in encoded.items():
+            by_row_targets.setdefault(parse_cell_range(ref)[1] + 1, {})[ref] = value
 
         def patch_row(row_num: int, row_xml: str) -> str:
-            targets = {ref: value for ref, value in pending.items() if parse_cell_range(ref)[1] + 1 == row_num}
-            if not targets:
-                return row_xml
-            return _patch_row(row_xml, targets, pending, prefix, row_num)
+            # Popped, so a second <row> with the same number stays as it is.
+            return _patch_row(row_xml, by_row_targets.pop(row_num), pending, prefix, row_num)
 
-        body = patch_rows(sheet_data[0], patch_row)
+        body = patch_rows(sheet_data[0], patch_row, by_row_targets.keys())
         # The cells left in ``pending`` are in rows the sheet does not have yet.
         by_row: dict[int, list[str]] = {}
         for ref in pending:
@@ -366,17 +391,19 @@ class XlsxEditMixin:
         body = insert_rows(body, new_rows)
         xml = xml[:sheet_data.start()] + body + xml[sheet_data.end():]
         # Expand dimensions, never shrink existing coverage or filters/tables.
-        refs = list(values) + [ref for ref, _ in cell_nodes]
+        refs = list(values)
         dimension = root.find(f"{{{MAIN}}}dimension")
         if dimension is not None and dimension.get("ref"):
             refs.extend(dimension.attrib["ref"].split(":"))
-        spans = [parse_cell_range(ref) for ref in refs]
+        spans: list[Sequence[int]] = [parse_cell_range(ref) for ref in refs]
+        if cell_bounds is not None:
+            spans.append(cell_bounds)
         first = f"{column_label(min(b[0] for b in spans))}{min(b[1] for b in spans) + 1}"
         last = f"{column_label(max(b[2] for b in spans))}{max(b[3] for b in spans) + 1}"
         xml = set_dimension_ref(xml, f"{first}:{last}")
         updates = {path: xml}
         removed: list[str] = []
-        removed_shared_refs = sum(ref in values and c.get("t") == "s" for ref, c in cell_nodes)
+        removed_shared_refs = sum(c.get("t") == "s" for _, c in edited_nodes)
         if removed_shared_refs:
             rels = safe_fromstring(self._package.get("xl/_rels/workbook.xml.rels"))
             for relationship in rels:
@@ -390,7 +417,7 @@ class XlsxEditMixin:
                     if "count" in attrs:
                         updated_tag = replace_or_add_xml_attribute(opening[0], "count", max(0, int(attrs["count"]) - removed_shared_refs))
                         updates[part] = strings[:opening.start()] + updated_tag + strings[opening.end():]
-        old_formula = any(ref in values and c.find(f"{{{MAIN}}}f") is not None for ref, c in cell_nodes)
+        old_formula = any(c.find(f"{{{MAIN}}}f") is not None for _, c in edited_nodes)
         if old_formula or any(isinstance(value, Formula) for value in values.values()):
             self._recalculate(updates, removed)
         self._apply_parts(updates, removed)
@@ -495,6 +522,32 @@ def _cell_xml(ref: str, encoded: tuple[str | None, str], prefix: str, old: str |
             inner = element_pattern(tag).sub("", inner)
         content += inner
     return opening + content + f'</{prefix}c>'
+
+
+# An already normal reference, the usual case: no ``$``, upper case, no range.
+_PLAIN_CELL_REF = re.compile(r"([A-Z]{1,3})([1-9][0-9]{0,6})")
+
+
+def _located_cell(reference: str | None, next_column: int, row_number: int,
+                   wanted_rows: Collection[int]) -> tuple[str | None, int, int]:
+    """A cell's normal reference and zero-based column and row. Without an ``r``
+    attribute it is at the column after the previous cell in the row, and the
+    reference is only made for the ``wanted_rows`` (None otherwise).
+    """
+    if reference is not None:
+        match = _PLAIN_CELL_REF.fullmatch(reference)
+        if match is not None:
+            column = _column_index(match[1])
+            row = int(match[2]) - 1
+            if column < 16384 and row < 1048576:
+                return reference, column, row
+    else:
+        if next_column < 16384 and 1 <= row_number <= 1048576 and row_number not in wanted_rows:
+            return None, next_column, row_number - 1
+        reference = f"{column_label(next_column)}{row_number}"
+    reference = cell_ref(reference)
+    column, row, _, _ = parse_cell_range(reference)
+    return reference, column, row
 
 
 def _patch_row(row_xml: str, targets: dict[str, Any], pending: dict[str, Any], prefix: str, row_num: int) -> str:
