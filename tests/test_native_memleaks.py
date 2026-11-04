@@ -27,7 +27,6 @@ from xlspy import CellRichText, ExcelReader, XlsbWriter, XlsxWriter
 from xlspy import _xlsx_read
 from xlspy._accel import (
     HAVE_NATIVE,
-    calc_column_widths,
     encode_xlsb_row,
     encode_xlsb_sst,
     encode_xlsx_row,
@@ -234,13 +233,12 @@ def test_row_encode_no_growth():
 
 
 @needs_native
-def test_prescan_and_widths_no_growth():
+def test_prescan_no_growth():
     rows = [_mixed_row(i) for i in range(200)]
 
     def run():
         for row in rows:
             xlsb_row_has_formatted(row)
-        calc_column_widths(rows, 9)
 
     assert_no_tracemalloc_growth(run, iters=30, allowance_kb=256.0)
 

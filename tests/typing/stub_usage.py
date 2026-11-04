@@ -15,7 +15,6 @@ def _accepted_calls() -> None:
     core.encode_xlsb_sst(["a", "b"], 2, 2)
     core.read_xlsb_shared_strings(b"")
     core.read_xlsx_shared_strings(b"")
-    core.calc_column_widths([["a", 1.5]], 4)
     meter = core.WidthMeter(lambda cell, style, header: 0, lambda style: (0, None), [bool])
     meter.add_kind(0, ({"a": 7}, 0, True, False, lambda char: 7, None, 0))
     meter.add(["a", 1.5], {0: None})

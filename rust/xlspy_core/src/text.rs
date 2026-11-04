@@ -28,15 +28,6 @@ impl<'a> CodePoints<'a> {
         })
     }
 
-    /// Code points before the first `\n` (the width of a cell's first line).
-    pub fn first_line_len(&self) -> usize {
-        match self {
-            CodePoints::Ucs1(d) => d.iter().position(|&c| c == b'\n').unwrap_or(d.len()),
-            CodePoints::Ucs2(d) => d.iter().position(|&c| c == 0x0A).unwrap_or(d.len()),
-            CodePoints::Ucs4(d) => d.iter().position(|&c| c == 0x0A).unwrap_or(d.len()),
-        }
-    }
-
     /// Index of the first surrogate code point (0xD800..=0xDFFF), if any.
     pub fn first_surrogate(&self) -> Option<usize> {
         match self {
@@ -134,8 +125,6 @@ mod tests {
                 points.write_utf16le(&mut out);
                 assert_eq!(out, python_utf16le(&s), "{text:?}");
                 assert_eq!(points.utf16_len(), out.len() / 2);
-                let first_line = text.chars().position(|c| c == '\n').unwrap();
-                assert_eq!(points.first_line_len(), first_line);
                 assert_eq!(points.first_surrogate(), None);
                 assert_eq!(decode_utf16le(py, &out).unwrap().to_cow().unwrap(), text);
             }

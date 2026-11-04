@@ -44,7 +44,6 @@ fn _rs_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(xlsx_sst::read_xlsx_shared_strings, m)?)?;
     m.add_class::<autofit::WidthMeter>()?;
     m.add_function(wrap_pyfunction!(autofit::general_number_text, m)?)?;
-    m.add_function(wrap_pyfunction!(widths::calc_column_widths, m)?)?;
     m.add_function(wrap_pyfunction!(widths::xlsb_row_has_formatted, m)?)?;
     m.add_function(wrap_pyfunction!(xlsb_write::encode_xlsb_row, m)?)?;
     m.add_function(wrap_pyfunction!(xlsb_write::encode_xlsb_row_inline, m)?)?;

@@ -34,7 +34,7 @@ if ACCEL_MODE not in _MODES:
     raise ImportError(f"XLSPY_ACCEL must be one of {sorted(_MODES)}, not {ACCEL_MODE!r}")
 
 _NATIVE_NAMES = (
-    "encode_xlsb_row", "encode_xlsb_row_inline", "calc_column_widths",
+    "encode_xlsb_row", "encode_xlsb_row_inline",
     "read_xlsb_worksheet", "read_xlsx_worksheet", "xlsb_row_has_formatted",
     "encode_xlsb_sst", "read_xlsb_shared_strings", "encode_xlsx_row",
     "read_xlsx_shared_strings",
@@ -91,12 +91,11 @@ if _native is not None:
     _register_types(_native)
 
 # True when the native backend provides the core readers and writers.
-HAVE_NATIVE = all(n in _impl for n in ("encode_xlsb_row", "calc_column_widths", "read_xlsb_worksheet"))
+HAVE_NATIVE = all(n in _impl for n in ("encode_xlsb_row", "read_xlsb_worksheet"))
 
 # Raw functions of the native module (None when it does not provide them).
 _native_encode_xlsb_row: Any = _impl.get("encode_xlsb_row")
 _native_encode_xlsb_row_inline: Any = _impl.get("encode_xlsb_row_inline")
-_native_calc_column_widths: Any = _impl.get("calc_column_widths")
 _native_read_xlsb_worksheet: Any = _impl.get("read_xlsb_worksheet")
 _native_read_xlsx_worksheet: Any = _impl.get("read_xlsx_worksheet")
 _native_row_has_formatted: Any = _impl.get("xlsb_row_has_formatted")
@@ -152,12 +151,6 @@ def encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_
             row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx, style_ids
         )
     return _native_encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx)
-
-
-def calc_column_widths(rows, max_cols):
-    if HAVE_NATIVE:
-        return _native_calc_column_widths(rows, max_cols)
-    return None
 
 
 def read_xlsb_worksheet(data, shared_strings, styles_list, date_num_fmts, date_1904=False):
