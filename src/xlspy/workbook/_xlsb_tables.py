@@ -181,7 +181,7 @@ def _other_tables(package: _Package, own: set[str | None]) -> list[Any]:
 
 @dataclass
 class PendingTable:
-    """A table the save adds: its id, name, column names and sheet, known before its part is written."""
+    """A table the save writes: its id, name, column names and sheet, known before its part is written."""
 
     table: Any
     ident: int
@@ -190,29 +190,80 @@ class PendingTable:
     sheet: str
 
 
-def plan_new_tables(workbook: Any, updater: XlsbUpdater) -> tuple[PendingTable, ...]:
-    """Give each table the sheets gain an id, in workbook order, before any formula is written.
+@dataclass(frozen=True)
+class TablePlan:
+    """The tables a loaded save adds, changes and removes, fixed before any formula is written.
 
-    A formula refers to a table by its id, and the formulas of a sheet are written before the
-    sheet's tables are; so the ids are fixed first, and the table parts are written with them.
+    A formula refers to a table by its id and to a column by its position, and the formulas of a
+    sheet are written before the sheet's tables are; so the ids, names and columns are fixed
+    first, and the formula context sees them while it encodes the formulas.
+    """
+
+    added: tuple[PendingTable, ...]
+    changed: tuple[PendingTable, ...]
+    removed: tuple[tuple[int, str], ...]
+
+    @property
+    def catalog(self) -> tuple[PendingTable, ...]:
+        """The entries that overlay the package's table catalog while formulas are written."""
+        return self.added + self.changed
+
+
+def plan_tables(workbook: Any, updater: XlsbUpdater) -> TablePlan:
+    """Give each table the sheets gain an id, in workbook order, and record the changed ones.
+
+    The catalog of a renamed table or column follows the model, so a formula added in the same
+    save can use the new name. A removed table leaves the catalog, so a new table can take its
+    name and a formula that still names the old table is refused.
     """
     package = _Package(updater)
+    handle = PackageHandle(updater)
     catalog = table_catalog(package.names, package.get)
     next_id = max(catalog, default=0) + 1
-    pending: list[PendingTable] = []
+    added: list[PendingTable] = []
+    changed: list[PendingTable] = []
+    removed: list[tuple[int, str]] = []
     for sheet in workbook._sheets:
-        saved = {id(table) for table in getattr(sheet, "_saved_table_objects", ())}
-        for table in sheet.tables:
-            if id(table) in saved:
+        current = list(sheet.tables)
+        current_ids = {id(table) for table in current}
+        saved = list(getattr(sheet, "_saved_table_objects", ()))
+        saved_ids = {id(table) for table in saved}
+        for table in current:
+            if id(table) in saved_ids:
                 continue
             excel = _as_excel_table(table)
             try:
                 columns: list[str] | None = table_column_names(excel, _header_row(sheet, excel) if excel.header_row else None)
             except ValueError:
                 columns = None  # the save reports it, in its own order of checks
-            pending.append(PendingTable(table, next_id, excel.display_name, columns, sheet.title))
+            added.append(PendingTable(table, next_id, excel.display_name, columns, sheet.title))
             next_id += 1
-    return tuple(pending)
+        if not saved:
+            continue
+        path = handle.sheets.get(sheet.title)
+        if path is None:
+            continue
+        data = package.get(path) or b""
+        listed = _listed(package, path, package.rels(path), data)
+        readable = [item for item in listed if item.parsed is not None]
+        if len(readable) != len(saved):
+            continue  # sync_tables refuses the mismatch before anything is written
+        for table, item in zip(saved, readable):
+            parsed = cast(TablePart, item.parsed)
+            if id(table) not in current_ids:
+                removed.append((parsed.id, parsed.name or ""))
+                continue
+            try:
+                excel = _as_excel_table(table)
+            except ValueError:
+                continue  # an edit the model cannot describe; sync_tables refuses it with its own message
+            file_columns = [column.name or "" for column in parsed.columns]
+            names = _model_column_names(table)
+            if len(names) != len(file_columns) or not all(isinstance(name, str) and name for name in names):
+                names = file_columns
+            if excel.display_name != parsed.name or names != file_columns:
+                changed.append(PendingTable(table, parsed.id, excel.display_name, list(names), sheet.title))
+    return TablePlan(tuple(added), tuple(changed), tuple(removed))
 
 
 def sync_tables(updater: XlsbUpdater, sheet: Worksheet, pending: tuple[PendingTable, ...] = ()) -> None:

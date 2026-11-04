@@ -80,6 +80,43 @@ def test_every_formula_of_the_fixture_compiles_back_to_its_text(sheet):
         assert decode_formula(compiled, context, sheet=sheet) == text.removeprefix("="), address
 
 
+@pytest.mark.parametrize("sheet", ["Data", "Names"])
+def test_every_formula_of_the_fixture_round_trips_through_its_tokens(sheet):
+    """Writing, reading and writing again gives the same PtgList bytes, not just the same text."""
+    context = _fixture_context()
+    for address, text in EXPECTED[sheet].items():
+        compiled = compile_formula(text, context, sheet=sheet)
+        decoded = decode_formula(compiled, context, sheet=sheet)
+        again = compile_formula("=" + decoded, context, sheet=sheet)
+        assert read_parsed(again)[:2] == read_parsed(compiled)[:2], address
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("=SUM(Tbl[[#Data],[#Data],[qty]])", "=SUM(Tbl[[#Data],[qty]])"),
+    ("=SUM(Tbl[[#Totals],[#Totals],[qty]])", "=SUM(Tbl[[#Totals],[qty]])"),
+    ("=SUM(Tbl[[#All],[#All]])", "=SUM(Tbl[#All])"),
+    ("=SUM(Tbl[[#This Row],[#This Row],[qty]])", "=SUM(Tbl[[#This Row],[qty]])"),
+    ("=SUM(Tbl[[#Data],[#Headers],[qty]])", "=SUM(Tbl[[#Headers],[#Data],[qty]])"),
+    ("=SUM(Tbl[[#Totals],[#Data],[qty]])", "=SUM(Tbl[[#Data],[#Totals],[qty]])"),
+])
+def test_duplicate_row_keywords_are_removed_as_excel_removes_them(text, expected):
+    context = _fixture_context()
+    assert decode_formula(compile_formula(text, context, sheet="Data"), context, sheet="Data") == \
+        expected.removeprefix("=")
+
+
+@pytest.mark.parametrize("text", [
+    "=SUM(Tbl[[#All],[#Data]])",  # #All stands alone
+    "=SUM(Tbl[[#All],[#This Row]])",
+    "=SUM(Tbl[[#This Row],[#Data]])",  # #This Row stands alone
+    "=SUM(Tbl[[#Headers],[#Totals]])",  # the keywords meet only through #Data
+    "=SUM(Tbl[[#Headers],[#Data],[#Totals],[qty]])",
+])
+def test_row_keyword_combinations_that_excel_refuses_are_refused(text):
+    with pytest.raises(ValueError, match="keyword|#Headers and #Totals"):
+        compile_formula(text, _fixture_context(), sheet="Data")
+
+
 @pytest.mark.parametrize(("text", "error"), [
     ("=SUM([qty])", UnsupportedFeatureError),  # a bare column needs its table's name
     ("=SUM(Nope[qty])", UnsupportedFeatureError),  # no such table
@@ -176,7 +213,7 @@ def test_a_table_that_a_new_formula_refers_to_cannot_be_removed(tmp_path):
     try:
         workbook["Data"]["Z2"] = "=SUM(Other[v])"
         workbook["Data"].tables.remove("Other")
-        with pytest.raises(UnsupportedFeatureError, match="used by a formula"):
+        with pytest.raises(UnsupportedFeatureError, match="removed by this save"):
             workbook.save(tmp_path / "out.xlsb")
     finally:
         workbook.close()
@@ -209,3 +246,135 @@ def test_a_formula_refers_to_a_table_added_in_the_same_loaded_session(tmp_path):
         assert [table.displayName for table in reloaded["Data"].tables] == ["Tbl", "Other", "New"]
     finally:
         reloaded.close()
+
+
+def test_a_formula_refers_to_a_table_renamed_in_the_same_save(tmp_path):
+    workbook = load_workbook(FIXTURE)
+    try:
+        table = workbook["Data"].tables["Other"]
+        table.displayName = table.name = "Renamed"
+        workbook["Data"]["AG1"] = "=SUM(Renamed[v])"
+        workbook["Names"]["A18"] = "=SUM(Renamed[k])"  # a later sheet sees the same catalog
+        workbook.save(tmp_path / "out.xlsb")
+    finally:
+        workbook.close()
+    reloaded = load_workbook(tmp_path / "out.xlsb")
+    try:
+        assert reloaded["Data"]["AG1"].value == "=SUM(Renamed[v])"
+        assert reloaded["Names"]["A18"].value == "=SUM(Renamed[k])"
+        assert [table.displayName for table in reloaded["Data"].tables] == ["Tbl", "Renamed"]
+    finally:
+        reloaded.close()
+
+
+def test_a_formula_cannot_use_the_old_name_of_a_table_renamed_in_the_same_save(tmp_path):
+    path = tmp_path / "out.xlsb"
+    workbook = load_workbook(FIXTURE)
+    try:
+        table = workbook["Data"].tables["Other"]
+        table.displayName = table.name = "Renamed"
+        workbook["Data"]["AG1"] = "=SUM(Other[v])"
+        with pytest.raises(UnsupportedFeatureError, match="not in the workbook"):
+            workbook.save(path)
+    finally:
+        workbook.close()
+    assert not path.exists()
+
+
+def test_a_formula_refers_to_a_column_renamed_in_the_same_save(tmp_path):
+    workbook = load_workbook(FIXTURE)
+    try:
+        sheet = workbook["Data"]
+        table = sheet.tables["Other"]
+        table.tableColumns[1].name = "value"
+        sheet["J1"] = "value"  # the header cell follows the column name
+        sheet["AG2"] = "=SUM(Other[value])"
+        workbook.save(tmp_path / "out.xlsb")
+    finally:
+        workbook.close()
+    reloaded = load_workbook(tmp_path / "out.xlsb")
+    try:
+        assert reloaded["Data"]["AG2"].value == "=SUM(Other[value])"
+        assert [column.name for column in reloaded["Data"].tables["Other"].tableColumns] == ["k", "value"]
+    finally:
+        reloaded.close()
+
+
+def test_a_formula_cannot_use_the_old_name_of_a_column_renamed_in_the_same_save(tmp_path):
+    path = tmp_path / "out.xlsb"
+    workbook = load_workbook(FIXTURE)
+    try:
+        sheet = workbook["Data"]
+        table = sheet.tables["Other"]
+        table.tableColumns[1].name = "value"
+        sheet["J1"] = "value"
+        sheet["AG2"] = "=SUM(Other[v])"
+        with pytest.raises(ValueError, match="has no column 'v'"):
+            workbook.save(path)
+    finally:
+        workbook.close()
+    assert not path.exists()
+
+
+def test_a_formula_on_a_later_sheet_refers_to_a_table_added_to_an_earlier_sheet(tmp_path):
+    workbook = load_workbook(FIXTURE)
+    try:
+        data = workbook["Data"]
+        data["W1"], data["X1"], data["W2"], data["X2"] = "name", "qty", "a", 1
+        data.add_table(ExcelTable("Added", "W1:X2"))
+        workbook["Names"]["A18"] = "=SUM(Added[qty])"
+        workbook.save(tmp_path / "out.xlsb")
+    finally:
+        workbook.close()
+    reloaded = load_workbook(tmp_path / "out.xlsb")
+    try:
+        assert reloaded["Names"]["A18"].value == "=SUM(Added[qty])"
+    finally:
+        reloaded.close()
+
+
+def test_a_formula_on_an_earlier_sheet_refers_to_a_table_added_to_a_later_sheet(tmp_path):
+    workbook = load_workbook(FIXTURE)
+    try:
+        names = workbook["Names"]
+        names["N1"], names["O1"], names["N2"], names["O2"] = "name", "qty", "a", 1
+        names.add_table(ExcelTable("Later", "N1:O2"))
+        workbook["Data"]["AG4"] = "=SUM(Later[qty])"
+        workbook.save(tmp_path / "out.xlsb")
+    finally:
+        workbook.close()
+    reloaded = load_workbook(tmp_path / "out.xlsb")
+    try:
+        assert reloaded["Data"]["AG4"].value == "=SUM(Later[qty])"
+        assert reloaded["Names"].tables["Later"].ref == "N1:O2"
+    finally:
+        reloaded.close()
+
+
+def test_a_new_table_can_take_the_name_of_one_removed_in_the_same_save(tmp_path):
+    source = tmp_path / "source.xlsb"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet["A1"], sheet["B1"], sheet["A2"], sheet["B2"] = "name", "qty", "a", 1
+    sheet.add_table(ExcelTable("Tbl", "A1:B2"))
+    workbook.save(source)
+    workbook.close()
+
+    workbook = load_workbook(source)
+    try:
+        sheet = workbook[workbook.sheetnames[0]]
+        sheet.tables.remove("Tbl")
+        sheet["D1"], sheet["E1"], sheet["D2"], sheet["E2"] = "name", "qty", "b", 2
+        sheet.add_table(ExcelTable("Tbl", "D1:E2"))
+        sheet["G1"] = "=SUM(Tbl[qty])"
+        workbook.save(tmp_path / "out.xlsb")
+    finally:
+        workbook.close()
+    reloaded = load_workbook(tmp_path / "out.xlsb")
+    try:
+        sheet = reloaded[reloaded.sheetnames[0]]
+        assert sheet.tables["Tbl"].ref == "D1:E2"
+        assert sheet["G1"].value == "=SUM(Tbl[qty])"
+    finally:
+        reloaded.close()
+

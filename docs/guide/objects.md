@@ -643,6 +643,11 @@ same form, as Excel writes them. In a new workbook, a formula can refer to a tab
 sheet or of a sheet written earlier, once that sheet's header row is written; a table of a
 sheet written later raises `UnsupportedFeatureError`, and so does a header row that is not
 written yet. In a loaded workbook, a formula can also refer to a table added in the same save.
+A table or column renamed in a save is known by its new name to the formulas of that save; its
+old name is refused. A table removed in a save frees its name for a table added in the same save,
+and a formula that still names the removed table is refused. Row keywords follow Excel: `#All`
+and `#This Row` stand alone, `#Headers` and `#Totals` meet only through `#Data`, and a repeated
+keyword is dropped, as Excel drops it. Any other combination raises `ValueError`.
 A defined name cannot refer to a table, as in Excel. External-workbook
 references, inline array constants and unsupported BIFF12 formula tokens raise an explicit error.
 `LET` and the `LAMBDA` family remain unsupported. These limits also apply

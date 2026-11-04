@@ -114,12 +114,17 @@ _AFTER_MERGES = (0x1CD, 0x23D, 0x1EE) + _BRT_AFTER_HYPERLINKS
 
 
 class XlsbEditMixin(XlsxEditMixin):
-    # Tables the save in progress adds, planned before any formula is written (see _xlsb_tables).
+    # Tables the save in progress adds or changes, planned before any formula is written
+    # (see _xlsb_tables).
     _pending_tables: tuple = ()
+    # ``(id, name)`` of the tables the save removes: their names are free for a table added in
+    # the same save, and a new formula that still names one is refused.
+    _pending_removed_tables: tuple = ()
 
-    def set_pending_tables(self, pending: Iterable[Any]) -> None:
-        """The tables a save is about to add, each with its id (empty when the save is done)."""
+    def set_pending_tables(self, pending: Iterable[Any], removed: Iterable[tuple[int, str]] = ()) -> None:
+        """The tables a save is about to write, each with its id (empty when the save is done)."""
         self._pending_tables = tuple(pending)
+        self._pending_removed_tables = tuple(removed)
 
     # Set by XlsbUpdater; None until the shared strings part is read.
     _shared_strings_data: bytes | None
@@ -210,14 +215,18 @@ class XlsbEditMixin(XlsxEditMixin):
 
     def _context(self, workbook: bytes | None, parts: Callable[[str], bytes | None] | None = None) -> FormulaContext:
         """A formula context over ``workbook`` whose structured references see this package's tables."""
+        live = {pending.name.casefold() for pending in self._pending_tables}
+        removed = frozenset(name.casefold() for _, name in self._pending_removed_tables) - live
         return FormulaContext(
             self._sheets, workbook, parts,
-            tables=self._table_catalog,
+            tables=self._table_catalog, removed_tables=removed,
         )
 
     def _table_catalog(self) -> dict[int, tuple[str, list[str], str | None]]:
-        """The package's tables, and those the save in progress adds, by id."""
+        """The package's tables, and those the save in progress adds or changes, by id."""
         catalog = table_catalog(self._package.names(), self._part_or_none, sheets=self._sheets)
+        for ident, _ in self._pending_removed_tables:
+            catalog.pop(ident, None)
         for pending in self._pending_tables:
             if pending.columns is not None:  # a header that cannot be read is refused by the save itself
                 catalog[pending.ident] = (pending.name, pending.columns, pending.sheet)

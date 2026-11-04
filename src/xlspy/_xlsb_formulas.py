@@ -606,7 +606,24 @@ def _parse_spec(spec):
         if columns is not None:
             raise ValueError("a structured reference names one column, or one range of columns")
         columns = [_unescape_column(item) for item in group]
+    _check_row_keywords(keywords, spec)
     return keywords, columns
+
+
+def _check_row_keywords(keywords, spec):
+    """Refuse the combinations of row keywords that Excel refuses.
+
+    ``#All`` and ``#This Row`` stand alone; ``#Headers`` and ``#Totals`` meet
+    only through ``#Data``. Duplicates are allowed, as Excel accepts and removes
+    them.
+    """
+    unique = set(keywords)
+    if '#ALL' in unique and len(unique) > 1:
+        raise ValueError(f"#All cannot be combined with another row keyword: [{spec}]")
+    if '#THIS ROW' in unique and len(unique) > 1:
+        raise ValueError(f"#This Row cannot be combined with another row keyword: [{spec}]")
+    if '#HEADERS' in unique and '#TOTALS' in unique:
+        raise ValueError(f"#Headers and #Totals need #Data between them: [{spec}]")
 
 
 def encode_table(name, spec, context, operand):
@@ -681,13 +698,16 @@ def external_sheet_names(part: bytes | None) -> list[str]:
 class FormulaContext:
     """``parts`` (path -> bytes or None) lets references to other workbooks show their sheet names."""
 
-    def __init__(self, sheets, workbook=None, parts=None, *, tables=None, cache_tables=True):
+    def __init__(self, sheets, workbook=None, parts=None, *, tables=None, cache_tables=True,
+                 removed_tables=()):
         self._sheets = sheets
         # ``tables()`` gives {table id: (name, column names, sheet title or None)}, for structured
         # references. A writer adds tables while it streams, so it asks for a fresh catalog each time.
         self._tables = tables
         self._cache_tables = cache_tables
         self._table_catalog: dict[int, tuple[str, list[str], str | None]] | None = None
+        # Tables a save removes are not in the catalog, and a new formula cannot name them.
+        self._removed_tables = frozenset(name.casefold() for name in removed_tables)
         self.names = []
         self.links = []
         self.xti = []
@@ -794,13 +814,19 @@ class FormulaContext:
         return structured_reference(name, columns, flags, first, last)
 
     def has_table(self, name):
-        """True when a table of the workbook has this name."""
-        return any(entry[0].casefold() == name.casefold() for entry in self._catalog().values())
+        """True when a table of the workbook has this name (or the save removes it)."""
+        folded = name.casefold()
+        return folded in self._removed_tables or any(
+            entry[0].casefold() == folded for entry in self._catalog().values())
 
     def table_for_formula(self, name):
         """``(id, column names, sheet title)`` of the table ``name``, for a formula that refers to it."""
+        folded = name.casefold()
+        if folded in self._removed_tables:
+            raise UnsupportedFeatureError(
+                f"table {name!r} is removed by this save, so a formula cannot refer to it")
         for ident, entry in self._catalog().items():
-            if entry[0].casefold() == name.casefold():
+            if entry[0].casefold() == folded:
                 if entry[2] is None:
                     raise UnsupportedFeatureError(f"the sheet of table {name!r} is not known")
                 return ident, list(entry[1]), entry[2]

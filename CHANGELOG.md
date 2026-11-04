@@ -9,12 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A formula in a loaded XLSB can refer to a table or column renamed in the same save, by its new name,
+  and to a table added to a later sheet from an earlier one. The old name is refused with
+  `UnsupportedFeatureError` or `ValueError`.
+- A table removed in a save frees its name for a table added in the same save. A formula that still
+  names the removed table is refused.
 - `ExcelTable.totals_row_functions` selects each column's totals function (`sum`, `average`, `min`,
   ...), or `label`; without it the cell decides: text is a label, a number a sum, a formula a custom
   total.
 
 ### Fixed
 
+- Row keyword combinations that Excel refuses are refused when a structured reference is written:
+  `#All` or `#This Row` with another keyword, and `#Headers` with `#Totals` without `#Data`. Repeated
+  keywords are dropped, as Excel drops them.
 - An XLSB table with a totals row opens in Excel: the table part sets `fShownTotalRow`, writes every
   column's totals function or label, keeps the totals row out of its filter, and omits the filter for
   a headerless table. Moving the range of a loaded totals table recomputes that metadata.
