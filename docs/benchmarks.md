@@ -399,6 +399,28 @@ see [openpyxl parity](openpyxl-parity.md).
 Some style features are not written to XLSB, so check that page before you rely on a
 particular style in XLSB output.
 
+### Python 3.15 (the figures of the README)
+
+The README tables come from this run: commit `08ab0f1`, Python 3.15 (3.15.2 on Windows, 3.15.0 on macOS and WSL2), a fresh virtual environment with the package built in release mode, openpyxl 3.1.5 and xlsxwriter 3.3.1. The write times are `examples/write_benchmark.py --rows 50000 --cols 50 --iterations 3 --native both` (inline strings), the read times the median of three runs of `examples/performance_test.py`, the machines as in the table above.
+
+| 50,000 × 50 | Windows | WSL2 | macOS |
+| :--- | ---: | ---: | ---: |
+| xlspy XLSB write, native | **0.67 s** | **0.57 s** | **0.41 s** |
+| xlspy XLSB write, `XLSPY_ACCEL=python` | 2.78 s | 2.64 s | 1.81 s |
+| xlspy XLSX write, native | **1.16 s** | **0.92 s** | **0.69 s** |
+| xlspy XLSX write, `XLSPY_ACCEL=python` | 3.73 s | 3.12 s | 2.18 s |
+| xlsxwriter (`constant_memory`) write | 11.71 s | 7.89 s | 5.42 s |
+| openpyxl (`write_only`) write | 20.39 s | 13.72 s | 9.23 s |
+| xlspy XLSB read, native | **0.22 s** | **0.14 s** | **0.07 s** |
+| xlspy XLSB read, `XLSPY_ACCEL=python` | 6.41 s | 4.74 s | 3.82 s |
+| xlspy XLSX read, native | **0.98 s** | **0.58 s** | **0.44 s** |
+| openpyxl (`read_only`) read | 14.35 s | 8.13 s | 6.14 s |
+
+Files: [`python315-windows-write.json`](benchmark-results/python315-windows-write.json), [`python315-windows-read.log`](benchmark-results/python315-windows-read.log), [`python315-wsl2-write.json`](benchmark-results/python315-wsl2-write.json), [`python315-wsl2-read.log`](benchmark-results/python315-wsl2-read.log), [`python315-mac-m4-write.json`](benchmark-results/python315-mac-m4-write.json), [`python315-mac-m4-read.log`](benchmark-results/python315-mac-m4-read.log).
+
+- The Windows times are higher than in the Python 3.14 run above for every library, the third-party ones included (xlsxwriter 10.17 s → 11.71 s, openpyxl 17.06 s → 20.39 s), so the cause is not in xlspy; the Python version and the load of the machine on the day were not separated. The ratios hold.
+- The native module writes **3.1–4.6×** faster than the pure-Python path and reads XLSB **29–55×** faster.
+
 ## Method
 
 - Every measurement runs in its own worker process. The writers are interleaved across three runs, and the medians are reported.

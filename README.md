@@ -14,15 +14,27 @@ Style the result with charts, tables, formatting, and cell notes — all from Py
 
 **2.5 million cells in under a second, as XLSB.**
 
-| 50,000 × 50 cells, Windows | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
-| :--- | ---: | ---: | ---: | ---: |
-| Write | **0.81 s** | **1.27 s** | 10.17 s | 17.06 s |
-| Read | **0.14 s** | **0.73 s** | — | 10.75 s |
+50,000 × 50 cells, on three systems:
 
-The native (Rust) module writes 2.5–3.7× and reads XLSB 46× faster than
-xlspy's pure-Python fallback. Medians of three runs on an AMD Ryzen 7 7840HS
-with Python 3.14 (2026-11-02); xlspy with inline strings, xlsxwriter with
-`constant_memory`, openpyxl with `write_only` and `read_only`.
+| Windows 11, AMD Ryzen 7 7840HS | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
+| :--- | ---: | ---: | ---: | ---: |
+| Write | **0.67 s** | **1.16 s** | 11.71 s | 20.39 s |
+| Read | **0.22 s** | **0.98 s** | — | 14.35 s |
+
+| Linux (Ubuntu on WSL2), AMD Ryzen 7 7840HS | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
+| :--- | ---: | ---: | ---: | ---: |
+| Write | **0.57 s** | **0.92 s** | 7.89 s | 13.72 s |
+| Read | **0.14 s** | **0.58 s** | — | 8.13 s |
+
+| macOS, Apple M4 | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
+| :--- | ---: | ---: | ---: | ---: |
+| Write | **0.41 s** | **0.69 s** | 5.42 s | 9.23 s |
+| Read | **0.07 s** | **0.44 s** | — | 6.14 s |
+
+The native (Rust) module writes 3.1–4.6× faster than xlspy's pure-Python
+fallback and reads XLSB 29–55× faster. Medians of three runs with Python 3.15;
+xlspy with inline strings, xlsxwriter with `constant_memory`, openpyxl with
+`write_only` and `read_only`.
 [See the full comparisons, hardware, and methodology →](https://github.com/justybase/xlspy/blob/main/docs/benchmarks.md)
 
 ## Made for the work behind the workbook
