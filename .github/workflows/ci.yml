@@ -246,22 +246,15 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust/xlspy_core
-
-      - name: Install package with test deps (the extension is built but disabled below)
+      - name: Install test dependencies without building the package
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[test]"
+          python -c 'import pathlib, subprocess, sys, tomllib; deps=tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["optional-dependencies"]["test"]; subprocess.check_call([sys.executable, "-m", "pip", "install", *deps])'
 
       - name: Check the native extension is disabled
         env:
           XLSPY_ACCEL: python
-        run: python -c "from xlspy._accel import HAVE_NATIVE; print('native:', HAVE_NATIVE); assert not HAVE_NATIVE, 'native extension should be disabled!'"
+        run: python -c "import sys; sys.path.insert(0, 'src'); from xlspy._accel import HAVE_NATIVE; print('native:', HAVE_NATIVE); assert not HAVE_NATIVE, 'native extension should be disabled!'"
 
       - name: Run tests with the native extension disabled
         env:
