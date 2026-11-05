@@ -25,6 +25,7 @@ from ._model import Workbook, Worksheet, WriteOnlyWorksheet
 from ..hyperlinks import Hyperlink
 from ._chartsheets import add_chartsheets, check_chartsheets, pending_chartsheets
 from ._package_kind import set_package_kind
+from ._reader import load_workbook
 from ..xlsx_updater import XlsxUpdater
 
 if TYPE_CHECKING:
@@ -268,6 +269,21 @@ def _write_new(workbook: Workbook, filename, writer_class, extension: str) -> No
         writer.save()
 
 
+def _save_new_with_named_styles(workbook: Workbook, filename, extension: str) -> None:
+    """Write a new workbook, then add named styles through the loaded-workbook path."""
+    with tempfile.TemporaryDirectory(prefix="xlspy-workbook-") as directory:
+        temporary = os.path.join(directory, f"workbook.{extension}")
+        _save_new(workbook, temporary)
+        loaded = load_workbook(temporary)
+        try:
+            for name, style in workbook._styles.named_style_defs.items():
+                if name != "Normal":
+                    loaded.add_named_style(style)
+            loaded.save(filename)
+        finally:
+            loaded.close()
+
+
 def _save_loaded_to_path(workbook: Workbook, filename) -> None:
     if isinstance(filename, (str, os.PathLike)):
         save_loaded(workbook, os.fspath(filename))
@@ -292,10 +308,11 @@ def save_workbook(workbook: Workbook, filename: WriteTarget) -> None:
     else:
         added = [name for name in workbook._styles.named_style_defs if name != "Normal"]
         if added:
-            # The new-file writers build their own styles.xml and do not write
-            # these styles; refuse instead of dropping them silently.
-            raise UnsupportedFeatureError(
-                f"named styles {added!r} can only be written to a loaded workbook: save the "
-                "new workbook first, load it, call add_named_style() and save again"
-            )
-        _save_new(workbook, filename)
+            extension = (
+                os.path.splitext(os.fspath(filename))[1].lower().lstrip(".")
+                if isinstance(filename, (str, os.PathLike))
+                else ""
+            ) or "xlsx"
+            _save_new_with_named_styles(workbook, filename, extension)
+        else:
+            _save_new(workbook, filename)

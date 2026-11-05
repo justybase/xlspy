@@ -68,7 +68,7 @@ Most report scripts only change their imports. The differences:
 | `CellIsRule(operator=..., formula=...)` | xlspy rules take the range first: `CellIsRule("B2:B9", "greaterThan", ["10"], dxf=...)`; `conditional_formatting.add(range, rule)` replaces it with its own range. |
 | `insert_rows()` keeps row heights in place | Heights and widths move with their rows and columns, as in Excel. Cell contents, styles, comments and hyperlinks move as in openpyxl; merged ranges and formulas do not (`move_range(translate=True)` shifts the references of moved formulas). |
 | `CellRichText`, `TextBlock`, `InlineFont` from `openpyxl.cell.rich_text` / `.text` | The same names from `xlspy`; `load_workbook(..., rich_text=True)` returns them. |
-| Named styles on a new workbook | `add_named_style()` raises `NotImplementedError` at save: save the new workbook, load it, add the style and save again. A loaded XLSX/XLSB keeps them. |
+| Named styles | Register with `add_named_style()` and assign by name with `cell.style = "Name"`; saved in new and loaded XLSX/XLSB workbooks. |
 
 The first row of a model sheet is written as stored: unlike `XlsxWriter`, the
 model does not make first-row text bold.
@@ -100,9 +100,7 @@ Hyperlinks set, removed or moved (by `insert_rows`, `delete_rows` and
 they are. Links that `Hyperlink` cannot represent, such as relative file
 paths, are kept in the file but do not move with their cells.
 
-Limitations: named styles added to a new workbook raise `NotImplementedError` at
-save (see the table above). Like openpyxl, `load_workbook()` returns
-formula text by default (`data_only=False`).
+Like openpyxl, `load_workbook()` returns formula text by default (`data_only=False`).
 
 #### Loaded XLSX and XLSB workbooks
 

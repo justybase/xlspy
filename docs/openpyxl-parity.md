@@ -69,10 +69,10 @@ gap is implemented the same test starts passing without changes.
   iconSet, top10, aboveAverage, text, duplicates, time periods, blanks) are
   reconstructed with their differential styles.
 - Named styles are parsed from `cellStyles`/`cellStyleXfs` into `NamedStyle`
-  objects; `Workbook.named_styles` exposes them and `add_named_style()` writes a
-  new style to both containers in a loaded workbook. `Cell.style = "Name"`
-  applies its components. Adding a named style to a new workbook cannot yet be
-  saved; see the [model guide](guide/model.md#openpyxl-like-workbook-model).
+  objects; `Workbook.named_styles` exposes them and `add_named_style()` writes
+  styles in new and loaded XLSX/XLSB workbooks. `Cell.style = "Name"` applies
+  the style's components; see the
+  [model guide](guide/model.md#openpyxl-like-workbook-model).
 - Editing/removing loaded tables, validations and conditional formats is
   supported. `sync_objects()` rebuilds the affected sheet elements and table
   parts when a loaded object changes or is removed; pure additions still use the

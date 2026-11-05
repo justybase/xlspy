@@ -123,15 +123,31 @@ def test_new_workbook_saves_table_objects(tmp_path):
         reloaded.close()
 
 
-def test_named_style_on_new_workbook_raises_instead_of_being_dropped(tmp_path):
+@pytest.mark.parametrize("extension", ["xlsx", "xlsb"])
+def test_named_style_on_new_workbook_is_written_and_applied(tmp_path, extension):
+    path = tmp_path / f"new.{extension}"
     workbook = Workbook()
-    workbook.active["A1"] = 1
-    workbook.add_named_style(NamedStyle(name="Mine"))
+    workbook.active["A1"] = 1.25
+    workbook.add_named_style(
+        NamedStyle(name="Mine", font=Font(bold=True), number_format="0.00")
+    )
+    workbook.add_named_style(NamedStyle(name="Unused", font=Font(italic=True)))
+    workbook.active["A1"].style = "Mine"
+    workbook.save(path)
+    workbook.close()
+
+    reloaded = load_workbook(path)
     try:
-        with pytest.raises(NotImplementedError, match="Mine"):
-            workbook.save(tmp_path / "new.xlsx")
+        assert {"Mine", "Unused"} <= {style.name for style in reloaded.named_styles}
+        assert reloaded.active["A1"].font.bold is True
+        assert reloaded.active["A1"].number_format == "0.00"
     finally:
-        workbook.close()
+        reloaded.close()
+    if extension == "xlsx":
+        reference = openpyxl.load_workbook(path)
+        assert {"Mine", "Unused"} <= set(reference.named_styles)
+        assert reference.active["A1"].font.bold is True
+        assert reference.active["A1"].number_format == "0.00"
 
 
 def test_named_style_on_loaded_workbook_is_written(tmp_path):

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Named styles registered on a new `Workbook()` are saved in XLSX and XLSB files,
+  and can be applied to cells with `cell.style = "Name"`.
 - A formula in a loaded XLSB can refer to a table or column renamed in the same save, by its new name,
   and to a table added to a later sheet from an earlier one. The old name is refused with
   `UnsupportedFeatureError` or `ValueError`.
