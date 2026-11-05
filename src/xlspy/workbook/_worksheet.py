@@ -78,6 +78,7 @@ class Worksheet:
         self._loaded = False
         self._original_title = title
         self._meta_signature = None
+        self._original_protection_hash: tuple[str | None, str | None, str | None, int | None] | None = None
         self._path: str | None = None
         self._row_heights: dict[int, float] = {}
         self._hidden_rows: set[int] = set()

@@ -33,8 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an edit outside the range leaves it intact; an edit inside the range is refused.
 - A loaded XLSB whose sheet protection carries Excel's strong hash (`BrtSheetProtectionIso`) keeps
   the hash when its permission flags are changed; Excel still accepts the old password. Changing
-  that password is refused. The ISO record was not read before, and the updater looked for it at the
-  wrong record id.
+  that password is refused. Changing the spin count of a loaded hashed XLSX or XLSB protection is
+  also refused because the hash cannot be recomputed without the password. The ISO record was not
+  read before, and the updater looked for it at the wrong record id.
 - A loaded XLSB saves the auto-filter's sort state (`BrtBeginSortState` 0x212,
   `BrtBeginSortCond` 0x214): the range, direction, case sensitivity, sort method and
   value/cell-colour/font-colour conditions are read back and written. Sorting by icon is

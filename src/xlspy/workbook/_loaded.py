@@ -504,6 +504,15 @@ def _sheet_protection_xml(sheet: Worksheet, prefix: str) -> str:
     protection = sheet.protection
     if not protection.sheet and protection.password is None:
         return ""
+    original_hash = sheet._original_protection_hash
+    if (
+        original_hash is not None
+        and original_hash[2] is not None
+        and protection.spinCount != original_hash[3]
+    ):
+        raise UnsupportedFeatureError(
+            "changing the spin count of a hashed sheet protection cannot be saved without the password"
+        )
     attrs = [f'sheet="{1 if protection.sheet else 0}"']
     for name in (
         "objects", "scenarios", "formatCells", "formatRows", "formatColumns",

@@ -53,22 +53,18 @@ def test_hashed_protection_is_read_and_flags_are_kept(tmp_path):
         reopened.close()
 
 
-def test_spin_count_change_is_saved(tmp_path):
+def test_spin_count_change_is_refused(tmp_path):
     target = tmp_path / "spin.xlsb"
     shutil.copyfile(FIXTURE, target)
+    original = target.read_bytes()
     book = load_workbook(target)
     try:
         book["Data"].protection.spinCount = 12345
-        book.save(target)
+        with pytest.raises(UnsupportedFeatureError, match="spin count"):
+            book.save(target)
     finally:
         book.close()
-    iso = next(payload for record_id, payload in _records(target) if record_id == 0x2A6)
-    assert struct.unpack_from("<I", iso, 0)[0] == 12345
-    reopened = load_workbook(target)
-    try:
-        assert reopened["Data"].protection.spinCount == 12345
-    finally:
-        reopened.close()
+    assert target.read_bytes() == original
 
 
 def test_hash_algorithm_change_is_refused(tmp_path):

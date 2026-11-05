@@ -1,6 +1,9 @@
 """The public SheetProtection and PageMargins applied to the workbook model."""
 from __future__ import annotations
 
+import zipfile
+from xml.etree import ElementTree as ET
+
 import pytest
 
 import xlspy
@@ -38,6 +41,42 @@ def test_public_sheet_protection_flags_are_inverted_for_model(tmp_path):
     ws.protection = xlspy.SheetProtection(select_locked_cells=False, select_unlocked_cells=True)
     assert ws.protection.selectLockedCells is True
     assert ws.protection.selectUnlockedCells is False
+
+
+def test_loaded_hashed_protection_rejects_spin_count_change(tmp_path):
+    wb = Workbook()
+    wb.active.protection.sheet = True
+    source = tmp_path / "hashed.xlsx"
+    wb.save(source)
+    patched = tmp_path / "hashed-patched.xlsx"
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(
+        patched, "w", zipfile.ZIP_DEFLATED
+    ) as output:
+        for item in original.infolist():
+            data = original.read(item.filename)
+            if item.filename == "xl/worksheets/sheet1.xml":
+                root = ET.fromstring(data)
+                protection = root.find(
+                    "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheetProtection"
+                )
+                protection.set("sheet", "1")
+                protection.set("algorithmName", "SHA-512")
+                protection.set("saltValue", "AQID")
+                protection.set("hashValue", "BAUG")
+                protection.set("spinCount", "1000")
+                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            output.writestr(item, data)
+    patched.replace(source)
+
+    loaded = load_workbook(source)
+    original = source.read_bytes()
+    try:
+        loaded.active.protection.spinCount = 12345
+        with pytest.raises(xlspy.UnsupportedFeatureError, match="spin count"):
+            loaded.save(source)
+    finally:
+        loaded.close()
+    assert source.read_bytes() == original
 
 
 def test_disabled_public_protection_does_not_protect(tmp_path):

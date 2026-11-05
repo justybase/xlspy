@@ -1016,6 +1016,12 @@ def _read_sheet_protection(sheet: Worksheet, node: ET.Element) -> None:
     protection.hashValue = node.get("hashValue")
     if (spin_count := node.get("spinCount")) is not None:
         protection.spinCount = int(spin_count)
+    sheet._original_protection_hash = (
+        protection.algorithmName,
+        protection.saltValue,
+        protection.hashValue,
+        protection.spinCount,
+    )
 
 
 def _read_page_margins(sheet: Worksheet, node: ET.Element) -> None:

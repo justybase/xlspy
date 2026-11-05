@@ -30,7 +30,8 @@ place (`LAMBDA(...)(...)`) is written to XLSX only.
 
 Hashed sheet protection: an Excel-saved XLSB (`BrtSheetProtectionIso`) keeps its
 hash when a permission flag changes, and Excel still unprotects with the old
-password.
+password. Changing the password or its spin count is refused because the hash
+cannot be recomputed without the password.
 
 Sort state: writing an XLSX with `<autoFilter><sortState>` and saving it as XLSB
 through COM showed the block Excel writes (`BrtBeginSortState` 0x212,

@@ -351,8 +351,10 @@ def _protection_record(sheet) -> bytes:
                 "changing the hash algorithm of a hashed sheet protection cannot be saved into XLSB"
             )
         stored_spin = struct.unpack_from("<I", payload, 0)[0]
-        if protection.spinCount is not None and protection.spinCount != stored_spin:
-            struct.pack_into("<I", payload, 0, int(protection.spinCount))
+        if int(protection.spinCount or 0) != stored_spin:
+            raise UnsupportedFeatureError(
+                "changing the spin count of a hashed sheet protection cannot be saved into XLSB"
+            )
         struct.pack_into("<16I", payload, 4, *flags)
         return build_record(SHEET_PROTECTION_ISO, bytes(payload)) + sheet_protection_record(0, flags)
     if protection.hashValue or protection.algorithmName:
