@@ -67,7 +67,7 @@ jobs:
 
   build-wheels:
     name: Build wheels on ${{ matrix.os }} (${{ matrix.archs }})
-    needs: tests
+    needs: check-version
     strategy:
       fail-fast: false
       matrix:
@@ -121,7 +121,7 @@ jobs:
 
   build-sdist:
     name: Build sdist
-    needs: tests
+    needs: check-version
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -178,7 +178,7 @@ jobs:
 
   publish:
     name: Upload to PyPI
-    needs: [build-wheels, test-sdist]
+    needs: [tests, build-wheels, test-sdist]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi
