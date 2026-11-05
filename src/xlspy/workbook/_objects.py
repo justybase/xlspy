@@ -734,6 +734,9 @@ def object_signatures(sheet) -> dict[str, tuple]:
         "conditional_formatting": tuple(
             repr(rule) for rule in sheet.conditional_formatting.all_rules()
         ),
+        "conditional_formatting_groups": tuple(
+            (item.sqref, item.pivot) for item in sheet.conditional_formatting
+        ),
     }
 
 
@@ -801,6 +804,13 @@ def _mark_synced_objects(sheet) -> None:
 
 def _only_appended(saved, current) -> bool:
     if saved is None:
+        return False
+    previous_groups = saved["conditional_formatting_groups"]
+    current_groups = current["conditional_formatting_groups"]
+    if (
+        len(current_groups) < len(previous_groups)
+        or current_groups[:len(previous_groups)] != previous_groups
+    ):
         return False
     for name in ("tables", "data_validations", "conditional_formatting"):
         previous, now = saved[name], current[name]

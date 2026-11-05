@@ -1,6 +1,9 @@
 """Excel reads conditional formats written into XLSB files, new and loaded."""
 
 
+from dataclasses import replace
+from pathlib import Path
+
 import pytest
 
 from xlspy import Workbook, load_workbook
@@ -15,6 +18,8 @@ XL_XLSB = 50
 XL_CELL_VALUE, XL_COLOR_SCALE, XL_DATABAR, XL_ICON_SETS = 1, 3, 4, 6
 XL_CONDITION_VALUE_FORMULA = 4
 XL_3_ARROWS, XL_5_RATING = 1, 16
+
+X14_DATABARS = Path(__file__).parent / "data" / "x14_databars.xlsb"
 
 
 def _rules():
@@ -101,3 +106,22 @@ def test_conditional_formats_added_to_an_excel_file(tmp_path, excel, open_workbo
     book = open_workbook(tmp_path / "edited.xlsb")
     _check(book)
     assert book.Worksheets(1).Range("F1:F5").FormatConditions(1).Type == XL_DATABAR
+
+
+def test_priority_edit_keeps_x14_data_bar_settings_in_excel(tmp_path, open_workbook):
+    workbook = load_workbook(X14_DATABARS)
+    try:
+        workbook.active.conditional_formatting[0].rules[0] = replace(
+            workbook.active.conditional_formatting[0].rules[0], priority=7,
+        )
+        target = tmp_path / "priority.xlsb"
+        workbook.save(target)
+    finally:
+        workbook.close()
+
+    sheet = open_workbook(target).Worksheets(1)
+    first = sheet.Range("A1").FormatConditions(1)
+    second = sheet.Range("C1").FormatConditions(1)
+    assert first.AxisColor.Color == 65280
+    assert second.AxisPosition == 2
+    assert first.Priority == 7

@@ -145,9 +145,12 @@ and the hash is kept, so Excel still accepts the old password. A password set
 through xlspy can be changed as before.
 
 ⁴ Every rule type the writers accept is loaded into the model, including colour
-scales, data bars and icon sets, in both XLSX and XLSB. In XLSB, each rule left
-as it was read keeps its Excel 2010 extension (negative bar colours, axes,
-gradient settings); a changed or removed rule loses its own extension.
+scales, data bars and icon sets, in both XLSX and XLSB. In XLSB, an unchanged
+rule keeps its Excel 2010 extension (negative bar colours, axes, gradient
+settings). Changing only its priority also keeps the extension. Changing a
+field represented by the opaque extension, or changing the rule's range, raises
+`UnsupportedFeatureError` rather than silently dropping those settings. Removing
+the rule removes its extension.
 
 ⁵ Tables can be added, removed and changed in a loaded XLSB: the range, the name,
 the style (name and banding), the filter range and the column names. Only the

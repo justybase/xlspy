@@ -2,9 +2,11 @@
 
 import zipfile
 from pathlib import Path
+from dataclasses import replace
 
+import pytest
 
-from xlspy import FormulaRule, load_workbook
+from xlspy import FormulaRule, UnsupportedFeatureError, load_workbook
 from xlspy.biff_utils import iter_record_payloads
 
 FIXTURE = Path(__file__).parent / "data" / "x14_databars.xlsb"  # two data bars, made by Excel
@@ -14,6 +16,28 @@ BEGIN_CF14, EXT_COLOR, BEGIN_RULE = 0x416, 0x41F, 0x1CF
 def _ids(path):
     with zipfile.ZipFile(path) as archive:
         return [record for record, _ in iter_record_payloads(archive.read("xl/worksheets/sheet1.bin"))]
+
+
+def _extension_groups(path):
+    with zipfile.ZipFile(path) as archive:
+        records = list(iter_record_payloads(archive.read("xl/worksheets/sheet1.bin")))
+    groups = []
+    current = None
+    for record_id, payload in records:
+        if record_id == BEGIN_CF14:
+            current = [(record_id, payload)]
+        elif current is not None:
+            current.append((record_id, payload))
+            if record_id == 0x417:
+                groups.append(current)
+                current = None
+    return groups
+
+
+def _links(path):
+    with zipfile.ZipFile(path) as archive:
+        records = iter_record_payloads(archive.read("xl/worksheets/sheet1.bin"))
+    return [payload for record_id, payload in records if record_id == 0x47A]
 
 
 def _edit(tmp_path, edit):
@@ -53,15 +77,61 @@ def test_removed_rule_takes_only_its_extension(tmp_path):
     assert ids.count(BEGIN_RULE) == 1 and ids.count(BEGIN_CF14) == 1
 
 
-def test_changed_rule_loses_only_its_extension(tmp_path):
-    from dataclasses import replace
-
+def test_priority_change_keeps_its_extension(tmp_path):
+    second = tmp_path / "second.xlsb"
     def edit(sheet):
         item = sheet.conditional_formatting[0]
-        item.rules[0] = replace(item.rules[0], min_length=20)
+        item.rules[0] = replace(item.rules[0], priority=7)
 
-    ids = _ids(_edit(tmp_path, edit))
-    assert ids.count(BEGIN_RULE) == 2 and ids.count(BEGIN_CF14) == 1
+    workbook = load_workbook(FIXTURE)
+    try:
+        edit(workbook.active)
+        out = tmp_path / "out.xlsb"
+        workbook.save(out)
+        workbook.save(second)
+    finally:
+        workbook.close()
+    assert _extension_groups(out) == _extension_groups(FIXTURE)
+    assert _extension_groups(second) == _extension_groups(FIXTURE)
+    assert _links(out) == _links(FIXTURE)
+    reopened = load_workbook(out)
+    try:
+        assert reopened.active.conditional_formatting[0].rules[0].priority == 7
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda rule: replace(rule, min_length=20),
+        lambda rule: replace(rule, color="FFFF0000"),
+        lambda rule: replace(rule, sqref="B1:B5"),
+    ],
+)
+def test_unsafe_rule_changes_are_refused_without_writing(tmp_path, change):
+    out = tmp_path / "out.xlsb"
+    workbook = load_workbook(FIXTURE)
+    try:
+        item = workbook.active.conditional_formatting[0]
+        item.rules[0] = change(item.rules[0])
+        with pytest.raises(UnsupportedFeatureError, match="x14 extension"):
+            workbook.save(out)
+    finally:
+        workbook.close()
+    assert not out.exists()
+
+
+def test_changing_the_group_range_with_an_extension_is_refused(tmp_path):
+    out = tmp_path / "out.xlsb"
+    workbook = load_workbook(FIXTURE)
+    try:
+        workbook.active.conditional_formatting[0].sqref = "B1:B5"
+        with pytest.raises(UnsupportedFeatureError, match="range.*x14 extension"):
+            workbook.save(out)
+    finally:
+        workbook.close()
+    assert not out.exists()
 
 
 def test_extension_stays_after_the_base_rules_and_before_the_end(tmp_path):

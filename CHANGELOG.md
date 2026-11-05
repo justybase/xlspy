@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Loaded XLSB conditional-format rules with Excel 2010 extensions keep their opaque
+  extension on priority-only edits; edits that would invalidate the extension are refused.
 - Editing a loaded XLSX table no longer duplicates its content-type override when its part is reused;
   Excel can open the saved workbook.
 - Row keyword combinations that Excel refuses are refused when a structured reference is written:

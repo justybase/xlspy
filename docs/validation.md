@@ -33,6 +33,27 @@ Clippy, all **51 Rust tests**, and `mkdocs build --strict` passed. The strict
 documentation build reports existing links to repository README/examples and
 benchmark history that are not included in the docs site.
 
+## XLSB conditional-format extension preservation (2026-11-05)
+
+Windows, Python 3.11.9, Rust 1.99.1, Excel 16. Conditional-format rules loaded
+from an XLSB can carry opaque Excel 2010 x14/FRT extension records for settings
+such as negative data-bar colours and axis configuration. A priority-only rule
+edit now keeps the original extension records and their GUID links. Changes to
+extension-backed fields or the rule/group range are rejected with
+`UnsupportedFeatureError` before writing, rather than silently dropping the
+settings. Removing a rule removes its extension.
+
+The rule model signature now tracks conditional-format group ranges, so changing
+only `sqref` is recognized as an edit. Binary and round-trip tests check extension
+payloads, GUID links, priority, group ranges and no-output-on-refusal. Excel COM
+confirmed that a priority edit keeps the fixture's axis colour and position:
+**32 passed**. The targeted CF/model tests passed with Rust (**94 passed**) and
+pure Python (**94 passed**). Full suite: Rust **9985 passed, 323 skipped,
+1 xfailed**; Python **8892 passed, 1417 skipped**. Ruff, mypy (140 source
+files), stubtest, `cargo fmt`, Clippy, **51 Rust tests** and strict docs build
+passed. The docs build continues to report pre-existing links to repository
+README/examples and benchmark history outside the docs site.
+
 ## COM conformance and the XLSB write path (2026-11-05)
 
 Windows 11, Python 3.14, native module built with `maturin develop --release`.

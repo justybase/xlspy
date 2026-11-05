@@ -159,14 +159,15 @@ gap is implemented the same test starts passing without changes.
   links (`Workbook.external_links`).
 - mypy now checks 11 more modules.
 
-### Remaining
+### Remaining from the 0.12 plan (status refreshed 2026-11-05)
 
 **XLSB**
-- Changing or removing the tables of a loaded XLSB (tables, charts and images can be
-  added; charts and images removed; chartsheets are loaded and can be added; named styles can be added).
-- A CF edit in a loaded XLSB keeps the Excel 2010 extension (negative bar colours,
-  axes, gradient settings) of every rule left as it was read; a changed or removed
-  rule loses its own extension. The settings are preserved, not modelled.
+- Loaded XLSB table edits/removals are supported (see the current feature table).
+- Conditional formatting in a loaded XLSB keeps opaque Excel 2010 extensions
+  (negative bar colours, axes, gradient settings) for unchanged rules and for
+  priority-only edits. Edits to extension-backed fields or the rule/group range are
+  refused rather than silently losing metadata; removing the rule removes its
+  extension. The extra settings are preserved, not modelled.
 
 **Charts and drawings**
 - Loaded charts keep their XML; their title, axis titles, legend position and series titles
@@ -175,9 +176,9 @@ gap is implemented the same test starts passing without changes.
   remain. New chartsheets go after the other sheets.
 
 **Long tail**
-- Ignored errors (`Worksheet.ignored_errors`, XLSX and XLSB) and external links (`Workbook.external_links`,
-  read only) are in the model. Pivots, OLE/controls, phonetics, sheet backgrounds and
-  custom/built-in table styles remain to be implemented.
+- Ignored errors and pivot tables are supported; external links are read-only.
+  OLE/controls, phonetics, sheet backgrounds, and custom/built-in table styles
+  remain outside the current model.
 
 ## P0/P1 gaps
 

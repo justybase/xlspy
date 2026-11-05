@@ -5,6 +5,7 @@ from .._package_handle import PackageHandle
 from ._coords import _in_sheet_order
 
 from ..exceptions import UnsupportedFeatureError
+from dataclasses import replace
 import os
 import shutil
 import tempfile
@@ -54,6 +55,76 @@ def _is_new(sheet) -> bool:
     return sheet._path is None
 
 
+def _cf_rule_signature(rule):
+    """The x14 extension is separate from the base rule's priority."""
+    return repr(replace(rule, priority=None))
+
+
+def _cf_extensions_for_save(sheet) -> dict[int, bytes]:
+    """Keep x14 payloads only when their rule and range still match safely."""
+    rules = [
+        (item.sqref, rule)
+        for item in sheet.conditional_formatting
+        for rule in item.rules
+    ]
+    extensions = getattr(sheet, "_cf_extensions", {})
+    kept = {}
+
+    for extension_rule, _original, payload in extensions.values():
+        original_signature = _cf_rule_signature(extension_rule)
+        exact = [
+            (sqref, rule) for sqref, rule in rules if rule is extension_rule
+        ]
+        if exact:
+            sqref, rule = exact[0]
+            if sqref != extension_rule.sqref:
+                raise UnsupportedFeatureError(
+                    "changing the range of an XLSB conditional-format rule with "
+                    "an x14 extension is not supported"
+                )
+            if _cf_rule_signature(rule) != original_signature:
+                raise UnsupportedFeatureError(
+                    "changing an XLSB conditional-format rule with an x14 "
+                    "extension is not supported"
+                )
+            kept[id(rule)] = payload
+            continue
+
+        equivalent = [
+            (sqref, rule)
+            for sqref, rule in rules
+            if type(rule) is type(extension_rule)
+            and sqref == extension_rule.sqref
+            and _cf_rule_signature(rule) == original_signature
+        ]
+        if len(equivalent) == 1:
+            kept[id(equivalent[0][1])] = payload
+            continue
+        if len(equivalent) > 1:
+            raise UnsupportedFeatureError(
+                "an XLSB conditional-format x14 extension cannot be mapped "
+                "unambiguously after editing"
+            )
+
+        possible_replacements = [
+            rule
+            for sqref, rule in rules
+            if type(rule) is type(extension_rule)
+            and (
+                sqref == extension_rule.sqref
+                or getattr(rule, "priority", None)
+                == getattr(extension_rule, "priority", None)
+            )
+        ]
+        if possible_replacements:
+            raise UnsupportedFeatureError(
+                "changing an XLSB conditional-format rule with an x14 "
+                "extension is not supported"
+            )
+
+    return kept
+
+
 def _reject_unsupported_sheet_edits(sheet) -> None:
     if _is_new(sheet):
         return
@@ -62,7 +133,14 @@ def _reject_unsupported_sheet_edits(sheet) -> None:
     current = object_signatures(sheet)
     check_unread(sheet, [
         name for name in ("data_validations", "conditional_formatting")
-        if current[name] != saved.get(name, ())
+        if (
+            current[name] != saved.get(name, ())
+            or (
+                name == "conditional_formatting"
+                and current["conditional_formatting_groups"]
+                != saved.get("conditional_formatting_groups", ())
+            )
+        )
     ])
 
 
@@ -189,19 +267,15 @@ def _save_sheet(sheet, updater) -> None:
     )
     if validations_changed:
         updater.set_data_validations(sheet.title, sheet.data_validations)
-    formats_changed = (
-        bool(sheet.conditional_formatting) if new else
-        object_signatures(sheet)["conditional_formatting"]
+    current_signatures = object_signatures(sheet)
+    formats_changed = bool(sheet.conditional_formatting) if new else (
+        current_signatures["conditional_formatting"]
         != sheet._saved_object_signatures.get("conditional_formatting", ())
+        or current_signatures["conditional_formatting_groups"]
+        != sheet._saved_object_signatures.get("conditional_formatting_groups", ())
     )
     if formats_changed:
-        # An unchanged rule keeps its Excel 2010 extension (negative bar colours,
-        # axes); a changed or removed one loses it with the old settings.
-        kept = {
-            id(rule): entry[2]
-            for rule in sheet.conditional_formatting.all_rules()
-            if (entry := getattr(sheet, "_cf_extensions", {}).get(id(rule))) and entry[0] is rule and entry[1] == repr(rule)
-        }
+        kept = _cf_extensions_for_save(sheet)
         updater.set_conditional_formats(
             sheet.title,
             [(item.sqref, item.pivot, item.rules) for item in sheet.conditional_formatting],
@@ -209,7 +283,9 @@ def _save_sheet(sheet, updater) -> None:
             kept,
         )
         sheet._cf_extensions = {
-            key: getattr(sheet, "_cf_extensions", {})[key] for key in kept
+            id(rule): (rule, repr(rule), payload)
+            for rule in sheet.conditional_formatting.all_rules()
+            if (payload := kept.get(id(rule))) is not None
         }
     if new:
         links = {
