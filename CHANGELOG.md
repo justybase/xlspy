@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Editing a loaded XLSX table no longer duplicates its content-type override when its part is reused;
+  Excel can open the saved workbook.
 - Row keyword combinations that Excel refuses are refused when a structured reference is written:
   `#All` or `#This Row` with another keyword, and `#Headers` with `#Totals` without `#Data`. Repeated
   keywords are dropped, as Excel drops them.

@@ -196,7 +196,20 @@ class _Package:
         return rid
 
     def override(self, path: str, content_type: str) -> None:
-        ET.SubElement(self.types, f"{{{CT}}}Override", {"PartName": "/" + path, "ContentType": content_type})
+        part_name = "/" + path
+        overrides = [
+            node for node in self.types.findall(f"{{{CT}}}Override")
+            if node.get("PartName") == part_name
+        ]
+        if overrides:
+            overrides[0].set("ContentType", content_type)
+            for duplicate in overrides[1:]:
+                self.types.remove(duplicate)
+            return
+        ET.SubElement(
+            self.types, f"{{{CT}}}Override",
+            {"PartName": part_name, "ContentType": content_type},
+        )
 
     def default(self, extension: str, content_type: str) -> None:
         if not any((node.get("Extension") or "").lower() == extension.lower() for node in self.types):

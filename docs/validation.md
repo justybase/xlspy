@@ -13,6 +13,26 @@
   workbook is being copied in, it holds part of the workbook (see
   [Failure handling](guide/writing.md#failure-handling)).
 
+## Mixed loaded-workbook round trip (2026-11-05)
+
+Windows, Python 3.11.9, Rust 1.99.1. A loaded XLSX table edit reused its
+original part name but appended a second matching `<Override>` to
+`[Content_Types].xml`; xlspy and openpyxl could read the package, but Excel
+refused to open it. `_Package.override` now updates an existing declaration
+instead of duplicating it. A regression test checks that a mixed workbook
+remains idempotent after a second save and that Excel opens both XLSX and XLSB
+round trips containing a renamed table/column, a structured-reference formula,
+dynamic-array spill, LET formula, totals row, ignored errors and sheet
+protection.
+
+The feature matrix passed on both backends (**127 passed, 4 skipped** each).
+The selected Excel COM suite passed **45 tests**. The full suite passed with
+the native backend (**9981 passed, 322 skipped, 1 xfailed**) and pure Python
+(**8888 passed, 1416 skipped**). Ruff, mypy (140 source files), `cargo fmt`,
+Clippy, all **51 Rust tests**, and `mkdocs build --strict` passed. The strict
+documentation build reports existing links to repository README/examples and
+benchmark history that are not included in the docs site.
+
 ## COM conformance and the XLSB write path (2026-11-05)
 
 Windows 11, Python 3.14, native module built with `maturin develop --release`.
@@ -334,4 +354,3 @@ since been added; [Known limitations](#known-limitations) lists the current ones
 - **Formula text length** (Excel allows 8,192 characters) is not checked.
 - **Updaters** (`XlsxUpdater`, `XlsbUpdater`) were not changed: they do not
   apply the new cell-text checks or escapes, or the staged output.
-
