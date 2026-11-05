@@ -30,8 +30,12 @@ place (`LAMBDA(...)(...)`) is written to XLSX only.
 
 Hashed sheet protection: an Excel-saved XLSB (`BrtSheetProtectionIso`) keeps its
 hash when a permission flag changes, and Excel still unprotects with the old
-password. No sort-state record was found in an XLSB Excel saved after
-`Range.Sort` or `AutoFilter.Sort.Apply`, so that gap was not closed.
+password.
+
+Sort state: writing an XLSX with `<autoFilter><sortState>` and saving it as XLSB
+through COM showed the block Excel writes (`BrtBeginSortState` 0x212,
+`BrtBeginSortCond` 0x214); the updater had looked for 0x1BB. It is now read,
+saved and checked in Excel (`AutoFilter.Sort.SortFields(1).Order`).
 
 The rewritten COM conformance suite (`tests/test_excel_com_conformance.py`, data
 in `tests/com_cases.py`, Excel helpers in `tests/com_spec.py`) — eight cases in

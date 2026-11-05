@@ -51,6 +51,7 @@ from .._xlsb_ignored_errors import (
     ignored_errors_from_records,
 )
 from ._model import Chartsheet
+from ._properties import SortCondition, SortState
 
 
 _CF_RECORDS = SCALE_RECORDS | {BRT_BEGIN_CONDITIONAL_FORMATTING, BRT_BEGIN_CF_RULE, _CF_RULE_EXT}
@@ -156,6 +157,7 @@ def _read_records(
     records = _SheetRecords()
     links: dict[str, str] | None = None
     filter_records: list[tuple[int, bytes]] | None = None
+    sort_state: SortState | None = None
     # The native loader has read the sheet data (with its row headers):
     # only the records around it are left.
     outside = (
@@ -192,6 +194,32 @@ def _read_records(
             r1, r2, c1, c2 = struct.unpack_from("<4I", payload)
             if r1 <= r2 < 1048576 and c1 <= c2 < 16384:
                 sheet._auto_filter = AutoFilter(_range_label(payload)[0])
+        elif record_id == 0x212 and len(payload) >= 18:
+            flags, _r1, _r2, _c1, _c2 = struct.unpack_from("<HIIII", payload)
+            sort_state = SortState(
+                ref=_range_label(payload[2:18])[0],
+                columnSort=bool(flags & 0x01) or None,
+                caseSensitive=bool(flags & 0x02) or None,
+                sortMethod="stroke" if flags & 0x04 else None,
+            )
+            sheet._auto_filter.sortState = sort_state
+        elif record_id == 0x214 and sort_state is not None and len(payload) >= 26:
+            flags, _r1, _r2, _c1, _c2, first, _second = struct.unpack_from(
+                "<HIIIIII", payload
+            )
+            sort_on = (flags >> 1) & 0x0F
+            condition = SortCondition(
+                ref=_range_label(payload[2:18])[0],
+                descending=bool(flags & 0x01) or None,
+                sortBy={0: None, 1: "cellColor", 2: "fontColor", 3: "icon"}.get(sort_on),
+                dxfId=first if sort_on in (1, 2) else None,
+            )
+            custom_length = struct.unpack_from("<i", payload, 26)[0]
+            if custom_length >= 0 and 30 + 2 * custom_length <= len(payload):
+                condition.customList = payload[30:30 + 2 * custom_length].decode(
+                    "utf-16-le", "replace"
+                )
+            sort_state.sortCondition.append(condition)
         elif record_id in FILTER_RECORDS:
             read_filter_record(sheet._auto_filter, record_id, payload)
         elif record_id == 0x1EE and len(payload) >= 16:  # BrtHLink

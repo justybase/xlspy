@@ -166,8 +166,9 @@ loaded chart can be changed; the rest of its XML is kept.
 
 ⁷ A custom auto filter (criteria other than a value list) is kept when the
 sheet is saved unchanged; changing it raises `UnsupportedFeatureError`, and
-removing it is allowed. A filter's sort state cannot be saved into a loaded
-XLSB.
+removing it is allowed. A filter's sort state is saved: the range, direction,
+case sensitivity, sort method and value/cell-colour/font-colour conditions.
+Sorting by icon cannot be saved yet.
 
 Where a loaded XLSB refuses an edit, `XlsbUpdater` may support it, or the
 workbook can be built with `Workbook()` and saved as `.xlsb`: the XLSB writer

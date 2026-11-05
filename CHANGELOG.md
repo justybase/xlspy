@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the hash when its permission flags are changed; Excel still accepts the old password. Changing
   that password is refused. The ISO record was not read before, and the updater looked for it at the
   wrong record id.
+- A loaded XLSB saves the auto-filter's sort state (`BrtBeginSortState` 0x212,
+  `BrtBeginSortCond` 0x214): the range, direction, case sensitivity, sort method and
+  value/cell-colour/font-colour conditions are read back and written. Sorting by icon is
+  refused. The updater used the wrong record id (0x1BB) and never found this block.
 - `XlsbUpdater.replace_sheet_data` writes scalar formulas, with their cached values: a formula cell
   is encoded like `update_cells` encodes it, and the save drops the calculation chain and asks Excel
   to recalculate on load. A legacy array formula is still refused with `UnsupportedFeatureError`
