@@ -13,6 +13,30 @@
   workbook is being copied in, it holds part of the workbook (see
   [Failure handling](guide/writing.md#failure-handling)).
 
+## Release candidate qualification (2026-11-05)
+
+Windows, Python 3.14.2. The focused feature tests passed (**116 passed, 5
+skipped**). Full-suite results:
+
+| Backend | Passed | Skipped | Xfailed | Time |
+| :--- | ---: | ---: | ---: | ---: |
+| Rust | 9,983 | 324 | 2 | 4:24 |
+| Pure Python | 8,890 | 1,418 | 1 | 2:42 |
+
+The xfails are the known rich-text inline-string native gap and, without Pillow,
+the openpyxl image-count comparison. The fallback run only has the latter.
+Excel COM checks for the current formulas, tables, ignored errors, protection,
+sort state and conditional-format changes passed (**88 passed, 4 skipped** in
+2:20). The four skips are cases not authored by Excel or cases with no cells.
+
+Ruff, mypy for Python 3.11 and 3.14 (140 source files), `stubtest`, Rustfmt,
+Clippy, all **51 Rust tests**, the strict MkDocs build and the repository link
+check (**24 passed**) also passed. MkDocs reported its existing links to
+repository files outside the published docs site. The CPython 3.14 Windows
+wheel passed its installed-package smoke test and **206 tests, 17 skipped** in
+a clean environment. The sdist built and installed in another clean environment
+and passed the same smoke test.
+
 ## Mixed loaded-workbook round trip (2026-11-05)
 
 Windows, Python 3.11.9, Rust 1.99.1. A loaded XLSX table edit reused its

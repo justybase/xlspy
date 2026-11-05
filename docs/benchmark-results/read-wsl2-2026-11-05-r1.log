@@ -1,0 +1,87 @@
+
+--- Testing (my) XlsbWriter ---
+Generating 50000x50 dataset...
+XlsbWriter finished in: 1.06 seconds
+File size: 7.72 MB
+--------------------------
+
+--- Testing (my) XlsbWriter (pure Python fallback, subprocess) ---
+
+--- Testing (my) XlsbWriter ---
+Generating 50000x50 dataset...
+XlsbWriter finished in: 3.25 seconds
+File size: 7.72 MB
+--------------------------
+RESULT seconds=3.2483 size_mb=7.7238
+XlsbWriter (Python) finished in: 3.25 seconds
+File size: 7.72 MB
+--------------------------
+
+--- Testing (my)  XlsxWriter ---
+Generating 50000x50 dataset...
+XlsxWriter finished in: 1.47 seconds
+File size: 7.27 MB
+--------------------------
+
+--- Testing xlsxwriter ---
+Generating 50000x50 dataset...
+xlsxwriter finished in: 8.42 seconds
+File size: 11.35 MB
+--------------------------
+
+--- Testing openpyxl (write_only=True) ---
+Generating 50000x50 dataset...
+openpyxl finished in: 15.11 seconds
+File size: 11.48 MB
+--------------------------
+
+--- Reading test_xlspy.xlsb with xlspy ---
+xlspy read 50000 rows in: 0.16 seconds
+--------------------------
+
+--- Reading XLSB with xlspy (pure Python fallback, subprocess) ---
+
+--- Reading test_xlspy.xlsb with xlspy ---
+xlspy read 50000 rows in: 4.92 seconds
+--------------------------
+RESULT seconds=4.9216 rows=50000
+xlspy (Python) read 50000 rows in: 4.92 seconds
+--------------------------
+
+--- Reading test_xlspy.xlsx with xlspy ---
+xlspy read 50000 rows in: 0.60 seconds
+--------------------------
+
+--- Reading test_openpyxl.xlsx with openpyxl (read_only=True) ---
+openpyxl read 50000 rows in: 9.37 seconds
+--------------------------
+
+================ SUMMARY ================
+Dataset: 50000 x 50 (2.5M cells); Linux x86_64 (Python 3.14.4); xlspy 0.14.0, openpyxl 3.1.5, xlsxwriter 3.3.1
+
+### Write
+
+| Library | Format | Time | Size |
+|---------|--------|------|------|
+| **xlspy (native)** | XLSB | **1.06 s** | 7.72 MB |
+| xlspy (Python) | XLSB | 3.25 s | 7.72 MB |
+| xlspy | XLSX | 1.47 s | 7.27 MB |
+| openpyxl (write_only) | XLSX | 15.11 s | 11.48 MB |
+| xlsxwriter (constant_memory) | XLSX | 8.42 s | 11.35 MB |
+
+### Read
+
+| Library | Format | Time | Notes |
+|---------|--------|------|-------|
+| **xlspy (native)** | XLSB | **0.16 s** | default, native module |
+| xlspy | XLSX | 0.60 s | native row scanner |
+| xlspy (Python) | XLSB | 4.92 s | pure Python fallback |
+| openpyxl (read_only) | XLSX | 9.37 s | read-only mode |
+=========================================
+Temporary benchmark files removed.
+
+Performance test complete.
+To see detailed memory usage, run this script with memory-profiler:
+mprof run performance_test.py
+Then, to see the plot:
+mprof plot

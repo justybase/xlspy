@@ -4,9 +4,84 @@
 
 `xlspy` includes a **native extension** (`_rs_core`, Rust/PyO3) that accelerates XLSB read and write, the XLSX read and write paths and workbook-model loading. It is enabled by default. Set `XLSPY_ACCEL=python` to force the pure-Python fallback.
 
-The [current results](#current-results-rust-module-2026-11-02) were measured on the Rust module, on Windows and, for [macOS and WSL2](#macos-and-wsl2-xlspy-0110), with xlspy 0.11.0. The [historical results](#historical-results-c-extension-2026-10-19-to-2026-10-30) were taken before the Rust port, with the C extension it replaced; they are kept as recorded.
+The [README](../README.md#built-for-speed) and the results below now include fresh WSL2 and Mac measurements for the 0.14.0 release candidate. The older tables remain as historical baselines: Windows results use commit `203721c` (Python 3.14.2), while the earlier [macOS and WSL2 results](#macos-and-wsl2-xlspy-0110) use release 0.11.0. The [historical results](#historical-results-c-extension-2026-10-19-to-2026-10-30) predate the Rust port.
 
-## Current results (Rust module, 2026-11-02)
+## Release candidate 0.14.0 (2026-11-05)
+
+The code was taken from local HEAD `a9f60f0` and built natively on each
+machine. The temporary source snapshots set `pyproject.toml` to the 0.14.0
+release-candidate version; benchmark code matches that commit. WSL2 ran Ubuntu
+26.04.1 on an AMD Ryzen 7 7840HS with Python 3.14.4. The Mac mini ran macOS
+27.2 on Apple M4 with Python 3.14.10. Both used the same deterministic input,
+native Rust backend, and three measured runs. WSL2's benchmark files were on
+the Linux home filesystem; Mac files were on APFS. The different CPUs, Python
+patch versions and filesystems mean the cross-platform comparison is
+indicative, not a controlled attribution of speed to the OS.
+
+### Read, write and model (50,000 × 20)
+
+`benchmarks/bench_io.py` ran each case in a fresh process. Times are medians
+of three runs; the raw JSON includes each run and its interquartile range.
+
+| Case | WSL2, seconds | Mac, seconds |
+| :--- | ---: | ---: |
+| Stream write XLSX | 0.391 | 0.249 |
+| Stream write XLSB | 0.277 | 0.167 |
+| `ExcelReader` read XLSX | 0.220 | 0.151 |
+| `ExcelReader` read XLSB | 0.053 | 0.025 |
+| `load_workbook()` XLSX | 0.411 | 0.221 |
+| `load_workbook()` XLSB | 0.256 | 0.100 |
+| Load styled XLSX | 0.438 | 0.216 |
+| Load styled XLSB | 0.245 | 0.101 |
+| Save loaded styled XLSX | 0.904 | 0.521 |
+| Save loaded styled XLSB | 0.366 | 0.201 |
+| Build and save model XLSX | 1.008 | 0.698 |
+| Build and save model XLSB | 0.853 | 0.615 |
+| Formula/hyperlink XLSX write | 2.336 | 1.402 |
+
+### Large writer comparison (50,000 × 50)
+
+`examples/write_benchmark.py` used the mixed eight-type generator, streamed
+rows, and three interleaved runs per writer. xlspy results include both native
+and pure-Python modes; the README shows the native inline-string XLSB/XLSX
+results. Times are seconds, medians:
+
+| Writer | WSL2 | Mac |
+| :--- | ---: | ---: |
+| xlspy XLSB inline, native | 0.65 | 0.44 |
+| xlspy XLSB inline, Python | 2.73 | 1.95 |
+| xlspy XLSX inline, native | 1.00 | 0.71 |
+| xlspy XLSX inline, Python | 3.25 | 2.38 |
+| xlspy XLSB shared, native | 0.86 | 0.51 |
+| xlspy XLSX shared, native | 1.32 | 0.91 |
+| xlsxwriter (`constant_memory`) | 8.54 | 5.98 |
+| openpyxl (`write_only`) | 14.21 | 9.71 |
+| PyExcelerate | 6.81 | 4.94 |
+
+The separate end-to-end reader check (`examples/performance_test.py`) wrote
+and read 50,000 × 50 files, three times per platform. Read times were measured
+with a warm page cache; each reader consumed its own writer's file:
+
+| Reader | WSL2, seconds | Mac, seconds |
+| :--- | ---: | ---: |
+| xlspy XLSB, native | 0.16 | 0.07 |
+| xlspy XLSB, pure Python | 4.88 | 3.95 |
+| xlspy XLSX, native | 0.59 | 0.44 |
+| openpyxl XLSX, `read_only` | 9.14 | 6.72 |
+
+Raw data: [WSL2 read/model JSON](benchmark-results/wsl2-2026-11-05-r1-io.json),
+[Mac read/model JSON](benchmark-results/mac-m4-2026-11-05-r1-io.json),
+[WSL2 writer JSON](benchmark-results/wsl2-2026-11-05-r1-write.json),
+[Mac writer JSON](benchmark-results/mac-m4-2026-11-05-r1-write.json), and the
+[WSL2](benchmark-results/read-wsl2-2026-11-05-r1.log),
+[Mac run 1](benchmark-results/read-mac-m4-2026-11-05-r1.log),
+[Mac run 2](benchmark-results/read-mac-m4-2026-11-05-r2.log) and
+[Mac run 3](benchmark-results/read-mac-m4-2026-11-05-r3.log) reader logs.
+The WSL2 logs are [run 1](benchmark-results/read-wsl2-2026-11-05-r1.log),
+[run 2](benchmark-results/read-wsl2-2026-11-05-r2.log) and
+[run 3](benchmark-results/read-wsl2-2026-11-05-r3.log).
+
+## Rust benchmark baseline (2026-11-02)
 
 Windows 11 Pro (build 26300), AMD Ryzen 7 7840HS (16 logical CPUs, 31 GiB RAM), Python 3.14.2, xlspy at commit `203721c` (Q7 of the quality round), openpyxl 3.1.5, xlsxwriter 3.3.1, PyExcelerate 0.13.0. Output goes to NTFS.
 

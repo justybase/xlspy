@@ -15,7 +15,7 @@ The harness in `tests/openpyxl_compat/` is the executable version of this
 matrix.  A missing attribute is reported as `xfail` with the ID below; when a
 gap is implemented the same test starts passing without changes.
 
-## Implementation status — 2026-10-27
+## Implementation history (initial status 2026-10-27; limits refreshed 2026-11-05)
 
 ### Completed
 
@@ -27,11 +27,8 @@ gap is implemented the same test starts passing without changes.
   no-op ZIP preservation; `tools/compare_openpyxl_model.py` produces a semantic
   JSON diff.
 - The `test` extra pins `openpyxl==3.1.5`, so every CI test job runs the harness.
-- Results on 2026-11-02 (Windows, native module): the compatibility harness is
-  **83 passed, 1 skipped, 1 xfailed**; the full suite is **2233 passed, 289
-  skipped, 1 xfailed**. The xfail is C7 in an environment without Pillow:
-  openpyxl then loads no images (xlspy reads all 4), so the counts differ. With
-  Pillow installed every planned harness check passes.
+  Current full-suite results and environment-specific skips are recorded in
+  [validation](validation.md).
 
 **Phase 1 — public API, utilities and formulas**
 - New `xlspy.utils.cell`, `xlspy.utils.datetime`, `xlspy.utils.escape`,
@@ -73,7 +70,9 @@ gap is implemented the same test starts passing without changes.
   reconstructed with their differential styles.
 - Named styles are parsed from `cellStyles`/`cellStyleXfs` into `NamedStyle`
   objects; `Workbook.named_styles` exposes them and `add_named_style()` writes a
-  new style to both containers. `Cell.style = "Name"` applies its components.
+  new style to both containers in a loaded workbook. `Cell.style = "Name"`
+  applies its components. Adding a named style to a new workbook cannot yet be
+  saved; see the [model guide](guide/model.md#openpyxl-like-workbook-model).
 - Editing/removing loaded tables, validations and conditional formats is
   supported. `sync_objects()` rebuilds the affected sheet elements and table
   parts when a loaded object changes or is removed; pure additions still use the

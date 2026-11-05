@@ -179,8 +179,6 @@ def test_a_new_workbook_holds_formulas_that_refer_to_its_own_and_an_earlier_tabl
         assert reloaded["Calc"]["A1"].value == "=SUM(Tbl[qty])+1"
     finally:
         reloaded.close()
-
-
 def test_a_formula_above_the_header_of_its_table_is_refused_with_a_reason(tmp_path):
     with pytest.raises(UnsupportedFeatureError, match="header row is not written yet"):
         _sales_workbook(tmp_path / "above.xlsb", formula_above_header=True)
@@ -377,4 +375,3 @@ def test_a_new_table_can_take_the_name_of_one_removed_in_the_same_save(tmp_path)
         assert sheet["G1"].value == "=SUM(Tbl[qty])"
     finally:
         reloaded.close()
-

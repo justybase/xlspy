@@ -2,7 +2,7 @@
 
 xlspy grew in three stages. Each stage still has code in the package, and the
 public API reaches more than one of them. This page maps which module does what,
-so changes go to the right place. It describes the code as of 2026-11-02.
+so changes go to the right place. It describes the code as of 2026-11-05.
 
 ## The three generations
 
@@ -122,6 +122,12 @@ part, and `workbook/_xlsb_layout._patch_xlsb_rows` edits binary records.
 
 `XlsbWriter` uses the same encoders, so a record has one encoder whichever path
 writes it.
+
+**Shared format helpers.** `_table_totals.py` normalizes and validates totals-row
+cells for both writers and XLSB table-part edits. `_xlsb_ignored_errors.py`
+encodes and decodes the Excel 16 `ignoredErrors` records for new and loaded
+XLSB workbooks. `_metadata_part.py` holds the dynamic-array metadata payloads
+used by the XLSX and XLSB writer parts.
 
 **Writers.** Both `write_sheet` methods check their options through
 `_writer_common.WriterFrontEnd._check_sheet_options`, which returns a

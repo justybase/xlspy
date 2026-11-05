@@ -14,27 +14,34 @@ Style the result with charts, tables, formatting, and cell notes — all from Py
 
 **2.5 million cells in under a second, as XLSB.**
 
-50,000 × 50 cells, on three systems:
+Times are medians of three runs. WSL2 and Mac were measured with xlspy 0.14.0
+on Python 3.14 on 2026-11-05. The Windows reference row is from xlspy 0.12.0
+on Python 3.15.2 (2026-11-04), so cross-platform differences are indicative,
+not a controlled hardware comparison.
 
-| Windows 11, AMD Ryzen 7 7840HS | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
+50,000 × 50 cells:
+
+| Windows 11, AMD Ryzen 7 7840HS, Python 3.15.2 | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
 | :--- | ---: | ---: | ---: | ---: |
 | Write | **0.67 s** | **1.16 s** | 11.71 s | 20.39 s |
 | Read | **0.22 s** | **0.98 s** | — | 14.35 s |
 
-| Linux (Ubuntu on WSL2), AMD Ryzen 7 7840HS | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
+| WSL2, Ubuntu, AMD Ryzen 7 7840HS, Python 3.14.4 | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
 | :--- | ---: | ---: | ---: | ---: |
-| Write | **0.57 s** | **0.92 s** | 7.89 s | 13.72 s |
-| Read | **0.14 s** | **0.58 s** | — | 8.13 s |
+| Write | **0.65 s** | **1.00 s** | 8.54 s | 14.21 s |
+| Read | **0.16 s** | **0.59 s** | — | 9.14 s |
 
-| macOS, Apple M4 | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
+| macOS 27.2, Apple M4, Python 3.14.10 | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
 | :--- | ---: | ---: | ---: | ---: |
-| Write | **0.41 s** | **0.69 s** | 5.42 s | 9.23 s |
-| Read | **0.07 s** | **0.44 s** | — | 6.14 s |
+| Write | **0.44 s** | **0.71 s** | 5.98 s | 9.71 s |
+| Read | **0.07 s** | **0.44 s** | — | 6.72 s |
 
-The native (Rust) module writes 3.1–4.6× faster than xlspy's pure-Python
-fallback and reads XLSB 29–55× faster. Medians of three runs with Python 3.15;
-xlspy with inline strings, xlsxwriter with `constant_memory`, openpyxl with
-`write_only` and `read_only`.
+The native (Rust) module writes XLSB with inline strings 4.2–4.4× faster than
+xlspy's pure-Python fallback and reads XLSB 30–56× faster. The WSL2 and Mac
+writer comparisons use inline strings for xlspy, `constant_memory` for
+xlsxwriter, and `write_only`/`read_only` for openpyxl. Read timings are medians
+of three end-to-end runs with a warm page cache. Raw results and methodology:
+[benchmarks](https://github.com/justybase/xlspy/blob/main/docs/benchmarks.md#release-candidate-0140-2026-11-05).
 [See the full comparisons, hardware, and methodology →](https://github.com/justybase/xlspy/blob/main/docs/benchmarks.md)
 
 ## Made for the work behind the workbook
