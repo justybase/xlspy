@@ -396,6 +396,11 @@ impl Row<'_, '_> {
         if !cell.getattr("array_ref")?.is_none() {
             return Ok(false);
         }
+        // A dynamic-array formula needs the anchor's cm attribute and the
+        // metadata part: the Python writer writes the row.
+        if !cell.getattr("spill_ref")?.is_none() {
+            return Ok(false);
+        }
         let text_obj = cell.getattr("text")?;
         let Ok(text) = text_obj.cast::<PyString>() else {
             return Ok(false);

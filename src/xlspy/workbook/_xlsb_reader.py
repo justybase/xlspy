@@ -44,6 +44,12 @@ from ._xlsb_sheet_meta import (
     FILTER_RECORDS, LIST_PART, RECORDS as SHEET_RECORDS, ROW_FLAGS, ROW_HEADER,
     apply_sheet_records, read_filter_record, read_table_part, row_header,
 )
+from .._xlsb_ignored_errors import (
+    RECORD_BEGIN as BEGIN_IGNORED_ERRORS,
+    RECORD_END as END_IGNORED_ERRORS,
+    RECORD_ERROR as IGNORED_ERROR,
+    ignored_errors_from_records,
+)
 from ._model import Chartsheet
 
 
@@ -133,6 +139,7 @@ class _SheetRecords:
     conditional: list[tuple[int, bytes]] = field(default_factory=list)
     validations: list[bytes] = field(default_factory=list)
     list_parts: list[str] = field(default_factory=list)
+    ignored_errors: list[tuple[int, bytes]] = field(default_factory=list)
 
 
 def _range_label(payload: bytes) -> tuple[str, int, int]:
@@ -165,6 +172,8 @@ def _read_records(
         if record_id == ROW_HEADER:
             if len(payload) > ROW_FLAGS and payload[ROW_FLAGS] & 0x7F:
                 row_header(sheet, payload)
+        elif record_id in (BEGIN_IGNORED_ERRORS, IGNORED_ERROR, END_IGNORED_ERRORS):
+            records.ignored_errors.append((record_id, payload))
         elif record_id in SHEET_RECORDS:
             records.metadata.append((record_id, payload))
         elif record_id in _CF_RECORDS:
@@ -291,6 +300,7 @@ def _load_sheet(
     span = _load_cells(sheet, reader, name, sheet_data, data_only)
     records = _read_records(sheet, sheet_path, sheet_data, span, handle.package)
     apply_sheet_records(sheet, records.metadata)
+    sheet.ignored_errors = ignored_errors_from_records(records.ignored_errors)
     _read_related_parts(sheet, sheet_path, handle.package, records.list_parts)
     if (records.validations or records.conditional) and formula_context is None:
         formula_context = FormulaContext(

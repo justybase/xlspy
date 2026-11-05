@@ -67,10 +67,23 @@ def test_options_must_be_a_sheet_options(tmp_path):
             writer.write_sheet([[1]], options={"zoom": 80})
 
 
-def test_xlsb_refuses_an_xlsx_only_option(tmp_path):
-    with XlsbWriter(tmp_path / "only.xlsb") as writer:
+def test_xlsb_takes_ignored_errors_like_xlsx(tmp_path):
+    from xlspy import IgnoredError
+    from xlspy._xlsb_ignored_errors import ignored_errors_from_records
+    from xlspy.biff_utils import iter_records
+
+    path = tmp_path / "only.xlsb"
+    with XlsbWriter(path) as writer:
         writer.add_sheet("S")
-        with pytest.raises(TypeError, match="ignored_errors"):
-            writer.write_sheet([[1]], options=SheetOptions(ignored_errors=[]))
-        with pytest.raises(TypeError, match="ignored_errors"):
-            writer.write_sheet([[1]], ignored_errors=[])
+        writer.write_sheet(
+            [[1]],
+            options=SheetOptions(ignored_errors=[
+                IgnoredError("A1", numberStoredAsText=True)
+            ]),
+        )
+    data = _part(path, "xl/worksheets/sheet1.bin")
+    records = [
+        (record.record_id, data[record.data_start:record.data_end])
+        for record in iter_records(data)
+    ]
+    assert [item.sqref for item in ignored_errors_from_records(records)] == ["A1"]

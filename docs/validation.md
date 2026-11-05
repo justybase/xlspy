@@ -5,12 +5,48 @@
 ## Known limitations
 
 - **Older Excel versions were not tested.** Only Excel 16.0 was available, so
-  compatibility with other Excel releases is unverified.
-- **Dynamic-array (spill) formulas** are not supported.
+  compatibility with other Excel releases is unverified. In XLSB, a lambda called
+  in place (`LAMBDA(...)(...)`) is not written yet; LET and lambdas passed to
+  higher-order functions are.
 - **Copying into a caller's stream cannot be undone.** A failed write leaves a
   file object untouched, but if the stream itself fails while the finished
   workbook is being copied in, it holds part of the workbook (see
   [Failure handling](guide/writing.md#failure-handling)).
+
+## COM conformance and the XLSB write path (2026-11-05)
+
+Windows 11, Python 3.14, native module built with `maturin develop --release`.
+The full suite passes (the two expectations that changed with the new XLSB write
+path were updated: `replace_sheet_data` now writes scalar formulas, and
+`XlsbWriter` takes `ignored_errors`).
+
+Modern formulas: a capture of Excel's own XLSX and XLSB files showed that reading
+LET/LAMBDA/spill already worked and a no-op save is byte-identical, while writing
+needed the `_xlpm.` parameter names, the XLSX `xl/metadata.xml` and the XLSB
+`xl/metadata.bin` plus a `BrtCellMeta` record and an array formula group. Excel
+16 recalculates LET and lambdas passed to `MAP`/`REDUCE`, and reports
+`HasSpill`/`SpillingToRange` for `SEQUENCE` in both formats. A lambda called in
+place (`LAMBDA(...)(...)`) is written to XLSX only.
+
+Hashed sheet protection: an Excel-saved XLSB (`BrtSheetProtectionIso`) keeps its
+hash when a permission flag changes, and Excel still unprotects with the old
+password. No sort-state record was found in an XLSB Excel saved after
+`Range.Sort` or `AutoFilter.Sort.Apply`, so that gap was not closed.
+
+The rewritten COM conformance suite (`tests/test_excel_com_conformance.py`, data
+in `tests/com_cases.py`, Excel helpers in `tests/com_spec.py`) — eight cases in
+XLSX and XLSB, written by xlspy and read by Excel, written by Excel and read by
+xlspy, plus an updater round — gave **46 passed, 4 skipped** in 6.8 s. The touched
+COM modules (`test_excel_com_conformance.py`,
+`test_excel_com_ignored_errors.py`, `test_xlsb_updater_formulas.py`,
+`test_excel_com_table_totals.py`) gave **65 passed, 4 skipped** in 76 s.
+
+Checked in Excel 16.0: the XLSB ignored-error block (ranges and each flag read
+back through `Range.Errors.Item(i).Ignore`), a loaded XLSB keeping and extending
+them, and `replace_sheet_data` formulas recalculating on load (the cached values
+written on purpose were wrong; Excel produced the right ones). The old conformance
+module depended on PowerShell 7 and a `comparison/com` workspace that was never in
+the repository; it skipped itself unconditionally.
 
 ## Edit and write rounds (2026-11-04)
 

@@ -140,13 +140,14 @@ copied byte for byte when no style changed.
 ² A sheet saved with several window views cannot have its view edited.
 
 ³ Protection whose password the file stores as a hash (written by Excel)
-cannot be edited; a password set through xlspy can.
+cannot have its password changed; in XLSB its permission flags can be changed
+and the hash is kept, so Excel still accepts the old password. A password set
+through xlspy can be changed as before.
 
-⁴ Cell-value, formula, top/bottom, above-average, duplicate/unique, text,
-time-period and blank/error rules are loaded into the model. Colour scales,
-data bars and icon sets stay in the file but are not loaded. In XLSB, each
-rule left as it was read keeps its Excel 2010 extension (negative bar colours,
-axes, gradient settings); a changed or removed rule loses its own extension.
+⁴ Every rule type the writers accept is loaded into the model, including colour
+scales, data bars and icon sets, in both XLSX and XLSB. In XLSB, each rule left
+as it was read keeps its Excel 2010 extension (negative bar colours, axes,
+gradient settings); a changed or removed rule loses its own extension.
 
 ⁵ Tables can be added, removed and changed in a loaded XLSB: the range, the name,
 the style (name and banding), the filter range and the column names. Only the

@@ -10,6 +10,23 @@ The [current results](#current-results-rust-module-2026-11-02) were measured on 
 
 Windows 11 Pro (build 26300), AMD Ryzen 7 7840HS (16 logical CPUs, 31 GiB RAM), Python 3.14.2, xlspy at commit `203721c` (Q7 of the quality round), openpyxl 3.1.5, xlsxwriter 3.3.1, PyExcelerate 0.13.0. Output goes to NTFS.
 
+### Native write-path experiments (2026-11-05)
+
+Two candidates were measured before being adopted; neither passed its gate, so the
+write path is unchanged.
+
+- **Hyperlink trailer in Rust** (`<hyperlinks>`, the worksheet `.rels` part): the
+  Python trailer on a 50,000 × 20 sheet of 250,000 unique links took 1.03 s; with
+  the native encoder 0.99 s, inside the run-to-run spread. The native function
+  creates the same 250,000 Python relationship tuples, which offsets the faster
+  XML formatting. Not adopted.
+- **Native deflate** (`zlib-rs`, `libdeflater`) on the uncompressed 24.8 MB
+  worksheet of a 50,000 × 20 XLSX, level 3: zlib 0.073 s (341 MB/s), `zlib-rs`
+  0.061 s (409 MB/s, 1.20×), `libdeflate` 0.055 s (453 MB/s, 1.33×); at level 6
+  `zlib-rs` is 1.08× zlib, at level 9 1.09×. Compression is about 0.07 s of a
+  0.42 s write at level 3, so the best case saves ~3% of the whole write (below the
+  8% gate), and the writer already compresses on a worker thread. Not adopted.
+
 ### Write
 
 50,000 × 50 (2.5 million cells), `mixed` dataset from a generator to a file, median of three interleaved runs, each in its own process ([`windows-2026-11-02-rust-write.json`](benchmark-results/windows-2026-11-02-rust-write.json)). Peak is the worker's peak working set; traced is a separate run's peak of Python allocations.

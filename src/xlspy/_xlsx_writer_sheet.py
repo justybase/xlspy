@@ -770,9 +770,16 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             v_xml = f'<v>{xstring_escape(saxutils.escape(value))}</v>'
         elif value is not None:
             v_xml = f'<v>{_format_number(float(value) if isinstance(value, Decimal) else value)}</v>'
-        f_attr = f' t="array" ref="{formula.array_ref}"' if formula.array_ref is not None else ''
+        range_ref = formula.spill_ref if formula.spill_ref is not None else formula.array_ref
+        f_attr = f' t="array" ref="{range_ref}"' if range_ref is not None else ''
+        cm_attr = ''
+        if formula.spill_ref is not None:
+            # A dynamic-array anchor: cm="1" points at the XLDAPR block of
+            # xl/metadata.xml, which the writer adds when it sees one.
+            cm_attr = ' cm="1"'
+            self._has_dynamic = True
         buf.write(
-            f'<c{s_attr}{t_attr}><f{f_attr}>{saxutils.escape(formula.text)}</f>{v_xml}</c>'
+            f'<c{cm_attr}{s_attr}{t_attr}><f{f_attr}>{saxutils.escape(formula.text)}</f>{v_xml}</c>'
         )
 
     def _append_pivot_rows(self, sink, renders, body) -> None:

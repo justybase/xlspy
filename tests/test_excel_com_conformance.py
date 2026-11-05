@@ -1,297 +1,182 @@
-"""Excel COM conformance suite driven by the shared spec in comparison/com/cases.json.
+"""Excel COM conformance suite driven by the spec in ``com_cases``.
 
-Writer tests: xlspy writes every case in XLSX and XLSB; Microsoft Excel (COM) opens each file
-and checks sheet names, visibility, AutoFilter, every cell value, the used range and number formats.
+Writer tests: xlspy writes every case in XLSX and XLSB; Microsoft Excel opens each
+file and reports sheet names, visibility, AutoFilter, used range, every cell value
+and number format.
 
-Reader tests: Excel writes the same cases; xlspy reads them back and must return the spec values.
+Reader tests: Excel writes the same cases; xlspy reads them back and must return
+the spec values.
 
-Requires Windows, Microsoft Excel with COM automation, and PowerShell 7+ (pwsh).
+Updater test: xlspy writes a template, ``replace_sheet_data`` replaces its body,
+and Excel reads the result.
+
+Requires Windows, Microsoft Excel and ``pywin32``; opt in with
+``XLSPY_RUN_EXCEL_COM=1``.
 """
 
 from __future__ import annotations
 
 import datetime as dt
-import json
 import math
 import shutil
-import subprocess
-from pathlib import Path
 
 import pytest
 
-from xlspy import ExcelReader, XlsbWriter, XlsxWriter
+from xlspy import ExcelReader, XlsbUpdater, XlsxUpdater
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-COM_DIR = REPO_ROOT / "comparison" / "com"
-SPEC_PATH = COM_DIR / "cases.json"
+from com_cases import CASES, UPDATE_RESULT, UPDATE_TEMPLATE
+from com_spec import (
+    cell_value,
+    expand_rows,
+    format_failures,
+    verify_in_excel,
+    write_case,
+    write_case_with_excel,
+)
+
+pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
+
+FORMATS = ("xlsx", "xlsb")
+CASE_IDS = [case["id"] for case in CASES]
 EXCEL_EPOCH = dt.datetime(1899, 12, 30)
 
 
-def _excel_available() -> bool:
-    if not __import__("sys").platform.startswith("win"):
-        return False
-    try:
-        import winreg
-
-        winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"Excel.Application\CLSID")
-        return True
-    except OSError:
-        return False
-
-
-pytestmark = [
-    pytest.mark.com,
-    pytest.mark.skipif(not _excel_available(), reason="Microsoft Excel COM is not available"),
-    pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 (pwsh) is required"),
-]
-
-
-# --- spec loading ---------------------------------------------------------------------------
-
-def _load_cases() -> list[dict]:
-    return json.loads(SPEC_PATH.read_text(encoding="utf-8"))["cases"]
-
-
-if not SPEC_PATH.exists():
-    pytest.skip(
-        "comparison/com/cases.json not found; run the Excel COM conformance suite "
-        "from the comparison workspace",
-        allow_module_level=True,
-    )
-
-CASES = _load_cases()
-FORMATS = ("xlsx", "xlsb")
-
-
-def _expand_sheet(sheet: dict) -> list[list]:
-    """Mirror of Expand-SheetRows in comparison/com/ExcelComSpec.psm1."""
-    gen = sheet.get("generator")
-    if gen is None:
-        return [list(row) for row in sheet["rows"]]
-    count = int(gen["rows"])
-    if "columns" in gen:
-        cols = int(gen["columns"])
-        rows = [[f"C{j:02d}" for j in range(1, cols + 1)]]
-        rows += [[float(i * 1000 + j) for j in range(1, cols + 1)] for i in range(1, count + 1)]
-        return rows
-    rows = [list(gen["header"])]
-    rows += [[float(i), f"row-{i}", i * 0.25] for i in range(1, count + 1)]
-    return rows
-
-
-def _cell_value(cell):
-    """Spec cell -> Python value as the library should read it / write it."""
-    if isinstance(cell, dict):
-        if "date" in cell:
-            return dt.datetime.strptime(cell["date"], "%Y-%m-%dT%H:%M:%S")
-        if "value" in cell:
-            return cell["value"]
-    return cell
-
-
-def _cell_number_format(cell):
-    if isinstance(cell, dict) and "numberFormat" in cell:
-        return cell["numberFormat"]
-    return None
-
-
-# --- writer side ----------------------------------------------------------------------------
-
-def _write_case(case: dict, path: Path, fmt: str) -> None:
-    writer_cls = XlsxWriter if fmt == "xlsx" else XlsbWriter
-    with writer_cls(str(path)) as workbook:
-        for sheet in case["sheets"]:
-            workbook.add_sheet(sheet["name"], hidden=bool(sheet.get("hidden", False)))
-            rows = _expand_sheet(sheet)
-            data = []
-            for row in rows:
-                out_row = []
-                for cell in row:
-                    value = _cell_value(cell)
-                    fmt_code = _cell_number_format(cell)
-                    out_row.append((value, fmt_code) if fmt_code else value)
-                data.append(out_row)
-            workbook.write_sheet(data, auto_filter=bool(sheet.get("autoFilter", False)))
-
-
-# --- Excel-side helpers ---------------------------------------------------------------------
-
-def _run_pwsh(args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", *args],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=900,
-    )
-
-
-def _verify(targets: list[dict], out_dir: Path) -> list[dict]:
-    targets_path = out_dir / "verify-targets.json"
-    results_path = out_dir / "verify-results.json"
-    targets_path.write_text(json.dumps(targets), encoding="utf-8")
-    proc = _run_pwsh(
-        [
-            str(COM_DIR / "Invoke-ExcelVerify.ps1"),
-            "-SpecPath", str(SPEC_PATH),
-            "-TargetsPath", str(targets_path),
-            "-OutPath", str(results_path),
-        ]
-    )
-    assert results_path.exists(), f"Excel verifier produced no results.\n{proc.stdout}\n{proc.stderr}"
-    return json.loads(results_path.read_text(encoding="utf-8"))
-
-
-@pytest.fixture(scope="session")
-def com_session(tmp_path_factory):
-    base = tmp_path_factory.mktemp("excel_com")
-    written = base / "written"
-    written.mkdir()
-
-    targets = []
+@pytest.fixture(scope="module")
+def written(tmp_path_factory, excel):
+    """Write every case with xlspy and read it back through Excel, once."""
+    base = tmp_path_factory.mktemp("com_conformance")
+    results = {}
     for case in CASES:
         for fmt in FORMATS:
-            path = written / f"{case['id']}.{fmt}"
-            _write_case(case, path, fmt)
-            targets.append({"file": str(path), "caseId": case["id"], "format": fmt})
-    writer_results = _verify(targets, base)
-
-    fixtures = base / "excel-fixtures"
-    proc = _run_pwsh(
-        [
-            str(COM_DIR / "New-ExcelFixture.ps1"),
-            "-SpecPath", str(SPEC_PATH),
-            "-OutDir", str(fixtures),
-        ]
-    )
-    assert proc.returncode == 0, f"New-ExcelFixture failed:\n{proc.stdout}\n{proc.stderr}"
-    fixture_targets = json.loads((fixtures / "targets.json").read_text(encoding="utf-8"))
-
-    return {"writer": writer_results, "fixtures": fixture_targets, "fixture_dir": fixtures}
+            path = base / f"{case['id']}.{fmt}"
+            write_case(path, case, fmt)
+            book = excel.Workbooks.Open(str(path), 0, True)
+            try:
+                results[(case["id"], fmt)] = verify_in_excel(book, case, fmt)
+            finally:
+                book.Close(False)
+    return results
 
 
-def _results_for(results: list[dict], case_id: str, fmt: str) -> list[dict]:
-    return [r for r in results if r["caseId"] == case_id and r["format"] == fmt]
+@pytest.fixture(scope="module")
+def excel_authored(tmp_path_factory, excel):
+    """Write every case with Excel itself and return the paths."""
+    base = tmp_path_factory.mktemp("com_conformance_excel")
+    paths = {}
+    for case in CASES:
+        if not case.get("excel_authored", True):
+            continue
+        for fmt in FORMATS:
+            path = base / f"{case['id']}.{fmt}"
+            write_case_with_excel(excel, path, case, fmt)
+            paths[(case["id"], fmt)] = path
+    return paths
 
 
-def _failures(results: list[dict]) -> str:
-    return "\n".join(
-        f"{r['check']} [{r['sheet']}]: expected {r['expected']!r}, got {r['actual']!r} {r['message']}"
-        for r in results
-        if not r["pass"]
-    )
-
-
-# --- tests: Excel reads what xlspy wrote -----------------------------------------------------
-
-def _is_structure_check(check: str) -> bool:
-    return not check.startswith(("cells:", "numberFormat:"))
+def _checks(written, case_id, fmt, kind):
+    checks = [c for c in written[(case_id, fmt)] if c["kind"] == kind]
+    assert checks, f"no {kind} checks were produced"
+    failures = [c for c in checks if not c["pass"]]
+    assert not failures, format_failures(failures)
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
-@pytest.mark.parametrize("case_id", [c["id"] for c in CASES])
-def test_excel_opens_xlspy_structure(com_session, case_id, fmt):
-    """Excel opens the file; sheet names, order, visibility, AutoFilter and used range match the spec."""
-    results = [r for r in _results_for(com_session["writer"], case_id, fmt) if _is_structure_check(r["check"])]
-    assert results, "no Excel checks were produced for this file"
-    failures = _failures(results)
-    assert not failures, failures
+@pytest.mark.parametrize("case_id", CASE_IDS)
+def test_excel_opens_xlspy_structure(written, case_id, fmt):
+    """Sheet names, order, visibility, AutoFilter and used range match the spec."""
+    _checks(written, case_id, fmt, "structure")
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
-@pytest.mark.parametrize("case_id", [c["id"] for c in CASES])
-def test_excel_reads_xlspy_cell_values(com_session, case_id, fmt):
-    """Every cell value and number format written by xlspy reads back in Excel as specified."""
-    results = [r for r in _results_for(com_session["writer"], case_id, fmt) if not _is_structure_check(r["check"])]
-    if not results:
-        pytest.skip("no cell checks for this case")
-    failures = _failures(results)
-    assert not failures, failures
+@pytest.mark.parametrize("case_id", CASE_IDS)
+def test_excel_reads_xlspy_cell_values(written, case_id, fmt):
+    """Every sampled cell value and number format reads back as specified."""
+    checks = [c for c in written[(case_id, fmt)] if c["kind"] == "cells"]
+    if not checks:
+        pytest.skip("the case holds no cells")
+    failures = [c for c in checks if not c["pass"]]
+    assert not failures, format_failures(failures)
 
 
-# --- tests: xlspy reads what Excel wrote -----------------------------------------------------
-
-def _normalise_for_compare(value):
-    if isinstance(value, bool):
+def _as_datetime(value):
+    if isinstance(value, dt.datetime):
         return value
-    if isinstance(value, (int, float)):
-        return float(value)
+    if isinstance(value, dt.date):
+        return dt.datetime.combine(value, dt.time())
     return value
 
 
 def _same_cell(expected, actual) -> bool:
-    expected = _normalise_for_compare(expected)
-    actual = _normalise_for_compare(actual)
+    expected = _as_datetime(expected)
     if expected is None:
         return actual in (None, "")
     if isinstance(expected, dt.datetime):
-        if not isinstance(actual, dt.datetime):
+        if not isinstance(_as_datetime(actual), dt.datetime):
             return False
-        return math.isclose((expected - EXCEL_EPOCH).total_seconds(), (actual - EXCEL_EPOCH).total_seconds(), abs_tol=1.0)
-    if isinstance(expected, float):
-        return isinstance(actual, float) and math.isclose(expected, actual, rel_tol=1e-9, abs_tol=1e-12)
+        expected_serial = (expected - EXCEL_EPOCH).total_seconds()
+        actual_serial = (_as_datetime(actual) - EXCEL_EPOCH).total_seconds()
+        return math.isclose(expected_serial, actual_serial, abs_tol=1.0)
+    if isinstance(expected, bool):
+        return isinstance(actual, bool) and actual is expected
+    if isinstance(expected, (int, float)):
+        return isinstance(actual, (int, float)) and not isinstance(actual, bool) and math.isclose(
+            float(expected), float(actual), rel_tol=1e-9, abs_tol=1e-12
+        )
     return expected == actual
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
-@pytest.mark.parametrize("case_id", [c["id"] for c in CASES])
-def test_xlspy_reads_excel_authored_file(com_session, case_id, fmt):
+@pytest.mark.parametrize("case_id", CASE_IDS)
+def test_xlspy_reads_excel_authored_file(excel_authored, case_id, fmt):
     case = next(c for c in CASES if c["id"] == case_id)
-    fixture = next(
-        t for t in com_session["fixtures"] if t["caseId"] == case_id and t["format"] == fmt
-    )
-    with ExcelReader(fixture["file"]) as reader:
-        names = reader.get_sheet_names()
-        expected_names = [s["name"] for s in case["sheets"]]
-        assert names == expected_names
-
+    if not case.get("excel_authored", True):
+        pytest.skip("Excel authoring this case is covered by the writer side")
+    with ExcelReader(excel_authored[(case_id, fmt)]) as reader:
+        assert reader.get_sheet_names() == [sheet["name"] for sheet in case["sheets"]]
         for sheet in case["sheets"]:
-            expected_rows = [[_cell_value(c) for c in row] for row in _expand_sheet(sheet)]
+            expected_rows = expand_rows(sheet)
             if not expected_rows:
                 continue
-            width = max(len(r) for r in expected_rows)
-            expected_rows = [r + [None] * (width - len(r)) for r in expected_rows]
-            actual_rows = [list(r) for r in reader.read_all(sheet["name"])]
-            actual_rows = [r + [None] * (width - len(r)) for r in actual_rows]
-
-            # Rows that are entirely empty may be trimmed by the reader; compare the populated prefix.
-            while actual_rows and all(v in (None, "") for v in actual_rows[-1]) and len(actual_rows) > len(expected_rows):
-                actual_rows.pop()
-            assert len(actual_rows) >= len(expected_rows), f"{sheet['name']}: too few rows"
-            for r, (exp_row, act_row) in enumerate(zip(expected_rows, actual_rows), start=1):
-                for c, (exp, act) in enumerate(zip(exp_row, act_row), start=1):
-                    assert _same_cell(exp, act), (
-                        f"{sheet['name']} row {r} col {c}: expected {exp!r}, got {act!r}"
+            actual_rows = [list(row) for row in reader.read_all(sheet["name"])]
+            for row_number, expected_row in enumerate(expected_rows, start=1):
+                if row_number > len(actual_rows):
+                    break
+                for column_number, expected in enumerate(expected_row, start=1):
+                    if expected is None:
+                        continue
+                    actual = (
+                        actual_rows[row_number - 1][column_number - 1]
+                        if column_number <= len(actual_rows[row_number - 1])
+                        else None
+                    )
+                    assert _same_cell(cell_value(expected), actual), (
+                        f"{sheet['name']} row {row_number} col {column_number}: "
+                        f"expected {cell_value(expected)!r}, got {actual!r}"
                     )
 
 
-# --- tests: in-place updaters on an Excel-authored template -----------------------------------
-
 @pytest.mark.parametrize("fmt", FORMATS)
-def test_xlspy_updater_replaces_sheet_and_excel_verifies(com_session, tmp_path, fmt):
-    from xlspy import XlsbUpdater, XlsxUpdater
-
-    template = next(
-        t for t in com_session["fixtures"] if t["caseId"] == "update_template" and t["format"] == fmt
-    )
+def test_xlspy_updater_then_excel_verifies(tmp_path, excel, fmt):
+    """A replace_sheet_data edit survives the save and Excel reads the new values."""
+    template = tmp_path / f"template.{fmt}"
+    write_case(template, UPDATE_TEMPLATE, fmt)
     target = tmp_path / f"updated.{fmt}"
-    shutil.copyfile(template["file"], target)
+    shutil.copyfile(template, target)
 
-    expected_case = next(c for c in CASES if c["id"] == "update_result")
-    data_rows = _expand_sheet(expected_case["sheets"][0])
-    headers, body = data_rows[0], [[_cell_value(c) for c in row] for row in data_rows[1:]]
-
-    updater_cls = XlsxUpdater if fmt == "xlsx" else XlsbUpdater
-    updater = updater_cls(str(target))
+    rows = expand_rows(UPDATE_RESULT["sheets"][0])
+    headers, body = rows[0], rows[1:]
+    updater_class = XlsxUpdater if fmt == "xlsx" else XlsbUpdater
+    updater = updater_class(str(target))
     try:
         updater.replace_sheet_data("Data", body, headers=headers)
         updater.save(str(target))
     finally:
         updater.close()
 
-    results = _verify(
-        [{"file": str(target), "caseId": "update_result", "format": fmt}],
-        tmp_path,
-    )
-    failures = _failures(results)
-    assert not failures, failures
+    book = excel.Workbooks.Open(str(target), 0, True)
+    try:
+        checks = __import__("com_spec").verify_in_excel(book, UPDATE_RESULT, fmt)
+    finally:
+        book.Close(False)
+    failures = [check for check in checks if not check["pass"]]
+    assert not failures, format_failures(failures)

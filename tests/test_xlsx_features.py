@@ -83,8 +83,8 @@ def test_formula_model_validates_and_normalizes():
         Formula("A1", value=True)
     with pytest.raises(ValueError, match="A1 range|invalid A1"):
         Formula("A1", array_ref="nope")
-    with pytest.raises(ValueError, match="_xlpm"):
-        Formula("LET(x,1,x)")
+    assert Formula("LET(x,1,x)").text == "_xlfn.LET(_xlpm.x,1,_xlpm.x)"
+    assert Formula("LAMBDA(x,x*2)(3)").text == "_xlfn.LAMBDA(_xlpm.x,_xlpm.x*2)(3)"
 
 
 def test_future_functions_get_xlfn_prefix_but_text_is_untouched():

@@ -7,6 +7,7 @@ import xml.sax.saxutils as saxutils
 from typing import Any
 from . import chart_parts
 from ._text import xml_space_attribute, xstring_escape
+from ._metadata_part import METADATA_XML
 from .comments import comments_xml, vml_xml, COMMENTS_TYPE
 from ._extlst import (
     EXT_WORKBOOK_SLICER_CACHES,
@@ -115,6 +116,8 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             self._zf.writestr(f"xl/tables/table{table_id}.xml", table_xml)
         for path, slicer_xml, _content_type in self._slicer_part_files:
             self._zf.writestr(path, slicer_xml)
+        if self._has_dynamic:
+            self._zf.writestr("xl/metadata.xml", METADATA_XML)
 
         self._zf.writestr("[Content_Types].xml", self._create_content_types())
         self._zf.writestr("_rels/.rels", self._create_root_rels())
@@ -163,6 +166,9 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             for chart_id in range(1, self._next_chart_id)
         )
         image_defaults = self._media.content_type_defaults()
+        metadata_part = ""
+        if self._has_dynamic:
+            metadata_part = '<Override PartName="/xl/metadata.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"/>'
         theme_part = ""
         if self._sheet_drawings:
             theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
@@ -194,6 +200,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
 {parts}
 <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+{metadata_part}
 {table_parts}
 {drawing_parts}
 {chart_overrides}
@@ -242,6 +249,12 @@ class _XlsxPartsMixin(_XlsxWriterHost):
                 f'<Relationship Id="rId{pivot_base + index + 1}" '
                 f'Type="{_REL_PIVOT_CACHE}" '
                 f'Target="pivotCache/pivotCacheDefinition{render.cache_id}.xml"/>'
+            )
+        if self._has_dynamic:
+            relationships.append(
+                f'<Relationship Id="rId{len(relationships) + 1}" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata" '
+                'Target="metadata.xml"/>'
             )
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

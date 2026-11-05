@@ -67,9 +67,9 @@ _ORDER = tuple(field.name for field in fields(SheetOptions))
 _FIELD_NAMES = frozenset(_ORDER)
 _DEFAULTS = {field.name: field.default for field in fields(SheetOptions)}
 
-# The options each writer accepts. XlsbWriter has no ignored_errors.
+# The options each writer accepts; both writers take every option.
 XLSX_OPTIONS = _FIELD_NAMES
-XLSB_OPTIONS = _FIELD_NAMES - {"ignored_errors"}
+XLSB_OPTIONS = _FIELD_NAMES
 
 
 def resolve_sheet_options(

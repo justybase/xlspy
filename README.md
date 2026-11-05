@@ -42,7 +42,7 @@ xlspy with inline strings, xlsxwriter with `constant_memory`, openpyxl with
 | Your workflow | What xlspy brings |
 | :--- | :--- |
 | **Export large datasets** | XLSB and XLSX output from a generator or database cursor, with bounded memory via `use_shared_strings=False`, and native (Rust) acceleration for supported read and write paths. A failed export publishes no partial workbook ([failure handling](https://github.com/justybase/xlspy/blob/main/docs/guide/writing.md#failure-handling)). |
-| **Deliver polished reports** | Cell styles, number formats, formulas, dropdown validation, hyperlinks, images, print setup, charts (column, bar, line, area, pie, doughnut, scatter, stacked), tables, and conditional formatting. Both XLSX and XLSB support them; see the [feature support table](https://github.com/justybase/xlspy/blob/main/docs/guide/objects.md#feature-support). |
+| **Deliver polished reports** | Cell styles, number formats, formulas, dropdown validation, hyperlinks, images, print setup, charts (column, bar, line, area, pie, doughnut, scatter, stacked — the chart types listed in the feature table), tables, and conditional formatting. Both XLSX and XLSB support them; see the [feature support table](https://github.com/justybase/xlspy/blob/main/docs/guide/objects.md#feature-support). |
 | **Work with DataFrames** | Export pandas or polars data directly to either format. |
 | **Refresh a familiar template** | Replace data in XLSB, XLSX, or XLSM while keeping workbook structure, styles, and unrelated sheets. |
 | **Connect a data pipeline** | Read rows as a generator and stream updates from a database cursor. |

@@ -24,6 +24,13 @@ from .._xlsb_print import (
     BRT_END_COL_BREAKS, BRT_END_HEADER_FOOTER, BRT_END_ROW_BREAKS, BRT_MARGINS,
     BRT_PAGE_SETUP, BRT_PRINT_OPTIONS, breaks_block, header_footer_block, margins_record,
 )
+from .._xlsb_ignored_errors import (
+    RECORD_BEGIN as BEGIN_IGNORED_ERRORS,
+    RECORD_END as END_IGNORED_ERRORS,
+    RECORD_ERROR,
+    ignored_errors_bin,
+)
+from ..ignored_errors import snapshot as ignored_errors_snapshot
 from .._xlsb_style_records import color_payload
 from ..biff_utils import build_record
 from ..printing import _paper_code, print_area_name
@@ -38,7 +45,7 @@ BEGIN_VIEWS, END_VIEWS, BEGIN_VIEW, END_VIEW, PANE, SELECTION = 0x85, 0x86, 0x89
 FORMAT_INFO = 0x1E5
 BEGIN_COL_INFOS, COL_INFO, END_COL_INFOS = 0x186, 0x3C, 0x187
 BEGIN_SHEET_DATA, END_SHEET_DATA, ROW_HEADER = 0x91, 0x92, 0x00
-SHEET_PROTECTION, SHEET_PROTECTION_ISO = 0x217, 0x218
+SHEET_PROTECTION, SHEET_PROTECTION_ISO = 0x217, 0x2A6
 BEGIN_FILTER, END_FILTER = 0xA1, 0xA2
 # Records of a value-list or blank-only auto filter; any other record means custom criteria.
 _VALUE_FILTER_RECORDS = frozenset({0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7})
@@ -162,6 +169,7 @@ GROUPS = {
     "filter": lambda sheet: _auto_filter_snapshot(sheet.auto_filter),
     "print": _print_state,
     "print_names": lambda sheet: (sheet.print_area, sheet.print_title_rows, sheet.print_title_cols),
+    "ignored_errors": lambda sheet: ignored_errors_snapshot(sheet.ignored_errors),
 }
 
 
@@ -320,6 +328,18 @@ def _protection_record(sheet) -> bytes:
     protection = sheet.protection
     if not protection.sheet:
         return b""
+    flags = [1] + [0 if getattr(protection, name) else 1 for name in _PROTECTION_FLAGS_NO_SHEET]
+    iso = getattr(sheet, "_protection_iso", None)
+    if iso is not None:
+        if protection.password is not None:
+            raise UnsupportedFeatureError(
+                "changing the password of a hashed sheet protection cannot be saved into XLSB"
+            )
+        payload = bytearray(iso)
+        if len(payload) < 4 + 16 * 4:
+            raise ValueError("malformed XLSB ISO sheet protection")
+        struct.pack_into("<16I", payload, 4, *flags)
+        return build_record(SHEET_PROTECTION_ISO, bytes(payload)) + sheet_protection_record(0, flags)
     if protection.hashValue or protection.algorithmName:
         raise UnsupportedFeatureError("sheet protection with a hashed password cannot be edited in XLSB yet")
     password = protection.password
@@ -329,7 +349,6 @@ def _protection_record(sheet) -> bytes:
         value = int(password, 16)
     else:
         value = int(password_hash(password), 16)
-    flags = [1] + [0 if getattr(protection, name) else 1 for name in _PROTECTION_FLAGS_NO_SHEET]
     return sheet_protection_record(value, flags)
 
 
@@ -606,6 +625,13 @@ def patch_layout(data: bytes, sheet, groups) -> bytes:
         data = _replace_filter(data, _filter_block(sheet))
     if "print" in groups:
         data = replace_records(data, _PRINT_RECORDS, _print_block(sheet, data), before=_AFTER_PRINT)
+    if "ignored_errors" in groups:
+        data = replace_records(
+            data,
+            {BEGIN_IGNORED_ERRORS, RECORD_ERROR, END_IGNORED_ERRORS},
+            ignored_errors_bin(sheet.ignored_errors),
+            before=(END_SHEET,),
+        )
     return data
 
 

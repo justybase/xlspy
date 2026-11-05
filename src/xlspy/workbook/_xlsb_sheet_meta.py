@@ -30,9 +30,11 @@ BEGIN_WS_VIEW = 0x89
 PANE = 0x97
 SELECTION = 0x98
 SHEET_PROTECTION = 0x217
+SHEET_PROTECTION_ISO = 0x2A6
 # Records collected for apply_sheet_records (row headers are filtered first).
 RECORDS = frozenset({
     COL_INFO, WS_PROP, BEGIN_WS_VIEW, PANE, SELECTION, FORMAT_INFO, SHEET_PROTECTION,
+    SHEET_PROTECTION_ISO,
     BRT_PRINT_OPTIONS,
     BRT_MARGINS, BRT_PAGE_SETUP, BRT_BEGIN_HEADER_FOOTER, BRT_BEGIN_ROW_BREAKS,
     BRT_END_ROW_BREAKS, BRT_BEGIN_COL_BREAKS, BRT_END_COL_BREAKS, BRT_BREAK,
@@ -168,6 +170,32 @@ def _protection(sheet, payload: bytes) -> None:
     protection.set_password(f"{password:04X}" if password else None, already_hashed=True)
 
 
+def _protection_iso(sheet, payload: bytes) -> None:
+    """The ISO protection record: the legacy flags plus the strong hash."""
+    sheet._protection_iso = payload
+    if len(payload) < 4 + 64:
+        return
+    protection = sheet.protection
+    protection.spinCount = struct.unpack_from("<I", payload, 0)[0] or None
+    flags = struct.unpack_from("<16I", payload, 4)
+    for index, (name, value) in enumerate(zip(_PROTECTION_FIELDS, flags)):
+        setattr(protection, name, bool(value) if index == 0 else not value)
+    offset = 4 + 64
+    if offset + 4 <= len(payload):
+        hash_size = struct.unpack_from("<I", payload, offset)[0]
+        offset += 4 + hash_size
+    if offset + 4 <= len(payload):
+        salt_size = struct.unpack_from("<I", payload, offset)[0]
+        offset += 4 + salt_size
+    if offset + 4 <= len(payload):
+        name_size = struct.unpack_from("<I", payload, offset)[0]
+        offset += 4
+        if offset + 2 * name_size <= len(payload):
+            protection.algorithmName = payload[offset:offset + 2 * name_size].decode(
+                "utf-16-le", "replace"
+            )
+
+
 def _read_xlsb_page_setup(sheet, payload: bytes) -> None:
     paper, scale, _hres, _vres, copies, first_page, width, height, flags = (
         struct.unpack_from("<8IH", payload, 0)
@@ -266,6 +294,8 @@ def apply_sheet_records(sheet, items) -> None:
                 _sheet_format(sheet, payload)
             elif record_id == SHEET_PROTECTION:
                 _protection(sheet, payload)
+            elif record_id == SHEET_PROTECTION_ISO:
+                _protection_iso(sheet, payload)
             elif record_id == BRT_PRINT_OPTIONS:
                 flags = struct.unpack_from("<H", payload, 0)[0]
                 options = sheet.print_options

@@ -10,7 +10,6 @@ from xlspy.biff_utils import build_record, iter_records, read_utf16
 from zip_utils import rewrite_workbook_members
 from xlspy import Workbook
 from xlspy import load_workbook
-from xlspy.exceptions import UnsupportedFeatureError
 from xlspy.formulas import Formula
 from xml.etree import ElementTree as ET
 import math
@@ -757,11 +756,18 @@ def test_xlsx_replace_writes_formula_with_cached_value(tmp_path, streaming):
     assert cached["B3"].value == "xy"
 
 
-def test_xlsb_replace_refuses_formulas_instead_of_writing_their_text(tmp_path):
+def test_xlsb_replace_writes_formulas_instead_of_their_text(tmp_path):
     base = _xlsb_base(tmp_path)
     updater = XlsbUpdater(base)
-    with pytest.raises(UnsupportedFeatureError, match="update_cells"):
-        updater.replace_sheet_data("S", [["a", Formula("A1+1")]])
+    try:
+        updater.replace_sheet_data("S", [["a", Formula("1+1", 2)]])
+        updater.save(base)
+    finally:
+        updater.close()
+    with ExcelReader(base) as reader:
+        assert reader.read_all("S") == [["a", 2]]
+    with ExcelReader(base) as reader:
+        assert reader.read_all("S", data_only=False) == [["a", "=1+1"]]
 
 
 def test_rows_of_a_self_closing_sheetdata_go_inside_it(tmp_path):

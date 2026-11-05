@@ -17,6 +17,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ExcelTable.totals_row_functions` selects each column's totals function (`sum`, `average`, `min`,
   ...), or `label`; without it the cell decides: text is a label, a number a sum, a formula a custom
   total.
+- `ignored_errors` in XLSB: `XlsbWriter.write_sheet`, `SheetOptions` and `Workbook.save` write the
+  ranges and flags, and a loaded XLSB reads them into `ws.ignored_errors` and saves changes. The block
+  (`BrtBeginIgnoredErrors` 0x0288, `BrtIgnoredError` 0x0289, `BrtEndIgnoredErrors` 0x028A) is not in
+  the published [MS-XLSB] specification; its layout and the bit of each flag were read back from
+  Excel 16, which opens the files. The binary form stores only the checks that are ignored: an
+  explicit `False` reads back as `None`.
+- `LET` and the `LAMBDA` family (`LAMBDA`, `MAP`, `REDUCE`, `SCAN`, `BYROW`, `BYCOL`, `MAKEARRAY`)
+  are written to XLSX and XLSB: their parameter names are given the `_xlpm.` prefix Excel stores
+  (`LET(x,1,x+1)` becomes `_xlfn.LET(_xlpm.x,1,_xlpm.x+1)`). A lambda called in place is written to
+  XLSX; the XLSB grammar does not take that call yet.
+- `Formula(..., spill_ref="A1:B3")` writes a dynamic-array formula to XLSX and XLSB: the anchor is an
+  array formula with the cell metadata (`cm="1"` / `BrtCellMeta`), and the workbook carries
+  `xl/metadata.xml` / `xl/metadata.bin`. Excel fills the range. A loaded file keeps the metadata and
+  an edit outside the range leaves it intact; an edit inside the range is refused.
+- A loaded XLSB whose sheet protection carries Excel's strong hash (`BrtSheetProtectionIso`) keeps
+  the hash when its permission flags are changed; Excel still accepts the old password. Changing
+  that password is refused. The ISO record was not read before, and the updater looked for it at the
+  wrong record id.
+- `XlsbUpdater.replace_sheet_data` writes scalar formulas, with their cached values: a formula cell
+  is encoded like `update_cells` encodes it, and the save drops the calculation chain and asks Excel
+  to recalculate on load. A legacy array formula is still refused with `UnsupportedFeatureError`
+  (use `update_cells`).
+- The Excel COM conformance suite is plain pytest (`tests/com_cases.py`, `tests/com_spec.py`): eight
+  cases in XLSX and XLSB, written by xlspy and read by Excel, written by Excel and read by xlspy, and
+  a template replaced by an updater. It needs neither PowerShell 7 nor the external `comparison/`
+  workspace the old module pointed at (and never found). New COM tests cover ignored errors and the
+  updater's formulas.
+
+### Changed
+
+- `SheetOptions.ignored_errors` is accepted by both writers; `XlsbWriter` no longer raises `TypeError`
+  for it.
 
 ### Fixed
 

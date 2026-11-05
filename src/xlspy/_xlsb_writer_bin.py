@@ -5,6 +5,7 @@ from typing import Any
 import datetime
 import math
 from decimal import Decimal
+from dataclasses import replace
 import struct
 from collections.abc import Iterable
 import io
@@ -42,6 +43,7 @@ from ._writer_common import FilterData
 from ._xlsb_writer_consts import _BRT_BEGIN_MERGE_CELLS, _BRT_DRAWING, _BRT_END_MERGE_CELLS, _BRT_HLINK, _BRT_MERGE_CELL, _hlink_payload
 from ._xlsb_writer_host import _XlsbWriterHost
 from ._xlsb_formulas import ArrayValue, formula_cell
+from ._xlsb_ignored_errors import ignored_errors_bin
 from ._xlsb_metadata import replace_records, sheet_protection_bin, wide_string
 
 
@@ -202,6 +204,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
         link_rids: dict | None = None, link_rid_start: int = 2,
         print_spec: PrintSettings | None = None, validations: Any = (), sparklines: Any = (),
         slicer_rel: str | None = None, table_bounds: frozenset = frozenset(),
+        ignored_errors: Any = None,
     ) -> None:
         buffer = io.BytesIO()
         spool = _SheetSpool(self._zf, part_name)
@@ -251,6 +254,9 @@ class _XlsbBinMixin(_XlsbWriterHost):
             def cell_hook(cell: Any, col: int, style: int, row: int) -> Any:
                 if isinstance(cell, Formula):
                     if cell.array_ref is not None:
+                        return NotImplemented
+                    if cell.spill_ref is not None:
+                        # The array group is written by the Python encoder.
                         return NotImplemented
                     return formula_cell(cell, col, style, formula_context(), sheet=sheet_name, row=row)
                 if isinstance(cell, CellRichText) and self._use_shared_strings:
@@ -436,6 +442,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 table_bounds=table_bounds, merge_refs=merge_refs, cf_rules=cf_rules, validations=validations, hyperlinks=hyperlinks,
                 print_spec=print_spec, drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
                 comment_vml_rid=comment_vml_rid, sparklines=sparklines, slicer_rel=slicer_rel,
+                ignored_errors=ignored_errors,
             )
             _set_dimension(head, used.payload())
             head += self._sheet_columns(
@@ -687,10 +694,15 @@ class _XlsbBinMixin(_XlsbWriterHost):
             else:
                 # The native encoder hands rows with other objects to this path.
                 if isinstance(cell, Formula):
-                    buffer.write(formula_cell(cell, col_idx, xf_index if has_custom_fmt else 0,
+                    spill = cell.spill_ref is not None and cell.array_ref is None
+                    formula = replace(cell, array_ref=cell.spill_ref, spill_ref=None) if spill else cell
+                    if spill:
+                        self._has_dynamic = True
+                        buffer.write(build_record(0x31, struct.pack('<I', 1)))
+                    buffer.write(formula_cell(formula, col_idx, xf_index if has_custom_fmt else 0,
                                               self._formula_context(), sheet=sheet_name, row=row_idx))
-                    if cell.array_ref is not None:
-                        bounds = parse_cell_range(cell.array_ref)
+                    if formula.array_ref is not None:
+                        bounds = parse_cell_range(formula.array_ref)
                         c1, r1, c2, r2 = bounds
                         if any(not (c2 < a or c1 > c or r2 < b or r1 > d) for a, b, c, d in array_ranges):
                             raise ValueError("overlapping array formulas")
@@ -788,6 +800,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
         table_bounds: frozenset, merge_refs: Any, cf_rules: list | None, validations: Any, hyperlinks: list[Any],
         print_spec: PrintSettings | None, drawing_rel: str | None, table_rel_ids: list[str] | None,
         comment_vml_rid: Any, sparklines: Any, slicer_rel: str | None,
+        ignored_errors: Any = None,
     ) -> None:
         """Write the records after the rows: protection, auto filter, merged cells,
         conditional formats, validations, hyperlinks, print settings, drawing, table
@@ -876,4 +889,6 @@ class _XlsbBinMixin(_XlsbWriterHost):
                                         self._formula_context()))
         if slicer_rel is not None:
             buffer.write(sheet_slicers_bin(slicer_rel))
+        # Excel writes the ignored-error block just before the trailing FRT block.
+        buffer.write(ignored_errors_bin(ignored_errors))
         buffer.write(self._sheet1Bytes[346:])

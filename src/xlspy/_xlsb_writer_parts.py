@@ -27,6 +27,7 @@ from .pivots import (
     pivot_table_rels_xml,
 )
 from ._xlsb_writer_consts import _ACUID_NAMESPACE, _BRT_AC_BEGIN, _BRT_AC_END, _BRT_BEGIN_AUTOFILTER, _BRT_BEGIN_CF, _BRT_BEGIN_LIST, _BRT_BEGIN_LIST_COL, _BRT_BEGIN_LIST_COLS, _BRT_BEGIN_LIST_PARTS, _BRT_END_AUTOFILTER, _BRT_END_CF, _BRT_END_LIST, _BRT_END_LIST_COL, _BRT_END_LIST_COLS, _BRT_END_LIST_PARTS, _BRT_FRT_BEGIN, _BRT_LIST_PART, _BRT_LIST_TR_FMLA, _BRT_TABLE_STYLE_CLIENT, _REL_PIVOT_CACHE, _REL_PIVOT_TABLE
+from ._metadata_part import METADATA_BIN
 from ._xlsb_writer_host import _XlsbWriterHost
 from .styles import ColorScaleRule, DataBarRule, DifferentialStyle, IconSetRule
 from ._xlsb_metadata import comments_bin
@@ -292,6 +293,8 @@ class _XlsbPartsMixin(_XlsbWriterHost):
 
         for table_id, table_bin in self._tables_bin.items():
             self._zf.writestr(f"xl/tables/table{table_id}.bin", table_bin)
+        if self._has_dynamic:
+            self._zf.writestr("xl/metadata.bin", METADATA_BIN)
 
         self._write_pivot_parts()
         self._zf.writestr("[Content_Types].xml", self._create_content_types())
@@ -342,6 +345,10 @@ class _XlsbPartsMixin(_XlsbWriterHost):
             for render in self._pivot_renders
         )
         theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
+        metadata_part = (
+            '<Override PartName="/xl/metadata.bin" ContentType="application/vnd.ms-excel.sheetMetadata"/>'
+            if self._has_dynamic else ""
+        )
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -354,6 +361,7 @@ class _XlsbPartsMixin(_XlsbWriterHost):
 {table_parts}
 {chart_parts_overrides}
 {theme_part}
+{metadata_part}
 {comment_parts}
 <Override PartName="/xl/styles.bin" ContentType="application/vnd.ms-excel.styles"/>
 <Override PartName="/xl/sharedStrings.bin" ContentType="application/vnd.ms-excel.sharedStrings"/>
@@ -392,6 +400,12 @@ class _XlsbPartsMixin(_XlsbWriterHost):
             f'Target="pivotCache/pivotCacheDefinition{render.cache_id}.bin"/>'
             for render, rel_id in zip(self._pivot_renders, self._pivot_cache_rel_ids())
         )
+        if self._has_dynamic:
+            relationships.append(
+                f'<Relationship Id="rId{len(relationships) + 1}" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata" '
+                'Target="metadata.bin"/>'
+            )
 
         return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">

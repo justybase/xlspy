@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .exceptions import InvalidFileError, UnsupportedFeatureError
+from .exceptions import InvalidFileError
 from collections.abc import Callable, Iterable, Mapping, Sequence
 import datetime
 from decimal import Decimal
@@ -628,8 +628,6 @@ def patch_row(data: bytes, values: Mapping[int, CellEdit], context: FormulaConte
         if kind == 0:
             row_header = bytearray(payload)
             continue
-        if kind in (0x31, 0x32):
-            raise UnsupportedFeatureError("point edits in rows with cell metadata are unsupported")
         if 1 <= kind <= 0x12:
             if kind >= 0xC:
                 column = previous_column + 1

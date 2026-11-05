@@ -305,7 +305,10 @@ def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=Fa
         if kind == 'name':
             if node[2] is None and context.has_table(node[1]):
                 return table_token(node[1], None, operand)  # a table alone is the whole table
-            index = context.name_reference(node[1], node[2] or sheet, qualified=node[2] is not None)
+            if node[2] is None and node[1].startswith('_xlpm.'):
+                index = context.lambda_name(node[1])
+            else:
+                index = context.name_reference(node[1], node[2] or sheet, qualified=node[2] is not None)
             return bytes([0x23 if operand == 'R' else 0x63 if operand == 'A' else 0x43]) + struct.pack('<I', index + 1)
         if kind == 'paren':
             return emit(node[1], operand) + b'\x15'
@@ -861,6 +864,15 @@ class FormulaContext:
             entry.raw = struct.pack('<IBI', entry.flags, 0, 0xFFFFFFFF) + wide_string(title) + parsed_formula(b'\x1c\x1d') + b'\xff' * 20
         return index
 
+    def lambda_name(self, title):
+        """A LET/LAMBDA parameter: the hidden ``_xlpm.`` name Excel writes."""
+        index = self.name_reference(title)
+        entry = self.names[index]
+        if entry.raw is None:
+            entry.flags = 0x20019
+            entry.raw = struct.pack('<IBI', entry.flags, 0, 0xFFFFFFFF) + wide_string(title) + parsed_formula(b'\x1c\x1d') + b'\xff' * 20
+        return index
+
     def set_name(self, definition):
         if not isinstance(definition, DefinedName):
             raise TypeError("definition must be DefinedName")
@@ -986,6 +998,27 @@ class ArrayValue:
     value: object = None
 
 
+def formula_record(formula, column, style, parsed, value=None) -> bytes:
+    """A ``BrtFmla*`` record for a formula already compiled to ``parsed``."""
+    header = struct.pack('<II', column, style)
+    if value is None:
+        value = getattr(formula, "value", None)
+    if isinstance(value, (datetime.date, datetime.datetime)):
+        # Array members may carry the cell value that was in the row.
+        value = datetime_to_serial(value, False)
+    if isinstance(value, str):
+        kind, cache = 8, wide_string(value)
+    elif isinstance(value, bool):
+        kind, cache = 10, bytes([value])
+    elif value is None or isinstance(value, (int, float, Decimal)):
+        if not math.isfinite(value or 0):
+            raise ValueError("XLSB formula cached values must be finite")
+        kind, cache = 9, struct.pack('<d', float(value or 0))
+    else:
+        raise TypeError(f"unsupported XLSB formula cached value {type(value).__name__}")
+    return build_record(kind, header + cache + b'\x01\0' + parsed)
+
+
 def formula_cell(formula, column, style, context, *, sheet=None, row=0):
     """Encode a scalar formula; cached zero is used if no cache was supplied."""
     array_definition = b''
@@ -1000,19 +1033,4 @@ def formula_cell(formula, column, style, context, *, sheet=None, row=0):
         array_definition = build_record(0x1AA, struct.pack('<IIII', r1, r2, c1, c2) + b'\x01' + group)
     else:
         parsed = compile_formula(formula.text, context, sheet=sheet, origin=(column, row))
-    header = struct.pack('<II', column, style)
-    value = formula.value
-    if isinstance(value, (datetime.date, datetime.datetime)):
-        # Array members may carry the cell value that was in the row.
-        value = datetime_to_serial(value, False)
-    if isinstance(value, str):
-        kind, cache = 8, wide_string(value)
-    elif isinstance(value, bool):
-        kind, cache = 10, bytes([value])
-    elif value is None or isinstance(value, (int, float, Decimal)):
-        if not math.isfinite(value or 0):
-            raise ValueError("XLSB formula cached values must be finite")
-        kind, cache = 9, struct.pack('<d', float(value or 0))
-    else:
-        raise TypeError(f"unsupported XLSB formula cached value {type(value).__name__}")
-    return build_record(kind, header + cache + b'\x01\0' + parsed) + array_definition
+    return formula_record(formula, column, style, parsed) + array_definition

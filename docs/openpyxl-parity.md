@@ -175,7 +175,7 @@ gap is implemented the same test starts passing without changes.
   remain. New chartsheets go after the other sheets.
 
 **Long tail**
-- Ignored errors (`Worksheet.ignored_errors`, XLSX) and external links (`Workbook.external_links`,
+- Ignored errors (`Worksheet.ignored_errors`, XLSX and XLSB) and external links (`Workbook.external_links`,
   read only) are in the model. Pivots, OLE/controls, phonetics, sheet backgrounds and
   custom/built-in table styles remain to be implemented.
 

@@ -32,19 +32,22 @@ with XlsxWriter("report.xlsx") as writer:
 - `Formula(text, value=..., array_ref=...)`: the text may start with `=`; `value`
   (number or string) is written as the cached result; `array_ref="C2:C5"` writes a
   legacy array (CSE) formula over that range.
+- `Formula(text, spill_ref="A1:B3")` writes a dynamic-array formula: Excel stores
+  the anchor as an array formula with cell metadata, and fills the range. The
+  anchor must be the top-left cell of `spill_ref`.
 - Excel recalculates formulas on open. Cells without a cached value read as
   `None` in data-only readers until Excel saves the file.
 - Functions added after Excel 2007 (`XLOOKUP`, `IFS`, `STDEV.S`, `CONCAT`, ...)
   are written with the `_xlfn.` prefix the file format requires; otherwise Excel
   shows `#NAME?`. Quoted sheet names and string literals are left as written.
+- `LET` and the `LAMBDA` family (`LAMBDA`, `MAP`, `REDUCE`, `SCAN`, `BYROW`,
+  `BYCOL`, `MAKEARRAY`) are written; their parameter names get the `_xlpm.`
+  prefix Excel stores. A lambda called in place (`LAMBDA(x,x*2)(3)`) is written
+  to XLSX; the XLSB formula grammar does not take that call yet (use a LET
+  binding or write XLSX).
 - Formulas work in styled cells, in table body rows, and with number formats
   (`(Formula(...), F.THOUSANDS_SEP)`). A pandas or polars column of `Formula`
   objects is written as formulas too.
-- Not supported: dynamic-array spill formulas (`FILTER`, `UNIQUE`, `SORT`,
-  `SEQUENCE` returning arrays), which need cell metadata xlspy does not write, and
-  `LET`/`LAMBDA`-family functions, which need `_xlpm.` parameter names. These
-  raise a `ValueError` where detectable. Wrap array functions so they return one
-  value (for example `COUNTA(UNIQUE(A:A))`).
 - xlspy does not evaluate formulas. Its syntax check only verifies balanced
   parentheses and quotes, and length; Excel reports any other error on open.
 
@@ -105,8 +108,8 @@ release, or use the arrow keys.
 
 **Reading links back.** `load_workbook()` restores them as `cell.hyperlink`
 (the label stays in `cell.value`); the read-only streaming readers do not
-report hyperlinks, and changing a link in a loaded workbook raises
-`NotImplementedError` at save time.
+report hyperlinks. Assigning `cell.hyperlink` in a loaded workbook (or calling
+`XlsxUpdater.set_hyperlinks` / `XlsbUpdater.set_hyperlinks`) saves the change.
 
 **XLSB** takes `Hyperlink` cells too, with the same targets, tooltip and link look
 as XLSX. External links are stored in the sheet's relationships and internal
@@ -431,6 +434,7 @@ report.
 | Row and column groups (`row_groups`, `column_groups`) | Yes | Yes |
 | Classic cell notes (`Comment`) | Yes | Yes |
 | User-defined names, sheet/workbook protection | Yes | Yes |
+| Ignored error checks (`IgnoredError`) | Yes | Yes |
 | Formula text reading (`data_only=False`) | Yes | Yes (supported BIFF12 tokens below) |
 | Sparse template edits (`update_cells`) | Yes (XLSX/XLSM updater) | Yes |
 | Column, bar, line, pie charts (original options) | Yes | Yes |
@@ -650,10 +654,12 @@ and `#This Row` stand alone, `#Headers` and `#Totals` meet only through `#Data`,
 keyword is dropped, as Excel drops it. Any other combination raises `ValueError`.
 A defined name cannot refer to a table, as in Excel. External-workbook
 references, inline array constants and unsupported BIFF12 formula tokens raise an explicit error.
-`LET` and the `LAMBDA` family remain unsupported. These limits also apply
-when reading formula text; reading cached values does not parse formula tokens.
-Point edits into grouped formulas are refused. Sparse edits discard the
-modified sheet's obsolete binary index and request recalculation.
+`LET` and the `LAMBDA` family are written, including their `_xlpm.` parameter
+names. A lambda called in place (`LAMBDA(...)(...)`) is not written to XLSB yet;
+as an argument to `MAP`, `REDUCE` and the other higher-order functions it is. These
+limits also apply when reading formula text; reading cached values does not parse
+formula tokens. Point edits into grouped formulas are refused. Sparse edits discard
+the modified sheet's obsolete binary index and request recalculation.
 
 Ordinary exports and reads with `data_only=True` retain their native row encoder
 and reader, with the existing Python fallback. They do not parse formula

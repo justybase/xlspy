@@ -160,6 +160,8 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
         self._letters = self._generate_column_letters()
         self._aborted = False
         self._saved = False
+        # Set when a dynamic-array formula is written: xl/metadata.xml follows.
+        self._has_dynamic = False
 
         # The default date and date-time formats, the same as XlsbWriter's.
         # Excel's built-in formats 14 and 22 would follow the reader's locale.

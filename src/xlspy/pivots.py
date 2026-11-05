@@ -6,7 +6,7 @@ aggregated as they go.  The pivot renders its own cells, writes a pivot cache
 without cached records (``saveData="0"``) and sets ``refreshOnLoad="1"``, so
 Excel rebuilds the report from the source table when the file opens.
 
-Only creation is supported, and only in XLSX.  The compact layout accepts one
+Only creation is supported, in XLSX and XLSB.  The compact layout accepts one
 row field, at most one column field, optional page (filter) fields and any
 number of value fields.  A loaded workbook keeps its pivot tables as untouched
 parts, as before.

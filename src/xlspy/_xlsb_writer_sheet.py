@@ -39,7 +39,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
 
         Sheet settings come from ``options`` (a ``SheetOptions``) or from keyword
         arguments with the same names; a keyword argument overrides the matching
-        field of ``options``. ``ignored_errors`` is an XLSX-only option.
+        field of ``options``.
         """
         opts = resolve_sheet_options(options, kwargs, XLSB_OPTIONS, "XlsbWriter")
         self._write_sheet(data, **opts.as_kwargs(XLSB_OPTIONS))
@@ -74,6 +74,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         header_rows: int = 1,
         tab_color: Color | str | None = None,
         zoom: int | None = None,
+        ignored_errors: list | tuple | None = None,
         sparklines: Any = None,
         slicers: Any = None,
         shapes: Any = None,
@@ -204,6 +205,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
                 link_rids=link_rids, link_rid_start=link_rid_start,
                 print_spec=spec.print_settings, validations=spec.validations,
                 sparklines=spec.sparklines, slicer_rel=slicer_rid,
+                ignored_errors=ignored_errors,
             )
             self._sheet_link_rels[sheet_id] = link_rids
             self._register_sheet_parts(

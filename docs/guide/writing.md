@@ -77,8 +77,8 @@ writer.write_sheet(rows, options=report)
 writer.write_sheet(other_rows, options=report, zoom=100)   # a keyword overrides the object
 ```
 
-`SheetOptions` is frozen. An unknown name raises `TypeError`. `XlsbWriter` does not
-accept `ignored_errors`; it raises `TypeError` as well.
+`SheetOptions` is frozen. An unknown name raises `TypeError`. Both writers take
+`ignored_errors`.
 
 ## Streaming large exports
 

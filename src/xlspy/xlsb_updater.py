@@ -16,6 +16,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from ._accel import encode_update_xlsb_row, patch_xlsb_row_headers
 from ._updater_base import StyleFallback, _UpdaterBase
 from ._xlsb_edit import XlsbEditMixin
+from ._xlsb_formulas import FormulaContext, formula_cell
 from ._xlsb_table_part import parse_table_part
 from ._xlsb_sheets import XlsbSheetsMixin
 from .exceptions import InvalidFileError, UnsupportedFeatureError, reading
@@ -80,6 +81,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         self._shared_strings_pending: list[str] = []
         self._shared_strings_dirty = False
         self._stream_shared_strings: DiskStringIndex | None = None
+        self._replace_formula_context: FormulaContext | None = None
 
     def _part_or_none(self, path: str) -> bytes | None:
         return self._package.get(path) if self._package.has(path) else None
@@ -142,13 +144,14 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         total_rows, width = self._region_size(materialized, header_values)
         last_row = max(0, total_rows - 1)
         last_col = max(0, width - 1)
-        new_rows = self._build_rows(
+        new_rows, wrote_formula = self._build_rows(
             materialized,
             header_values,
             data_styles,
             header_styles,
             date_xf,
             style_fallback,
+            sheet_name,
         )
 
         region = self._find_rows_region(sheet_data)
@@ -170,6 +173,8 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
 
         self._patch_dimension(updated, last_row, last_col)
         self._package.set(sheet_path, bytes(updated))
+        if wrote_formula:
+            self._invalidate_replaced_formulas()
         self._commit_shared_strings()
         self._patch_pivot_caches(sheet_name, last_row, last_col)
 
@@ -211,7 +216,9 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
 
                 # The final column is not known until the generator ends: the row
                 # headers say 0 until _patch_row_headers_file.
-                writer = _XlsbRowWriter(self, header_styles, data_styles, date_xf, style_fallback, 0)
+                writer = _XlsbRowWriter(
+                    self, header_styles, data_styles, date_xf, style_fallback, 0, sheet_name
+                )
 
                 if header_values is not None:
                     header_texts = header_row_texts(header_values)
@@ -252,6 +259,8 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                 updated_sheet, last_row, last_col, (region.rows_start, region.rows_start + rows_length)
             )
             self._package.set_file(sheet_path, updated_sheet)
+            if writer.wrote_formula:
+                self._invalidate_replaced_formulas()
             self._commit_stream_shared_strings()
             self._patch_pivot_caches(sheet_name, last_row, last_col)
         finally:
@@ -479,12 +488,16 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         header_styles: dict[int, int],
         date_xf: int | None,
         style_fallback: StyleFallback,
-    ) -> bytes:
+        sheet_name: str,
+    ) -> tuple[bytes, bool]:
         chunks: list[bytes] = []
         max_col = max(
             [len(row) for row in rows] + ([len(headers)] if headers is not None else []) + [0]
         )
-        writer = _XlsbRowWriter(self, header_styles, data_styles, date_xf, style_fallback, max(0, max_col - 1))
+        writer = _XlsbRowWriter(
+            self, header_styles, data_styles, date_xf, style_fallback,
+            max(0, max_col - 1), sheet_name,
+        )
 
         if headers is not None:
             header_texts = [
@@ -497,7 +510,29 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         for row in rows:
             chunks.append(writer.row(row, row_number))
             row_number += 1
-        return b"".join(chunks)
+        return b"".join(chunks), writer.wrote_formula
+
+    def _replace_context(self) -> FormulaContext:
+        """The formula context of a ``replace_sheet_data`` call, built once."""
+        if self._replace_formula_context is None:
+            self._replace_formula_context = self._context(
+                self._package.get("xl/workbook.bin"), self._part_or_none
+            )
+        return self._replace_formula_context
+
+    def _invalidate_replaced_formulas(self) -> None:
+        """Drop the calculation chain and ask Excel to recalculate on load.
+
+        The parts are set one by one: the streaming path already holds a package
+        transaction, and the in-memory path writes them straight through.
+        """
+        updates: dict[str, Any] = {}
+        removed: list[str] = []
+        self._invalidate_calculation(updates, removed)
+        for path, data in updates.items():
+            self._package.set(path, data.encode("utf-8") if isinstance(data, str) else data)
+        for path in removed:
+            self._package.remove(path)
 
     def _value_cell_bytes(
         self,
@@ -506,13 +541,23 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         data_styles: dict[int, int],
         date_xf: int | None,
         style_fallback: StyleFallback,
+        *,
+        sheet_name: str = "",
+        row_number: int = 0,
     ) -> bytes:
         value = unwrap_cell(raw)
         style = 0 if style_fallback == "general" else data_styles.get(column, 0)
         if isinstance(value, Formula):
-            raise UnsupportedFeatureError(
-                "replace_sheet_data cannot write formulas to XLSB; use update_cells() for formula cells"
+            if value.array_ref is not None:
+                raise UnsupportedFeatureError(
+                    "replace_sheet_data supports scalar formulas only; use update_cells() "
+                    "for array formulas"
+                )
+            encoded: bytes = formula_cell(
+                value, column, style, self._replace_context(),
+                sheet=sheet_name, row=row_number,
             )
+            return encoded
         if value is None:
             return self._string_cell_bytes(column, style, "")
         # numpy and other numeric types register with numbers; write them as Python numbers.
@@ -686,13 +731,17 @@ class _XlsbRowWriter:
     ``last_col`` as the last column."""
 
     def __init__(self, updater: XlsbUpdater, header_styles: dict[int, int], data_styles: dict[int, int],
-                 date_xf: int | None, style_fallback: StyleFallback, last_col: int) -> None:
+                 date_xf: int | None, style_fallback: StyleFallback, last_col: int,
+                 sheet_name: str = "") -> None:
         self._updater = updater
         self._header_styles = header_styles
         self._data_styles = data_styles
         self._date_xf = date_xf
         self._style_fallback = style_fallback
         self._last_col = last_col
+        self._sheet_name = sheet_name
+        # Set when a Formula cell is encoded: the save then asks for a recalculation.
+        self.wrote_formula = False
         general = style_fallback == "general"
         # The native encoder takes the column xfs as a list (none for "general").
         self._style_lists = tuple(
@@ -711,8 +760,13 @@ class _XlsbRowWriter:
         struct.pack_into("<i", payload, 21, self._last_col)
         return build_record(0x00, bytes(payload))
 
-    def _cell(self, raw: Any, column: int) -> bytes:
-        return self._updater._value_cell_bytes(raw, column, self._data_styles, self._date_xf, self._style_fallback)
+    def _cell(self, raw: Any, column: int, row_number: int) -> bytes:
+        if isinstance(unwrap_cell(raw), Formula):
+            self.wrote_formula = True
+        return self._updater._value_cell_bytes(
+            raw, column, self._data_styles, self._date_xf, self._style_fallback,
+            sheet_name=self._sheet_name, row_number=row_number,
+        )
 
     def _header_cell(self, text: Any, column: int) -> bytes:
         style = 0 if self._style_fallback == "general" else self._header_styles.get(column, 0)
@@ -729,13 +783,16 @@ class _XlsbRowWriter:
         )
 
     def row(self, row: Sequence[Any], row_number: int) -> bytes:
+        def cell(raw: Any, column: int, _row_number: int = row_number) -> bytes:
+            return self._cell(raw, column, _row_number)
+
         if encode_update_xlsb_row is not None:
             return bytes(encode_update_xlsb_row(
                 row, row_number, self._last_col, self._style_lists[1], self._date_xf or 0,
-                self._string_index, self._cell, self._updater._date_1904,
+                self._string_index, cell, self._updater._date_1904,
             ))
         return self._row_header(row_number) + b"".join(
-            self._cell(raw, column) for column, raw in enumerate(row) if raw is not None
+            self._cell(raw, column, row_number) for column, raw in enumerate(row) if raw is not None
         )
 
 

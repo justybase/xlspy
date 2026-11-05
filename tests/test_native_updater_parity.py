@@ -116,10 +116,8 @@ def test_native_rows_match_python_rows(tmp_path, monkeypatch, updater, writer, s
 
 
 @pytest.mark.parametrize("updater, writer, suffix", UPDATERS)
-@pytest.mark.parametrize("bad", [float("nan"), float("inf"), "x" * 40000, Formula("1+1")])
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), "x" * 40000], ids=["nan", "inf", "long-text"])
 def test_errors_are_the_python_errors(tmp_path, monkeypatch, updater, writer, suffix, bad):
-    if suffix == "xlsx" and isinstance(bad, Formula):
-        pytest.skip("XlsxUpdater writes formulas")
     errors = []
     for native in (True, False):
         with pytest.raises(Exception) as caught:
@@ -127,3 +125,12 @@ def test_errors_are_the_python_errors(tmp_path, monkeypatch, updater, writer, su
                      fallback="inherit", headers=False, date_1904=False, rows=[[1, "a"], ["b", bad]])
         errors.append((type(caught.value), str(caught.value)))
     assert errors[0] == errors[1]
+
+
+def test_xlsb_formula_rows_match_the_python_encoder(tmp_path, monkeypatch):
+    rows = [[1, "a"], ["b", Formula("1+1", 2)], ["c", Formula("B2&\"x\"")]]
+    options = {"shared": True, "stream": False, "fallback": "inherit", "headers": False,
+               "date_1904": False, "rows": rows}
+    native = _replace(tmp_path, monkeypatch, XlsbUpdater, XlsbWriter, "xlsb", native=True, **options)
+    python = _replace(tmp_path, monkeypatch, XlsbUpdater, XlsbWriter, "xlsb", native=False, **options)
+    assert native == python

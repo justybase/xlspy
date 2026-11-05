@@ -27,6 +27,14 @@ XLSPY_ACCEL=python python -m pytest        # PowerShell: $env:XLSPY_ACCEL="pytho
 Tests that drive Microsoft Excel through COM (Windows, `pywin32`) are skipped
 unless `XLSPY_RUN_EXCEL_COM=1` is set; run them with `-p no:faulthandler`.
 
+The conformance suite (`test_excel_com_conformance.py`, driven by the data in
+`com_cases.py` and the Excel helpers in `com_spec.py`) writes eight cases as XLSX
+and XLSB with xlspy and reads them back in Excel, writes the same cases in Excel
+and reads them with xlspy, and replaces a template's body with an updater. It
+needs no PowerShell 7 and no external `comparison/` workspace. Ignored errors and
+the updater's formulas have their own COM modules
+(`test_excel_com_ignored_errors.py`, `test_xlsb_updater_formulas.py`).
+
 ## Lint and type checks
 
 CI runs both. mypy checks every module in `src/xlspy` with
@@ -81,6 +89,7 @@ $env:XLSPY_RUN_EXCEL_COM = "1"
 python -m pytest tests/test_excel_com_metadata.py
 python -m pytest tests/test_xlsb_metadata_com.py
 python -m pytest tests/test_excel_com_review_fixes.py
+python -m pytest tests/test_excel_com_conformance.py tests/test_excel_com_ignored_errors.py
 ```
 
 ## Native extension

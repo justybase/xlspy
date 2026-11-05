@@ -33,6 +33,7 @@ class _XlsxWriterHost:
         _spool_max_bytes: int
         _worksheet_data: list[tuple[str, Iterable[list[Any]] | None, bool]]
         _sheet_count: int
+        _has_dynamic: bool
         _sheet_written: set[int]
         _letters: list[str]
         _filtered_data_list: list[FilterData]

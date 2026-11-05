@@ -230,6 +230,8 @@ class XlsbWriter(_XlsbStylesMixin, _XlsbPartsMixin, _XlsbSheetMixin, _XlsbViewsM
         self._sheet_pivots: dict[int, list] = {}
         self._pending_pivots: dict[str, list] = {}
         self._written_sheets: set[int] = set()
+        # Set when a dynamic-array formula is written: xl/metadata.bin follows.
+        self._has_dynamic = False
         self._seen_cf_priorities: set[int] = set()
         self._reserved_cf_priorities: set[int] = set()
         self._next_cf_priority = 1

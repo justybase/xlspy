@@ -39,6 +39,14 @@ _XLFN_FUNCTIONS = frozenset({
     "SEQUENCE", "RANDARRAY", "TAKE", "DROP", "CHOOSECOLS", "CHOOSEROWS",
     "VSTACK", "HSTACK", "TOCOL", "TOROW", "WRAPCOLS", "WRAPROWS", "EXPAND",
     "ARRAYTOTEXT",
+    "LET",
+    "LAMBDA",
+    "MAP",
+    "REDUCE",
+    "SCAN",
+    "BYROW",
+    "BYCOL",
+    "MAKEARRAY",
     "BITAND",
     "BITLSHIFT",
     "BITOR",
@@ -92,12 +100,6 @@ def future_function_name(name: str) -> str:
     return "_xlfn." + bare
 
 
-# Functions whose arguments need ``_xlpm.`` parameter names or cell-level
-# lambda metadata. They are refused rather than written as #NAME? formulas.
-_UNSUPPORTED_FUNCTIONS = frozenset({
-    "LET", "LAMBDA", "MAP", "REDUCE", "SCAN", "BYROW", "BYCOL", "MAKEARRAY",
-})
-
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -144,12 +146,6 @@ def _prefix_future_functions(text: str) -> str:
         if kind != "ident":
             continue
         upper = value.upper()
-        if upper in _UNSUPPORTED_FUNCTIONS:
-            following = tokens[index + 1] if index + 1 < len(tokens) else None
-            if following is not None and following[1] == "(":
-                raise ValueError(
-                    f"{upper} needs _xlpm parameter names, which xlspy does not write"
-                )
         if upper not in _XLFN_FUNCTIONS:
             continue
         following = tokens[index + 1] if index + 1 < len(tokens) else None
@@ -160,6 +156,135 @@ def _prefix_future_functions(text: str) -> str:
         cursor = end
     pieces.append(text[cursor:])
     return "".join(pieces)
+
+
+def _matching_paren(tokens: list[tuple[str, str, int, int]], open_index: int) -> int | None:
+    depth = 0
+    for index in range(open_index, len(tokens)):
+        kind, value, _start, _end = tokens[index]
+        if kind != "char":
+            continue
+        if value == "(":
+            depth += 1
+        elif value == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _split_arguments(
+    tokens: list[tuple[str, str, int, int]], start: int, end: int
+) -> list[tuple[int, int]]:
+    """Token ranges of the top-level arguments between ``start`` and ``end``."""
+    ranges = []
+    depth = 0
+    argument_start = start
+    for index in range(start, end):
+        kind, value, _start, _end = tokens[index]
+        if kind != "char":
+            continue
+        if value in "([{":
+            depth += 1
+        elif value in ")]}":
+            depth -= 1
+        elif value == "," and depth == 0:
+            ranges.append((argument_start, index))
+            argument_start = index + 1
+    ranges.append((argument_start, end))
+    return ranges
+
+
+def _prefix_lambda_parameters(text: str) -> str:
+    """Prefix the names bound by ``LET`` and ``LAMBDA`` with ``_xlpm.``.
+
+    Excel stores ``LET(x,1,x+1)`` as ``_xlfn.LET(_xlpm.x,1,_xlpm.x+1)``: the
+    binding and every use of it. ``LET`` is sequential (a value sees the names
+    bound before it); a ``LAMBDA`` body sees all of its parameters. Nested calls
+    and a lambda call (``LAMBDA(x,x*2)(3)``) are handled.
+    """
+    tokens = list(_scan_tokens(text))
+
+    def significant(first: int, last: int) -> list[tuple[str, str, int, int]]:
+        return [
+            token for token in tokens[first:last]
+            if not (token[0] == "char" and token[1].isspace())
+        ]
+
+    def is_call(index: int, end: int) -> int | None:
+        if index + 1 >= end or tokens[index + 1][1] != "(":
+            return None
+        close = _matching_paren(tokens, index + 1)
+        return close if close is not None and close < end else None
+
+    def render(start: int, end: int, names: frozenset[str]) -> str:
+        if start >= end:
+            return ""
+        pieces = []
+        cursor = tokens[start][2]
+        index = start
+        while index < end:
+            kind, value, token_start, token_end = tokens[index]
+            upper = value.upper()
+            close = None
+            if kind == "ident" and upper in ("LET", "LAMBDA"):
+                close = is_call(index, end)
+            if close is not None:
+                pieces.append(text[cursor:token_end])
+                pieces.append(render_call(index, close, names))
+                cursor = tokens[close][3]
+                index = close + 1
+                continue
+            if kind == "ident" and value.casefold() in names and not value.lower().startswith("_xlpm."):
+                following = tokens[index + 1][1] if index + 1 < end else ""
+                if following not in ("!", "[", ":"):
+                    pieces.append(text[cursor:token_start])
+                    pieces.append("_xlpm.")
+                    cursor = token_start
+            index += 1
+        pieces.append(text[cursor:tokens[end - 1][3]])
+        return "".join(pieces)
+
+    def render_call(index: int, close: int, names: frozenset[str]) -> str:
+        upper = tokens[index][1].upper()
+        arguments = _split_arguments(tokens, index + 2, close)
+        rendered = []
+        if upper == "LET":
+            scope = set(names)
+            last = len(arguments) - 1
+            for argument_index, (first, last_token) in enumerate(arguments):
+                tokens_here = significant(first, last_token)
+                if (
+                    argument_index < last and argument_index % 2 == 0
+                    and len(tokens_here) == 1 and tokens_here[0][0] == "ident"
+                ):
+                    name = tokens_here[0][1]
+                    rendered.append(
+                        name if name.lower().startswith("_xlpm.") else "_xlpm." + name
+                    )
+                    continue
+                rendered.append(render(first, last_token, frozenset(scope)))
+                if argument_index < last and argument_index % 2 == 1:
+                    name_token = significant(*arguments[argument_index - 1])
+                    if len(name_token) == 1 and name_token[0][0] == "ident":
+                        scope.add(name_token[0][1].casefold())
+        else:
+            bindings = set()
+            for argument_index, (first, last_token) in enumerate(arguments[:-1]):
+                tokens_here = significant(first, last_token)
+                if len(tokens_here) == 1 and tokens_here[0][0] == "ident":
+                    name = tokens_here[0][1]
+                    bindings.add(name.casefold())
+                    rendered.append(
+                        name if name.lower().startswith("_xlpm.") else "_xlpm." + name
+                    )
+                else:
+                    rendered.append(render(first, last_token, names))
+            if arguments:
+                rendered.append(render(*arguments[-1], names | frozenset(bindings)))
+        return "(" + ",".join(rendered) + ")"
+
+    return render(0, len(tokens), frozenset())
 
 
 def _check_balance(text: str) -> None:
@@ -191,7 +316,7 @@ def normalize_formula(text: str) -> str:
     if _CONTROL_RE.search(body):
         raise ValueError("formula text must not contain control characters")
     _check_balance(body)
-    return _prefix_future_functions(body)
+    return _prefix_future_functions(_prefix_lambda_parameters(body))
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,13 +326,15 @@ class Formula:
     ``text`` is the formula without its leading ``=``. ``value`` is an optional
     cached result, written so that readers that do not recalculate still see a
     number. ``array_ref`` (for example ``"B2:B5"``) writes a legacy
-    array (CSE) formula over that range. Dynamic-array spill formulas are not
-    written; see the documentation for the supported forms.
+    array (CSE) formula over that range. ``spill_ref`` writes a dynamic-array
+    formula over the range: Excel stores the anchor as an array formula and the
+    file carries the dynamic-array cell metadata.
     """
 
     text: str
     value: object = None
     array_ref: str | None = None
+    spill_ref: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "text", normalize_formula(self.text))
@@ -223,3 +350,9 @@ class Formula:
             if not isinstance(self.array_ref, str):
                 raise TypeError("array_ref must be an A1 range or None")
             parse_cell_range(self.array_ref)
+        if self.spill_ref is not None:
+            if not isinstance(self.spill_ref, str):
+                raise TypeError("spill_ref must be an A1 range or None")
+            if self.array_ref is not None:
+                raise ValueError("a formula takes array_ref or spill_ref, not both")
+            parse_cell_range(self.spill_ref)

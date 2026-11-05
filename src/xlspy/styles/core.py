@@ -3,9 +3,10 @@
 The model mirrors openpyxl: ``Font``, ``PatternFill``/``GradientFill``,
 ``Border``/``Side``, ``Alignment``, ``Protection``, and the conditional rules
 (``CellIsRule``, ``FormulaRule``, ``ColorScaleRule``, ``DataBarRule``,
-``IconSetRule``) with ``DifferentialStyle`` as the Excel ``dxf``. The XLSX
-writer serializes all of it; the XLSB writer currently supports the flat
-``Style`` subset and rejects the rest with ``NotImplementedError``.
+``IconSetRule``) with ``DifferentialStyle`` as the Excel ``dxf``. Both writers
+serialize the model; the XLSB writer rejects a few rare options (a relative
+indent, the vertical/horizontal/start/end border sides, ``outline=False``) with
+``NotImplementedError``.
 """
 
 from __future__ import annotations
