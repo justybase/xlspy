@@ -235,6 +235,8 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src
 
     steps:
       - uses: actions/checkout@v5
