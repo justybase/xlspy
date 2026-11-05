@@ -203,7 +203,9 @@ def _read_records(
                 sortMethod="stroke" if flags & 0x04 else None,
             )
             sheet._auto_filter.sortState = sort_state
-        elif record_id == 0x214 and sort_state is not None and len(payload) >= 26:
+        # 0x480 is BrtBeginSortCond14: the same layout, with a CFFlag14 for
+        # extra icon sets. It is read so an icon sort is refused, not lost.
+        elif record_id in (0x214, 0x480) and sort_state is not None and len(payload) >= 30:
             flags, _r1, _r2, _c1, _c2, first, _second = struct.unpack_from(
                 "<HIIIIII", payload
             )

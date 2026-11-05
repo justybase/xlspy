@@ -203,6 +203,9 @@ def _prefix_lambda_parameters(text: str) -> str:
     bound before it); a ``LAMBDA`` body sees all of its parameters. Nested calls
     and a lambda call (``LAMBDA(x,x*2)(3)``) are handled.
     """
+    lowered = text.lower()
+    if "let" not in lowered and "lambda" not in lowered:
+        return text
     tokens = list(_scan_tokens(text))
 
     def significant(first: int, last: int) -> list[tuple[str, str, int, int]]:
@@ -210,6 +213,13 @@ def _prefix_lambda_parameters(text: str) -> str:
             token for token in tokens[first:last]
             if not (token[0] == "char" and token[1].isspace())
         ]
+
+    def following_significant(index: int, last: int) -> str:
+        for next_index in range(index + 1, last):
+            kind, value, _start, _end = tokens[next_index]
+            if not (kind == "char" and value.isspace()):
+                return value
+        return ""
 
     def is_call(index: int, end: int) -> int | None:
         if index + 1 >= end or tokens[index + 1][1] != "(":
@@ -223,8 +233,19 @@ def _prefix_lambda_parameters(text: str) -> str:
         pieces = []
         cursor = tokens[start][2]
         index = start
+        bracket_depth = 0
+        previous = ""
         while index < end:
             kind, value, token_start, token_end = tokens[index]
+            if kind == "char":
+                if value == "[":
+                    bracket_depth += 1
+                elif value == "]":
+                    bracket_depth = max(0, bracket_depth - 1)
+                if not value.isspace():
+                    previous = value
+                index += 1
+                continue
             upper = value.upper()
             close = None
             if kind == "ident" and upper in ("LET", "LAMBDA"):
@@ -234,13 +255,20 @@ def _prefix_lambda_parameters(text: str) -> str:
                 pieces.append(render_call(index, close, names))
                 cursor = tokens[close][3]
                 index = close + 1
+                previous = ")"
                 continue
-            if kind == "ident" and value.casefold() in names and not value.lower().startswith("_xlpm."):
-                following = tokens[index + 1][1] if index + 1 < end else ""
-                if following not in ("!", "[", ":"):
-                    pieces.append(text[cursor:token_start])
-                    pieces.append("_xlpm.")
-                    cursor = token_start
+            if (
+                kind == "ident"
+                and bracket_depth == 0
+                and value.casefold() in names
+                and not value.lower().startswith("_xlpm.")
+                and previous not in ("!", ".")
+                and following_significant(index, end) not in ("!", "[", ":")
+            ):
+                pieces.append(text[cursor:token_start])
+                pieces.append("_xlpm.")
+                cursor = token_start
+            previous = value
             index += 1
         pieces.append(text[cursor:tokens[end - 1][3]])
         return "".join(pieces)

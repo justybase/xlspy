@@ -140,7 +140,10 @@ def test_xlspy_reads_excel_authored_file(excel_authored, case_id, fmt):
             actual_rows = [list(row) for row in reader.read_all(sheet["name"])]
             for row_number, expected_row in enumerate(expected_rows, start=1):
                 if row_number > len(actual_rows):
-                    break
+                    assert all(cell_value(cell) is None for cell in expected_row), (
+                        f"{sheet['name']} row {row_number} is missing"
+                    )
+                    continue
                 for column_number, expected in enumerate(expected_row, start=1):
                     if expected is None:
                         continue

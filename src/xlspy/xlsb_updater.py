@@ -548,10 +548,10 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         value = unwrap_cell(raw)
         style = 0 if style_fallback == "general" else data_styles.get(column, 0)
         if isinstance(value, Formula):
-            if value.array_ref is not None:
+            if value.array_ref is not None or value.spill_ref is not None:
                 raise UnsupportedFeatureError(
-                    "replace_sheet_data supports scalar formulas only; use update_cells() "
-                    "for array formulas"
+                    "replace_sheet_data supports scalar formulas only; array and "
+                    "dynamic-array formulas need the workbook writer"
                 )
             encoded: bytes = formula_cell(
                 value, column, style, self._replace_context(),

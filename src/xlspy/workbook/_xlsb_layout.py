@@ -34,7 +34,7 @@ from ..ignored_errors import snapshot as ignored_errors_snapshot
 from .._xlsb_style_records import color_payload
 from ..biff_utils import build_record
 from ..printing import _paper_code, print_area_name
-from ..refs import parse_cell_range, column_label, quote_sheet_name
+from ..refs import parse_cell_range, column_label, quote_sheet_name, sort_state_ref
 from ..styles import _color_key
 from ._loaded import _auto_filter_snapshot, _break_snapshot, _header_footer_snapshot, _snapshot
 from ._model import Selection
@@ -50,10 +50,12 @@ BEGIN_FILTER, END_FILTER = 0xA1, 0xA2
 # The sort state lives inside BrtBeginAFilter..BrtEndAFilter.
 BEGIN_SORT_STATE, END_SORT_STATE = 0x212, 0x213
 BEGIN_SORT_COND, END_SORT_COND = 0x214, 0x215
+BEGIN_SORT_COND14, END_SORT_COND14 = 0x480, 0x481
 # Records of a value-list or blank-only auto filter; any other record means custom criteria.
 _VALUE_FILTER_RECORDS = frozenset({
     0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
     BEGIN_SORT_STATE, END_SORT_STATE, BEGIN_SORT_COND, END_SORT_COND,
+    BEGIN_SORT_COND14, END_SORT_COND14,
 })
 BEGIN_FILTER_COLUMN, END_FILTER_COLUMN, BEGIN_FILTERS, END_FILTERS, FILTER = 0xA3, 0xA4, 0xA5, 0xA6, 0xA7
 END_SHEET = 0x82
@@ -343,6 +345,14 @@ def _protection_record(sheet) -> bytes:
         payload = bytearray(iso)
         if len(payload) < 4 + 16 * 4:
             raise ValueError("malformed XLSB ISO sheet protection")
+        original_algorithm = getattr(sheet, "_protection_iso_algorithm", None)
+        if protection.algorithmName != original_algorithm:
+            raise UnsupportedFeatureError(
+                "changing the hash algorithm of a hashed sheet protection cannot be saved into XLSB"
+            )
+        stored_spin = struct.unpack_from("<I", payload, 0)[0]
+        if protection.spinCount is not None and protection.spinCount != stored_spin:
+            struct.pack_into("<I", payload, 0, int(protection.spinCount))
         struct.pack_into("<16I", payload, 4, *flags)
         return build_record(SHEET_PROTECTION_ISO, bytes(payload)) + sheet_protection_record(0, flags)
     if protection.hashValue or protection.algorithmName:
@@ -372,12 +382,13 @@ def _filter_block(sheet) -> bytes:
         output.append(build_record(END_FILTER_COLUMN))
     sort = auto_filter.sortState
     if sort is not None:
-        sort_ref = sort.ref or auto_filter.ref
+        sort_ref = sort_state_ref(auto_filter.ref, sort.ref)
+        assert sort_ref is not None
         sc1, sr1, sc2, sr2 = parse_cell_range(sort_ref)
         flags = (
             (0x01 if sort.columnSort else 0)
             | (0x02 if sort.caseSensitive else 0)
-            | (0x04 if sort.sortMethod == "stroke" else 0)
+            | (0x04 if sort.sortMethod in ("stroke", "pinYin") else 0)
         )
         output.append(build_record(
             BEGIN_SORT_STATE, struct.pack("<HIIII", flags, sr1, sr2, sc1, sc2)

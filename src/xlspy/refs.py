@@ -53,6 +53,29 @@ def parse_cell_range(reference: str) -> tuple[int, int, int, int]:
     return bounds
 
 
+def sort_state_ref(filter_ref: str | None, sort_ref: str | None) -> str | None:
+    """The range Excel stores in a filter's ``sortState``.
+
+    ``AutoFilter.add_sort_condition`` follows openpyxl and starts the sort state
+    at the filter's first row, header included. Excel stores the data body
+    instead (``A1:C4`` -> ``A2:C4``); a header-inclusive range is accepted when
+    read but dropped when Excel saves the file again.
+    """
+    if not filter_ref:
+        return sort_ref
+    if not sort_ref:
+        sort_ref = filter_ref
+    try:
+        filter_bounds = parse_cell_range(filter_ref)
+        sort_bounds = parse_cell_range(sort_ref)
+    except (TypeError, ValueError):
+        return sort_ref
+    if filter_bounds != sort_bounds or sort_bounds[1] >= sort_bounds[3]:
+        return sort_ref
+    c1, r1, c2, r2 = sort_bounds
+    return f"{column_label(c1)}{r1 + 2}:{column_label(c2)}{r2 + 1}"
+
+
 class RangeIndex:
     """Ranges found by the cells they cover, without going through all of them.
 

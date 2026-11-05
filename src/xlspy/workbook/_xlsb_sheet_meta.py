@@ -194,6 +194,7 @@ def _protection_iso(sheet, payload: bytes) -> None:
             protection.algorithmName = payload[offset:offset + 2 * name_size].decode(
                 "utf-16-le", "replace"
             )
+            sheet._protection_iso_algorithm = protection.algorithmName
 
 
 def _read_xlsb_page_setup(sheet, payload: bytes) -> None:

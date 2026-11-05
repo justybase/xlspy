@@ -541,6 +541,10 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
     @staticmethod
     def _formula_cell(formula: Formula, cell_prefix: str, prefix: str) -> str:
         """A formula cell, written the way the XLSX writer writes one."""
+        if formula.spill_ref is not None:
+            raise UnsupportedFeatureError(
+                "replace_sheet_data cannot write dynamic-array formulas"
+            )
         type_attribute = ""
         cached_xml = ""
         cached = formula.value

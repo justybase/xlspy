@@ -1021,6 +1021,10 @@ def formula_record(formula, column, style, parsed, value=None) -> bytes:
 
 def formula_cell(formula, column, style, context, *, sheet=None, row=0):
     """Encode a scalar formula; cached zero is used if no cache was supplied."""
+    if getattr(formula, "spill_ref", None) is not None:
+        raise UnsupportedFeatureError(
+            "a dynamic-array formula needs the workbook writer's spill metadata"
+        )
     array_definition = b''
     if isinstance(formula, ArrayValue):
         parsed = parsed_formula(b'\x01' + struct.pack('<I', formula.source_row), struct.pack('<I', formula.source_column))

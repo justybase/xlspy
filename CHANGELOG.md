@@ -41,8 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused. The updater used the wrong record id (0x1BB) and never found this block.
 - `XlsbUpdater.replace_sheet_data` writes scalar formulas, with their cached values: a formula cell
   is encoded like `update_cells` encodes it, and the save drops the calculation chain and asks Excel
-  to recalculate on load. A legacy array formula is still refused with `UnsupportedFeatureError`
-  (use `update_cells`).
+  to recalculate on load. Array and dynamic-array formulas are still refused with
+  `UnsupportedFeatureError` (write them with `XlsbWriter` or `XlsxWriter`).
 - The Excel COM conformance suite is plain pytest (`tests/com_cases.py`, `tests/com_spec.py`): eight
   cases in XLSX and XLSB, written by xlspy and read by Excel, written by Excel and read by xlspy, and
   a template replaced by an updater. It needs neither PowerShell 7 nor the external `comparison/`

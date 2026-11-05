@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .exceptions import InvalidFileError
+from .exceptions import InvalidFileError, UnsupportedFeatureError
 from collections.abc import Callable, Iterable, Mapping, Sequence
 import datetime
 from decimal import Decimal
@@ -573,6 +573,10 @@ def encode_cell(value: Any, column: int, style: int, context: FormulaContext | N
     if isinstance(value, Formula):
         if value.array_ref is not None:
             raise ValueError("update_cells supports scalar formulas only")
+        if value.spill_ref is not None:
+            raise UnsupportedFeatureError(
+                "update_cells cannot write dynamic-array formulas"
+            )
         encoded: bytes = formula_cell(value, column, style, context, sheet=sheet, row=row)
         return encoded
     if isinstance(value, bool):

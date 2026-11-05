@@ -28,6 +28,7 @@ from .comments import (
     NotePartsEdit, comment_part_targets, find_comment_parts, read_comments, resolve_part, rels_path,
 )
 from .excel_dates import datetime_to_serial
+from .exceptions import UnsupportedFeatureError
 from .formulas import Formula
 from .hyperlinks import Hyperlink
 from .refs import RangeIndex, _column_index, parse_cell_range, column_label
@@ -354,6 +355,10 @@ class XlsxEditMixin:
         for ref, value in values.items():
             if isinstance(value, Formula) and value.array_ref is not None:
                 raise ValueError("update_cells supports scalar formulas only")
+            if isinstance(value, Formula) and value.spill_ref is not None:
+                raise UnsupportedFeatureError(
+                    "update_cells cannot write dynamic-array formulas"
+                )
         sheet_data = fast.sheet_data if fast is not None else sheet_data_match(xml)
         if sheet_data is None:
             raise ValueError("Worksheet sheetData element was not found")

@@ -29,7 +29,7 @@ from ._drawings import check_removals, remove_drawing_objects, save_chart_edits
 from ._objects import (
     add_objects, check_object_rewrites, has_pending_objects, mark_objects_saved, sync_objects,
 )
-from ..refs import parse_cell_range
+from ..refs import parse_cell_range, sort_state_ref
 from ..styles import _coerce_color, _color_key
 from ..updater_utils import (
     renamed_chart_parts, renamed_sparkline_parts, replace_or_add_xml_attribute,
@@ -99,7 +99,16 @@ def _auto_filter_snapshot(filter_) -> tuple:
         tuple((column.colId, tuple(column.vals), column.blank) for column in filter_.filterColumn),
         None if sort is None else (
             sort.ref,
-            tuple((item.ref, item.descending, item.sortBy) for item in sort.sortCondition),
+            sort.columnSort,
+            sort.caseSensitive,
+            sort.sortMethod,
+            tuple(
+                (
+                    item.ref, item.descending, item.sortBy, item.customList,
+                    item.dxfId, item.iconSet, item.iconId,
+                )
+                for item in sort.sortCondition
+            ),
         ),
     )
 
@@ -540,8 +549,9 @@ def _auto_filter_xml(sheet: Worksheet, prefix: str) -> str:
     sort = filter_.sortState
     if sort is not None:
         sort_attrs = []
-        if sort.ref:
-            sort_attrs.append(f'ref="{sort.ref}"')
+        sort_ref = sort_state_ref(filter_.ref, sort.ref)
+        if sort_ref:
+            sort_attrs.append(f'ref="{sort_ref}"')
         if sort.columnSort is not None:
             sort_attrs.append(f'columnSort="{int(bool(sort.columnSort))}"')
         if sort.caseSensitive is not None:
