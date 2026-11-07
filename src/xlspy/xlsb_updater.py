@@ -20,8 +20,8 @@ from ._xlsb_edit import XlsbEditMixin
 from ._xlsb_formulas import ArrayValue, FormulaContext, formula_cell
 from ._xlsb_table_part import parse_table_part
 from ._xlsb_sheets import XlsbSheetsMixin
-from .exceptions import InvalidFileError, reading
-from .formulas import Formula
+from .exceptions import InvalidFileError, UnsupportedFeatureError, reading
+from .formulas import ArrayFormula, DataTableFormula, Formula
 from .refs import parse_cell_range
 
 from .biff_utils import (
@@ -160,12 +160,16 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             for row in materialized:
                 for raw in row:
                     value = unwrap_cell(raw)
-                    if isinstance(value, Formula):
+                    if isinstance(value, ArrayFormula):
+                        ref = value.ref
+                    elif isinstance(value, Formula):
                         ref = value.array_ref or value.spill_ref
-                        if ref is not None:
-                            _c1, _r1, c2, r2 = parse_cell_range(ref)
-                            last_row = max(last_row, r2)
-                            last_col = max(last_col, c2)
+                    else:
+                        ref = None
+                    if ref is not None:
+                        _c1, _r1, c2, r2 = parse_cell_range(ref)
+                        last_row = max(last_row, r2)
+                        last_col = max(last_col, c2)
 
         region = self._find_rows_region(sheet_data)
         old_rows_length = region.rows_end - region.rows_start
@@ -532,11 +536,15 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         for row in rows:
             for raw in row:
                 value = unwrap_cell(raw)
-                if isinstance(value, Formula):
+                if isinstance(value, ArrayFormula):
+                    ref = value.ref
+                elif isinstance(value, Formula):
                     ref = value.array_ref or value.spill_ref
-                    if ref is not None:
-                        _c1, _r1, c2, _r2 = parse_cell_range(ref)
-                        max_col = max(max_col, c2 + 1)
+                else:
+                    ref = None
+                if ref is not None:
+                    _c1, _r1, c2, _r2 = parse_cell_range(ref)
+                    max_col = max(max_col, c2 + 1)
         writer = _XlsbRowWriter(
             self, header_styles, data_styles, date_xf, style_fallback,
             max(0, max_col - 1), sheet_name,
@@ -596,6 +604,12 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         row_number: int = 0,
     ) -> bytes:
         value = unwrap_cell(raw)
+        if isinstance(value, ArrayFormula):
+            value = Formula(value.text, array_ref=value.ref)
+        elif isinstance(value, DataTableFormula):
+            raise UnsupportedFeatureError(
+                "an XLSB workbook cannot store a data-table formula; write it to XLSX"
+            )
         style = 0 if style_fallback == "general" else data_styles.get(column, 0)
         if isinstance(value, ArrayValue):
             return formula_cell(
@@ -826,7 +840,12 @@ class _XlsbRowWriter:
 
     def _cell(self, raw: Any, column: int, row_number: int) -> bytes:
         unwrapped = unwrap_cell(raw)
-        if isinstance(unwrapped, Formula):
+        if isinstance(unwrapped, ArrayFormula):
+            self.wrote_formula = True
+            self._register_array_range(
+                Formula(unwrapped.text, array_ref=unwrapped.ref), column, row_number
+            )
+        elif isinstance(unwrapped, Formula):
             self.wrote_formula = True
             if unwrapped.spill_ref is not None:
                 self.wrote_spill = True
@@ -864,7 +883,11 @@ class _XlsbRowWriter:
         prepared = list(row)
         for column, raw in enumerate(prepared):
             value = unwrap_cell(raw)
-            if isinstance(value, Formula):
+            if isinstance(value, ArrayFormula):
+                self._register_array_range(
+                    Formula(value.text, array_ref=value.ref), column, row_number
+                )
+            elif isinstance(value, Formula):
                 self._register_array_range(value, column, row_number)
         for c1, r1, c2, r2 in self.array_ranges:
             if not r1 <= row_number <= r2:
@@ -875,7 +898,7 @@ class _XlsbRowWriter:
                 if row_number == r1 and column == c1:
                     continue  # the anchor formula stays in place
                 value = unwrap_cell(prepared[column]) if prepared[column] is not None else None
-                if isinstance(value, Formula):
+                if isinstance(value, (Formula, ArrayFormula, DataTableFormula)):
                     raise ValueError("overlapping array formulas")
                 if isinstance(value, ArrayValue):
                     continue

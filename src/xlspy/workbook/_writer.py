@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from ..utils.datetime import time_to_days, timedelta_to_days
 from .._metadata import SheetProtection as MetadataProtection
-from ..formulas import Formula
+from ..formulas import ArrayFormula, DataTableFormula, Formula
 from ..rich_text import CellRichText
 from ..styles import Style
 from ..writer import XlsbWriter
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 
 def _value_for_new(cell):
-    if isinstance(cell._formula, Formula):
+    if isinstance(cell._formula, (Formula, ArrayFormula, DataTableFormula)):
         return cell._formula
     if isinstance(cell._formula, str):
         return Formula(cell._formula)

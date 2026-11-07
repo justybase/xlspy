@@ -24,9 +24,9 @@ gap is implemented the same test starts passing without changes.
 ### Completed
 
 **Phase 0 — compatibility harness and goldens**
-- `tools/make_openpyxl_goldens.py` generates six openpyxl-authored workbooks
-  (`metadata`, `objects`, `charts`, `images`, `chartsheet`, `long_tail`) plus
-  `manifest.json`.
+- `tools/make_openpyxl_goldens.py` generates seven openpyxl-authored workbooks
+  (`metadata`, `objects`, `array_formulas`, `charts`, `images`, `chartsheet`,
+  `long_tail`) plus `manifest.json`.
 - `tests/openpyxl_compat/` compares values, styles, metadata, object counts and
   no-op ZIP preservation; `tools/compare_openpyxl_model.py` produces a semantic
   JSON diff.
@@ -107,6 +107,21 @@ gap is implemented the same test starts passing without changes.
 - No-op save is byte-identical; editing a cell and saving works through
   `XlsbUpdater.update_cells`.
 - `read_only=True` keeps the existing streaming `ExcelReader` path.
+
+**Array and data-table formulas — 2026-11-07**
+- `ArrayFormula(ref, text)` and `DataTableFormula(ref, ca=, dt2D=, dtr=, r1=,
+  r2=, del1=, del2=)` match openpyxl's objects. A loaded XLSX reports them from
+  `Cell.value` with `data_type == "f"`, and `Worksheet.array_formulae` maps each
+  anchor to its range.
+- New and loaded XLSX workbooks write them through `XlsxWriter` and
+  `XlsxUpdater.update_cells`; a save keeps them. XLSB stores an `ArrayFormula`
+  as its binary array formula and refuses `DataTableFormula`.
+- `move_range(translate=True)` shifts an array formula and its range, and a
+  sheet rename rewrites its text. Replacing an array anchor with a formula that
+  covers the same range is allowed; other edits into the range are refused.
+- The openpyxl harness reads an openpyxl-authored golden with both formula
+  objects (`tests/data/openpyxl_parity/array_formulas.xlsx`) and compares their
+  fields with openpyxl's model.
 
 **XLSB model parity — 2026-10-27**
 - `styles.bin` is loaded into `XlsbStyleTable` (number formats, fonts, fills
@@ -272,6 +287,7 @@ Pivot tables, sparklines, slicers and shapes were added after this snapshot.
 ## Verification
 
 ```bash
+pip install pillow  # only to regenerate the images golden
 python tools/make_openpyxl_goldens.py
 python -m pytest tests/openpyxl_compat -q
 python tools/compare_openpyxl_model.py LEFT RIGHT

@@ -10,6 +10,7 @@ from ..charts import Chart
 from ..comments import Comment
 from ..data_validation import DataValidation
 from ..formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT
+from ..formulas import ArrayFormula, Formula
 from ..images import Image
 from ..refs import parse_cell_range, quote_sheet_name
 from ..styles import (
@@ -44,9 +45,25 @@ class Worksheet:
     ORIENTATION_PORTRAIT = "portrait"
     ORIENTATION_LANDSCAPE = "landscape"
     PAPERSIZE_LETTER = 1
+    PAPERSIZE_LETTER_SMALL = 2
+    PAPERSIZE_TABLOID = 3
+    PAPERSIZE_LEDGER = 4
     PAPERSIZE_LEGAL = 5
+    PAPERSIZE_STATEMENT = 6
+    PAPERSIZE_EXECUTIVE = 7
     PAPERSIZE_A3 = 8
     PAPERSIZE_A4 = 9
+    PAPERSIZE_A4_SMALL = 10
+    PAPERSIZE_A5 = 11
+    SHEETSTATE_VISIBLE = "visible"
+    SHEETSTATE_HIDDEN = "hidden"
+    SHEETSTATE_VERYHIDDEN = "veryHidden"
+    BREAK_NONE = 0
+    BREAK_ROW = 1
+    BREAK_COLUMN = 2
+    _MIME_TYPE = (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
+    )
 
     # Set by the XLSB loader (workbook/_xlsb_reader.py) on loaded sheets only.
     _cf_extensions: Any
@@ -113,6 +130,30 @@ class Worksheet:
         return f"<Worksheet {self._title!r}>"
 
     @property
+    def parent(self) -> Workbook:
+        """The workbook that holds the sheet, as openpyxl names it."""
+        return self._workbook
+
+    @property
+    def encoding(self) -> str:
+        """Always ``"utf-8"``, for openpyxl compatibility."""
+        return "utf-8"
+
+    @property
+    def mime_type(self) -> str:
+        """The content type of a worksheet part."""
+        return self._MIME_TYPE
+
+    @property
+    def path(self) -> str:
+        """The worksheet part name, such as ``/xl/worksheets/sheet1.xml``."""
+        if self._path is not None:
+            return "/" + self._path.lstrip("/")
+        sheets = self._workbook._sheets
+        index = sheets.index(self) + 1 if self in sheets else 1
+        return f"/xl/worksheets/sheet{index}.xml"
+
+    @property
     def title(self) -> str:
         """The sheet name.
 
@@ -145,6 +186,35 @@ class Worksheet:
     def merged_cells(self) -> MultiCellRange:
         """The merged ranges of the sheet."""
         return self._merged_cells
+
+    @property
+    def merged_cell_ranges(self) -> list[str]:
+        """A copy of the merged range strings, as openpyxl's deprecated alias."""
+        return list(self._merged_cells.ranges)
+
+    @property
+    def array_formulae(self) -> dict[str, str]:
+        """Array formula anchors and the range each one fills, as openpyxl maps them."""
+        found: dict[str, str] = {}
+        for row in self._cells.values():
+            for cell in row.values():
+                formula = cell._formula
+                if isinstance(formula, ArrayFormula):
+                    found[cell.coordinate] = formula.ref
+                elif isinstance(formula, Formula) and formula.spill_ref is not None:
+                    found[cell.coordinate] = formula.spill_ref
+        return found
+
+    @property
+    def column_groups(self) -> list[str]:
+        """The column ranges that span more than one column, such as ``"A:C"``."""
+        ranges: list[str] = []
+        for dimension in self._column_dimensions.values():
+            if dimension.min and dimension.max and dimension.max > dimension.min:
+                value = dimension.range
+                if value not in ranges:
+                    ranges.append(value)
+        return ranges
 
     @property
     def column_dimensions(self) -> DimensionHolder:

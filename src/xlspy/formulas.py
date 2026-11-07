@@ -348,6 +348,90 @@ def normalize_formula(text: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class ArrayFormula:
+    """A legacy CSE array formula that fills ``ref``.
+
+    The same object openpyxl's ``openpyxl.worksheet.formula.ArrayFormula``
+    represents: Excel stores the formula once, in the top-left cell of the
+    range, and fills the other cells from it. ``text`` is the formula without
+    its leading ``=``. Assign it to a cell to write an array formula:
+
+    ```python
+    from xlspy import ArrayFormula, Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet["A1"] = 1
+    sheet["A2"] = 2
+    sheet["B1"] = ArrayFormula("B1:B2", "A1:A2*2")
+    workbook.save("array.xlsx")
+    ```
+
+    A dynamic-array formula is written with ``Formula(..., spill_ref=...)``;
+    ``ArrayFormula`` is the static CSE form.
+    """
+
+    ref: str
+    text: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.ref, str):
+            raise TypeError("array formula ref must be an A1 range")
+        parse_cell_range(self.ref)
+        if not isinstance(self.text, str):
+            raise TypeError("array formula text must be a string")
+        body = self.text.strip()
+        if body.startswith("="):
+            body = body[1:].lstrip()
+        object.__setattr__(self, "text", normalize_formula(body) if body else "")
+
+    def __iter__(self) -> Iterator[tuple[str, str]]:
+        yield "t", "array"
+        if self.ref:
+            yield "ref", self.ref
+
+
+@dataclass(frozen=True, slots=True)
+class DataTableFormula:
+    """A data-table formula (``What-If Analysis > Data Table``).
+
+    The fields follow openpyxl's ``DataTableFormula`` and the OOXML
+    ``<f t="dataTable">`` attributes: ``r1``/``r2`` are the input cells,
+    ``dt2D`` marks a two-dimensional table, ``dtr`` a row-oriented one, and
+    ``del1``/``del2`` are Excel's "delete" flags. A data-table formula has no
+    text and no cached value of its own.
+    """
+
+    ref: str
+    ca: bool = False
+    dt2D: bool = False
+    dtr: bool = False
+    r1: str | None = None
+    r2: str | None = None
+    del1: bool = False
+    del2: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.ref, str):
+            raise TypeError("data-table formula ref must be an A1 range")
+        parse_cell_range(self.ref)
+        for name in ("r1", "r2"):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, str):
+                raise TypeError(f"data-table formula {name} must be a cell reference or None")
+        for name in ("ca", "dt2D", "dtr", "del1", "del2"):
+            if not isinstance(getattr(self, name), bool):
+                raise TypeError(f"data-table formula {name} must be a bool")
+
+    def __iter__(self) -> Iterator[tuple[str, object]]:
+        yield "t", "dataTable"
+        for name in ("ref", "dt2D", "dtr", "r1", "r2", "del1", "del2", "ca"):
+            value = getattr(self, name)
+            if value:
+                yield name, value
+
+
+@dataclass(frozen=True, slots=True)
 class Formula:
     """A formula cell.
 

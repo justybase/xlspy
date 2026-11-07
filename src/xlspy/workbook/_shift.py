@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ..formulas import Formula
+from ..formulas import ArrayFormula, Formula
 from ..refs import column_label, parse_cell_range, shift_references as translate_formula, _MAX_ROW as _MAX_ROW
 
 _MAX_COL = 16384
@@ -156,7 +156,12 @@ def move_range(sheet, cell_range, rows: int = 0, cols: int = 0, translate: bool 
                 if not first_col <= col <= last_col:
                     continue
                 formula = cell._formula
-                if isinstance(formula, Formula):
+                if isinstance(formula, ArrayFormula):
+                    translated_formulas[id(cell)] = ArrayFormula(
+                        _translate_array_ref(formula.ref, rows, cols),
+                        translate_formula(formula.text, rows, cols),
+                    )
+                elif isinstance(formula, Formula):
                     array_ref = (
                         _translate_array_ref(formula.array_ref, rows, cols)
                         if formula.array_ref is not None else None

@@ -25,6 +25,7 @@ from ..comments import find_comment_parts, read_comments, rels_path
 from ..data_validation import DataValidation, OPERATORS, VALIDATION_TYPES
 from ..excel_dates import serial_to_datetime
 from ..external_links import read_external_links
+from ..formulas import ArrayFormula, DataTableFormula, Formula
 from ..hyperlinks import Hyperlink
 from ..ignored_errors import FLAGS as IGNORED_ERROR_FLAGS, IgnoredError
 from ..reader import ExcelReader
@@ -226,6 +227,30 @@ def _cell_data(cell: ET.Element, style_table: XlsxStyleTable, *, data_only: bool
         text = formula.text or ""
         kind = formula.get("t")
         ref = cell.get("r")
+        if kind == "array" and (array_ref := formula.get("ref")) is not None:
+            # xlspy's own dynamic-array anchors carry the cell metadata marker
+            # (cm="1"); they load back as Formula(spill_ref=...), which is how
+            # they are written. A plain CSE array is openpyxl's ArrayFormula.
+            try:
+                if cell.get("cm") is not None:
+                    return None, "f", Formula(text, spill_ref=array_ref), style_id
+                return None, "f", ArrayFormula(array_ref, text), style_id
+            except (TypeError, ValueError):
+                pass
+        elif kind == "dataTable" and (table_ref := formula.get("ref")) is not None:
+            try:
+                return None, "f", DataTableFormula(
+                    table_ref,
+                    ca=_bool_attr(formula, "ca", False),
+                    dt2D=_bool_attr(formula, "dt2D", False),
+                    dtr=_bool_attr(formula, "dtr", False),
+                    r1=formula.get("r1"),
+                    r2=formula.get("r2"),
+                    del1=_bool_attr(formula, "del1", False),
+                    del2=_bool_attr(formula, "del2", False),
+                ), style_id
+            except (TypeError, ValueError):
+                pass
         if kind == "shared":
             sid = formula.get("si", "")
             if text:
@@ -1506,6 +1531,7 @@ def _read_only_workbook(reader: ExcelReader, path: str, *, data_only: bool) -> W
     workbook._sheets.clear()
     workbook._read_only = True
     workbook._loaded = True
+    workbook._data_only = data_only
     workbook._source_path = path
     cellless = set(reader.get_chartsheet_names())
     for index, name in enumerate(reader.get_sheet_names()):
@@ -1569,6 +1595,7 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
     workbook = Workbook()
     workbook._sheets.clear()
     workbook._loaded = True
+    workbook._data_only = data_only
     workbook._updater = updater
     workbook._source_path = path
     workbook._loaded_worksheet_names = set()

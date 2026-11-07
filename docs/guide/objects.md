@@ -36,6 +36,12 @@ with XlsxWriter("report.xlsx") as writer:
 - `Formula(text, value=..., array_ref=...)`: the text may start with `=`; `value`
   (number or string) is written as the cached result; `array_ref="C2:C5"` writes a
   legacy array (CSE) formula over that range.
+- `ArrayFormula(ref, text)` is the openpyxl-compatible spelling of a CSE array
+  formula: assign it to the range's top-left cell
+  (`ws["C2"] = ArrayFormula("C2:C5", "A2:A5*B2:B5")`). `DataTableFormula(ref,
+  ca=, dt2D=, dtr=, r1=, r2=, del1=, del2=)` writes a What-If data table. Both
+  work in new and loaded XLSX workbooks; XLSB takes `ArrayFormula` and refuses
+  `DataTableFormula` with `UnsupportedFeatureError`.
 - `Formula(text, spill_ref="A1:B3")` writes a dynamic-array formula: Excel stores
   the anchor as an array formula with cell metadata, and fills the range. The
   anchor must be the top-left cell of `spill_ref`.

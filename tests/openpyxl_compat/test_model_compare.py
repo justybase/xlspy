@@ -35,6 +35,11 @@ def _color(value):
     return getattr(value, "rgb", None) or getattr(value, "theme", None) or str(value)
 
 
+def _flag(value):
+    """An XML boolean: openpyxl keeps "1" as text, xlspy stores a bool."""
+    return value in (True, 1, "1", "true", "True")
+
+
 def test_sheet_format(manifest):
     xwb, owb = _pair("metadata.xlsx")
     try:
@@ -356,6 +361,39 @@ def test_named_styles(manifest):
             for item in owb.named_styles
         )
         xfail_mismatch("C4", "named style names", xnames, onames)
+    finally:
+        _close(xwb, owb)
+
+
+def test_array_and_data_table_formulas(manifest):
+    from openpyxl.worksheet.formula import (
+        ArrayFormula as OpenpyxlArrayFormula,
+        DataTableFormula as OpenpyxlDataTableFormula,
+    )
+
+    from xlspy import ArrayFormula, DataTableFormula
+
+    xwb, owb = _pair("array_formulas.xlsx")
+    try:
+        xs = xwb["Array"]
+        xarray = xs["B2"].value
+        oarray = owb["Array"]["B2"].value
+        assert isinstance(xarray, ArrayFormula)
+        assert isinstance(oarray, OpenpyxlArrayFormula)
+        assert xarray.ref == oarray.ref == "B2:B4"
+        text = oarray.text[1:] if oarray.text.startswith("=") else oarray.text
+        assert xarray.text == text == "A2:A4*2"
+        assert xs.array_formulae == {"B2": "B2:B4"}
+
+        xtable = xwb["WhatIf"]["B2"].value
+        otable = owb["WhatIf"]["B2"].value
+        assert isinstance(xtable, DataTableFormula)
+        assert isinstance(otable, OpenpyxlDataTableFormula)
+        assert xtable.ref == otable.ref == "B2:D4"
+        assert (xtable.r1, xtable.r2) == (otable.r1, otable.r2) == ("F1", "F2")
+        for name in ("ca", "dt2D", "dtr", "del1", "del2"):
+            assert getattr(xtable, name) is _flag(getattr(otable, name)), name
+        assert xwb["WhatIf"]["A1"].value == owb["WhatIf"]["A1"].value == "=F1*F2"
     finally:
         _close(xwb, owb)
 

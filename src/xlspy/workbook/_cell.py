@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from ..comments import Comment
 from ..formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT
-from ..formulas import Formula
+from ..formulas import ArrayFormula, DataTableFormula, Formula
 from ..hyperlinks import Hyperlink
 from ..refs import column_label
 from ..rich_text import CellRichText
@@ -50,7 +50,7 @@ class Cell:
         self._row = _coerce_row(row)
         self._column = _coerce_column(column)
         self._value: Any = None
-        self._formula: Formula | str | None = None
+        self._formula: Formula | ArrayFormula | DataTableFormula | str | None = None
         self._data_type = "n"
         self._style_id = int(style_id)
         self._comment: Comment | None = None
@@ -76,6 +76,11 @@ class Cell:
         return column_label(self._column - 1)
 
     @property
+    def col_idx(self) -> int:
+        """The 1-based column number, as openpyxl names it."""
+        return self._column
+
+    @property
     def coordinate(self) -> str:
         """The cell reference, such as ``"C5"``."""
         return _coordinate(self._row, self._column)
@@ -91,15 +96,22 @@ class Cell:
     # -- value --------------------------------------------------------
     @property
     def value(self) -> Any:
-        """The cell value; a formula reads back as text that starts with ``=``.
+        """The cell value; a scalar formula reads back as ``"=..."`` text.
 
-        Assigning text that starts with ``=`` or a Formula sets a formula, and a Hyperlink
-        sets the link and shows its text; any other value keeps the cell's link, as in
-        Excel (``hyperlink = None`` removes it). A date, time or timedelta gets a default
-        number format when the cell's format is ``General``.
+        An ``ArrayFormula`` or ``DataTableFormula`` reads back as that object, as
+        in openpyxl. Assigning text that starts with ``=`` or a Formula sets a
+        formula; an ``ArrayFormula`` or ``DataTableFormula`` sets that formula
+        object, and a Hyperlink sets the link and shows its text; any other value
+        keeps the cell's link, as in Excel (``hyperlink = None`` removes it). A
+        date, time or timedelta gets a default number format when the cell's
+        format is ``General``.
         """
         if isinstance(self._formula, Formula):
             return "=" + self._formula.text
+        if isinstance(self._formula, (ArrayFormula, DataTableFormula)):
+            # openpyxl returns these objects from Cell.value; their text is in
+            # ArrayFormula.text, and DataTableFormula has no text at all.
+            return self._formula
         if isinstance(self._formula, str):
             return "=" + self._formula
         return self._value
@@ -119,7 +131,11 @@ class Cell:
             return
         if isinstance(value, Cell):
             value = value.value
-        if isinstance(value, Formula):
+        if isinstance(value, (ArrayFormula, DataTableFormula)):
+            self._formula = value
+            self._value = None
+            self._data_type = "f"
+        elif isinstance(value, Formula):
             self._formula = value
             self._value = None
             self._data_type = "f"
@@ -150,8 +166,8 @@ class Cell:
         self._mark_dirty()
 
     @property
-    def formula(self) -> Formula | str | None:
-        """The formula without its leading ``=`` (a Formula or text), or None."""
+    def formula(self) -> Formula | ArrayFormula | DataTableFormula | str | None:
+        """The formula object or text without its leading ``=``, or None."""
         return self._formula
 
     @property
@@ -230,6 +246,16 @@ class Cell:
         )
 
     # -- style --------------------------------------------------------
+    @property
+    def style_id(self) -> int:
+        """The index of the cell's style in the workbook's style table."""
+        return self._style_id
+
+    @property
+    def has_style(self) -> bool:
+        """True when the cell has a style other than the workbook default."""
+        return bool(self._style_id)
+
     def _style(self) -> Style:
         return self._sheet._workbook._styles.style_at(self._style_id)
 

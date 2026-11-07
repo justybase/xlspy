@@ -3,11 +3,13 @@
 Usage:
     python tools/make_openpyxl_goldens.py [--out tests/data/openpyxl_parity]
 
+The images golden needs Pillow: openpyxl reads and writes pictures through it.
+
 The files are deliberately small but exercise the model surface that xlspy is
 expected to match: workbook/sheet metadata, tables, validations, conditional
-formatting, named styles, charts, images and chartsheets.  ``manifest.json``
-records the openpyxl/Python versions used, so a compatibility run is
-reproducible and a diff can be explained.
+formatting, named styles, array and data-table formulas, charts, images and
+chartsheets.  ``manifest.json`` records the openpyxl/Python versions used, so a
+compatibility run is reproducible and a diff can be explained.
 """
 
 from __future__ import annotations
@@ -66,6 +68,7 @@ from openpyxl.styles.named_styles import NamedStyle
 from openpyxl.utils.units import pixels_to_EMU
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 from openpyxl.worksheet.pagebreak import Break
 from openpyxl.worksheet.table import Table, TableColumn, TableStyleInfo
 from openpyxl.worksheet.views import Pane, Selection
@@ -419,6 +422,33 @@ def _objects_workbook() -> Workbook:
     return wb
 
 
+def _array_formulas_workbook() -> Workbook:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Array"
+
+    ws["A1"] = "Input"
+    ws["B1"] = "CSE"
+    for row, value in enumerate((1, 2, 3), start=2):
+        ws.cell(row=row, column=1, value=value)
+    # openpyxl writes the text after dropping its leading "=", as in a normal formula.
+    ws["B2"] = ArrayFormula("B2:B4", "=A2:A4*2")
+
+    what_if = wb.create_sheet("WhatIf")
+    # The layout Excel writes for a two-variable what-if table: the master formula
+    # in A1, row values across B1:D1, column values down A2:A4, and the data-table
+    # formula on the first result cell (B2) with ref covering only the results.
+    what_if["F1"] = 2
+    what_if["F2"] = 3
+    what_if["A1"] = "=F1*F2"
+    for column, value in enumerate((1, 2, 3), start=2):
+        what_if.cell(row=1, column=column, value=value)
+    for row, value in enumerate((10, 20, 30), start=2):
+        what_if.cell(row=row, column=1, value=value)
+    what_if["B2"] = DataTableFormula("B2:D4", dt2D=True, dtr=True, r1="F1", r2="F2")
+    return wb
+
+
 def _write_chart(wb: Workbook, chart, title: str) -> None:
     ws = wb.create_sheet(title)
     ws.add_chart(chart, "E2")
@@ -659,6 +689,7 @@ def generate(out_dir: Path) -> dict:
     builders = {
         "metadata.xlsx": _metadata_workbook,
         "objects.xlsx": _objects_workbook,
+        "array_formulas.xlsx": _array_formulas_workbook,
         "charts.xlsx": _charts_workbook,
         "images.xlsx": _images_workbook,
         "chartsheet.xlsx": _chartsheet_workbook,

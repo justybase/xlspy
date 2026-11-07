@@ -47,6 +47,13 @@ class Dimension:
 class ColumnDimension(Dimension):
     """A column's width, visibility and outline level: ``ws.column_dimensions["B"]``."""
 
+    @property
+    def range(self) -> str:
+        """The columns covered, such as ``"A:C"``, as openpyxl names it."""
+        first = self.min if self.min is not None else 1
+        last = self.max if self.max is not None else first
+        return f"{column_label(first - 1)}:{column_label(last - 1)}"
+
 
 class RowDimension(Dimension):
     """A row's height, visibility and outline level: ``ws.row_dimensions[3]``."""

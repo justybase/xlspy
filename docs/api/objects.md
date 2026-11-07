@@ -32,6 +32,10 @@ Charts, formulas, notes, links, images, pivots and printing.
 
 ::: xlspy.formulas.Formula
 
+::: xlspy.formulas.ArrayFormula
+
+::: xlspy.formulas.DataTableFormula
+
 ::: xlspy._metadata.DefinedName
 
 ::: xlspy.external_links.ExternalLink

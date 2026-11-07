@@ -48,9 +48,16 @@ Supported model features:
   `sheet_state`, `sheet_properties.tabColor` and `sheet_view` options
   (a new XLSX/XLSB workbook saves `sheet_view.showGridLines`; a loaded one
   also keeps the other view settings).
-- `Cell`: `value` (numbers, text, booleans, dates/times, `Formula` or text
-  starting with `=`, `CellRichText`), `font`, `fill`, `border`, `alignment`,
-  `protection`, `number_format`, `comment` and `hyperlink`.
+- `Cell`: `value` (numbers, text, booleans, dates/times, `Formula`,
+  `ArrayFormula`, `DataTableFormula`, or text starting with `=`, `CellRichText`),
+  `font`, `fill`, `border`, `alignment`,
+  `protection`, `number_format`, `comment` and `hyperlink`. `style_id`,
+  `has_style` and `col_idx` follow openpyxl's names.
+- openpyxl aliases on the model: `Worksheet.parent`, `encoding`, `mime_type`,
+  `path`, `merged_cell_ranges`, `array_formulae` and `column_groups`;
+  `Workbook.data_only`, `excel_base_date`, `path`, `mime_type`, `style_names`,
+  `get_index()`, `get_sheet_names()`, `remove_sheet()` and
+  `create_named_range()`.
 - Rows and columns: `insert_rows()`, `delete_rows()`, `insert_cols()`,
   `delete_cols()` and `move_range(range, rows, cols, translate=False)`, also
   in loaded workbooks.

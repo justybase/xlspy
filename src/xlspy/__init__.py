@@ -49,7 +49,7 @@ from .charts import (
 )
 from .data_validation import DataValidation
 from .external_links import ExternalLink
-from .formulas import Formula
+from .formulas import ArrayFormula, DataTableFormula, Formula
 from .ignored_errors import IgnoredError
 from .comments import Comment
 from ._metadata import DefinedName, SheetProtection, WorkbookProtection
@@ -163,6 +163,8 @@ __all__ = [
     'ErrorBars',
     'Trendline',
     'Formula',
+    'ArrayFormula',
+    'DataTableFormula',
     'Comment',
     'DefinedName',
     'SheetProtection',

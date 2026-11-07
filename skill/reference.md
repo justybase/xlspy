@@ -66,6 +66,8 @@ Keyword arguments override fields of `options`.
 | Type | Constructor |
 | :--- | :--- |
 | Formula | `Formula(text, value=None, array_ref=None, spill_ref=None)` |
+| Array formula | `ArrayFormula(ref, text)` |
+| Data table | `DataTableFormula(ref, ca=False, dt2D=False, dtr=False, r1=None, r2=None, del1=False, del2=False)` |
 | Hyperlink | `Hyperlink(target, text=None, tooltip=None)` |
 | Rich text | `CellRichText(*parts)`, `TextBlock(InlineFont(...), text)` |
 | Number format | `(value, "format string")` |
@@ -73,6 +75,8 @@ Keyword arguments override fields of `options`.
 
 `Formula.text` has **no** leading `=`. `value` is the cached result.
 `array_ref` writes a legacy CSE formula; `spill_ref` writes a dynamic array.
+`ArrayFormula`/`DataTableFormula` are the openpyxl objects; XLSX takes both,
+XLSB takes `ArrayFormula` only.
 
 `InlineFont` uses openpyxl names: `rFont`, `b`, `i`, `u`, `strike`, `sz`,
 `color`, `vertAlign`, `family`, `charset`, `scheme`.

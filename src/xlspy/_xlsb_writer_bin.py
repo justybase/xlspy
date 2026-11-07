@@ -31,7 +31,8 @@ from .biff_utils import build_record
 from ._xlsb_print import FIT_TO_PAGE_BIT, FIT_TO_PAGE_BYTE, print_records
 from ._xlsb_validation import validations_bin
 from .rich_text import CellRichText
-from .formulas import Formula
+from .exceptions import UnsupportedFeatureError
+from .formulas import ArrayFormula, DataTableFormula, Formula
 from .hyperlinks import Hyperlink
 from ._scalars import is_pandas_missing, native_cell_value, plain_value
 from ._xlsb_slicers import (
@@ -61,7 +62,9 @@ _SPOOL_MAX_BYTES = 1 << 20
 
 
 # Cells the native encoders' hook leaves to the Python encoder.
-_XLSB_PYTHON_CELLS = (Formula, Hyperlink, CellRichText, ArrayValue, datetime.date)
+_XLSB_PYTHON_CELLS = (
+    Formula, ArrayFormula, DataTableFormula, Hyperlink, CellRichText, ArrayValue, datetime.date,
+)
 
 
 def _link_rid(link: Hyperlink, link_rids: dict, start: int) -> str | None:
@@ -254,6 +257,10 @@ class _XlsbBinMixin(_XlsbWriterHost):
             formula_context = self._formula_context
 
             def cell_hook(cell: Any, col: int, style: int, row: int) -> Any:
+                if isinstance(cell, (ArrayFormula, DataTableFormula)):
+                    # The Python encoder writes the array formula (or refuses a
+                    # data-table formula) once the whole row reaches it.
+                    return NotImplemented
                 if isinstance(cell, Formula):
                     if cell.array_ref is not None:
                         return NotImplemented
@@ -696,6 +703,12 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
             else:
                 # The native encoder hands rows with other objects to this path.
+                if isinstance(cell, ArrayFormula):
+                    cell = Formula(cell.text, array_ref=cell.ref)
+                elif isinstance(cell, DataTableFormula):
+                    raise UnsupportedFeatureError(
+                        "an XLSB workbook cannot store a data-table formula; write it to XLSX"
+                    )
                 if isinstance(cell, Formula):
                     spill = cell.spill_ref is not None and cell.array_ref is None
                     formula = replace(cell, array_ref=cell.spill_ref, spill_ref=None) if spill else cell

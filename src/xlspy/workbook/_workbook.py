@@ -7,9 +7,9 @@ import zipfile
 from dataclasses import replace
 import datetime as _datetime
 from typing import TYPE_CHECKING, Any
-from ..formulas import Formula
+from ..formulas import ArrayFormula, DataTableFormula, Formula
 from .._metadata import DefinedName
-from ..refs import check_sheet_name
+from ..refs import check_sheet_name, quote_sheet_name
 from ..styles import (
     NamedStyle,
     NamedStyleList,
@@ -79,6 +79,7 @@ class Workbook:
         self.named_styles = NamedStyleList(["Normal"])
         self._format = "xlsx"
         self._loaded = False
+        self._data_only = False
         self._loaded_active_index = 0
         self._loaded_workbook_meta = None
         self._read_only = False
@@ -120,6 +121,42 @@ class Workbook:
         self._read_only = bool(value)
 
     @property
+    def data_only(self) -> bool:
+        """True when the workbook was loaded with ``data_only=True``."""
+        return self._data_only
+
+    @property
+    def excel_base_date(self) -> _datetime.datetime:
+        """The base date of serial date numbers, as openpyxl names ``epoch``."""
+        return self.epoch
+
+    @property
+    def path(self) -> str:
+        """The workbook part name."""
+        return "/xl/workbook.xml"
+
+    @property
+    def mime_type(self) -> str:
+        """The content type the workbook's extension stands for."""
+        if self.vba_archive is not None:
+            return (
+                "application/vnd.ms-excel.template.macroEnabled.main+xml"
+                if self.template
+                else "application/vnd.ms-excel.sheet.macroEnabled.main+xml"
+            )
+        if self.template:
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml"
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+
+    @property
+    def style_names(self) -> list[str]:
+        """The names of the workbook's named styles, as openpyxl lists them."""
+        return [
+            entry if isinstance(entry, str) else entry.name
+            for entry in self.named_styles
+        ]
+
+    @property
     def worksheets(self) -> list[Worksheet]:
         """The worksheets, in order (a new list)."""
         return list(self._sheets)
@@ -156,6 +193,14 @@ class Workbook:
     def get_sheet_by_name(self, name: str) -> Worksheet:
         """Return the worksheet called ``name``; the same as ``wb[name]``."""
         return self[name]
+
+    def get_sheet_names(self) -> list[str]:
+        """The worksheet names, as openpyxl's deprecated alias for ``sheetnames``."""
+        return self.sheetnames
+
+    def get_index(self, worksheet: Worksheet) -> int:
+        """Return the 0-based position of ``worksheet``, as openpyxl's alias for ``index``."""
+        return self.index(worksheet)
 
     def index(self, worksheet: Worksheet) -> int:
         """Return the 0-based position of ``worksheet``."""
@@ -229,6 +274,10 @@ class Workbook:
         if self._loaded:
             self._mark_loaded = True
 
+    def remove_sheet(self, worksheet: Worksheet) -> None:
+        """Remove ``worksheet``, as openpyxl's deprecated alias for ``remove``."""
+        self.remove(worksheet)
+
     def copy_worksheet(self, from_worksheet: Worksheet) -> Worksheet:
         """Copy a worksheet to a new sheet named after it, and return the copy.
 
@@ -289,6 +338,18 @@ class Workbook:
         self.named_styles.add(style)
         self._styles_dirty = True
 
+    def create_named_range(self, name: str, worksheet: Worksheet | None = None,
+                           value: str | None = None, scope: str | None = None) -> None:
+        """Add a defined name, as openpyxl's deprecated ``create_named_range``.
+
+        Prefer ``workbook.defined_names[name] = DefinedName(...)``.
+        """
+        if value is None:
+            raise ValueError("a named range needs a value")
+        if worksheet is not None:
+            value = f"{quote_sheet_name(worksheet.title)}!{value}"
+        self.defined_names.add(DefinedName(name, value, scope))
+
     @property
     def defined_names(self) -> DefinedNameList:
         """The workbook's defined names."""
@@ -319,13 +380,21 @@ class Workbook:
                     formula = cell._formula
                     if formula is None:
                         continue
-                    text = formula.text if isinstance(formula, Formula) else formula
+                    if isinstance(formula, DataTableFormula):
+                        # A data-table formula has no text to rename.
+                        continue
+                    text = (
+                        formula.text if isinstance(formula, (Formula, ArrayFormula))
+                        else formula
+                    )
                     updated = renamed(text)
                     if updated != text:
-                        cell.value = (
-                            replace(formula, text=updated) if isinstance(formula, Formula)
-                            else "=" + updated
-                        )
+                        if isinstance(formula, ArrayFormula):
+                            cell.value = ArrayFormula(formula.ref, updated)
+                        elif isinstance(formula, Formula):
+                            cell.value = replace(formula, text=updated)
+                        else:
+                            cell.value = "=" + updated
             for index, rule in enumerate(other._data_validations):
                 values = {name: renamed(getattr(rule, name)) for name in ("formula1", "formula2")}
                 if any(values[name] != getattr(rule, name) for name in values):

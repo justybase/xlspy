@@ -30,7 +30,7 @@ from .comments import (
 )
 from .excel_dates import datetime_to_serial
 from .exceptions import UnsupportedFeatureError
-from .formulas import Formula
+from .formulas import ArrayFormula, DataTableFormula, Formula
 from .hyperlinks import Hyperlink
 from .refs import RangeIndex, _column_index, parse_cell_range, column_label
 from .updater_utils import unwrap_cell, replace_or_add_xml_attribute
@@ -464,7 +464,7 @@ class XlsxEditMixin:
                         updated_tag = replace_or_add_xml_attribute(opening[0], "count", max(0, int(attrs["count"]) - removed_shared_refs))
                         updates[part] = strings[:opening.start()] + updated_tag + strings[opening.end():]
         old_formula = any(has_formula for _, _, has_formula in scan.edited)
-        if old_formula or any(isinstance(value, Formula) for value in values.values()):
+        if old_formula or any(isinstance(value, (Formula, ArrayFormula, DataTableFormula)) for value in values.values()):
             self._recalculate(updates, removed)
         self._apply_parts(updates, removed)
         if self._shared_strings_loaded:
@@ -654,14 +654,27 @@ def _tree_scan(root: Any, values: Mapping[str, object]) -> _EditScan:
 
 def _refuse_formula_groups(scan: _EditScan, values: Mapping[str, object]) -> None:
     """Refuse an edit inside a shared formula group or an array formula, in the order
-    the formulas come in the sheet (the first one to forbid it gives the message)."""
-    targets = [parse_cell_range(ref) for ref in values]
+    the formulas come in the sheet (the first one to forbid it gives the message).
+
+    Replacing an array's anchor with an ``ArrayFormula`` or ``DataTableFormula``
+    that fully covers the same range is allowed: the new formula is the one
+    Excel fills the range with.
+    """
+    targets = [(parse_cell_range(ref), unwrap_cell(value)) for ref, value in values.items()]
+    replacements: dict[tuple[int, int], tuple[int, int, int, int]] = {}
+    for (col, row, _, _), value in targets:
+        if isinstance(value, (ArrayFormula, DataTableFormula)):
+            replacements[(col, row)] = parse_cell_range(value.ref)
     for ref, index in scan.arrays:
         if scan.shared_hit is not None and scan.shared_hit < index:
             break
-        c1, r1, c2, r2 = parse_cell_range(ref)
-        if any(c1 <= column <= c2 and r1 <= row <= r2 for column, row, _, _ in targets):
-            raise ValueError("editing members of array/data-table formulas is unsupported")
+        bounds = parse_cell_range(ref)
+        c1, r1, c2, r2 = bounds
+        for (col, row, _, _), _value in targets:
+            if c1 <= col <= c2 and r1 <= row <= r2:
+                if replacements.get((col, row)) == bounds:
+                    continue
+                raise ValueError("editing members of array/data-table formulas is unsupported")
     if scan.shared_hit is not None:
         raise ValueError("editing members of shared formula groups is unsupported")
 
@@ -669,6 +682,25 @@ def _refuse_formula_groups(scan: _EditScan, values: Mapping[str, object]) -> Non
 def _cell_xml_value(value: Any, date_1904: bool, prefix: str) -> tuple[str | None, str]:
     if value is None:
         return None, ""
+    if isinstance(value, ArrayFormula):
+        xml_text(value.text)
+        check_cell_text(value.text)
+        if len(value.text) > 8192:
+            raise ValueError("formula exceeds Excel's 8192-character limit")
+        return None, (
+            f'<{prefix}f t="array" ref={quoteattr(value.ref)}>'
+            f"{escape(value.text)}</{prefix}f>"
+        )
+    if isinstance(value, DataTableFormula):
+        attributes = ['t="dataTable"', f"ref={quoteattr(value.ref)}"]
+        for name in ("dt2D", "dtr", "del1", "del2", "ca"):
+            if getattr(value, name):
+                attributes.append(f'{name}="1"')
+        for name in ("r1", "r2"):
+            cell = getattr(value, name)
+            if cell is not None:
+                attributes.append(f"{name}={quoteattr(cell)}")
+        return None, f'<{prefix}f {" ".join(attributes)}/>'
     if isinstance(value, Formula):
         xml_text(value.text)
         check_cell_text(value.text)
@@ -711,6 +743,8 @@ def _cell_xml(ref: str, encoded: tuple[str | None, str], prefix: str, old: str |
     attrs = tag_attributes(old) if old else {"r": ref}
     attrs["r"] = ref
     attrs.pop("t", None)
+    # A dynamic-array anchor's cm attribute belongs to the formula it described.
+    attrs.pop("cm", None)
     if kind:
         attrs["t"] = kind
     opening = f'<{prefix}c ' + " ".join(f"{key}={quoteattr(value)}" for key, value in attrs.items()) + ">"

@@ -46,7 +46,7 @@ from ._updater_base import StyleFallback, _UpdaterBase
 from ._sheet_data import replace_sheet_data_body, set_dimension_ref, tag_prefix
 from ._xlsx_edit import XlsxEditMixin
 from ._accel import encode_update_xlsx_row
-from .formulas import Formula
+from .formulas import ArrayFormula, DataTableFormula, Formula
 
 # A formula element (<f>, <f t="shared">, or a prefixed <x:f>); not <formula>.
 _FORMULA_TAG = re.compile(r"<(?:[\w.-]+:)?f[\s>/]")
@@ -543,8 +543,24 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         return style
 
     @staticmethod
-    def _formula_cell(formula: Formula, cell_prefix: str, prefix: str) -> str:
+    def _formula_cell(formula: Formula | ArrayFormula | DataTableFormula, cell_prefix: str, prefix: str) -> str:
         """A formula cell, written the way the XLSX writer writes one."""
+        if isinstance(formula, ArrayFormula):
+            return (
+                f"{cell_prefix}>"
+                f"<{prefix}f t=\"array\" ref=\"{escape_xml_text(formula.ref)}\">"
+                f"{escape_xml_text(formula.text)}</{prefix}f></{prefix}c>"
+            )
+        if isinstance(formula, DataTableFormula):
+            attributes = [f't="dataTable"', f'ref="{escape_xml_text(formula.ref)}"']
+            for name in ("dt2D", "dtr", "del1", "del2", "ca"):
+                if getattr(formula, name):
+                    attributes.append(f'{name}="1"')
+            for name in ("r1", "r2"):
+                value = getattr(formula, name)
+                if value is not None:
+                    attributes.append(f'{name}="{escape_xml_text(value)}"')
+            return f"{cell_prefix}><{prefix}f {' '.join(attributes)}/></{prefix}c>"
         spill = formula.spill_ref is not None
         if spill and formula.array_ref is not None:
             raise ValueError("a formula takes array_ref or spill_ref, not both")
@@ -605,7 +621,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         style_attribute = f' s="{style}"' if style > 0 else ""
         cell_prefix = f'<{prefix}c r="{cell_reference}"{style_attribute}'
 
-        if isinstance(value, Formula):
+        if isinstance(value, (Formula, ArrayFormula, DataTableFormula)):
             return self._formula_cell(value, cell_prefix, prefix)
         if isinstance(value, bool):
             return f'{cell_prefix} t="b"><{prefix}v>{1 if value else 0}</{prefix}v></{prefix}c>'
@@ -868,9 +884,9 @@ class _XlsxRowWriter:
 
     def _cell(self, value: Any, column: int) -> str:
         unwrapped = unwrap_cell(value)
-        if not self._header and isinstance(unwrapped, Formula):
+        if not self._header and isinstance(unwrapped, (Formula, ArrayFormula, DataTableFormula)):
             self.formulas = True
-            if unwrapped.spill_ref is not None:
+            if isinstance(unwrapped, Formula) and unwrapped.spill_ref is not None:
                 self.spill = True
         header_styles, data_styles = self._styles
         return self._updater._value_cell(

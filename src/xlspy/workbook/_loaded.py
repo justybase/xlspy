@@ -24,7 +24,7 @@ from .._metadata import tag_attributes, MAIN, REL, PKG_REL, CT, qname, element_p
 from .._sheet_data import insert_rows, patch_cells, patch_rows, set_dimension_ref, sheet_data_match, tag_prefix
 from .._xlsx_edit import _bytes, _cell_xml_value, _required_match
 from ..formula.sheets import rename_sheet_references
-from ..formulas import Formula
+from ..formulas import ArrayFormula, DataTableFormula, Formula
 from ..ignored_errors import ignored_errors_xml, snapshot as ignored_errors_snapshot
 from ._drawings import check_removals, remove_drawing_objects, save_chart_edits
 from ._objects import (
@@ -697,7 +697,7 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
 
 
 def _value_for_save(cell, date_1904: bool):
-    if isinstance(cell._formula, Formula):
+    if isinstance(cell._formula, (Formula, ArrayFormula, DataTableFormula)):
         return cell._formula
     if isinstance(cell._formula, str):
         try:

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ArrayFormula` and `DataTableFormula`, the openpyxl formula objects:
+  `ArrayFormula(ref, text)` writes a legacy CSE array formula when assigned to a
+  cell, and `DataTableFormula(ref, ca=, dt2D=, dtr=, r1=, r2=, del1=, del2=)`
+  writes a What-If data table. Both are read back by `load_workbook()` in XLSX,
+  written by `XlsxWriter`/`XlsxUpdater.update_cells` and kept when a loaded
+  workbook is saved. `ArrayFormula` moves with `move_range(translate=True)`, is
+  renamed with its sheet and appears in `ws.array_formulae`. A loaded array
+  anchor can be replaced by an `ArrayFormula`/`DataTableFormula` covering the
+  same range; any other edit into an array range is still refused. XLSB stores
+  `ArrayFormula` as its binary array formula and refuses `DataTableFormula`
+  with `UnsupportedFeatureError` (write XLSX instead).
+- The openpyxl compatibility harness has an `array_formulas.xlsx` golden and a
+  model test that compares `ArrayFormula` and `DataTableFormula` with openpyxl's.
+- openpyxl model aliases: `Cell.style_id`, `Cell.has_style`, `Cell.col_idx`,
+  `Worksheet.parent`, `Worksheet.encoding`, `Worksheet.mime_type`,
+  `Worksheet.path`, `Worksheet.merged_cell_ranges`, `Worksheet.array_formulae`,
+  `Worksheet.column_groups`, and `Workbook.data_only`,
+  `Workbook.excel_base_date`, `Workbook.path`, `Workbook.mime_type`,
+  `Workbook.style_names`, `Workbook.get_index()`, `Workbook.get_sheet_names()`,
+  `Workbook.remove_sheet()` and `Workbook.create_named_range()`. The worksheet
+  also carries openpyxl's `PAPERSIZE_*`, `SHEETSTATE_*` and `BREAK_*`
+  constants, and `ColumnDimension.range`.
 - A lambda called in place (`LAMBDA(...)(...)`) is written to XLSB, as in XLSX.
 - `replace_sheet_data` writes array and dynamic-array formulas in XLSX and XLSB:
   scalar, `array_ref` and `spill_ref` anchors, with `xl/metadata` ensured and the

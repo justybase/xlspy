@@ -17,7 +17,7 @@ from .charts import Chart
 from .data_validation import DataValidation
 from .excel_dates import datetime_to_serial
 from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell, _unwrap_cell
-from .formulas import Formula
+from .formulas import ArrayFormula, DataTableFormula, Formula
 from .comments import Comment
 from ._metadata import SheetProtection, replace_element
 from .ignored_errors import ignored_errors_xml
@@ -87,7 +87,7 @@ def _filter_cells(
 
 
 # Cells the native encoder's hook leaves to the Python writer.
-_XLSX_PYTHON_CELLS = (Formula, Hyperlink, CellRichText, datetime.date)
+_XLSX_PYTHON_CELLS = (Formula, ArrayFormula, DataTableFormula, Hyperlink, CellRichText, datetime.date)
 
 
 class _XlsxSheetMixin(_XlsxWriterHost):
@@ -713,10 +713,16 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 # (None, format) or (None, Style): a formatted cell without a
                 # value, written like a blank with a range style.
                 buf.write('<c/>' if xf_index is None else f'<c s="{xf_index}"/>')
-            elif isinstance(cell, Formula):
+            elif isinstance(cell, (Formula, ArrayFormula, DataTableFormula)):
                 self._write_formula_cell(buf, cell, xf_index)
-                if arrays is not None and cell.array_ref is not None:
-                    arrays.append(parse_cell_range(cell.array_ref))
+                if arrays is not None:
+                    ref = (
+                        cell.ref if isinstance(cell, ArrayFormula)
+                        else cell.array_ref if isinstance(cell, Formula)
+                        else None
+                    )
+                    if ref is not None:
+                        arrays.append(parse_cell_range(ref))
             elif isinstance(cell, str):
                 self._write_string_cell(buf, cell, row_idx == 0, xf_index)
             elif isinstance(cell, bool):
@@ -762,8 +768,25 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             else:
                 self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
 
-    def _write_formula_cell(self, buf, formula: Formula, xf_index):
+    def _write_formula_cell(self, buf, formula: Formula | ArrayFormula | DataTableFormula, xf_index):
         s_attr = f' s="{xf_index}"' if xf_index is not None else ''
+        if isinstance(formula, ArrayFormula):
+            buf.write(
+                f'<c{s_attr}><f t="array" ref={saxutils.quoteattr(formula.ref)}>'
+                f"{saxutils.escape(formula.text)}</f></c>"
+            )
+            return
+        if isinstance(formula, DataTableFormula):
+            attrs = ["t=\"dataTable\"", f"ref={saxutils.quoteattr(formula.ref)}"]
+            for name in ("dt2D", "dtr", "del1", "del2", "ca"):
+                if getattr(formula, name):
+                    attrs.append(f'{name}="1"')
+            for name in ("r1", "r2"):
+                value = getattr(formula, name)
+                if value is not None:
+                    attrs.append(f"{name}={saxutils.quoteattr(value)}")
+            buf.write(f'<c{s_attr}><f {" ".join(attrs)}/></c>')
+            return
         value = formula.value
         t_attr = ''
         v_xml = ''

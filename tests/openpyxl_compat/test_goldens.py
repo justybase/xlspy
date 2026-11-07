@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import openpyxl
 import pytest
+from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 
 from ._util import close_quietly, golden_dir, xlspy_load, gap_xfail
 
@@ -51,6 +52,13 @@ def test_golden_object_counts(golden):
             assert len(workbook["Images"]._images) == 4
         elif golden.name == "chartsheet.xlsx":
             assert [sheet.title for sheet in workbook.chartsheets] == ["ChartSheet"]
+        elif golden.name == "array_formulas.xlsx":
+            array = workbook["Array"]["B2"].value
+            table = workbook["WhatIf"]["B2"].value
+            assert isinstance(array, ArrayFormula) and array.ref == "B2:B4"
+            assert isinstance(table, DataTableFormula) and table.ref == "B2:D4"
+            assert table.dt2D == "1" and table.dtr == "1"
+            assert (table.r1, table.r2) == ("F1", "F2")
         elif golden.name == "long_tail.xlsx":
             sheet = workbook["LongTail"]
             assert sheet["A1"].comment is not None

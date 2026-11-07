@@ -24,7 +24,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from . import _fonts
 from ._accel import WidthMeter as _NativeWidthMeter
 from ._scalars import plain_value
-from .formulas import Formula
+from .formulas import ArrayFormula, DataTableFormula, Formula
 from .hyperlinks import Hyperlink
 from .formats import _is_formatted_cell
 from .rich_text import CellRichText, TextBlock
@@ -364,6 +364,9 @@ def _shown(value, number_format: str | None) -> tuple[str | None, str | None]:
     value = plain_value(value)  # written as the Python value it holds (NaT, NA: empty)
     if isinstance(value, Hyperlink):
         value = value.display_text
+    elif isinstance(value, (ArrayFormula, DataTableFormula)):
+        # No cached result of its own: measured as an empty cell.
+        value = None
     elif isinstance(value, Formula):
         value = value.value
     if value is None:

@@ -409,6 +409,7 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
     workbook._sheets.clear()
     workbook._loaded = True
     workbook._read_only = False
+    workbook._data_only = data_only
     workbook._updater = updater
     workbook._source_path = path
     workbook._format = "xlsb"

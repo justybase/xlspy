@@ -30,7 +30,7 @@ from . import _accel
 from .biff_utils import build_record, iter_records
 from .comments import Comment, NotePartsEdit, V, VML_TYPE, comment_part_targets, find_comment_parts, normalize_comments, vml_xml, rels_path, resolve_part
 from .excel_dates import datetime_to_serial
-from .formulas import Formula
+from .formulas import ArrayFormula, DataTableFormula, Formula
 from .refs import column_label, parse_cell_range
 from .updater_utils import unwrap_cell
 from .writer import XlsbWriter, _hlink_payload
@@ -534,7 +534,10 @@ class XlsbEditMixin(XlsxEditMixin):
         for r1, r2, c1, c2 in groups:
             if any(c1 <= parse_cell_range(ref)[0] <= c2 and r1 <= parse_cell_range(ref)[1] <= r2 for ref in values):
                 raise ValueError("editing members of array/shared/data-table formulas is unsupported")
-        has_formulas = any(isinstance(value, Formula) for value in values.values())
+        has_formulas = any(
+            isinstance(value, (Formula, ArrayFormula, DataTableFormula))
+            for value in values.values()
+        )
         original_workbook = self._package.get('xl/workbook.bin') if has_formulas else None
         context = self._context(original_workbook) if has_formulas else None
         # Encode everything before staging any changes, including all formulas.
@@ -632,6 +635,17 @@ def encode_cell(value: Any, column: int, style: int, context: FormulaContext | N
     header = struct.pack('<II', column, style)
     if value is None:
         return build_record(1, header)
+    if isinstance(value, ArrayFormula):
+        # The openpyxl object is accepted here; a plain Formula(array_ref=...)
+        # through update_cells stays refused (it is a scalar-edit API), as before.
+        return formula_cell(
+            Formula(value.text, array_ref=value.ref), column, style, context,
+            sheet=sheet, row=row,
+        )
+    if isinstance(value, DataTableFormula):
+        raise UnsupportedFeatureError(
+            "an XLSB workbook cannot store a data-table formula; write it to XLSX"
+        )
     if isinstance(value, Formula):
         if value.array_ref is not None:
             raise ValueError("update_cells supports scalar formulas only")
