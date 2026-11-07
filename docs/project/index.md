@@ -7,6 +7,11 @@ description: "Project resources for xlspy: changelog, contributing, tests, examp
 <div class="xlspy-cards" markdown>
 
 <div class="xlspy-card" markdown>
+### [Agent guide](https://github.com/justybase/xlspy/blob/main/skill/SKILL.md)
+A compact Markdown variant for AI agents: decision tables, API map, recipes and pitfalls.
+</div>
+
+<div class="xlspy-card" markdown>
 ### [Changelog](https://github.com/justybase/xlspy/blob/main/CHANGELOG.md)
 Releases, fixes, breaking changes and migration notes.
 </div>

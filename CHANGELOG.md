@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sections, the landing page metadata and every guide page have descriptions,
   `docs/robots.txt` points crawlers at the sitemap, and the README links to the
   published tutorial, guides and reference instead of source files.
+- `skill/` contains an agent-oriented Markdown variant of the documentation:
+  `SKILL.md` (decision tables, value model, pitfalls), `reference.md` (compact
+  API) and `recipes.md` (runnable task recipes).
 
 ## [0.14.0] - 2026-11-05
 
