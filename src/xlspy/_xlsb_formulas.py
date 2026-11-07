@@ -178,6 +178,21 @@ class _Parser:
                 left = ('bool', token.upper() == 'TRUE')
             else:
                 left = ('name', token, sheet)
+        # An immediate invocation: LAMBDA(...)(...), LET(...)(...) or
+        # (expr)(args). Excel stores it as another PtgFuncVar with id 255
+        # whose first stack item is the callee.
+        while self.peek() == '(':
+            self.pop()
+            call_args = []
+            if self.peek() != ')':
+                while True:
+                    call_args.append(('missing',) if self.peek() in (',', ')') else self.expression(2))
+                    if self.peek() != ',':
+                        break
+                    self.pop()
+            if self.pop() != ')':
+                raise ValueError("invalid function argument list")
+            left = ('call', left, call_args)
         while True:
             operator = self.peek()
             if operator == '%':
@@ -366,6 +381,16 @@ def compile_formula(text, context, *, sheet=None, origin=(0, 0), name_formula=Fa
                     chunks.append(branch + b'\x19\x08' + struct.pack('<H', remaining))
                 return b''.join(chunks) + ending
             return b''.join(encoded) + ending
+        if kind == 'call':
+            # An immediate invocation: LAMBDA(...)(args). Excel stores the
+            # callee and the call arguments, then a PtgFuncVar with id 255
+            # whose first stack item is the callee.
+            callee, call_args = node[1], node[2]
+            result_class = 0x20 if operand == 'R' else 0x60 if operand == 'A' else 0x40
+            if len(call_args) + 1 > 254:
+                raise ValueError("too many XLSB function arguments")
+            encoded = [emit(callee, 'R')] + [emit(arg, 'R') for arg in call_args]
+            return b''.join(encoded) + bytes([result_class | 2, len(call_args) + 1]) + struct.pack('<H', 255)
         raise UnsupportedFeatureError(f"unsupported XLSB formula node {kind}")
 
     top = operand or ('R' if name_formula else 'V')
@@ -1019,7 +1044,7 @@ def formula_record(formula, column, style, parsed, value=None) -> bytes:
     return build_record(kind, header + cache + b'\x01\0' + parsed)
 
 
-def formula_cell(formula, column, style, context, *, sheet=None, row=0):
+def formula_cell(formula, column, style, context, *, sheet=None, row=0) -> bytes:
     """Encode a scalar formula; cached zero is used if no cache was supplied."""
     if getattr(formula, "spill_ref", None) is not None:
         raise UnsupportedFeatureError(

@@ -120,12 +120,93 @@ def test_updaters_refuse_new_spill_formulas(
             updater.update_cells(
                 "S", {"A2": Formula("SEQUENCE(3)", spill_ref="A2:A4")}
             )
-        with pytest.raises(UnsupportedFeatureError, match="dynamic"):
-            updater.replace_sheet_data(
-                "S", [[Formula("SEQUENCE(3)", spill_ref="A2:A4")]], headers=["x"]
-            )
     finally:
         updater.close()
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_xlsb_replace_sheet_data_writes_spill_members(tmp_path, stream):
+    source = tmp_path / "source.xlsb"
+    with XlsbWriter(source) as writer:
+        writer.add_sheet("S")
+        writer.write_sheet([["x", "y"]])
+    updater = XlsbUpdater(source)
+    try:
+        replace = updater.replace_sheet_data_stream if stream else updater.replace_sheet_data
+        replace(
+            "S",
+            [
+                [Formula("SEQUENCE(2,2)", spill_ref="A2:B3"), 99],
+                [7, 8],
+            ],
+            headers=["x", "y"],
+        )
+        updater.save(source)
+    finally:
+        updater.close()
+
+    with ExcelReader(source) as reader:
+        rows = reader.read_all("S", data_only=False)
+    # B2 and the whole second row are array members, not ordinary cells.
+    assert rows[1][1] == 99
+    assert rows[2] == [7, 8]
+    parts = _parts(source)
+    from xlspy.biff_utils import iter_records
+
+    record_ids = {record.record_id for record in iter_records(parts["xl/worksheets/sheet1.bin"])}
+    assert 0x1AA in record_ids  # the array formula group
+    assert 0x31 in record_ids  # dynamic-array cell metadata
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_xlsb_replace_sheet_data_writes_spill_rows_past_the_data(tmp_path, stream):
+    source = tmp_path / "source.xlsb"
+    with XlsbWriter(source) as writer:
+        writer.add_sheet("S")
+        writer.write_sheet([["x", "y"]])
+    updater = XlsbUpdater(source)
+    try:
+        replace = updater.replace_sheet_data_stream if stream else updater.replace_sheet_data
+        replace(
+            "S",
+            [[Formula("SEQUENCE(3)", spill_ref="A2:A4")]],
+            headers=["x", "y"],
+        )
+        updater.save(source)
+    finally:
+        updater.close()
+
+    with ExcelReader(source) as reader:
+        rows = reader.read_all("S", data_only=False)
+    assert len(rows) == 4
+    assert rows[1][0] == "=_xlfn.SEQUENCE(3)"
+    assert rows[2][0] == 0 and rows[3][0] == 0
+
+
+@pytest.mark.parametrize(
+    "writer_class, updater_class, suffix",
+    [(XlsxWriter, XlsxUpdater, "xlsx"), (XlsbWriter, XlsbUpdater, "xlsb")],
+)
+def test_replace_sheet_data_writes_spill_formulas(
+    tmp_path, writer_class, updater_class, suffix
+):
+    source = tmp_path / f"plain.{suffix}"
+    with writer_class(source) as writer:
+        writer.add_sheet("S")
+        writer.write_sheet([["x"], [1]])
+    updater = updater_class(source)
+    try:
+        updater.replace_sheet_data(
+            "S", [[Formula("SEQUENCE(3)", spill_ref="A2:A4")]], headers=["x"]
+        )
+        updater.save(source)
+    finally:
+        updater.close()
+    parts = _parts(source)
+    assert ("xl/metadata.xml" if suffix == "xlsx" else "xl/metadata.bin") in parts
+    with ExcelReader(source) as reader:
+        rows = reader.read_all("S", data_only=False)
+    assert rows[1][0] == "=_xlfn.SEQUENCE(3)"
 
 
 @pytest.mark.parametrize(

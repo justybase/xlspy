@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A lambda called in place (`LAMBDA(...)(...)`) is written to XLSB, as in XLSX.
+- `replace_sheet_data` writes array and dynamic-array formulas in XLSX and XLSB:
+  scalar, `array_ref` and `spill_ref` anchors, with `xl/metadata` ensured and the
+  calculation chain dropped. `update_cells` still refuses spills.
 - Auto-filter sort state is saved in new workbooks (XLSX and XLSB) and
   sorting by icon is saved in loaded and new workbooks: `SortCondition(sortBy="icon",
   iconSet="3TrafficLights1", iconId=1)`. Classic sets use `BrtBeginSortCond`,
@@ -18,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- XLSB `replace_sheet_data` with a future function (`CONCAT`, `SEQUENCE`, ...)
+  wrote a name reference without adding the name to `workbook.bin`, so the file
+  failed to read (`invalid XLSB name reference index`). The names are written back.
 - `Worksheet.auto_filter.sortState` in XLSX now keeps `dxfId`, `customList`,
   `iconSet` and `iconId`; XLSB keeps the icon set/id from `BrtBeginSortCond(14)`.
 

@@ -15,6 +15,7 @@ from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
 
 from ._metadata import CT, REL, PKG_REL, DefinedName, SheetProtection, WorkbookProtection, cell_ref
+from ._metadata_part import METADATA_BIN
 from ._text import check_cell_text
 from ._xlsb_metadata import (
     _XLSB_COMMENTS_TYPE, LEGACY_DRAWING, SHEET_PROTECTION, SHEET_PROTECTION_ISO,
@@ -120,6 +121,15 @@ class XlsbEditMixin(XlsxEditMixin):
     # ``(id, name)`` of the tables the save removes: their names are free for a table added in
     # the same save, and a new formula that still names one is refused.
     _pending_removed_tables: tuple = ()
+    # A replacement caches a formula context over workbook.bin; any later write
+    # of that part makes it stale.
+    if TYPE_CHECKING:
+        _replace_formula_context: FormulaContext | None
+
+    def _apply_parts(self, parts: Mapping[str, Any], removed: Iterable[str] = ()) -> None:
+        if "xl/workbook.bin" in parts or "xl/workbook.bin" in removed:
+            self._replace_formula_context = None
+        super()._apply_parts(parts, removed)
 
     def set_pending_tables(self, pending: Iterable[Any], removed: Iterable[tuple[int, str]] = ()) -> None:
         """The tables a save is about to write, each with its id (empty when the save is done)."""
@@ -461,6 +471,36 @@ class XlsbEditMixin(XlsxEditMixin):
                         types.remove(ct)
         updates[rp] = ET.tostring(rels, encoding='utf-8')
         updates['[Content_Types].xml'] = ET.tostring(types, encoding='utf-8')
+
+    def _ensure_dynamic_metadata(self) -> None:
+        """Ensure xl/metadata.bin and its content-type and relationship exist.
+
+        The part is static: one entry serves every dynamic-array anchor.
+        """
+        updates: dict[str, Any] = {}
+        removed: list[str] = []
+        if "xl/metadata.bin" not in self._package.names():
+            updates["xl/metadata.bin"] = METADATA_BIN
+        types = safe_fromstring(self._package.get("[Content_Types].xml"))
+        if not any(node.get("PartName") == "/xl/metadata.bin" for node in list(types)):
+            override = ET.SubElement(types, f"{{{CT}}}Override")
+            override.set("PartName", "/xl/metadata.bin")
+            override.set("ContentType", "application/vnd.ms-excel.sheetMetadata")
+            updates["[Content_Types].xml"] = ET.tostring(types, encoding="utf-8")
+        rp = "xl/_rels/workbook.bin.rels"
+        rels = safe_fromstring(self._package.get(rp))
+        if not any("sheetMetadata" in (node.get("Type") or "") for node in list(rels)):
+            taken = {node.get("Id") for node in rels}
+            number = 1
+            while f"rId{number}" in taken:
+                number += 1
+            node = ET.SubElement(rels, f"{{{PKG_REL}}}Relationship")
+            node.set("Id", f"rId{number}")
+            node.set("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata")
+            node.set("Target", "metadata.bin")
+            updates[rp] = ET.tostring(rels, encoding="utf-8")
+        if updates:
+            self._apply_parts(updates, removed)
 
     def update_cells(self, sheet_name: str, cells: Mapping[str, object], *,
                      styles: Mapping[str, int] | None = None) -> None:

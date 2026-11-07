@@ -799,6 +799,11 @@ class ZipPackage:
         if self._temporary_directory_finalizer.detach() is not None:
             shutil.rmtree(self._temporary_directory)
 
+    @property
+    def in_transaction(self) -> bool:
+        """Whether a transaction is open, so writes are staged directly."""
+        return self._package_transaction is not None
+
     def has(self, name: str) -> bool:
         return name in self._indices
 

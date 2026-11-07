@@ -22,6 +22,7 @@ from ._metadata import (
     MAIN, REL, PKG_REL, CT, DefinedName, SheetProtection, WorkbookProtection,
     cell_ref, element_pattern, replace_element, append_child, read_defined_names, xml_text,
 )
+from ._metadata_part import METADATA_XML
 from ._text import check_cell_text, xstring_escape
 from .comments import (
     Comment, COMMENTS_TYPE, VML_TYPE, V, comments_xml, vml_xml, normalize_comments,
@@ -76,6 +77,15 @@ class XlsxEditMixin:
         def _tag_prefix(xml_data: str, tag_name: str) -> str: ...
 
     def _apply_parts(self, parts: Mapping[str, Any], removed: Iterable[str] = ()) -> None:
+        # A streaming replacement already holds the package transaction; nesting
+        # another one would fail, so its parts are written directly into that
+        # transaction (a failure rolls the whole replacement back).
+        if self._package.in_transaction:
+            for path, data in parts.items():
+                self._package.set(path, data.encode("utf-8") if isinstance(data, str) else data)
+            for path in removed:
+                self._package.remove(path)
+            return
         # The package owns the write-back transaction (ZipPackage.apply_parts).
         self._package.apply_parts(parts, removed)
 
@@ -493,6 +503,39 @@ class XlsxEditMixin:
                         types.remove(ct)
         updates[rp] = _bytes(rels)
         updates["[Content_Types].xml"] = _bytes(types)
+
+    def _ensure_dynamic_metadata(self) -> None:
+        """Ensure xl/metadata.xml and its content-type and relationship exist.
+
+        The part is static: one XLDAPR entry serves every dynamic-array anchor.
+        """
+        updates: dict[str, Any] = {}
+        removed: list[str] = []
+        if not self._package.has("xl/metadata.xml"):
+            updates["xl/metadata.xml"] = METADATA_XML.encode("utf-8")
+        types_xml = self._package.get("[Content_Types].xml").decode("utf-8")
+        if "/xl/metadata.xml" not in types_xml:
+            types = safe_fromstring(self._package.get("[Content_Types].xml"))
+            override = ET.SubElement(types, f"{{{CT}}}Override")
+            override.set("PartName", "/xl/metadata.xml")
+            override.set("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml")
+            updates["[Content_Types].xml"] = _bytes(types)
+        rp = "xl/_rels/workbook.xml.rels"
+        rels_xml = self._package.get(rp).decode("utf-8")
+        if "sheetMetadata" not in rels_xml:
+            rels = safe_fromstring(self._package.get(rp))
+            # Next free rId.
+            taken = {node.get("Id") for node in rels}
+            number = 1
+            while f"rId{number}" in taken:
+                number += 1
+            node = ET.SubElement(rels, f"{{{PKG_REL}}}Relationship")
+            node.set("Id", f"rId{number}")
+            node.set("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata")
+            node.set("Target", "metadata.xml")
+            updates[rp] = _bytes(rels)
+        if updates:
+            self._apply_parts(updates, removed)
 
 
 @dataclass

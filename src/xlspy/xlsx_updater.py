@@ -177,6 +177,8 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             has_formulas=writer.formulas,
         )
         self._package.set(sheet_path, updated_sheet_xml.encode("utf-8"))
+        if writer.spill:
+            self._ensure_dynamic_metadata()
         self._commit_shared_strings()
         self._patch_pivot_metadata(sheet_name, len(materialized), dimension_ref)
 
@@ -264,6 +266,8 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                 has_formulas=writer.formulas,
             )
             self._package.set_file(sheet_path, updated_sheet)
+            if writer.spill:
+                self._ensure_dynamic_metadata()
             self._commit_stream_shared_strings()
             self._patch_pivot_metadata(sheet_name, trimmer.kept_rows, dimension_ref)
         finally:
@@ -541,10 +545,9 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
     @staticmethod
     def _formula_cell(formula: Formula, cell_prefix: str, prefix: str) -> str:
         """A formula cell, written the way the XLSX writer writes one."""
-        if formula.spill_ref is not None:
-            raise UnsupportedFeatureError(
-                "replace_sheet_data cannot write dynamic-array formulas"
-            )
+        spill = formula.spill_ref is not None
+        if spill and formula.array_ref is not None:
+            raise ValueError("a formula takes array_ref or spill_ref, not both")
         type_attribute = ""
         cached_xml = ""
         cached = formula.value
@@ -554,6 +557,14 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             cached_xml = f"<{prefix}v>{escape_xml_text(cached)}</{prefix}v>"
         elif cached is not None:
             cached_xml = f"<{prefix}v>{repr(float(cast(Any, cached)))}</{prefix}v>"
+        if spill:
+            assert formula.spill_ref is not None
+            return (
+                f"{cell_prefix}{type_attribute} cm=\"1\">"
+                f"<{prefix}f t=\"array\" ref=\"{escape_xml_text(formula.spill_ref)}\">"
+                f"{escape_xml_text(formula.text)}</{prefix}f>"
+                f"{cached_xml}</{prefix}c>"
+            )
         array_attribute = (
             f' t="array" ref="{escape_xml_text(formula.array_ref)}"'
             if formula.array_ref is not None
@@ -842,6 +853,7 @@ class _XlsxRowWriter:
         self._style_fallback = style_fallback
         self._prefix = prefix
         self.formulas = False
+        self.spill = False
         self._row_number = 0
         self._header = False
         general = style_fallback == "general"
@@ -855,8 +867,11 @@ class _XlsxRowWriter:
         self._string_index = updater._shared_string_index if updater._use_shared_strings else None
 
     def _cell(self, value: Any, column: int) -> str:
-        if not self._header and isinstance(unwrap_cell(value), Formula):
+        unwrapped = unwrap_cell(value)
+        if not self._header and isinstance(unwrapped, Formula):
             self.formulas = True
+            if unwrapped.spill_ref is not None:
+                self.spill = True
         header_styles, data_styles = self._styles
         return self._updater._value_cell(
             value, column, self._row_number, header_styles, data_styles, self._date_style,

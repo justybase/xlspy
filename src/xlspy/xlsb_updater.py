@@ -8,6 +8,7 @@ import numbers
 import os
 import re
 import struct
+from dataclasses import replace
 from ._safe_xml import fromstring as safe_fromstring
 from decimal import Decimal
 from pathlib import Path
@@ -16,11 +17,12 @@ from collections.abc import Iterable, Iterator, Sequence
 from ._accel import encode_update_xlsb_row, patch_xlsb_row_headers
 from ._updater_base import StyleFallback, _UpdaterBase
 from ._xlsb_edit import XlsbEditMixin
-from ._xlsb_formulas import FormulaContext, formula_cell
+from ._xlsb_formulas import ArrayValue, FormulaContext, formula_cell
 from ._xlsb_table_part import parse_table_part
 from ._xlsb_sheets import XlsbSheetsMixin
-from .exceptions import InvalidFileError, UnsupportedFeatureError, reading
+from .exceptions import InvalidFileError, reading
 from .formulas import Formula
+from .refs import parse_cell_range
 
 from .biff_utils import (
     Biff12Record,
@@ -144,7 +146,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         total_rows, width = self._region_size(materialized, header_values)
         last_row = max(0, total_rows - 1)
         last_col = max(0, width - 1)
-        new_rows, wrote_formula = self._build_rows(
+        new_rows, wrote_formula, wrote_spill = self._build_rows(
             materialized,
             header_values,
             data_styles,
@@ -153,6 +155,17 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             style_fallback,
             sheet_name,
         )
+        # Extra spill/array rows past the provided data extend the dimension.
+        if wrote_spill or wrote_formula:
+            for row in materialized:
+                for raw in row:
+                    value = unwrap_cell(raw)
+                    if isinstance(value, Formula):
+                        ref = value.array_ref or value.spill_ref
+                        if ref is not None:
+                            _c1, _r1, c2, r2 = parse_cell_range(ref)
+                            last_row = max(last_row, r2)
+                            last_col = max(last_col, c2)
 
         region = self._find_rows_region(sheet_data)
         old_rows_length = region.rows_end - region.rows_start
@@ -174,7 +187,14 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         self._patch_dimension(updated, last_row, last_col)
         self._package.set(sheet_path, bytes(updated))
         if wrote_formula:
+            # New names (future functions, _xlpm params) live in the context;
+            # write them back like update_cells does.
+            original_workbook = self._package.get("xl/workbook.bin")
+            context = self._replace_context()
+            self._package.set("xl/workbook.bin", context.write_workbook(original_workbook))
             self._invalidate_replaced_formulas()
+        if wrote_spill:
+            self._ensure_dynamic_metadata()
         self._commit_shared_strings()
         self._patch_pivot_caches(sheet_name, last_row, last_col)
 
@@ -230,9 +250,16 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                 for source_row in rows:
                     row = row_cells(source_row)
                     guard.check_row(next_row, row)
-                    output.write(writer.row(row, next_row))
-                    trimmer.wrote(row)
+                    prepared = writer.prepare_row(row, next_row)
+                    output.write(writer.row(prepared, next_row))
+                    trimmer.wrote(prepared)
                     next_row += 1
+
+                # Array and spill members past the source rows.
+                for extra in writer.extra_row_numbers(next_row):
+                    prepared = writer.prepare_row([], extra)
+                    output.write(writer.row(prepared, extra))
+                    trimmer.wrote(prepared)
 
                 guard.finish()
                 trimmer.finish()
@@ -260,7 +287,12 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             )
             self._package.set_file(sheet_path, updated_sheet)
             if writer.wrote_formula:
+                original_workbook = self._package.get("xl/workbook.bin")
+                context = self._replace_context()
+                self._package.set("xl/workbook.bin", context.write_workbook(original_workbook))
                 self._invalidate_replaced_formulas()
+            if writer.wrote_spill:
+                self._ensure_dynamic_metadata()
             self._commit_stream_shared_strings()
             self._patch_pivot_caches(sheet_name, last_row, last_col)
         finally:
@@ -489,11 +521,22 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         date_xf: int | None,
         style_fallback: StyleFallback,
         sheet_name: str,
-    ) -> tuple[bytes, bool]:
+    ) -> tuple[bytes, bool, bool]:
         chunks: list[bytes] = []
         max_col = max(
             [len(row) for row in rows] + ([len(headers)] if headers is not None else []) + [0]
         )
+        first_row = 1 if headers is not None else 0
+        # A spill or array formula widens its row even when the row source is
+        # shorter; the row headers must name that last column.
+        for row in rows:
+            for raw in row:
+                value = unwrap_cell(raw)
+                if isinstance(value, Formula):
+                    ref = value.array_ref or value.spill_ref
+                    if ref is not None:
+                        _c1, _r1, c2, _r2 = parse_cell_range(ref)
+                        max_col = max(max_col, c2 + 1)
         writer = _XlsbRowWriter(
             self, header_styles, data_styles, date_xf, style_fallback,
             max(0, max_col - 1), sheet_name,
@@ -506,11 +549,15 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             ]
             chunks.append(writer.header(header_texts, 0))
 
-        row_number = 1 if headers is not None else 0
+        row_number = first_row
         for row in rows:
             chunks.append(writer.row(row, row_number))
             row_number += 1
-        return b"".join(chunks), writer.wrote_formula
+        # Array and spill ranges that reach past the provided rows still need
+        # their member cells, as the workbook writer emits them.
+        for extra in writer.extra_row_numbers(row_number):
+            chunks.append(writer.row([], extra))
+        return b"".join(chunks), writer.wrote_formula, writer.wrote_spill
 
     def _replace_context(self) -> FormulaContext:
         """The formula context of a ``replace_sheet_data`` call, built once."""
@@ -533,6 +580,9 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             self._package.set(path, data.encode("utf-8") if isinstance(data, str) else data)
         for path in removed:
             self._package.remove(path)
+        # workbook.bin changed (the recalculation flag), so a cached formula
+        # context no longer describes the package.
+        self._replace_formula_context = None
 
     def _value_cell_bytes(
         self,
@@ -547,17 +597,26 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
     ) -> bytes:
         value = unwrap_cell(raw)
         style = 0 if style_fallback == "general" else data_styles.get(column, 0)
-        if isinstance(value, Formula):
-            if value.array_ref is not None or value.spill_ref is not None:
-                raise UnsupportedFeatureError(
-                    "replace_sheet_data supports scalar formulas only; array and "
-                    "dynamic-array formulas need the workbook writer"
-                )
-            encoded: bytes = formula_cell(
+        if isinstance(value, ArrayValue):
+            return formula_cell(
                 value, column, style, self._replace_context(),
                 sheet=sheet_name, row=row_number,
             )
-            return encoded
+        if isinstance(value, Formula):
+            spill = value.spill_ref is not None and value.array_ref is None
+            if spill:
+                assert value.spill_ref is not None
+                # Dynamic array: BrtCellMeta + array formula group, like the writer.
+                # Tracked by the row writer for metadata ensuring.
+                converted = replace(value, array_ref=value.spill_ref, spill_ref=None)
+                return build_record(0x31, struct.pack("<I", 1)) + formula_cell(
+                    converted, column, style, self._replace_context(),
+                    sheet=sheet_name, row=row_number,
+                )
+            return formula_cell(
+                value, column, style, self._replace_context(),
+                sheet=sheet_name, row=row_number,
+            )
         if value is None:
             return self._string_cell_bytes(column, style, "")
         # numpy and other numeric types register with numbers; write them as Python numbers.
@@ -742,6 +801,11 @@ class _XlsbRowWriter:
         self._sheet_name = sheet_name
         # Set when a Formula cell is encoded: the save then asks for a recalculation.
         self.wrote_formula = False
+        self.wrote_spill = False
+        # Array and spill ranges started in the rows written so far, and the
+        # anchor cells that started them (prepare_row may run twice per row).
+        self.array_ranges: list[tuple[int, int, int, int]] = []
+        self._array_anchors: set[tuple[int, int]] = set()
         general = style_fallback == "general"
         # The native encoder takes the column xfs as a list (none for "general").
         self._style_lists = tuple(
@@ -761,12 +825,69 @@ class _XlsbRowWriter:
         return build_record(0x00, bytes(payload))
 
     def _cell(self, raw: Any, column: int, row_number: int) -> bytes:
-        if isinstance(unwrap_cell(raw), Formula):
+        unwrapped = unwrap_cell(raw)
+        if isinstance(unwrapped, Formula):
             self.wrote_formula = True
+            if unwrapped.spill_ref is not None:
+                self.wrote_spill = True
         return self._updater._value_cell_bytes(
             raw, column, self._data_styles, self._date_xf, self._style_fallback,
             sheet_name=self._sheet_name, row_number=row_number,
         )
+
+    def _register_array_range(
+        self, formula: Formula, column: int, row_number: int
+    ) -> None:
+        ref = formula.array_ref or formula.spill_ref
+        if ref is None:
+            return
+        bounds = parse_cell_range(ref)
+        c1, r1, c2, r2 = bounds
+        if formula.array_ref is not None and (column, row_number) != (c1, r1):
+            raise ValueError("array formula must be written in its top-left cell")
+        if (column, row_number) in self._array_anchors:
+            return
+        self._array_anchors.add((column, row_number))
+        for a, b, c, d in self.array_ranges:
+            if not (c2 < a or c1 > c or r2 < b or r1 > d):
+                raise ValueError("overlapping array formulas")
+        self.array_ranges.append(bounds)
+
+    def prepare_row(self, row: Sequence[Any], row_number: int) -> list[Any]:
+        """Add the member cells an array or spill range needs to ``row``.
+
+        The workbook writer does the same: cells inside a range become
+        ``ArrayValue`` followers (the anchor stays a formula), so Excel opens a
+        file whose spills are not lost when the source row is shorter or ends
+        before the range does.
+        """
+        prepared = list(row)
+        for column, raw in enumerate(prepared):
+            value = unwrap_cell(raw)
+            if isinstance(value, Formula):
+                self._register_array_range(value, column, row_number)
+        for c1, r1, c2, r2 in self.array_ranges:
+            if not r1 <= row_number <= r2:
+                continue
+            if len(prepared) <= c2:
+                prepared.extend([None] * (c2 + 1 - len(prepared)))
+            for column in range(c1, c2 + 1):
+                if row_number == r1 and column == c1:
+                    continue  # the anchor formula stays in place
+                value = unwrap_cell(prepared[column]) if prepared[column] is not None else None
+                if isinstance(value, Formula):
+                    raise ValueError("overlapping array formulas")
+                if isinstance(value, ArrayValue):
+                    continue
+                prepared[column] = ArrayValue(r1, c1, value)
+        return prepared
+
+    def extra_row_numbers(self, next_row: int) -> Iterator[int]:
+        """Rows from ``next_row`` through the last member of an array range."""
+        if not self.array_ranges:
+            return
+        final_row = max(r2 for _c1, _r1, _c2, r2 in self.array_ranges)
+        yield from range(next_row, final_row + 1)
 
     def _header_cell(self, text: Any, column: int) -> bytes:
         style = 0 if self._style_fallback == "general" else self._header_styles.get(column, 0)
@@ -783,16 +904,18 @@ class _XlsbRowWriter:
         )
 
     def row(self, row: Sequence[Any], row_number: int) -> bytes:
+        prepared = self.prepare_row(row, row_number)
+
         def cell(raw: Any, column: int, _row_number: int = row_number) -> bytes:
             return self._cell(raw, column, _row_number)
 
         if encode_update_xlsb_row is not None:
             return bytes(encode_update_xlsb_row(
-                row, row_number, self._last_col, self._style_lists[1], self._date_xf or 0,
+                prepared, row_number, self._last_col, self._style_lists[1], self._date_xf or 0,
                 self._string_index, cell, self._updater._date_1904,
             ))
         return self._row_header(row_number) + b"".join(
-            self._cell(raw, column, row_number) for column, raw in enumerate(row) if raw is not None
+            self._cell(raw, column, row_number) for column, raw in enumerate(prepared) if raw is not None
         )
 
 

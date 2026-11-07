@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 
-from xlspy import ExcelReader, Formula, UnsupportedFeatureError, XlsbUpdater, XlsbWriter
+from xlspy import ExcelReader, Formula, XlsbUpdater, XlsbWriter
 
 HEADERS = ["Name", "Qty", "Price"]
 BODY = [
@@ -68,21 +68,29 @@ def test_replace_sheet_data_keeps_formulas_in_later_rows(tmp_path):
         ]
 
 
-def test_replace_sheet_data_refuses_array_formulas(tmp_path):
+@pytest.mark.parametrize("stream", [False, True])
+def test_replace_sheet_data_writes_array_formulas(tmp_path, stream):
     source = tmp_path / "source.xlsb"
     _template(source)
     target = tmp_path / "target.xlsb"
     shutil.copyfile(source, target)
     updater = XlsbUpdater(target)
     try:
-        with pytest.raises(UnsupportedFeatureError):
-            updater.replace_sheet_data(
-                "Data",
-                [["x", Formula("1+1", array_ref="B2:B3")]],
-                headers=["Name", "Value"],
-            )
+        replace = updater.replace_sheet_data_stream if stream else updater.replace_sheet_data
+        replace(
+            "Data",
+            [["x", Formula("1+1", array_ref="B2:B3")]],
+            headers=["Name", "Value"],
+        )
+        updater.save(target)
     finally:
         updater.close()
+
+    with ExcelReader(target) as reader:
+        rows = reader.read_all("Data", data_only=False)
+    assert rows[0] == ["Name", "Value"]
+    assert rows[1] == ["x", "=1+1"]
+    assert rows[2] == [None, 0]
 
 
 @pytest.mark.com

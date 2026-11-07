@@ -185,6 +185,32 @@ def test_binary_staging_failure_rolls_back(tmp_path,monkeypatch):
         updater.close()
 
 
+def test_replace_sheet_data_sees_defined_names_changed_between_calls(tmp_path):
+    path = tmp_path / 'stale_context.xlsb'
+    with XlsbWriter(path) as writer:
+        writer.add_sheet('Data')
+        writer.write_sheet([['x']])
+        writer.set_defined_name(DefinedName('OldName', "'Data'!$B$1"))
+
+    updater = XlsbUpdater(path)
+    try:
+        updater.replace_sheet_data('Data', [[Formula('OldName+1')]], headers=['x'])
+        updater.remove_defined_name('OldName')
+        updater.replace_sheet_data('Data', [[Formula('SUM(1,2)')]], headers=['x'])
+        updater.set_defined_name(DefinedName('Fresh', "'Data'!$B$2"))
+        updater.replace_sheet_data('Data', [[Formula('Fresh+1')]], headers=['x'])
+        updater.save(path)
+        assert [(name.name, name.formula) for name in updater.get_defined_names()] == [
+            ('Fresh', "'Data'!$B$2")
+        ]
+    finally:
+        updater.close()
+
+    with ExcelReader(path) as reader:
+        assert reader.read_all('Data', data_only=False)[1][0] == '=Fresh+1'
+        assert [name.name for name in reader.get_defined_names()] == ['Fresh']
+
+
 @pytest.mark.parametrize('formula',[
     'A1+$B2+C$3+$D$4','SUM(A1:B3)','IF(A1>0,"yes","no")','ROUND(A1/3,2)',
     'IFERROR(1/0,99)','-A1^2','(A1+B1)*2','A1&"x"','SUM(A:A)','SUM(1:3)',

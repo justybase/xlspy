@@ -5,9 +5,7 @@
 ## Known limitations
 
 - **Older Excel versions were not tested.** Only Excel 16.0 was available, so
-  compatibility with other Excel releases is unverified. In XLSB, a lambda called
-  in place (`LAMBDA(...)(...)`) is not written yet; LET and lambdas passed to
-  higher-order functions are.
+  compatibility with other Excel releases is unverified.
 - **Copying into a caller's stream cannot be undone.** A failed write leaves a
   file object untouched, but if the stream itself fails while the finished
   workbook is being copied in, it holds part of the workbook (see
