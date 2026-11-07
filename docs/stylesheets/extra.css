@@ -1,0 +1,129 @@
+/* Brand layer on top of Zensical's modern theme. */
+
+:root {
+  --xlspy-ink: #0d2b3e;
+  --xlspy-ink-soft: #24475c;
+  --xlspy-accent: #2f9e8f;
+  --xlspy-accent-soft: #d9f3ee;
+  --xlspy-card: #f5f9f8;
+}
+
+[data-md-color-scheme="slate"] {
+  --xlspy-ink: #e7f2f0;
+  --xlspy-ink-soft: #b9cfcb;
+  --xlspy-accent: #6ed3c5;
+  --xlspy-accent-soft: #16332f;
+  --xlspy-card: #12262a;
+}
+
+.md-grid {
+  max-width: 1440px;
+}
+
+/* Landing hero */
+
+.xlspy-hero {
+  padding: 3.2rem 0 1.8rem;
+  text-align: center;
+}
+
+.xlspy-hero h1 {
+  margin: 0.4rem 0 0.6rem;
+  font-size: clamp(2.1rem, 5vw, 3.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--xlspy-ink);
+}
+
+.xlspy-hero .xlspy-tagline {
+  max-width: 46rem;
+  margin: 0 auto 1.2rem;
+  font-size: 1.12rem;
+  color: var(--xlspy-ink-soft);
+}
+
+.xlspy-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: center;
+  margin: 0 0 1.3rem;
+}
+
+.xlspy-badges img {
+  height: 1.5rem;
+}
+
+.xlspy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin: 0 0 1.5rem;
+}
+
+.xlspy-actions .md-button {
+  margin: 0;
+}
+
+.xlspy-install {
+  display: inline-block;
+  padding: 0.65rem 1.1rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.5rem;
+  background: var(--xlspy-card);
+  font-family: var(--md-code-font-family);
+  font-size: 0.95rem;
+}
+
+/* Feature and link cards */
+
+.xlspy-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.9rem;
+  margin: 1rem 0 1.6rem;
+}
+
+.xlspy-card {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.65rem;
+  background: var(--xlspy-card);
+}
+
+.xlspy-card h3 {
+  margin: 0.2rem 0 0.4rem;
+  font-size: 1rem;
+  color: var(--xlspy-ink);
+}
+
+.xlspy-card p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--xlspy-ink-soft);
+}
+
+.xlspy-card a {
+  font-weight: 600;
+}
+
+/* Section intro */
+
+.xlspy-lead {
+  max-width: 52rem;
+  font-size: 1.05rem;
+  color: var(--xlspy-ink-soft);
+}
+
+/* Slightly roomier tables in the guide */
+
+.md-typeset table:not([class]) th {
+  white-space: nowrap;
+}
+
+/* Keep long API signatures readable */
+
+.md-typeset .doc-signature {
+  overflow-x: auto;
+}

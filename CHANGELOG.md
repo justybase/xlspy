@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `llms.txt`) and publishes to GitHub Pages via `.github/workflows/docs.yml`;
   `docs/index.md` is the site home, page links stay inside `docs/`, and
   `docs/api/updating.md` lists `XlsmUpdater` instead of repeating `XlsxUpdater`.
+- The documentation is split into Learn (a ten-step tutorial), Guide (how-to),
+  Reference, Explanation and Project; the landing page has a hero, feature cards
+  and a five-minute example, and `tests/test_docs_tutorial.py` runs every marked
+  tutorial snippet.
 
 ## [0.14.0] - 2026-11-05
 

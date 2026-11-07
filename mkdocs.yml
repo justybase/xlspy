@@ -1,12 +1,17 @@
-# The guide and the API reference. Build: pip install -e .[docs] && zensical build --clean --strict
+# The guide, tutorial and API reference. Build: pip install -e .[docs] && zensical build --clean --strict
 site_name: xlspy
 site_description: Fast XLSB/XLSX reader and writer for Python
 site_url: https://justybase.github.io/xlspy/
 repo_url: https://github.com/justybase/xlspy
+edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: site
+copyright: "&copy; 2026 Krzysztof Duśko · MIT licensed"
+
 theme:
   variant: modern
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
   palette:
     - scheme: default
       primary: indigo
@@ -23,29 +28,53 @@ theme:
   features:
     - navigation.tabs
     - navigation.sections
+    - navigation.indexes
     - navigation.instant
     - navigation.tracking
     - navigation.top
     - navigation.path
+    - navigation.footer
     - toc.follow
     - search.suggest
     - search.highlight
+    - content.action.edit
+    - content.action.copy
     - content.code.copy
+    - content.code.select
+    - content.tabs.link
+    - content.tooltips
   icon:
     repo: fontawesome/brands/github
 
+extra_css:
+  - stylesheets/extra.css
+
 nav:
   - Home: index.md
+  - Learn:
+      - Overview: learn/index.md
+      - Installation: learn/installation.md
+      - Your first workbook: learn/first-workbook.md
+      - XLSB in one line: learn/xlsb.md
+      - Styles and number formats: learn/styles.md
+      - Formulas, tables and charts: learn/objects.md
+      - pandas and polars DataFrames: learn/dataframes.md
+      - Reading a workbook: learn/reading.md
+      - Updating a template: learn/updating.md
+      - Streaming a large export: learn/streaming.md
+      - Next steps: learn/next-steps.md
   - Guide:
-      - Overview: usage.md
+      - Overview: guide/index.md
+      - Choose XLSX or XLSB: guide/choose-format.md
       - Writing workbooks: guide/writing.md
       - Formatting and layout: guide/styling.md
-      - Formulas, charts and other objects: guide/objects.md
+      - Formulas, charts and objects: guide/objects.md
       - pandas and polars DataFrames: guide/dataframes.md
       - Updating existing workbooks: guide/updating.md
       - Reading workbooks: guide/reading.md
       - The workbook model: guide/model.md
-  - API reference:
+      - Troubleshooting: guide/troubleshooting.md
+  - Reference:
       - Overview: api/index.md
       - Writing: api/writing.md
       - Reading: api/reading.md
@@ -54,14 +83,41 @@ nav:
       - Styles and formatting: api/styles.md
       - Charts and other objects: api/objects.md
       - Errors: api/errors.md
-  - Architecture: architecture.md
-  - Benchmarks: benchmarks.md
-  - openpyxl parity: openpyxl-parity.md
-  - Validation: validation.md
+      - Performance: performance.md
+  - Explanation:
+      - Overview: explanation/index.md
+      - Architecture: architecture.md
+      - Benchmarks: benchmarks.md
+      - Validation: validation.md
+      - openpyxl parity: openpyxl-parity.md
+  - Project:
+      - Overview: project/index.md
+      - Changelog: https://github.com/justybase/xlspy/blob/main/CHANGELOG.md
+      - Contributing: https://github.com/justybase/xlspy/blob/main/CONTRIBUTING.md
+      - Test suite: https://github.com/justybase/xlspy/blob/main/tests/README.md
+      - Examples: https://github.com/justybase/xlspy/blob/main/examples/README.md
 
 validation:
   invalid_links: true
   invalid_link_anchors: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      base_path:
+        - .
+        - docs
 
 plugins:
   - search
@@ -69,25 +125,31 @@ plugins:
       sections:
         Home:
           - index.md
+        Learn:
+          - learn/*.md
         Guide:
-          - usage.md
           - guide/*.md
+          - usage.md
         API:
           - api/*.md
-        Project:
+        Explanation:
+          - performance.md
           - architecture.md
           - benchmarks.md
-          - openpyxl-parity.md
           - validation.md
+          - openpyxl-parity.md
   - mkdocstrings:
       handlers:
         python:
           paths: [src]
           options:
             docstring_style: google
-            show_source: false
+            docstring_section_style: table
+            show_source: true
             show_root_heading: true
             show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
             members_order: source
             filters: ["!^_"]
             inherited_members: true

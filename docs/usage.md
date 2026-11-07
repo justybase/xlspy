@@ -3,7 +3,7 @@
 [Home](index.md) · [Runnable examples](https://github.com/justybase/xlspy/blob/main/examples/README.md) · [Benchmarks](benchmarks.md)
 
 Read, write, and update Excel workbooks from Python. This guide covers the
-APIs and options behind the [quick start](index.md#quick-start).
+APIs and options behind the [first workbook](learn/first-workbook.md).
 
 The guide is split by task:
 

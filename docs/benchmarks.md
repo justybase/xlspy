@@ -4,7 +4,7 @@
 
 `xlspy` includes a **native extension** (`_rs_core`, Rust/PyO3) that accelerates XLSB read and write, the XLSX read and write paths and workbook-model loading. It is enabled by default. Set `XLSPY_ACCEL=python` to force the pure-Python fallback.
 
-The [home page](index.md#built-for-speed) and the results below now include fresh WSL2 and Mac measurements for the 0.14.0 release candidate. The older tables remain as historical baselines: Windows results use commit `203721c` (Python 3.14.2), while the earlier [macOS and WSL2 results](#macos-and-wsl2-xlspy-0110) use release 0.11.0. The [historical results](#historical-results-c-extension-2026-10-19-to-2026-10-30) predate the Rust port.
+The [performance page](performance.md) and the results below now include fresh WSL2 and Mac measurements for the 0.14.0 release candidate. The older tables remain as historical baselines: Windows results use commit `203721c` (Python 3.14.2), while the earlier [macOS and WSL2 results](#macos-and-wsl2-xlspy-0110) use release 0.11.0. The [historical results](#historical-results-c-extension-2026-10-19-to-2026-10-30) predate the Rust port.
 
 ## Release candidate 0.14.0 (2026-11-05)
 

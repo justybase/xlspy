@@ -1,126 +1,140 @@
-![xlspy — Excel reports, made with Python](xlspy-banner.svg)
+---
+description: Read and write XLSB and XLSX files, export pandas and polars DataFrames, and refresh XLSM templates from Python.
+---
+
+<div class="xlspy-hero" markdown>
 
 # Excel reports. Python simplicity.
 
-**Turn Python data into Excel workbooks — from everyday reports to large exports.**
+<p class="xlspy-tagline">
+Turn Python data into Excel workbooks — from everyday reports to large exports.
+Read and write <strong>XLSB</strong> and <strong>XLSX</strong>, export DataFrames,
+and refresh existing <strong>XLSM</strong> templates while preserving their macros.
+</p>
 
-Read and write **XLSB** and **XLSX**, bring your pandas or polars DataFrames,
-and refresh existing **XLSM** templates while preserving their macros.
-Style the result with charts, tables, formatting, and cell notes — all from Python.
+<div class="xlspy-badges">
+  <a href="https://pypi.org/project/xlspy/"><img src="https://img.shields.io/pypi/v/xlspy?color=2f9e8f&label=PyPI" alt="PyPI"></a>
+  <a href="https://pypi.org/project/xlspy/"><img src="https://img.shields.io/pypi/pyversions/xlspy?color=2f9e8f" alt="Python versions"></a>
+  <a href="https://github.com/justybase/xlspy/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2f9e8f" alt="MIT license"></a>
+  <a href="https://github.com/justybase/xlspy/actions/workflows/ci.yml"><img src="https://github.com/justybase/xlspy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+</div>
 
-[Get started](#quick-start) · [Usage guide](usage.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md) · [Benchmarks](benchmarks.md)
+<div class="xlspy-actions" markdown>
+[Start the tutorial](learn/index.md){ .md-button .md-button--primary }
+[API reference](api/index.md){ .md-button }
+</div>
 
-## Built for speed
+<p class="xlspy-install"><code>pip install xlspy</code></p>
 
-**2.5 million cells in under a second, as XLSB.**
+</div>
 
-Times are medians of three runs. WSL2 and Mac were measured with xlspy 0.14.0
-on Python 3.14 on 2026-11-05. The Windows reference row is from xlspy 0.12.0
-on Python 3.15.2 (2026-11-04), so cross-platform differences are indicative,
-not a controlled hardware comparison.
+## Why xlspy
 
-50,000 × 50 cells:
+<div class="xlspy-cards" markdown>
 
-| Windows 11, AMD Ryzen 7 7840HS, Python 3.15.2 | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
-| :--- | ---: | ---: | ---: | ---: |
-| Write | **0.67 s** | **1.16 s** | 11.71 s | 20.39 s |
-| Read | **0.22 s** | **0.98 s** | — | 14.35 s |
+<div class="xlspy-card" markdown>
+### Fast by default
+2.5 million cells in under a second as XLSB. The native Rust extension accelerates reads, writes and `load_workbook()`.
+</div>
 
-| WSL2, Ubuntu, AMD Ryzen 7 7840HS, Python 3.14.4 | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
-| :--- | ---: | ---: | ---: | ---: |
-| Write | **0.65 s** | **1.00 s** | 8.54 s | 14.21 s |
-| Read | **0.16 s** | **0.59 s** | — | 9.14 s |
+<div class="xlspy-card" markdown>
+### XLSB and XLSX
+One API for both formats: `XlsxWriter` and `XlsbWriter` take the same rows, styles, charts and tables.
+</div>
 
-| macOS 27.2, Apple M4, Python 3.14.10 | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
-| :--- | ---: | ---: | ---: | ---: |
-| Write | **0.44 s** | **0.71 s** | 5.98 s | 9.71 s |
-| Read | **0.07 s** | **0.44 s** | — | 6.72 s |
+<div class="xlspy-card" markdown>
+### DataFrames included
+Export pandas or polars directly with `to_xlsx()` / `to_xlsb()`, or stream rows from a database cursor.
+</div>
 
-The native (Rust) module writes XLSB with inline strings 4.2–4.4× faster than
-xlspy's pure-Python fallback and reads XLSB 30–56× faster. The WSL2 and Mac
-writer comparisons use inline strings for xlspy, `constant_memory` for
-xlsxwriter, and `write_only`/`read_only` for openpyxl. Read timings are medians
-of three end-to-end runs with a warm page cache. Raw results and methodology:
-[benchmarks](benchmarks.md#release-candidate-0140-2026-11-05).
-[See the full comparisons, hardware, and methodology →](benchmarks.md)
+<div class="xlspy-card" markdown>
+### Templates preserved
+Refresh data in XLSM templates without touching the VBA project, drawings or unrelated sheets.
+</div>
 
-## Made for the work behind the workbook
+<div class="xlspy-card" markdown>
+### No required dependencies
+The core library has no required Python packages. Pandas and polars are optional extras.
+</div>
 
-| Your workflow | What xlspy brings |
-| :--- | :--- |
-| **Export large datasets** | XLSB and XLSX output from a generator or database cursor, with bounded memory via `use_shared_strings=False`, and native (Rust) acceleration for supported read and write paths. A failed export publishes no partial workbook ([failure handling](guide/writing.md#failure-handling)). |
-| **Deliver polished reports** | Cell styles, number formats, formulas, dropdown validation, hyperlinks, images, print setup, charts (column, bar, line, area, pie, doughnut, scatter, stacked — the chart types listed in the feature table), tables, and conditional formatting. Both XLSX and XLSB support them; see the [feature support table](guide/objects.md#feature-support). |
-| **Work with DataFrames** | Export pandas or polars data directly to either format. |
-| **Refresh a familiar template** | Replace data in XLSB, XLSX, or XLSM while keeping workbook structure, styles, and unrelated sheets. |
-| **Connect a data pipeline** | Read rows as a generator and stream updates from a database cursor. |
+<div class="xlspy-card" markdown>
+### Excel not required
+Create and read workbooks on Linux, Windows or macOS. Microsoft Excel is not needed for the core APIs.
+</div>
 
-The core library has **no required Python package dependencies**. Add pandas or
-polars support when you need it. Microsoft Excel is not required for the core
-read and write APIs.
+</div>
 
-## Quick start
-
-Requires **Python 3.11 or newer** (tested on 3.11–3.15).
-
-```bash
-pip install xlspy
-```
-
-Wheels include the native (Rust) extension. Installing from the source
-distribution builds it, which needs Rust 1.88 or newer
-([rustup](https://rustup.rs)). Set `XLSPY_ACCEL=python` to run the pure-Python
-code instead.
-
-Create a report with a styled header and formatted values:
+## Your first report
 
 ```python
 from xlspy import F, Style, XlsxWriter
 
+rows = [
+    ["Product", "Units", "Revenue"],
+    ["Coffee", 120, (12500, F.THOUSANDS_SEP)],
+    ["Tea", 90, (8400, F.THOUSANDS_SEP)],
+    ["Juice", 45, (5100, F.THOUSANDS_SEP)],
+]
+
 with XlsxWriter("sales.xlsx") as workbook:
     workbook.add_sheet("Sales")
     workbook.write_sheet(
-        [
-            ["Product", "Revenue"],
-            ["Coffee", (12500, F.THOUSANDS_SEP)],
-            ["Tea", (8400, F.THOUSANDS_SEP)],
-        ],
+        rows,
         header_style=Style(bold=True, fill="#183C52", font_color="#FFFFFF"),
+        freeze_panes="A2",
     )
 ```
 
-For binary Excel output, use `XlsbWriter` and a `.xlsb` filename with the same
-API. Explore [formatting, charts, and tables](guide/styling.md#cell-styles-colors-fonts-alignment)
-when your report needs more detail.
+For binary output, change `XlsxWriter` to `XlsbWriter` and the filename to `.xlsb`.
+The rest of the code stays the same.
 
-## Bring your data. Keep your workflow.
+[Build this report step by step →](learn/first-workbook.md){ .md-button }
 
-**Already using pandas or polars?** Export with `to_xlsx(df, "report.xlsx")`
-or `to_xlsb(df, "report.xlsb")`.
-[See DataFrame examples →](guide/dataframes.md)
+## Performance at a glance
 
-**Have an Excel template?** Refresh its data with `XlsxUpdater`, `XlsbUpdater`,
-or `XlsmUpdater`. XLSM updates preserve the existing VBA project.
-[Update a workbook →](guide/updating.md#updating-an-existing-workbook)
+50,000 × 50 cells (2.5 million cells), Windows 11, AMD Ryzen 7 7840HS:
 
-**Need to read the results?** Use `ExcelReader` for XLSB and XLSX, with the same
-API for both formats. It streams values without styles and is the fastest way in.
-For random access, formatting and edits, `load_workbook()` loads either format
-into an openpyxl-like model; styles are resolved only when you read them, so
-there is no flag to set.
-[Choose a read mode →](guide/reading.md#read-modes-which-one-to-use)
+| | xlspy XLSB | xlspy XLSX | xlsxwriter | openpyxl |
+| :--- | ---: | ---: | ---: | ---: |
+| Write | **0.67 s** | **1.16 s** | 11.71 s | 20.39 s |
+| Read | **0.22 s** | **0.98 s** | — | 14.35 s |
 
-## Explore further
+[Full benchmarks and methodology →](performance.md)
 
-| Resource | What you will find |
+## Start here
+
+<div class="xlspy-cards" markdown>
+
+<div class="xlspy-card" markdown>
+### [Learn xlspy](learn/index.md)
+A ten-step tutorial: install, write your first workbook, style it, add formulas and charts, read it back.
+</div>
+
+<div class="xlspy-card" markdown>
+### [How-to guides](guide/index.md)
+Task-focused pages: choose a format, stream large exports, update templates, add pivots, comments and protection.
+</div>
+
+<div class="xlspy-card" markdown>
+### [API reference](api/index.md)
+Every public class and function, generated from the docstrings, with signatures and examples.
+</div>
+
+<div class="xlspy-card" markdown>
+### [Explanation](explanation/index.md)
+Architecture, performance, validation and the openpyxl parity matrix — the reasoning behind the library.
+</div>
+
+</div>
+
+## Works with your stack
+
+| Workflow | Entry point |
 | :--- | :--- |
-| [Usage guide](usage.md) | Detailed examples, API options, and format support limits. |
-| [API reference](api/index.md) | Every public class and function, generated from the docstrings. |
-| [Runnable examples](https://github.com/justybase/xlspy/blob/main/examples/README.md) | Scripts for reports, DataFrames, and workbook updates. |
-| [Benchmarks](benchmarks.md) | Read and write comparisons, dataset details, and reproduction commands. |
-| [Validation](validation.md) | Windows and WSL2 test results, compatibility checks, and known limitations. |
-| [Test suite](https://github.com/justybase/xlspy/blob/main/tests/README.md) | How to run tests and measure coverage. |
-| [Contributing](https://github.com/justybase/xlspy/blob/main/CONTRIBUTING.md) | Development setup, building the Rust module, checks and commit style. |
-| [Architecture](architecture.md) | Which module does what, the layers, and the native module. |
-| [Changelog](https://github.com/justybase/xlspy/blob/main/CHANGELOG.md) | Releases, improvements, and fixes. |
+| pandas or polars | `to_xlsx(df, "report.xlsx")`, `to_xlsb(df, "report.xlsb")` |
+| Existing Excel template | `XlsxUpdater`, `XlsmUpdater`, `XlsbUpdater` |
+| Database cursor | `writer.write_sheet(cursor_rows(cursor))` |
+| Random access and edits | `load_workbook(path)` |
+| Values only, fastest | `ExcelReader(path).get_rows(sheet)` |
 
-[MIT licensed](https://github.com/justybase/xlspy/blob/main/LICENSE) · [PyPI](https://pypi.org/project/xlspy/) · [Source and issues](https://github.com/justybase/xlspy)
+[Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md) · [Changelog](https://github.com/justybase/xlspy/blob/main/CHANGELOG.md) · [GitHub](https://github.com/justybase/xlspy)
