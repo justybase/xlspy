@@ -39,7 +39,7 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/justybase/xlspy/"
-Documentation = "https://github.com/justybase/xlspy/blob/main/docs/usage.md"
+Documentation = "https://justybase.github.io/xlspy/"
 Changelog = "https://github.com/justybase/xlspy/blob/main/CHANGELOG.md"
 Issues = "https://github.com/justybase/xlspy/issues"
 
@@ -66,10 +66,10 @@ test = [
 examples = [
     "memory-profiler"
 ]
-# The guide and API reference site (mkdocs.yml); CI installs the same versions.
+# The guide and API reference site (mkdocs.yml, built with Zensical); CI installs the same versions.
 docs = [
-    "mkdocs>=1.6",
-    "mkdocstrings[python]>=0.26",
+    "zensical>=0.1",
+    "mkdocstrings-python>=1.0",
 ]
 
 # The architectures come from the runner (CIBW_ARCHS in .github/workflows/publish.yml).

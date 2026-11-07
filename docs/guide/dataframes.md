@@ -1,6 +1,6 @@
 # pandas and polars DataFrames
 
-[Guide](../usage.md) · [Home](../../README.md) · [Examples](../../examples/README.md)
+[Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)
 
 ## Writing pandas / polars DataFrames (optional)
 
@@ -88,6 +88,6 @@ float16/float32 scalars: they are written as the Python value they hold (`int`, 
 `float`), so `float32(0.1)` is written as `0.10000000149011612`. A `NaN` among them raises
 `ValueError`, as a `float` NaN does.
 
-See [`examples/dataframe_*.py`](../../examples/) and
-[`examples/polars_to_xlsx_xlsb.py`](../../examples/polars_to_xlsx_xlsb.py) for full,
-runnable scripts, indexed in [`examples/README.md`](../../examples/README.md).
+See [`examples/dataframe_*.py`](https://github.com/justybase/xlspy/blob/main/examples/) and
+[`examples/polars_to_xlsx_xlsb.py`](https://github.com/justybase/xlspy/blob/main/examples/polars_to_xlsx_xlsb.py) for full,
+runnable scripts, indexed in [`examples/README.md`](https://github.com/justybase/xlspy/blob/main/examples/README.md).

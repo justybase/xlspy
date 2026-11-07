@@ -105,7 +105,7 @@ The documentation site, when you change `docs/` or a docstring:
 
 ```bash
 python -m pip install -e '.[docs]'
-mkdocs build --strict        # or: mkdocs serve
+zensical build --clean --strict        # or: zensical serve
 ```
 
 ## Rules the tests enforce

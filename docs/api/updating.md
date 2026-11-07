@@ -6,6 +6,6 @@ Edits to existing files that keep everything else in the package.
 
 ::: xlspy.xlsx_updater.XlsxUpdater
 
-::: xlspy.xlsx_updater.XlsxUpdater
+::: xlspy.xlsx_updater.XlsmUpdater
 
 ::: xlspy.xlsb_updater.XlsbUpdater

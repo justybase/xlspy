@@ -1,6 +1,6 @@
 # Writing workbooks
 
-[Guide](../usage.md) · [Home](../../README.md) · [Examples](../../examples/README.md)
+[Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)
 
 ## Basic Example
 
@@ -102,7 +102,7 @@ with XlsbWriter("sales.xlsb", use_shared_strings=False) as writer:
     writer.write_sheet(cursor_rows(cursor))      # a generator over a DB cursor
 ```
 
-Examples: [`xlsx_streaming_export.py`](../../examples/xlsx_streaming_export.py) (DB-API cursor, XLSX or XLSB).
+Examples: [`xlsx_streaming_export.py`](https://github.com/justybase/xlspy/blob/main/examples/xlsx_streaming_export.py) (DB-API cursor, XLSX or XLSB).
 
 ## Cell text
 
@@ -169,4 +169,4 @@ supported. The refusal happens before the workbook is published.
 
 ## Streaming from a database
 
-`write_sheet` takes any iterable of rows, so a generator over a DB-API cursor writes a query result of any size without holding it in memory. [`examples/xlsx_streaming_export.py`](../../examples/xlsx_streaming_export.py) does it with sqlite3; [`examples/netezza_export.py`](../../examples/netezza_export.py) with Netezza (`nzpy-extended`).
+`write_sheet` takes any iterable of rows, so a generator over a DB-API cursor writes a query result of any size without holding it in memory. [`examples/xlsx_streaming_export.py`](https://github.com/justybase/xlspy/blob/main/examples/xlsx_streaming_export.py) does it with sqlite3; [`examples/netezza_export.py`](https://github.com/justybase/xlspy/blob/main/examples/netezza_export.py) with Netezza (`nzpy-extended`).

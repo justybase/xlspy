@@ -1,6 +1,6 @@
 # Validation and test results
 
-[Home](../README.md) · [Benchmarks](benchmarks.md) · [Running the test suite](../tests/README.md)
+[Home](index.md) · [Benchmarks](benchmarks.md) · [Running the test suite](https://github.com/justybase/xlspy/blob/main/tests/README.md)
 
 ## Known limitations
 

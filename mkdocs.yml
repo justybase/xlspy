@@ -1,13 +1,41 @@
-# The guide and the API reference. Build: pip install -e .[docs] && mkdocs build --strict
+# The guide and the API reference. Build: pip install -e .[docs] && zensical build --clean --strict
 site_name: xlspy
 site_description: Fast XLSB/XLSX reader and writer for Python
+site_url: https://justybase.github.io/xlspy/
 repo_url: https://github.com/justybase/xlspy
 docs_dir: docs
 site_dir: site
 theme:
-  name: mkdocs
+  variant: modern
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: lucide/sun
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: lucide/moon
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.path
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
 
 nav:
+  - Home: index.md
   - Guide:
       - Overview: usage.md
       - Writing workbooks: guide/writing.md
@@ -32,13 +60,25 @@ nav:
   - Validation: validation.md
 
 validation:
-  links:
-    # The pages link to README.md and examples/, outside docs_dir; on GitHub those
-    # links work. tests/test_docs_links.py checks every relative link and anchor.
-    not_found: info
+  invalid_links: true
+  invalid_link_anchors: true
 
 plugins:
   - search
+  - llmstxt:
+      sections:
+        Home:
+          - index.md
+        Guide:
+          - usage.md
+          - guide/*.md
+        API:
+          - api/*.md
+        Project:
+          - architecture.md
+          - benchmarks.md
+          - openpyxl-parity.md
+          - validation.md
   - mkdocstrings:
       handlers:
         python:

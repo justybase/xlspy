@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `DefinedNameList.add()`/`remove()` on a loaded workbook stage the edit and
   flush once at `save()` (single rewrite). 500 names: 1-2 s -> ~0.02 s (save).
+- The documentation site builds with Zensical (modern theme with dark mode,
+  `llms.txt`) and publishes to GitHub Pages via `.github/workflows/docs.yml`;
+  `docs/index.md` is the site home, page links stay inside `docs/`, and
+  `docs/api/updating.md` lists `XlsmUpdater` instead of repeating `XlsxUpdater`.
 
 ## [0.14.0] - 2026-11-05
 

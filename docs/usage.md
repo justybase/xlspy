@@ -1,9 +1,9 @@
 # Using xlspy
 
-[Home](../README.md) · [Runnable examples](../examples/README.md) · [Benchmarks](benchmarks.md)
+[Home](index.md) · [Runnable examples](https://github.com/justybase/xlspy/blob/main/examples/README.md) · [Benchmarks](benchmarks.md)
 
 Read, write, and update Excel workbooks from Python. This guide covers the
-APIs and options behind the [quick start](../README.md#quick-start).
+APIs and options behind the [quick start](index.md#quick-start).
 
 The guide is split by task:
 

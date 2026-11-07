@@ -102,13 +102,13 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Install mkdocs (the versions of the docs extra)
+      - name: Install zensical (the versions of the docs extra)
         run: |
           python -m pip install --upgrade pip
-          pip install "mkdocs>=1.6" "mkdocstrings[python]>=0.26"
+          pip install "zensical>=0.1" "mkdocstrings-python>=1.0"
 
       - name: Build
-        run: mkdocs build --strict
+        run: zensical build --clean --strict
 
   rust:
     runs-on: ubuntu-latest

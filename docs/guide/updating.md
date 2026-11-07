@@ -1,6 +1,6 @@
 # Updating existing workbooks
 
-[Guide](../usage.md) · [Home](../../README.md) · [Examples](../../examples/README.md)
+[Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)
 
 ## Updating an Existing Workbook
 

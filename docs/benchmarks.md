@@ -1,10 +1,10 @@
 # Benchmarks
 
-[Home](../README.md) · [Usage guide](usage.md) · [Validation](validation.md)
+[Home](index.md) · [Usage guide](usage.md) · [Validation](validation.md)
 
 `xlspy` includes a **native extension** (`_rs_core`, Rust/PyO3) that accelerates XLSB read and write, the XLSX read and write paths and workbook-model loading. It is enabled by default. Set `XLSPY_ACCEL=python` to force the pure-Python fallback.
 
-The [README](../README.md#built-for-speed) and the results below now include fresh WSL2 and Mac measurements for the 0.14.0 release candidate. The older tables remain as historical baselines: Windows results use commit `203721c` (Python 3.14.2), while the earlier [macOS and WSL2 results](#macos-and-wsl2-xlspy-0110) use release 0.11.0. The [historical results](#historical-results-c-extension-2026-10-19-to-2026-10-30) predate the Rust port.
+The [home page](index.md#built-for-speed) and the results below now include fresh WSL2 and Mac measurements for the 0.14.0 release candidate. The older tables remain as historical baselines: Windows results use commit `203721c` (Python 3.14.2), while the earlier [macOS and WSL2 results](#macos-and-wsl2-xlspy-0110) use release 0.11.0. The [historical results](#historical-results-c-extension-2026-10-19-to-2026-10-30) predate the Rust port.
 
 ## Release candidate 0.14.0 (2026-11-05)
 
@@ -289,9 +289,9 @@ Median wall time to read the 50,000 × 50 workbook back. Each library reads the 
 `benchmarks/bench_io.py` compares the read modes described in
 [Read modes](guide/reading.md#read-modes-which-one-to-use) on a 50,000 × 20 workbook
 (Windows, Python 3.14, C extension on, median of three runs, 2026-10-29,
-[`results-2026-10-29-sprint.json`](../benchmarks/history/results-2026-10-29-sprint.json);
+[`results-2026-10-29-sprint.json`](https://github.com/justybase/xlspy/blob/main/benchmarks/history/results-2026-10-29-sprint.json);
 before the 0.11 sprint in brackets,
-[`results-write-final.json`](../benchmarks/history/results-write-final.json)):
+[`results-write-final.json`](https://github.com/justybase/xlspy/blob/main/benchmarks/history/results-write-final.json)):
 
 | Case | XLSX | XLSB |
 | :--- | ---: | ---: |
@@ -316,7 +316,7 @@ before the 0.11 sprint in brackets,
 
 **Regression check** against `results-write-final.json` (`bench_io.py`, 50,000 × 20, 2026-10-27):
 every case ran at 0.90–0.99× of the baseline time, so no case is slower than before
-(full results: [`results-2026-10-27.json`](../benchmarks/history/results-2026-10-27.json)).
+(full results: [`results-2026-10-27.json`](https://github.com/justybase/xlspy/blob/main/benchmarks/history/results-2026-10-27.json)).
 
 #### Comparison with other Python libraries (2026-10-30)
 
@@ -328,10 +328,10 @@ numbers below are for the changed code.
 Library versions: openpyxl 3.1.5, xlsxwriter 3.2.9, PyExcelerate 0.13.0,
 python-calamine 0.9.0, fastexcel 0.21.0 with pyarrow 26.0.0, pyxlsb 1.0.10.
 Raw data: write, median of three runs, 50,000 × 50 (2.5 million cells):
-[`results-write-2026-10-30.json`](../benchmarks/history/results-write-2026-10-30.json),
-[`results-write-2026-10-30.csv`](../benchmarks/history/results-write-2026-10-30.csv);
+[`results-write-2026-10-30.json`](https://github.com/justybase/xlspy/blob/main/benchmarks/history/results-write-2026-10-30.json),
+[`results-write-2026-10-30.csv`](https://github.com/justybase/xlspy/blob/main/benchmarks/history/results-write-2026-10-30.csv);
 read, median of five runs:
-[`results-read-compare-2026-10-30-v2.json`](../benchmarks/history/results-read-compare-2026-10-30-v2.json).
+[`results-read-compare-2026-10-30-v2.json`](https://github.com/justybase/xlspy/blob/main/benchmarks/history/results-read-compare-2026-10-30-v2.json).
 
 **Write**, time in seconds. The `mixed` dataset (the eight-type layout of
 `performance_test.py`) goes from a generator to a file. Peak is the writer's peak
@@ -556,7 +556,7 @@ python -m pip install -e '.[test]'
 python -c "from xlspy._accel import HAVE_NATIVE; assert HAVE_NATIVE"
 ```
 
-[`examples/write_benchmark.py`](../examples/write_benchmark.py) produced the tables above. It runs every measurement in a fresh worker process, repeats each writer three times by default, interleaves the writers, and reports medians:
+[`examples/write_benchmark.py`](https://github.com/justybase/xlspy/blob/main/examples/write_benchmark.py) produced the tables above. It runs every measurement in a fresh worker process, repeats each writer three times by default, interleaves the writers, and reports medians:
 
 ```bash
 # The full comparison: all writers, native module on and off, one tracemalloc run per writer

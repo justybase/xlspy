@@ -1,6 +1,6 @@
 # Formatting and layout
 
-[Guide](../usage.md) · [Home](../../README.md) · [Examples](../../examples/README.md)
+[Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)
 
 ## Cell Formatting (Number, Date, DateTime)
 
@@ -496,5 +496,5 @@ with XlsxWriter("grouped.xlsx") as writer:
   the fast path.
 - Updaters (`XlsxUpdater`, `XlsbUpdater`) do not create or change groups.
 
-[`xlsx_grouping.py`](../../examples/xlsx_grouping.py) builds a two-level report
+[`xlsx_grouping.py`](https://github.com/justybase/xlspy/blob/main/examples/xlsx_grouping.py) builds a two-level report
 with region subtotals and quarter columns (pass `--out grouping.xlsb` for XLSB).

@@ -1,6 +1,6 @@
 # Formulas, charts and other objects
 
-[Guide](../usage.md) · [Home](../../README.md) · [Examples](../../examples/README.md)
+[Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)
 
 ## Formulas, validation, hyperlinks, images, and printing
 
@@ -418,7 +418,7 @@ of the same data stay byte-for-byte identical. The workbook model saves
 
 ### Combined example
 
-[`xlsx_report_features.py`](../../examples/xlsx_report_features.py) combines formulas,
+[`xlsx_report_features.py`](https://github.com/justybase/xlspy/blob/main/examples/xlsx_report_features.py) combines formulas,
 a table, styles, validation, hyperlinks, a logo, print settings, and two charts in one
 report.
 
@@ -623,7 +623,7 @@ encrypt the file.
 
 These additions support XLSX/XLSB creation and XLSX/XLSM/XLSB updates without
 additional runtime dependencies. See the runnable
-[`comments and templates example`](../../examples/xlsx_comments_and_templates.py)
+[`comments and templates example`](https://github.com/justybase/xlspy/blob/main/examples/xlsx_comments_and_templates.py)
 (`--out reviewed.xlsb` selects binary output).
 
 ### XLSB formulas and the bulk data path
