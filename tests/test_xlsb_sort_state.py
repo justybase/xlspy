@@ -7,9 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from xlspy import (
-    UnsupportedFeatureError, Workbook, XlsxWriter, load_workbook,
-)
+from xlspy import Workbook, XlsxWriter, load_workbook
 from xlspy.biff_utils import iter_records
 
 FIXTURE = Path(__file__).parent / "data" / "xlsb" / "sorted_autofilter.xlsb"
@@ -59,7 +57,7 @@ def test_sort_cond14_is_read_as_an_icon_sort(tmp_path):
     try:
         condition = book["Data"].auto_filter.sortState.sortCondition[0]
         assert condition.sortBy == "icon"
-        # An unrelated edit keeps the record; changing the filter refuses it.
+        # An unrelated edit keeps the record; changing the filter keeps the icon.
         book["Data"]["D10"] = 1
         book.save(target)
     finally:
@@ -67,11 +65,41 @@ def test_sort_cond14_is_read_as_an_icon_sort(tmp_path):
 
     book = load_workbook(target)
     try:
+        assert book["Data"].auto_filter.sortState.sortCondition[0].sortBy == "icon"
         book["Data"].auto_filter.add_filter_column(0, ["a"])
-        with pytest.raises(UnsupportedFeatureError, match="icon"):
-            book.save(target)
+        book.save(target)
     finally:
         book.close()
+
+    reopened = load_workbook(target)
+    try:
+        assert reopened["Data"].auto_filter.sortState.sortCondition[0].sortBy == "icon"
+    finally:
+        reopened.close()
+
+
+def test_icon_sort_round_trip_with_details(tmp_path):
+    target = tmp_path / "icon_details.xlsb"
+    shutil.copyfile(FIXTURE, target)
+    book = load_workbook(target)
+    try:
+        condition = book["Data"].auto_filter.sortState.sortCondition[0]
+        condition.sortBy = "icon"
+        condition.iconSet = "3TrafficLights1"
+        condition.iconId = 1
+        condition.dxfId = None
+        book.save(target)
+    finally:
+        book.close()
+
+    reopened = load_workbook(target)
+    try:
+        condition = reopened["Data"].auto_filter.sortState.sortCondition[0]
+        assert condition.sortBy == "icon"
+        assert condition.iconSet == "3TrafficLights1"
+        assert condition.iconId == 1
+    finally:
+        reopened.close()
 
 
 def test_sort_state_fields_are_saved(tmp_path):
@@ -151,17 +179,78 @@ def test_add_sort_condition_uses_the_data_range(tmp_path):
         reopened.close()
 
 
-def test_new_workbook_sort_state_is_refused(tmp_path):
+def test_new_workbook_sort_state_is_saved(tmp_path):
+    for suffix in ("xlsx", "xlsb"):
+        workbook = Workbook()
+        try:
+            sheet = workbook.active
+            sheet.append(["h1", "h2", "h3"])
+            sheet.append([1, 3, 9])
+            sheet.append([2, 1, 8])
+            sheet.auto_filter.ref = "A1:C3"
+            sheet.auto_filter.add_sort_condition("B2:B3")
+            out = tmp_path / f"new.{suffix}"
+            workbook.save(out)
+        finally:
+            workbook.close()
+        reopened = load_workbook(out)
+        try:
+            sort = reopened.worksheets[0].auto_filter.sortState
+            assert sort is not None
+            assert sort.sortCondition[0].ref == "B2:B3"
+        finally:
+            reopened.close()
+
+
+@pytest.mark.parametrize("suffix", ["xlsx", "xlsb"])
+def test_custom_list_with_quotes_and_markup_round_trips(tmp_path, suffix):
+    path = tmp_path / f"custom.{suffix}"
     workbook = Workbook()
     try:
         sheet = workbook.active
-        sheet.append(["h1", "h2", "h3"])
-        sheet.append([1, 3, 9])
-        sheet.append([2, 1, 8])
-        sheet.auto_filter.ref = "A1:C3"
+        sheet.append(["h1", "h2"])
+        sheet.append([1, 3])
+        sheet.append([2, 1])
+        sheet.auto_filter.ref = "A1:B3"
         sheet.auto_filter.add_sort_condition("B2:B3")
-        with pytest.raises(UnsupportedFeatureError, match="sort state"):
-            workbook.save(tmp_path / "new.xlsx")
+        sheet.auto_filter.sortState.sortCondition[0].customList = 'a"b<&'
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+    if suffix == "xlsx":
+        # Attribute escaping must keep the part well formed, not just readable
+        # by the tolerant reader.
+        with zipfile.ZipFile(path) as archive:
+            from xml.etree import ElementTree as ET
+
+            root = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+        condition = root.find(
+            ".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sortCondition"
+        )
+        assert condition is not None
+        assert condition.get("customList") == 'a"b<&'
+
+    reopened = load_workbook(path)
+    try:
+        condition = reopened.worksheets[0].auto_filter.sortState.sortCondition[0]
+        assert condition.customList == 'a"b<&'
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize("suffix", ["xlsx", "xlsb"])
+def test_an_unknown_sort_key_is_refused_before_writing(tmp_path, suffix):
+    workbook = Workbook()
+    try:
+        sheet = workbook.active
+        sheet.append(["h1", "h2"])
+        sheet.append([1, 3])
+        sheet.auto_filter.ref = "A1:B2"
+        sheet.auto_filter.add_sort_condition("B2:B2")
+        sheet.auto_filter.sortState.sortCondition[0].sortBy = "bogus"
+        with pytest.raises(ValueError, match="sortBy"):
+            workbook.save(tmp_path / f"bad.{suffix}")
     finally:
         workbook.close()
 

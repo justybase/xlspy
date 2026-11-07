@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import xml.sax.saxutils as saxutils
 from ._writer_common import FilterData
+from ._sort_state import check_sort_state
+from .refs import sort_state_ref
 from ._text import xstring_escape
 from .data_validation import data_validation_xml
 from ._widths import ColumnWidthMeter, file_width
@@ -285,7 +287,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
 
     def _sheet_tail(self, body, sheet_index, merge_refs, cf_rules, table_specs,
                     table_bounds, validations, link_rels, auto_filter, drawing_rid,
-                    print_spec, *, auto_filter_ref=None, header_rows=1):
+                    print_spec, *, auto_filter_ref=None, header_rows=1, sort_state=None):
         """Everything after the row data, in schema order."""
         parts = ['</sheetData>']
         data_filter = None
@@ -302,10 +304,52 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         if auto_filter is False:
             data_filter = None
         # A table brings its own filter: none for the sheet over the same range.
+        if sort_state is not None and (
+            data_filter is None
+            or parse_cell_range(data_filter) in {parse_cell_range(ref) for ref in body.table_refs}
+        ):
+            raise ValueError("sort_state needs an auto filter (auto_filter_ref or data with header)")
         if data_filter is not None and parse_cell_range(data_filter) not in {
             parse_cell_range(ref) for ref in body.table_refs
         }:
-            parts.append(f'<autoFilter ref="{data_filter}"/>')
+            sort_xml = ""
+            if sort_state is not None:
+                conditions = check_sort_state(sort_state, data_filter)
+                sort_ref = sort_state_ref(data_filter, getattr(sort_state, "ref", None))
+                sort_attrs = []
+                if sort_ref:
+                    sort_attrs.append(f"ref={saxutils.quoteattr(sort_ref)}")
+                if getattr(sort_state, "columnSort", None) is not None:
+                    sort_attrs.append(f'columnSort="{int(bool(sort_state.columnSort))}"')
+                if getattr(sort_state, "caseSensitive", None) is not None:
+                    sort_attrs.append(f'caseSensitive="{int(bool(sort_state.caseSensitive))}"')
+                if getattr(sort_state, "sortMethod", None) is not None:
+                    sort_attrs.append(f"sortMethod={saxutils.quoteattr(sort_state.sortMethod)}")
+                conds = []
+                for item in conditions:
+                    c = f"<sortCondition ref={saxutils.quoteattr(item.ref)}"
+                    if item.descending is not None:
+                        c += f' descending="{int(bool(item.descending))}"'
+                    if item.sortBy is not None:
+                        c += f" sortBy={saxutils.quoteattr(item.sortBy)}"
+                    if getattr(item, "dxfId", None) is not None:
+                        c += f' dxfId="{item.dxfId}"'
+                    if getattr(item, "customList", None) is not None:
+                        c += f" customList={saxutils.quoteattr(item.customList)}"
+                    if getattr(item, "iconSet", None) is not None:
+                        c += f" iconSet={saxutils.quoteattr(item.iconSet)}"
+                    if getattr(item, "iconId", None) is not None:
+                        c += f' iconId="{item.iconId}"'
+                    c += "/>"
+                    conds.append(c)
+                sort_xml = (
+                    f'<sortState {" ".join(sort_attrs)}>{"".join(conds)}</sortState>'
+                    if sort_attrs or conds else ""
+                )
+            if sort_xml:
+                parts.append(f'<autoFilter ref="{data_filter}">{sort_xml}</autoFilter>')
+            else:
+                parts.append(f'<autoFilter ref="{data_filter}"/>')
             first_col, first_row, last_col, last_row = parse_cell_range(data_filter)
             self._filtered_data_list.append(FilterData(
                 sheet_index=sheet_index,

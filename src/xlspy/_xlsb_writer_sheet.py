@@ -82,6 +82,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         show_zero_values: bool = True,
         right_to_left: bool = False,
         pivots: list | tuple | None = None,
+        sort_state: Any | None = None,
     ) -> None:
         self._require_writable()
         spec = self._check_sheet_options(
@@ -95,7 +96,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             hidden_columns=hidden_columns, row_heights=row_heights, hidden_rows=hidden_rows,
             row_groups=row_groups, column_groups=column_groups, freeze_panes=freeze_panes,
             autofit_rows=autofit_rows, autofit_padding=autofit_padding,
-            check_style=self._reject_rich_style,
+            check_style=self._reject_rich_style, sort_state=sort_state,
         )
         current_sheet = self._worksheet_data[-1][0] if self._worksheet_data else "Sheet1"
         pivot_names = set(self._pivot_names)
@@ -190,7 +191,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
                 merge_refs=spec.merge_refs, widths=spec.widths, autofit=spec.autofit, hidden_cols=spec.hidden_cols,
                 heights=spec.heights, hidden_row_set=spec.hidden_rows,
                 freeze_panes=freeze_panes, auto_filter=auto_filter,
-                auto_filter_ref=auto_filter_ref,
+                auto_filter_ref=auto_filter_ref, sort_state=spec.sort_state,
                 drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
                 cf_rules=spec.cf_rules, row_outline=spec.row_outline, col_outline=spec.col_outline,
                 sheet_protection=sheet_protection,

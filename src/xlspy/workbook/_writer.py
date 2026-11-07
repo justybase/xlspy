@@ -201,10 +201,7 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
     if sheet.ignored_errors:
         options["ignored_errors"] = list(sheet.ignored_errors)
     if sheet.auto_filter.sortState is not None:
-        raise UnsupportedFeatureError(
-            "the new-workbook writer does not save an auto-filter sort state; "
-            "save a loaded workbook in its own format instead"
-        )
+        options["sort_state"] = sheet.auto_filter.sortState
     options["auto_filter"] = bool(sheet.auto_filter.ref)
     options["auto_filter_ref"] = sheet.auto_filter.ref or None
     return options

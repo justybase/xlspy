@@ -38,8 +38,9 @@ from ._xlsb_layout import BEGIN_FILTER, END_FILTER, builtin_names
 from ._xlsb_loaded import remember_saved_state, remember_workbook_state
 from .._xlsb_cf import (
     BRT_BEGIN_CF_RULE, BRT_BEGIN_CONDITIONAL_FORMATTING, SCALE_RECORDS, _CF_RULE_EXT,
-    read_conditional_formats,
+    _ICON_SET_NAMES, read_conditional_formats,
 )
+from .._sort_state import EXTRA_ICON_SET_CODES
 from ._xlsb_sheet_meta import (
     FILTER_RECORDS, LIST_PART, RECORDS as SHEET_RECORDS, ROW_FLAGS, ROW_HEADER,
     apply_sheet_records, read_filter_record, read_table_part, row_header,
@@ -204,17 +205,31 @@ def _read_records(
             )
             sheet._auto_filter.sortState = sort_state
         # 0x480 is BrtBeginSortCond14: the same layout, with a CFFlag14 for
-        # extra icon sets. It is read so an icon sort is refused, not lost.
+        # extra icon sets. Both are read with their icon details.
         elif record_id in (0x214, 0x480) and sort_state is not None and len(payload) >= 30:
             flags, _r1, _r2, _c1, _c2, first, _second = struct.unpack_from(
                 "<HIIIIII", payload
             )
             sort_on = (flags >> 1) & 0x0F
+            icon_set = icon_id = None
+            if sort_on == 3:
+                # CFFlag (0x214) and CFFlag14 (0x480) share the old codes;
+                # 0x480 adds 0x11-0x13. Unknown codes keep a stable fallback.
+                names = {
+                    **_ICON_SET_NAMES,
+                    **{code: name for name, code in EXTRA_ICON_SET_CODES.items()},
+                }
+                # 0xFFFFFFFF means no icon set.
+                if first != 0xFFFFFFFF:
+                    icon_set = names.get(first, f"iconSet{first}")
+                    icon_id = int(_second)
             condition = SortCondition(
                 ref=_range_label(payload[2:18])[0],
                 descending=bool(flags & 0x01) or None,
                 sortBy={0: None, 1: "cellColor", 2: "fontColor", 3: "icon"}.get(sort_on),
                 dxfId=first if sort_on in (1, 2) else None,
+                iconSet=icon_set,
+                iconId=icon_id,
             )
             custom_length = struct.unpack_from("<i", payload, 26)[0]
             if custom_length >= 0 and 30 + 2 * custom_length <= len(payload):

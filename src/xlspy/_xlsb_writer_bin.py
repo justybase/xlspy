@@ -45,6 +45,7 @@ from ._xlsb_writer_host import _XlsbWriterHost
 from ._xlsb_formulas import ArrayValue, formula_cell
 from ._xlsb_ignored_errors import ignored_errors_bin
 from ._xlsb_metadata import replace_records, sheet_protection_bin, wide_string
+from ._xlsb_sort import range_ref, sort_state_records
 
 
 # Rows are encoded into a memory buffer that is written out once it passes this size.
@@ -194,6 +195,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
         hidden_cols: Any = frozenset(), heights: Any = None,
         hidden_row_set: Any = frozenset(), freeze_panes: str | None = None,
         auto_filter: bool | None = None, auto_filter_ref: str | None = None,
+        sort_state: Any | None = None,
         drawing_rel: str | None = None,
         table_rel_ids: list[str] | None = None,
         cf_rules: list | None = None,
@@ -439,6 +441,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
             self._write_sheet_tail(
                 buffer, row_idx, worksheet_index, stream_width, data_rows, sheet_protection=sheet_protection,
                 header_rows=header_rows, auto_filter=auto_filter, auto_filter_ref=auto_filter_ref,
+                sort_state=sort_state,
                 table_bounds=table_bounds, merge_refs=merge_refs, cf_rules=cf_rules, validations=validations, hyperlinks=hyperlinks,
                 print_spec=print_spec, drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
                 comment_vml_rid=comment_vml_rid, sparklines=sparklines, slicer_rel=slicer_rel,
@@ -797,6 +800,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
         self, buffer: io.BytesIO, row_idx: int, worksheet_index: int, stream_width: int,
         data_rows: int, *,
         sheet_protection: Any, header_rows: int, auto_filter: bool | None, auto_filter_ref: str | None,
+        sort_state: Any | None = None,
         table_bounds: frozenset, merge_refs: Any, cf_rules: list | None, validations: Any, hyperlinks: list[Any],
         print_spec: PrintSettings | None, drawing_rel: str | None, table_rel_ids: list[str] | None,
         comment_vml_rid: Any, sparklines: Any, slicer_rel: str | None,
@@ -825,6 +829,8 @@ class _XlsbBinMixin(_XlsbWriterHost):
         if filter_range in table_bounds:
             # A table brings its own filter: none for the sheet over the same range.
             filter_range = None
+        if sort_state is not None and filter_range is None:
+            raise ValueError("sort_state needs an auto filter (auto_filter_ref or data with header)")
         if filter_range is not None:
             filter_first_col, filter_first_row, filter_last_col, filter_last_row = filter_range
             buffer.write(self._autoFilterStartBytes)
@@ -832,6 +838,8 @@ class _XlsbBinMixin(_XlsbWriterHost):
             buffer.write(struct.pack('<I', filter_last_row))
             buffer.write(struct.pack('<I', filter_first_col))
             buffer.write(struct.pack('<I', filter_last_col))
+            if sort_state is not None:
+                buffer.write(sort_state_records(range_ref(filter_range), sort_state))
             buffer.write(self._autoFilterEndBytes)
             self._filtered_data_list.append(
                 FilterData(

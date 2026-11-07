@@ -56,6 +56,7 @@ class SheetOptions:
     show_row_col_headers: bool = True
     show_zero_values: bool = True
     right_to_left: bool = False
+    sort_state: Any | None = None
 
     def as_kwargs(self, names: frozenset[str] | None = None) -> dict[str, Any]:
         """The fields in ``names`` (all of them by default) as keyword arguments.

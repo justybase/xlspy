@@ -31,6 +31,7 @@ from ._objects import (
     add_objects, check_object_rewrites, has_pending_objects, mark_objects_saved, sync_objects,
 )
 from ..refs import parse_cell_range, sort_state_ref
+from .._sort_state import check_sort_state
 from ..styles import _coerce_color, _color_key
 from ..updater_utils import (
     renamed_chart_parts, renamed_sparkline_parts, replace_or_add_xml_attribute,
@@ -558,24 +559,29 @@ def _auto_filter_xml(sheet: Worksheet, prefix: str) -> str:
         children.append(f'<{prefix}filterColumn {" ".join(column_attrs)}>{values}</{prefix}filterColumn>')
     sort = filter_.sortState
     if sort is not None:
+        conditions = check_sort_state(sort, filter_.ref)
         sort_attrs = []
         sort_ref = sort_state_ref(filter_.ref, sort.ref)
         if sort_ref:
-            sort_attrs.append(f'ref="{sort_ref}"')
+            sort_attrs.append(f'ref={quoteattr(sort_ref)}')
         if sort.columnSort is not None:
             sort_attrs.append(f'columnSort="{int(bool(sort.columnSort))}"')
         if sort.caseSensitive is not None:
             sort_attrs.append(f'caseSensitive="{int(bool(sort.caseSensitive))}"')
         if sort.sortMethod is not None:
             sort_attrs.append(f'sortMethod={quoteattr(sort.sortMethod)}')
-        conditions = "".join(
-            f'<{prefix}sortCondition ref="{item.ref}"'
+        condition_xml = "".join(
+            f'<{prefix}sortCondition ref={quoteattr(item.ref)}'
             + (f' descending="{int(bool(item.descending))}"' if item.descending is not None else "")
             + (f' sortBy={quoteattr(item.sortBy)}' if item.sortBy is not None else "")
+            + (f' dxfId="{item.dxfId}"' if item.dxfId is not None else "")
+            + (f' customList={quoteattr(item.customList)}' if item.customList is not None else "")
+            + (f' iconSet={quoteattr(item.iconSet)}' if item.iconSet is not None else "")
+            + (f' iconId="{item.iconId}"' if item.iconId is not None else "")
             + "/>"
-            for item in sort.sortCondition
+            for item in conditions
         )
-        children.append(f'<{prefix}sortState {" ".join(sort_attrs)}>{conditions}</{prefix}sortState>')
+        children.append(f'<{prefix}sortState {" ".join(sort_attrs)}>{condition_xml}</{prefix}sortState>')
     body = "".join(children)
     return f'<{prefix}autoFilter{attrs}>{body}</{prefix}autoFilter>' if body else f'<{prefix}autoFilter{attrs}/>'
 

@@ -33,8 +33,12 @@ from .._xlsb_ignored_errors import (
 from ..ignored_errors import snapshot as ignored_errors_snapshot
 from .._xlsb_style_records import color_payload
 from ..biff_utils import build_record
+from .._xlsb_sort import (
+    BEGIN_SORT_COND, BEGIN_SORT_COND14, BEGIN_SORT_STATE,
+    END_SORT_COND, END_SORT_COND14, END_SORT_STATE, sort_state_records,
+)
 from ..printing import _paper_code, print_area_name
-from ..refs import parse_cell_range, column_label, quote_sheet_name, sort_state_ref
+from ..refs import parse_cell_range, column_label, quote_sheet_name
 from ..styles import _color_key
 from ._loaded import _auto_filter_snapshot, _break_snapshot, _header_footer_snapshot, _snapshot
 from ._model import Selection
@@ -47,10 +51,8 @@ BEGIN_COL_INFOS, COL_INFO, END_COL_INFOS = 0x186, 0x3C, 0x187
 BEGIN_SHEET_DATA, END_SHEET_DATA, ROW_HEADER = 0x91, 0x92, 0x00
 SHEET_PROTECTION, SHEET_PROTECTION_ISO = 0x217, 0x2A6
 BEGIN_FILTER, END_FILTER = 0xA1, 0xA2
-# The sort state lives inside BrtBeginAFilter..BrtEndAFilter.
-BEGIN_SORT_STATE, END_SORT_STATE = 0x212, 0x213
-BEGIN_SORT_COND, END_SORT_COND = 0x214, 0x215
-BEGIN_SORT_COND14, END_SORT_COND14 = 0x480, 0x481
+# The sort state lives inside BrtBeginAFilter..BrtEndAFilter; its record ids
+# come from _xlsb_sort, which writes the block for the writer too.
 # Records of a value-list or blank-only auto filter; any other record means custom criteria.
 _VALUE_FILTER_RECORDS = frozenset({
     0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
@@ -384,44 +386,7 @@ def _filter_block(sheet) -> bytes:
         output.append(build_record(END_FILTER_COLUMN))
     sort = auto_filter.sortState
     if sort is not None:
-        sort_ref = sort_state_ref(auto_filter.ref, sort.ref)
-        assert sort_ref is not None
-        sc1, sr1, sc2, sr2 = parse_cell_range(sort_ref)
-        flags = (
-            (0x01 if sort.columnSort else 0)
-            | (0x02 if sort.caseSensitive else 0)
-            | (0x04 if sort.sortMethod in ("stroke", "pinYin") else 0)
-        )
-        output.append(build_record(
-            BEGIN_SORT_STATE, struct.pack("<HIIII", flags, sr1, sr2, sc1, sc2)
-        ))
-        for condition in sort.sortCondition:
-            if condition.ref is None:
-                raise ValueError("a sort condition needs a range")
-            cc1, cr1, cc2, cr2 = parse_cell_range(condition.ref)
-            sort_by = condition.sortBy or "value"
-            if sort_by == "icon":
-                raise UnsupportedFeatureError(
-                    "sorting by icon cannot be saved into a loaded XLSB workbook yet"
-                )
-            if sort_by not in ("value", "cellColor", "fontColor"):
-                raise ValueError(f"invalid sortBy {condition.sortBy!r}")
-            sort_on = {"value": 0, "cellColor": 1, "fontColor": 2}[sort_by]
-            flags = (0x01 if condition.descending else 0) | (sort_on << 1)
-            union = (
-                struct.pack("<II", condition.dxfId or 0, 0) if sort_on else bytes(8)
-            )
-            custom = condition.customList
-            tail = (
-                b"\xff" * 4 if not custom
-                else wide_string(custom)
-            )
-            output.append(build_record(
-                BEGIN_SORT_COND,
-                struct.pack("<HIIII", flags, cr1, cr2, cc1, cc2) + union + tail,
-            ))
-            output.append(build_record(END_SORT_COND))
-        output.append(build_record(END_SORT_STATE))
+        output.append(sort_state_records(auto_filter.ref, sort))
     output.append(build_record(END_FILTER))
     return b"".join(output)
 

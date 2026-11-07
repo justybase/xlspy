@@ -167,16 +167,14 @@ loaded chart can be changed; the rest of its XML is kept.
 
 ⁷ A custom auto filter (criteria other than a value list) is kept when the
 sheet is saved unchanged; changing it raises `UnsupportedFeatureError`, and
-removing it is allowed. A filter's sort state in a loaded workbook is saved: the
-range, direction, case sensitivity, sort method and value/cell-colour/font-colour
-conditions. Sorting by icon cannot be saved yet. The writer for a new workbook
-does not write a filter sort state, and a worksheet-level sort state (Data >
-Sort without a filter) is not part of the model.
+removing it is allowed. A filter's sort state is saved in loaded and new
+workbooks: the range, direction, case sensitivity, sort method and
+value/cell-colour/font-colour/icon conditions (icon needs `iconSet` and `iconId`;
+`3Stars`/`3Triangles`/`5Boxes` use `BrtBeginSortCond14`). A worksheet-level sort
+state (Data > Sort without a filter) is not part of the model.
 
 Where a loaded XLSB refuses an edit, `XlsbUpdater` may support it, or the
-workbook can be built with `Workbook()` and saved as `.xlsb`: the XLSB writer
-supports everything in the table except the new-workbook filter sort state noted
-above.
+workbook can be built with `Workbook()` and saved as `.xlsb`.
 
 ### Read-only mode
 

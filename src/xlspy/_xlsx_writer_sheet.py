@@ -146,6 +146,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         show_row_col_headers: bool = True,
         show_zero_values: bool = True,
         right_to_left: bool = False,
+        sort_state: Any | None = None,
     ):
         """Write rows to the current sheet.
 
@@ -166,6 +167,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             hidden_columns=hidden_columns, row_heights=row_heights, hidden_rows=hidden_rows,
             row_groups=row_groups, column_groups=column_groups, freeze_panes=freeze_panes,
             autofit_rows=autofit_rows, autofit_padding=autofit_padding,
+            sort_state=sort_state,
         )
         # Every option is valid; only now record what this sheet claims. A second
         # write to the same sheet is refused after the options are checked, so a
@@ -251,6 +253,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 body, sheet_index, spec.merge_refs, spec.cf_rules, spec.tables, table_bounds,
                 spec.validations, link_rels, auto_filter, drawing_rid, spec.print_settings,
                 auto_filter_ref=auto_filter_ref, header_rows=spec.header_rows,
+                sort_state=spec.sort_state,
             )
             tail = self._finish_tail(
                 tail, rels, sheet_id, sheet_name, spec, sheet_protection, ignored_errors, slicer_rids,

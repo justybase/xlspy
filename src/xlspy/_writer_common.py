@@ -16,6 +16,7 @@ from .data_validation import normalize_validations
 from .images import normalize_images
 from .outline import build_outline
 from .printing import PrintSettings, normalize_print_settings
+from ._sort_state import check_sort_state
 from .shapes import normalize_shapes
 from .slicers import normalize_slicers
 from .sparklines import normalize_sparklines
@@ -98,6 +99,7 @@ class SheetSpec:
     row_outline: Any
     col_outline: Any
     split_freeze: tuple[int, int] | None
+    sort_state: Any | None = None
 
 
 class WriterFrontEnd:
@@ -159,6 +161,7 @@ class WriterFrontEnd:
         row_groups: Any, column_groups: Any, freeze_panes: Any,
         autofit_rows: Any = 1000, autofit_padding: Any = 0.0,
         check_style: Callable[[Style], None] | None = None,
+        sort_state: Any = None,
     ) -> SheetSpec:
         """Check and normalize the options of ``write_sheet``; raise before anything
         is recorded, so a rejected call leaves the writer as it was.
@@ -214,6 +217,10 @@ class WriterFrontEnd:
         cf_priorities = explicit_cf_priorities(
             cf_rules, self._seen_cf_priorities, self._reserved_cf_priorities,
         )
+        if sort_state is not None:
+            # The range against the filter is checked once the writer knows the
+            # filter range; the conditions are format-independent and checked now.
+            check_sort_state(sort_state, auto_filter_ref)
         return SheetSpec(
             view=view, header_rows=header_rows, tab_key=tab_key, zoom=zoom,
             style_ranges=style_ranges, header_style=header_style, merge_refs=merge_refs,
@@ -222,7 +229,7 @@ class WriterFrontEnd:
             charts=chart_specs, validations=validations, images=image_specs, shapes=shape_specs,
             print_settings=print_spec, widths=widths, autofit=autofit, hidden_cols=hidden_cols, heights=heights,
             hidden_rows=hidden_row_set, row_outline=row_outline, col_outline=col_outline,
-            split_freeze=split_freeze,
+            split_freeze=split_freeze, sort_state=sort_state,
         )
 
     def _claim_sheet_options(self, spec: SheetSpec) -> None:

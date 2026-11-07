@@ -9,8 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Auto-filter sort state is saved in new workbooks (XLSX and XLSB) and
+  sorting by icon is saved in loaded and new workbooks: `SortCondition(sortBy="icon",
+  iconSet="3TrafficLights1", iconId=1)`. Classic sets use `BrtBeginSortCond`,
+  `3Stars`/`3Triangles`/`5Boxes` use `BrtBeginSortCond14`.
 - `XlsxUpdater`/`XlsbUpdater.set_defined_names()` and `remove_defined_names()`
   batch many names in one workbook rewrite.
+
+### Fixed
+
+- `Worksheet.auto_filter.sortState` in XLSX now keeps `dxfId`, `customList`,
+  `iconSet` and `iconId`; XLSB keeps the icon set/id from `BrtBeginSortCond(14)`.
 
 ### Changed
 
