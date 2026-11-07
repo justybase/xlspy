@@ -19,6 +19,24 @@ authors = [
   { name="Krzysztof Duśko"},
 ]
 description = "Read and write XLSB and XLSX files efficiently, including XLSM updates."
+keywords = [
+    "excel",
+    "xlsx",
+    "xlsb",
+    "xlsm",
+    "spreadsheet",
+    "python",
+    "rust",
+    "pandas",
+    "polars",
+    "excel-reader",
+    "excel-writer",
+    "dataframes",
+    "streaming",
+    "high-performance",
+    "excel-automation",
+    "report-generation",
+]
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
