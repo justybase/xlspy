@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from xlspy import Workbook, XlsxWriter, load_workbook
+from xlspy.workbook._properties import SortCondition, SortState
 from xlspy.biff_utils import iter_records
 
 FIXTURE = Path(__file__).parent / "data" / "xlsb" / "sorted_autofilter.xlsb"
@@ -333,3 +334,70 @@ def test_excel_reads_the_saved_sort_state(tmp_path, open_workbook):
     sort = worksheet.AutoFilter.Sort
     assert sort.SortFields.Count == 1
     assert sort.SortFields(1).Order == 1  # xlAscending
+
+
+ICON_SETS = ("3TrafficLights1", "3Stars")
+
+
+def _icon_sort(path, open_workbook, key):
+    """Excel reads back a sort field that sorts on an icon, ascending."""
+    worksheet = open_workbook(path).Worksheets(1)
+    sort = worksheet.AutoFilter.Sort
+    assert sort.SortFields.Count == 1
+    field = sort.SortFields(1)
+    assert field.SortOn == 3  # xlSortOnIcon
+    assert field.Order == 1  # xlAscending
+    assert field.Key.Address == key
+
+
+@pytest.mark.com
+@pytest.mark.parametrize("suffix", ["xlsx", "xlsb"])
+@pytest.mark.parametrize("icon_set", ICON_SETS)
+def test_excel_reads_an_icon_sort_from_a_new_workbook(tmp_path, open_workbook, suffix, icon_set):
+    path = tmp_path / f"icon.{suffix}"
+    workbook = Workbook()
+    try:
+        sheet = workbook.active
+        sheet.append(["h1", "h2", "h3"])
+        sheet.append([1, 3, 9])
+        sheet.append([2, 1, 8])
+        sheet.auto_filter.ref = "A1:C3"
+        sheet.auto_filter.sortState = SortState(
+            sortCondition=[SortCondition(ref="B2:B3", sortBy="icon", iconSet=icon_set, iconId=1)]
+        )
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+    _icon_sort(path, open_workbook, "$B$2:$B$3")
+
+    reopened = load_workbook(path)
+    try:
+        condition = reopened.worksheets[0].auto_filter.sortState.sortCondition[0]
+        assert (condition.sortBy, condition.iconSet, condition.iconId) == ("icon", icon_set, 1)
+    finally:
+        reopened.close()
+
+
+@pytest.mark.com
+@pytest.mark.parametrize("icon_set", ICON_SETS)
+def test_excel_keeps_an_icon_sort_written_into_a_loaded_xlsb(tmp_path, open_workbook, icon_set):
+    target = tmp_path / "icon.xlsb"
+    shutil.copyfile(FIXTURE, target)
+    book = load_workbook(target)
+    try:
+        book["Data"].auto_filter.sortState = SortState(
+            sortCondition=[SortCondition(ref="B2:B4", sortBy="icon", iconSet=icon_set, iconId=1)]
+        )
+        book.save(target)
+    finally:
+        book.close()
+
+    _icon_sort(target, open_workbook, "$B$2:$B$4")
+
+    reopened = load_workbook(target)
+    try:
+        condition = reopened["Data"].auto_filter.sortState.sortCondition[0]
+        assert (condition.sortBy, condition.iconSet, condition.iconId) == ("icon", icon_set, 1)
+    finally:
+        reopened.close()
