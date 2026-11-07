@@ -205,18 +205,42 @@ def _sync_sheet_list(workbook, updater) -> None:
 def _save_defined_names(workbook, updater, renamed) -> None:
     names = {(item.name, item.formula, item.scope, item.hidden, item.comment) for item in workbook.defined_names}
     previous = getattr(workbook, "_loaded_defined_names", names)
-    if names == previous:
+    dirty = bool(getattr(workbook, "_defined_names_dirty", False))
+    if names == previous and not dirty:
         return
     handle = PackageHandle(updater)
-    for name, _formula, scope, _hidden, _comment in previous - names:
-        scope = renamed.get(scope, scope)
-        # Names local to a removed sheet went with it.
-        if scope is None or scope in handle.sheets:
-            updater.remove_defined_name(name, scope)
+    valid_scopes = set(handle.sheets)
+    previous_pairs = {
+        (name.casefold(), scope) for name, _f, scope, _h, _c in previous
+    }
+    kept = []
     for item in workbook.defined_names:
-        if item.scope is None or item.scope in handle.sheets:
-            updater.set_defined_name(item)
-    workbook._loaded_defined_names = names
+        if item.scope is None:
+            kept.append(item)
+        elif item.scope in valid_scopes:
+            # The sheet may have moved since the name was read; the title is
+            # current, the stored localSheetId is not.
+            kept.append(replace(item, localSheetId=None))
+        elif (item.name.casefold(), item.scope) not in previous_pairs:
+            raise KeyError(f"Worksheet not found: {item.scope}")
+    current = {
+        (item.name, item.formula, item.scope, item.hidden, item.comment)
+        for item in kept
+    }
+    to_remove = []
+    for name, _formula, scope, _hidden, _comment in previous - current:
+        mapped = renamed.get(scope, scope) if scope is not None else None
+        # Names local to a removed sheet went with it.
+        if mapped is None or mapped in valid_scopes:
+            to_remove.append((name, mapped))
+    if to_remove:
+        updater.remove_defined_names(to_remove)
+    # Only rewrite adds when something changed: previous diff or dirty flag
+    # covers bulk inserts that replaced same names.
+    if kept and (to_remove or dirty or names != previous):
+        updater.set_defined_names(kept)
+    workbook._loaded_defined_names = current
+    workbook._defined_names_dirty = False
 
 
 def _save_cells(sheet, updater, everything: bool) -> None:

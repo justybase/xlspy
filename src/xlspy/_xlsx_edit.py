@@ -263,22 +263,46 @@ class XlsxEditMixin:
             removed.append(rp)
         self._apply_parts(updates, removed)
 
+    def _workbook_sheets(self) -> list[str]:
+        """Sheet names in the order workbook.xml lists them (chartsheets included)."""
+        root = safe_fromstring(self._package.get("xl/workbook.xml"))
+        return [
+            node.get("name", "")
+            for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
+        ]
+
+    @staticmethod
+    def _resolve_defined_name(definition: DefinedName, sheets: list[str]) -> DefinedName:
+        """Resolve a scope title to the index of that sheet in ``sheets``."""
+        return definition.resolved(sheets)
+
     def get_defined_names(self) -> list[DefinedName]:
         """Return user-defined global and worksheet-local names."""
-        return read_defined_names(self._package.get("xl/workbook.xml"), self._sheets)
+        return read_defined_names(self._package.get("xl/workbook.xml"), self._workbook_sheets())
 
     def set_defined_name(self, definition: DefinedName) -> None:
         """Add a defined name, replacing one with the same name and scope."""
-        if not isinstance(definition, DefinedName):
-            raise TypeError("definition must be a DefinedName")
-        definition = definition.resolved(self._sheets)
-        fragment = definition.to_xml(self._sheets)
+        self.set_defined_names([definition])
+
+    def set_defined_names(self, definitions: Iterable[DefinedName]) -> None:
+        """Add many defined names in one workbook rewrite (linear, not quadratic)."""
+        definitions = list(definitions)
+        for definition in definitions:
+            if not isinstance(definition, DefinedName):
+                raise TypeError("definition must be DefinedName")
+        if not definitions:
+            return
+        sheets = self._workbook_sheets()
+        resolved = [self._resolve_defined_name(definition, sheets) for definition in definitions]
+        fragments = [definition.to_xml(sheets) for definition in resolved]
         xml = self._package.get("xl/workbook.xml").decode("utf-8")
-        xml = self._remove_name(xml, definition.name, definition.scope)
+        for definition in resolved:
+            xml = self._remove_name(xml, definition.name, definition.scope, sheets)
+        combined = "".join(fragments)
         if element_pattern("definedNames").search(xml):
-            xml = append_child(xml, "definedNames", fragment)
+            xml = append_child(xml, "definedNames", combined)
         else:
-            xml = replace_element(xml, "definedNames", f'<definedNames xmlns="{MAIN}">{fragment}</definedNames>', before=("calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"))
+            xml = replace_element(xml, "definedNames", f'<definedNames xmlns="{MAIN}">{combined}</definedNames>', before=("calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"))
         self._apply_name_change(xml)
 
     def _apply_name_change(self, xml: str) -> None:
@@ -289,8 +313,8 @@ class XlsxEditMixin:
         self._recalculate(updates, removed)
         self._apply_parts(updates, removed)
 
-    def _remove_name(self, xml: str, name: str, scope: str | None) -> str:
-        scope_id = None if scope is None else str(list(self._sheets).index(scope))
+    def _remove_name(self, xml: str, name: str, scope: str | None, sheets: list[str]) -> str:
+        scope_id = None if scope is None else str(sheets.index(scope))
         def remove(match: re.Match[str]) -> str:
             attrs = tag_attributes(match[0])
             return "" if attrs.get("name", "").casefold() == name.casefold() and attrs.get("localSheetId") == scope_id else match[0]
@@ -301,10 +325,20 @@ class XlsxEditMixin:
 
     def remove_defined_name(self, name: str, scope: str | None = None) -> None:
         """Remove a defined name; with ``scope``, the one local to that sheet."""
-        # Validate the name, including the reserved built-in namespace.
-        DefinedName(name, "0", scope).to_xml(self._sheets)
+        self.remove_defined_names([(name, scope)])
+
+    def remove_defined_names(self, names: Iterable[tuple[str, str | None]]) -> None:
+        """Remove many defined names in one workbook rewrite."""
+        names = list(names)
+        if not names:
+            return
+        sheets = self._workbook_sheets()
+        for name, scope in names:
+            DefinedName(name, "0", scope).to_xml(sheets)
         xml = self._package.get("xl/workbook.xml").decode("utf-8")
-        updated = self._remove_name(xml, name, scope)
+        updated = xml
+        for name, scope in names:
+            updated = self._remove_name(updated, name, scope, sheets)
         if updated != xml:
             self._apply_name_change(updated)
 

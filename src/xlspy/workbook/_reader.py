@@ -1650,4 +1650,9 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
         )
     except (TypeError, ValueError, IndexError, ET.ParseError):
         workbook._defined_names = DefinedNameList(workbook)
+    workbook._loaded_defined_names = {
+        (item.name, item.formula, item.scope, item.hidden, item.comment)
+        for item in workbook._defined_names
+    }
+    workbook._defined_names_dirty = False
     return workbook

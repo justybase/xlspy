@@ -13,6 +13,7 @@ from ._coords import _in_sheet_order
 
 from ..exceptions import UnsupportedFeatureError
 import datetime as _datetime
+from dataclasses import replace
 import re
 from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
@@ -1294,6 +1295,48 @@ def save_loaded(workbook: Workbook, filename) -> None:
     for chartsheet in workbook._chartsheets:
         save_chart_edits(updater, chartsheet)
     save_properties(updater, workbook)
+    # Defined names staged via DefinedNameList.add/remove: single rewrite.
+    if getattr(workbook, "_defined_names_dirty", False):
+        current = list(workbook.defined_names)
+        previous: set[tuple] = getattr(workbook, "_loaded_defined_names", set())
+        sheets_now = _sheet_order(updater)
+        valid_scopes = set(sheets_now)
+        renamed_sheets = {s._original_title: s.title for s in workbook._sheets}
+        previous_pairs = {
+            (name.casefold(), scope) for name, _f, scope, _h, _c in previous
+        }
+        kept = []
+        for definition in current:
+            if definition.scope is None:
+                kept.append(definition)
+            elif definition.scope in valid_scopes:
+                # The sheet may have moved since the name was read; the title is
+                # current, the stored localSheetId is not.
+                kept.append(replace(definition, localSheetId=None))
+            elif (definition.name.casefold(), definition.scope) not in previous_pairs:
+                # A name added for a sheet that does not exist is a mistake; one
+                # loaded from a sheet that has since been removed is dropped, as
+                # Excel drops it with the sheet.
+                raise KeyError(f"Worksheet not found: {definition.scope}")
+        current_set = {
+            (d.name, d.formula, d.scope, d.hidden, d.comment) for d in kept
+        }
+        if current_set != previous:
+            current_pairs = {(d.name.casefold(), d.scope) for d in kept}
+            to_remove = []
+            for name, _formula, scope, _hidden, _comment in previous:
+                mapped = renamed_sheets.get(scope, scope) if scope is not None else None
+                if (
+                    (name.casefold(), mapped) not in current_pairs
+                    and (mapped is None or mapped in valid_scopes)
+                ):
+                    to_remove.append((name, mapped))
+            if to_remove:
+                updater.remove_defined_names(to_remove)
+            if kept:
+                updater.set_defined_names(kept)
+        workbook._loaded_defined_names = current_set
+        workbook._defined_names_dirty = False
     updater.save(filename)
     for sheet in workbook._sheets:
         sheet._original_title = sheet.title

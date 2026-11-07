@@ -238,12 +238,22 @@ class XlsbEditMixin(XlsxEditMixin):
 
     def set_defined_name(self, definition: DefinedName) -> None:
         """Add a defined name, replacing one with the same name and scope."""
-        if not isinstance(definition, DefinedName):
-            raise TypeError("definition must be DefinedName")
-        definition = definition.resolved(self._sheets)
+        self.set_defined_names([definition])
+
+    def set_defined_names(self, definitions: Iterable[DefinedName]) -> None:
+        """Add many defined names in one workbook rewrite (linear, not quadratic)."""
+        definitions = list(definitions)
+        for definition in definitions:
+            if not isinstance(definition, DefinedName):
+                raise TypeError("definition must be DefinedName")
+        if not definitions:
+            return
+        sheets = list(self._sheets)
+        resolved = [self._resolve_defined_name(definition, sheets) for definition in definitions]
         original = self._package.get('xl/workbook.bin')
         context = self._context(original)
-        context.set_name(definition)
+        for definition in resolved:
+            context.set_name(definition)
         updates = {'xl/workbook.bin': context.write_workbook(original)}
         removed: list[str] = []
         self._invalidate_calculation(updates, removed)
@@ -251,11 +261,23 @@ class XlsbEditMixin(XlsxEditMixin):
 
     def remove_defined_name(self, name: str, scope: str | None = None) -> None:
         """Remove a defined name; with ``scope``, the one local to that sheet."""
-        if scope is not None and scope not in self._sheets:
-            raise KeyError(f"Worksheet not found: {scope}")
+        self.remove_defined_names([(name, scope)])
+
+    def remove_defined_names(self, names: Iterable[tuple[str, str | None]]) -> None:
+        """Remove many defined names in one workbook rewrite."""
+        names = list(names)
+        if not names:
+            return
+        for _name, scope in names:
+            if scope is not None and scope not in self._sheets:
+                raise KeyError(f"Worksheet not found: {scope}")
         original = self._package.get('xl/workbook.bin')
         context = self._context(original)
-        if not context.remove_name(name, scope):
+        changed = False
+        for name, scope in names:
+            if context.remove_name(name, scope):
+                changed = True
+        if not changed:
             return
         updates = {'xl/workbook.bin': context.write_workbook(original)}
         removed: list[str] = []

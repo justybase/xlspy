@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `XlsxUpdater`/`XlsbUpdater.set_defined_names()` and `remove_defined_names()`
+  batch many names in one workbook rewrite.
+
+### Changed
+
+- `DefinedNameList.add()`/`remove()` on a loaded workbook stage the edit and
+  flush once at `save()` (single rewrite). 500 names: 1-2 s -> ~0.02 s (save).
+
 ## [0.14.0] - 2026-11-05
 
 ### Added

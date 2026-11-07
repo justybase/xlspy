@@ -143,10 +143,9 @@ class DefinedNameList:
         ]
         self._items.append(definition)
         if stage and self._workbook is not None:
-            if self._workbook._updater is not None:
-                self._workbook._updater.set_defined_name(definition)
-            else:
-                self._workbook._defined_names_dirty = True
+            # Staged: flushed once at save (single workbook rewrite) instead of
+            # once per add, which was quadratic for bulk inserts.
+            self._workbook._defined_names_dirty = True
 
     append = add
 
@@ -169,10 +168,7 @@ class DefinedNameList:
             raise KeyError(name)
         self._items.remove(target)
         if self._workbook is not None:
-            if self._workbook._updater is not None:
-                self._workbook._updater.remove_defined_name(target.name, target.scope)
-            else:
-                self._workbook._defined_names_dirty = True
+            self._workbook._defined_names_dirty = True
         return target
 
 
