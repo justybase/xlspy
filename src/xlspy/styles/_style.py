@@ -20,6 +20,25 @@ class Style:
     ``fill`` accepts a color string (solid), ``PatternFill``, or
     ``GradientFill``. On conflict the structured object wins per property; a
     ``None`` sub-property falls back to the corresponding flat shorthand.
+
+    Examples:
+        A header style with a solid fill and a money format:
+
+        ```python
+        from xlspy import F, Style
+
+        header = Style(bold=True, fill="1F4E78", font_color="FFFFFF")
+        money = Style(number_format=F.THOUSANDS_SEP)
+        warn = Style(fill="FFF2CC", border=Border(bottom=Side("thin", "BF9000")))
+        ```
+
+        Styles are composable because unset fields stay ``None``; a range style
+        only overrides the properties it sets.
+
+    See Also:
+        `Font`, `PatternFill`, `GradientFill`, `Border`, `Alignment` and
+        `Protection` for the structured properties, and `DifferentialStyle`
+        for conditional formatting.
     """
     fill: str | PatternFill | GradientFill | None = None
     font_color: str | None = None

@@ -45,7 +45,32 @@ def _cell_ref(column: int, row: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class SparklineGroup:
-    """One style of sparklines over ``data``, shown in ``location``."""
+    """One style of sparklines over ``data``, shown in ``location``.
+
+    Examples:
+        A line sparkline beside each row of a small table:
+
+        ```python
+        from xlspy import SparklineGroup, XlsxWriter
+
+        rows = [["Month", "Sales", "Trend"],
+                ["Jan", 12, None], ["Feb", 15, None], ["Mar", 11, None]]
+
+        with XlsxWriter("sparklines.xlsx") as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet(
+                rows,
+                sparklines=[SparklineGroup("B2:B4", "C2:C4", kind="line",
+                                           markers=True, last_point=True)],
+            )
+        ```
+
+        ``kind`` is ``"line"``, ``"column"`` or ``"win_loss"``. The group is
+        written to the sheet in the same ``write_sheet`` call.
+
+    See Also:
+        `Chart` for a full chart, and `DataLabels` for chart point labels.
+    """
 
     data: str
     location: str

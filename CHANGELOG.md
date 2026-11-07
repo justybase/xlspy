@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reference, Explanation and Project; the landing page has a hero, feature cards
   and a five-minute example, and `tests/test_docs_tutorial.py` runs every marked
   tutorial snippet.
+- The public API docstrings carry Google-style `Examples:` and `See Also:`
+  sections, the landing page metadata and every guide page have descriptions,
+  `docs/robots.txt` points crawlers at the sitemap, and the README links to the
+  published tutorial, guides and reference instead of source files.
 
 ## [0.14.0] - 2026-11-05
 

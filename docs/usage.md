@@ -1,3 +1,7 @@
+---
+description: "A task-oriented tour of the xlspy API: writing, styling, reading, updating and performance."
+---
+
 # Using xlspy
 
 [Home](index.md) · [Runnable examples](https://github.com/justybase/xlspy/blob/main/examples/README.md) · [Benchmarks](benchmarks.md)

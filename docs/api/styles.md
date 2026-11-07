@@ -1,3 +1,7 @@
+---
+description: "Cell styles, fonts, fills, borders, conditional formats, tables and rich text."
+---
+
 # Styles and formatting
 
 Cell styles, conditional formats, tables and rich text.

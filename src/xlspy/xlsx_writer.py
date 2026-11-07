@@ -140,6 +140,43 @@ from ._xlsx_writer_sheet_xml import (
 
 
 class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetXmlMixin, WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
+    """Write XLSX workbooks with a row-oriented API.
+
+    A writer collects sheets, styles, tables, charts and other objects, then
+    publishes the package when the ``with`` block exits. Rows are consumed once,
+    so a generator or a database cursor can be passed straight to
+    ``write_sheet``.
+
+    Args:
+        file: A path or a binary file object to write.
+        compression_level: ZIP compression level, 0-9 (default 3).
+        use_shared_strings: Store every distinct string once (default). Set it
+            to ``False`` for high-cardinality exports.
+        spool_max_bytes: Bytes kept in memory before sheet rows spill to a
+            temporary file.
+
+    Examples:
+        Write a styled report and read it back:
+
+        ```python
+        from xlspy import ExcelReader, F, Style, XlsxWriter
+
+        with XlsxWriter("report.xlsx") as workbook:
+            workbook.add_sheet("Sales")
+            workbook.write_sheet(
+                [["Product", "Revenue"], ["Coffee", (12500, F.THOUSANDS_SEP)]],
+                header_style=Style(bold=True, fill="183C52", font_color="FFFFFF"),
+                freeze_panes="A2",
+            )
+
+        with ExcelReader("report.xlsx") as reader:
+            print(reader.read_all("Sales"))
+        ```
+
+    See Also:
+        `XlsbWriter` for the binary XLSB format with the same API, and
+        `to_xlsx` for a DataFrame one-liner.
+    """
     def __init__(self, file: WriteTarget, compression_level: int = 3, use_shared_strings: bool = True,
                  spool_max_bytes: int = DEFAULT_SPOOL_BYTES, **unknown: object) -> None:
         reject_unknown_arguments(type(self).__name__, unknown)

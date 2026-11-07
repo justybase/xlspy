@@ -19,16 +19,31 @@ _SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.\-]*):")
 class Hyperlink:
     """A link written as the value of a cell.
 
-    Put it in a row where the text belongs::
-
-        ["Report", Hyperlink("https://example.com", text="Open report")]
-
     ``target`` is an ``http``, ``https``, ``mailto`` or ``ftp`` URL, or an
     internal location written as ``"#Sheet Name!B2"`` (quote the sheet name
     with single quotes when it contains spaces: ``"#'Sales Data'!B2"``). Other
     schemes and relative file paths are refused. ``text`` is the displayed
     label and defaults to the target; ``tooltip`` is shown on hover. Linked
     cells use the built-in hyperlink look unless the cell has its own style.
+
+    Examples:
+        A Hyperlink is a cell value, so it goes where the text belongs:
+
+        ```python
+        from xlspy import Hyperlink, XlsxWriter
+
+        rows = [
+            ["Report", Hyperlink("https://example.com/report", text="Open report")],
+            ["Back", Hyperlink("#Links!A1", text="Back to top")],
+        ]
+        with XlsxWriter("links.xlsx") as workbook:
+            workbook.add_sheet("Links")
+            workbook.write_sheet(rows)
+        ```
+
+    See Also:
+        `Comment` for a note attached to a cell, and `Shape` for a linked
+        shape.
     """
 
     target: str

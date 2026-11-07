@@ -1,3 +1,7 @@
+---
+description: "Platform test results, Excel COM conformance and known limitations."
+---
+
 # Validation and test results
 
 [Home](index.md) · [Benchmarks](benchmarks.md) · [Running the test suite](https://github.com/justybase/xlspy/blob/main/tests/README.md)

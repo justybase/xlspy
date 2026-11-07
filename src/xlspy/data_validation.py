@@ -123,6 +123,34 @@ class DataValidation:
     ``show_dropdown=False`` hides the arrow of a list rule. ``allow_blank``
     accepts empty cells. Prompts and error messages are shown when their
     ``show_*`` flag is true.
+
+    Examples:
+        Add a dropdown, a numeric range and a date rule to one sheet:
+
+        ```python
+        import datetime
+
+        from xlspy import DataValidation, XlsxWriter
+
+        rows = [["Region", "Amount", "Date"], ["North", 10, datetime.date(2026, 1, 5)]]
+        with XlsxWriter("validated.xlsx") as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet(
+                rows,
+                data_validations=[
+                    DataValidation("list", "A2:A50", formula1='"North,South,East"'),
+                    DataValidation("whole", "B2:B50", formula1=1, formula2=100),
+                    DataValidation("date", "C2:C50", formula1=datetime.date(2026, 1, 1),
+                                   operator="greater_than"),
+                ],
+            )
+        ```
+
+        Invalid combinations raise ``ValueError`` when the rule is created.
+
+    See Also:
+        `Formula` for ``custom`` rules, and `ExcelTable` for structured
+        references in a validation formula.
     """
 
     type: str

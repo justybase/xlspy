@@ -248,6 +248,44 @@ class PivotTable:
     ``sheet`` is omitted the pivot is placed on the source sheet, below the
     table.  Otherwise the target sheet must be written after the source sheet,
     or left empty and saved as is.
+
+    Examples:
+        Summarise a written table by region and quarter:
+
+        ```python
+        from xlspy import ExcelTable, PivotTable, PivotValue, XlsxWriter
+
+        rows = [
+            ["Region", "Quarter", "Sales"],
+            ["North", "Q1", 1300],
+            ["South", "Q1", 1600],
+            ["North", "Q2", 1400],
+        ]
+        sales = ExcelTable("SalesTable", "A1:C4")
+
+        with XlsxWriter("pivot.xlsx") as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet(
+                rows,
+                tables=[sales],
+                pivots=[
+                    PivotTable(
+                        sales,
+                        rows="Region",
+                        columns="Quarter",
+                        values=[PivotValue("Sales", "sum", number_format="#,##0")],
+                        location="A3",
+                        sheet="Summary",
+                    )
+                ],
+            )
+            workbook.add_sheet("Summary")
+            workbook.write_sheet([])
+        ```
+
+    See Also:
+        `PivotValue` for aggregations and number formats, and `ExcelTable` for
+        the source range.
     """
 
     source: ExcelTable | str

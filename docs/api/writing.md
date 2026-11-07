@@ -1,3 +1,7 @@
+---
+description: "XlsxWriter, XlsbWriter, sheet options and DataFrame export."
+---
+
 # Writing
 
 New workbooks: the writers, sheet options and DataFrame export.

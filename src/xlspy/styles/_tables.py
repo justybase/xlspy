@@ -11,7 +11,36 @@ from ._attrs import _TABLE_NAME_RE, _is_reference_like
 
 @dataclass(frozen=True, slots=True)
 class ExcelTable:
-    """An Excel table (ListObject) bound to a rectangular range."""
+    """An Excel table (ListObject) bound to a rectangular range.
+
+    The range must have a header row whose cells match the column names. Table
+    names must be unique in the workbook and may not read as a cell reference
+    (``T1``, ``AB12``).
+
+    Examples:
+        Turn written rows into a filterable, styled table:
+
+        ```python
+        from xlspy import ExcelTable, XlsxWriter
+
+        rows = [["Region", "Sales"], ["North", 120], ["South", 90]]
+        sales = ExcelTable("Sales", "A1:B3", style_name="TableStyleMedium2")
+
+        with XlsxWriter("table.xlsx") as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet(rows, tables=[sales], auto_filter=True)
+        ```
+
+        A totals row uses the last row of the range:
+
+        ```python
+        ExcelTable("Sales", "A1:B4", totals_row=True,
+                   totals_row_functions=(None, "sum"))
+        ```
+
+    See Also:
+        `PivotTable` to summarise a table, and `Slicer` to filter one.
+    """
 
     display_name: str
     ref: str

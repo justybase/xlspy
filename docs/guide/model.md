@@ -1,3 +1,7 @@
+---
+description: "Load, inspect and edit workbooks with the openpyxl-compatible Workbook model."
+---
+
 # The workbook model
 
 [Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)

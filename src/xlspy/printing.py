@@ -134,6 +134,32 @@ class PrintSettings:
     are raw Excel header codes such as ``"&LReport&RPage &P of &N"``; write
     a literal ampersand as ``&&``. ``row_breaks`` and ``col_breaks`` name the
     row or column after which a manual page break is placed (1-based).
+
+    Examples:
+        Landscape A4 with a repeating header and a footer:
+
+        ```python
+        from xlspy import PageMargins, PrintSettings, XlsxWriter
+
+        with XlsxWriter("print.xlsx") as workbook:
+            workbook.add_sheet("Report")
+            workbook.write_sheet(
+                [["Region", "Sales"], ["North", 120], ["South", 90]],
+                freeze_panes="A2",
+                print_settings=PrintSettings(
+                    orientation="landscape",
+                    paper_size="A4",
+                    print_area="A1:B50",
+                    repeat_rows="1:1",
+                    fit_to_width=1,
+                    margins=PageMargins(left=0.4, right=0.4),
+                    footer="&LReport&RPage &P of &N",
+                ),
+            )
+        ```
+
+    See Also:
+        `PageMargins` for the inch-based margins.
     """
 
     orientation: str | None = None

@@ -105,7 +105,29 @@ class TextBlock:
 
 
 class CellRichText(list["str | TextBlock"]):
-    """A cell value made of plain strings and ``TextBlock`` runs."""
+    """A cell value made of plain strings and ``TextBlock`` runs.
+
+    Examples:
+        Mix plain text with a bold run:
+
+        ```python
+        from xlspy import CellRichText, InlineFont, TextBlock, XlsxWriter
+
+        value = CellRichText(
+            "Revenue: ",
+            TextBlock(InlineFont(b=True, color="1F4E78"), "12,500"),
+        )
+        with XlsxWriter("rich.xlsx") as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet([["Label"], [value]])
+        ```
+
+        A list or tuple of parts is accepted too, and rich text works in both
+        XLSX and XLSB.
+
+    See Also:
+        `TextBlock` and `InlineFont` for the run properties.
+    """
 
     def __init__(self, *args: Any) -> None:
         parts = args[0] if len(args) == 1 and isinstance(args[0], (list, tuple)) else args

@@ -1,3 +1,7 @@
+---
+description: "How the reader, updater and writer paths fit together, and where the native module helps."
+---
+
 # Architecture: the reader, updater and writer paths
 
 xlspy grew in three stages. Each stage still has code in the package, and the

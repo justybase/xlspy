@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://justybase.github.io/xlspy/sitemap.xml

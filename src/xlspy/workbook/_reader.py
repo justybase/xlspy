@@ -1457,6 +1457,42 @@ def load_workbook(filename: str | os.PathLike[str], *, read_only: bool = False, 
 
     The fast ``ExcelReader`` remains the best choice for raw value extraction.
     This function adds coordinates, styles, merges, dimensions and editing.
+
+    Args:
+        filename: Path to an ``.xlsx``, ``.xlsm`` or ``.xlsb`` file.
+        read_only: Stream rows instead of building the full model. Read-only
+            sheets cannot be edited or saved.
+        data_only: Return cached formula results instead of formula text.
+        keep_vba: Keep the VBA project of an ``.xlsm`` workbook.
+        rich_text: Preserve rich-text runs as `CellRichText` values.
+        keep_links: Keep external workbook links in the model.
+
+    Examples:
+        Read a value, edit it and save a copy:
+
+        ```python
+        from xlspy import load_workbook
+
+        workbook = load_workbook("report.xlsx")
+        sheet = workbook["Sales"]
+        print(sheet["A1"].value)
+        sheet["B2"] = 130
+        workbook.save("report-updated.xlsx")
+        workbook.close()
+        ```
+
+        Stream a large sheet without loading it whole:
+
+        ```python
+        workbook = load_workbook("large.xlsb", read_only=True)
+        for row in workbook["Data"].iter_rows(min_row=1, max_row=5, values_only=True):
+            print(row)
+        workbook.close()
+        ```
+
+    See Also:
+        `ExcelReader` for the fastest values-only path, and `Workbook` for the
+        in-memory model this function returns.
     """
     path = os.fspath(filename)
     with reading(path):

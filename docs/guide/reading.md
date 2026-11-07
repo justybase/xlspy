@@ -1,3 +1,7 @@
+---
+description: "Choose between ExcelReader, read-only workbooks and the full Workbook model."
+---
+
 # Reading workbooks
 
 [Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)

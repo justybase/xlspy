@@ -1,3 +1,7 @@
+---
+description: "XlsxUpdater, XlsmUpdater and XlsbUpdater for editing existing workbooks."
+---
+
 # Updating
 
 Edits to existing files that keep everything else in the package.

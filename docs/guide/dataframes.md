@@ -1,3 +1,7 @@
+---
+description: "Export pandas and polars DataFrames to XLSX or XLSB, including formats, missing values and indexes."
+---
+
 # pandas and polars DataFrames
 
 [Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)

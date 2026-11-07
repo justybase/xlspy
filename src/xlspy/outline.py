@@ -26,6 +26,29 @@ class Group:
     Columns may also be given as letters, such as ``Group("D", "F")``.
     ``collapsed`` hides the group and sets the collapsed flag on the summary
     row or column just after ``last``.
+
+    Examples:
+        Collapse rows 2-10 behind a summary row 11:
+
+        ```python
+        from xlspy import Group, Style, XlsxWriter
+
+        with XlsxWriter("grouped.xlsx") as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet(
+                [["Item", "Value"], *[[f"item-{i}", i] for i in range(10)],
+                 ["Total", 45]],
+                row_groups=[Group(2, 10, collapsed=True)],
+                header_style=Style(bold=True),
+            )
+        ```
+
+        Use ``column_groups=[Group("B", "D")]`` for the same effect across
+        columns; letters and zero-based indexes are both accepted.
+
+    See Also:
+        ``row_heights`` and ``hidden_rows`` for related row options of
+        ``write_sheet``.
     """
 
     first: int | str

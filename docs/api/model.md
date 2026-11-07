@@ -1,3 +1,7 @@
+---
+description: "load_workbook and the openpyxl-compatible Workbook, Worksheet and Cell objects."
+---
+
 # Workbook model
 
 `load_workbook` and the openpyxl-like objects it returns.

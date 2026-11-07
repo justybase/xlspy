@@ -29,6 +29,28 @@ class Workbook:
     ``Workbook()`` starts with one empty sheet; ``load_workbook`` opens a file.
     ``save`` writes a new workbook as XLSB or XLSX/XLSM by the file extension,
     and a loaded workbook in the format it was loaded from.
+
+    Examples:
+        Build a workbook cell by cell, like openpyxl:
+
+        ```python
+        from xlspy import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Data"
+        sheet["A1"] = "Item"
+        sheet["A2"] = 1200
+        workbook.save("book.xlsx")
+        workbook.close()
+        ```
+
+        ``save`` chooses the format from the extension, so ``"book.xlsb"``
+        writes a binary XLSB package from the same code.
+
+    See Also:
+        `load_workbook` to open an existing file, and `XlsxWriter` /
+        `XlsbWriter` for the faster row-oriented API.
     """
     # Set by the loaders and the XLSB saver; a workbook built in memory has none of them.
     _updater: Any

@@ -1,3 +1,7 @@
+---
+description: "Which openpyxl APIs xlspy implements, where behaviour differs and what remains."
+---
+
 # openpyxl parity matrix
 
 This document tracks the practical compatibility target described in the

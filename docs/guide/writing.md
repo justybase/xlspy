@@ -1,3 +1,7 @@
+---
+description: "Write workbooks from rows or generators, handle large exports and understand failures."
+---
+
 # Writing workbooks
 
 [Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)

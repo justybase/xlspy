@@ -43,6 +43,29 @@ class Slicer:
     sheet in the same call, and ``column`` the header text of one of its
     columns. ``name`` (default: the column) and ``caption`` (default: the
     column) must be unique within the workbook for ``name``.
+
+    Examples:
+        A Region slicer beside a table on the same sheet:
+
+        ```python
+        from xlspy import ExcelTable, Slicer, XlsxWriter
+
+        rows = [["Region", "Sales"], ["North", 120], ["South", 90], ["East", 75]]
+        with XlsxWriter("slicer.xlsx") as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet(
+                rows,
+                tables=[ExcelTable("SalesTable", "A1:B4")],
+                slicers=[Slicer("SalesTable", "Region", anchor="D2",
+                                width=160, height=200, caption="Region")],
+            )
+        ```
+
+        The slicer drives the table's filter; Excel shows it when the file
+        opens. The table and slicer must be written by the same call.
+
+    See Also:
+        `ExcelTable` for the source range, and `PivotTable` for aggregation.
     """
 
     table: str

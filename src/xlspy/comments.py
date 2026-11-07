@@ -25,7 +25,27 @@ X = "urn:schemas-microsoft-com:office:excel"
 
 @dataclass(frozen=True, slots=True)
 class Comment:
-    """A classic cell note. Width and height are pixels at 96 DPI."""
+    """A classic cell note. Width and height are pixels at 96 DPI.
+
+    Examples:
+        Notes are keyed by cell address in the ``comments`` sheet option:
+
+        ```python
+        from xlspy import Comment, XlsxWriter
+
+        with XlsxWriter("notes.xlsx") as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet(
+                [["Amount"], [1200]],
+                comments={"A2": Comment("Confirm this amount", "Jan", 240, 100)},
+            )
+        ```
+
+        The author is required and is shown in Excel's note header.
+
+    See Also:
+        `XlsxUpdater.set_comments` for notes on an existing workbook.
+    """
 
     text: str
     author: str

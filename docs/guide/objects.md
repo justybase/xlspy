@@ -1,3 +1,7 @@
+---
+description: "Add formulas, charts, tables, validation, images, pivots, comments and print settings."
+---
+
 # Formulas, charts and other objects
 
 [Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)

@@ -1,3 +1,7 @@
+---
+description: "Complete xlspy API reference generated from the public docstrings."
+---
+
 # API reference
 
 Generated from the docstrings of every public name (`xlspy.__all__` and

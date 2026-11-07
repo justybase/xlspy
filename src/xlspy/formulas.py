@@ -357,6 +357,28 @@ class Formula:
     array (CSE) formula over that range. ``spill_ref`` writes a dynamic-array
     formula over the range: Excel stores the anchor as an array formula and the
     file carries the dynamic-array cell metadata.
+
+    Examples:
+        Put a formula in a row, with an optional cached result:
+
+        ```python
+        from xlspy import Formula, XlsxWriter
+
+        rows = [
+            ["A", "B", "Total"],
+            [2, 3, Formula("A2+B2", value=5)],
+            [4, 6, Formula("A3+B3")],
+        ]
+        with XlsxWriter("formulas.xlsx") as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet(rows)
+        ```
+
+        Formula text has no leading ``=``. A plain string is always written as
+        text, so exported data cannot inject a formula.
+
+    See Also:
+        `Hyperlink` for links, and the guide section on XLSB formula limits.
     """
 
     text: str

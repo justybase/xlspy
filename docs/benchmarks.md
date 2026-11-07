@@ -1,3 +1,7 @@
+---
+description: "xlspy read and write benchmarks with hardware, datasets and reproduction commands."
+---
+
 # Benchmarks
 
 [Home](index.md) · [Usage guide](usage.md) · [Validation](validation.md)

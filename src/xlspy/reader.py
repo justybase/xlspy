@@ -145,6 +145,29 @@ class ExcelReader:
     Error cells come back as CellError strings (``"error:#DIV/0!"``); with
     ``errors="openpyxl"`` they are plain text such as ``"#DIV/0!"``. For styles,
     coordinates or editing use ``load_workbook``.
+
+    Examples:
+        Stream values without building the workbook model:
+
+        ```python
+        from xlspy import ExcelReader
+
+        with ExcelReader("report.xlsb") as reader:
+            print(reader.get_sheet_names())
+            for row in reader.get_rows("Sales"):
+                print(row)
+        ```
+
+        Formula text instead of cached values:
+
+        ```python
+        with ExcelReader("report.xlsx") as reader:
+            rows = reader.read_all("Sales", data_only=False)
+        ```
+
+    See Also:
+        `load_workbook` when you need coordinates, styles or edits; the
+        tutorial page `reading` for a comparison of the three read modes.
     """
     _open_xml_info_string = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 

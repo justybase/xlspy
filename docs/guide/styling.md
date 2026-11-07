@@ -1,3 +1,7 @@
+---
+description: "Number formats, cell styles, column widths, headers, tables, conditional formats and groups."
+---
+
 # Formatting and layout
 
 [Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)

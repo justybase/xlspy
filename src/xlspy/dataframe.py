@@ -60,6 +60,26 @@ def to_xlsx(
 
     A failed conversion leaves ``path`` as it was: the writer stages the file
     and publishes it only on success.
+
+    Examples:
+        ```python
+        import pandas as pd
+
+        from xlspy import to_xlsx
+
+        df = pd.DataFrame({"name": ["Alice", "Bob"], "age": [25, 30]})
+        to_xlsx(df, "people.xlsx")
+        ```
+
+        All sheet options of ``write_dataframe`` are accepted as keywords:
+
+        ```python
+        to_xlsx(df, "people.xlsx", freeze_panes="A2", include_index=True)
+        ```
+
+    See Also:
+        `to_xlsb` for the binary format, and `XlsxWriter.write_dataframe` for
+        writing into a workbook that already has sheets and objects.
     """
     with XlsxWriter(path, **writer_kwargs) as writer:
         writer.add_sheet(sheet_name)
@@ -110,6 +130,23 @@ def to_xlsb(
 
     A failed conversion leaves ``path`` as it was: the writer stages the file
     and publishes it only on success.
+
+    Examples:
+        ```python
+        import polars as pl
+
+        from xlspy import to_xlsb
+
+        df = pl.DataFrame({"name": ["Alice", "Bob"], "age": [25, 30]})
+        to_xlsb(df, "people.xlsb")
+        ```
+
+        The result is a binary XLSB workbook with a single ``Sheet1``. Use
+        `XlsbWriter.write_dataframe` to add more sheets, styles or charts.
+
+    See Also:
+        `to_xlsx` for maximum compatibility, and `XlsbWriter` for the full
+        writer API.
     """
     with XlsbWriter(path, **writer_kwargs) as writer:
         writer.add_sheet(sheet_name)

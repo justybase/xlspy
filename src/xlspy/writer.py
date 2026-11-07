@@ -153,6 +153,54 @@ from ._xlsb_writer_strings import (
 
 
 class XlsbWriter(_XlsbStylesMixin, _XlsbPartsMixin, _XlsbSheetMixin, _XlsbViewsMixin, _XlsbBinMixin, _XlsbStringsMixin, WriterFrontEnd, StagedWriter, XlsbWriterMetadata, DocumentPropertiesMixin):
+    """Write XLSB workbooks with the same API as `XlsxWriter`.
+
+    XLSB is Excel's binary workbook format. It is faster and smaller than XLSX
+    for large exports, at the cost of narrower support in third-party readers.
+    Rows are consumed once and encoded as they are produced, so memory does not
+    grow with the number of rows.
+
+    Args:
+        file: A path or a binary file object to write.
+        compression_level: ZIP compression level, 0-9 (default 3).
+        use_shared_strings: Store every distinct string once (default). Set it
+            to ``False`` to store text inline and bound memory on
+            high-cardinality exports.
+
+    Examples:
+        Write the same report as XLSB:
+
+        ```python
+        from xlspy import F, Style, XlsbWriter
+
+        with XlsbWriter("report.xlsb") as workbook:
+            workbook.add_sheet("Sales")
+            workbook.write_sheet(
+                [["Product", "Revenue"], ["Coffee", (12500, F.THOUSANDS_SEP)]],
+                header_style=Style(bold=True, fill="183C52", font_color="FFFFFF"),
+                freeze_panes="A2",
+            )
+        ```
+
+        Stream a million rows from a generator with bounded memory:
+
+        ```python
+        from xlspy import XlsbWriter
+
+        def rows(count):
+            for i in range(count):
+                yield [i, f"row-{i}", i * 1.5]
+
+        with XlsbWriter("large.xlsb", use_shared_strings=False) as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet(rows(1_000_000))
+        ```
+
+    See Also:
+        `XlsxWriter` for maximum compatibility, and `to_xlsb` for a DataFrame
+        one-liner. XLSB formulas use a binary grammar; an unsupported token
+        raises `UnsupportedFeatureError` instead of writing a broken file.
+    """
     def __init__(self, file: WriteTarget, compression_level: int = 3,
                  use_shared_strings: bool = True, **unknown: object) -> None:
         reject_unknown_arguments(type(self).__name__, unknown)

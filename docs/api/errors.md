@@ -1,3 +1,7 @@
+---
+description: "The exceptions xlspy raises, what they mean and how to handle them."
+---
+
 # Errors
 
 The exceptions xlspy raises.

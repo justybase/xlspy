@@ -1,3 +1,7 @@
+---
+description: "Refresh data in XLSX, XLSM and XLSB templates while preserving styles, sheets and macros."
+---
+
 # Updating existing workbooks
 
 [Guide](../usage.md) · [Home](../index.md) · [Examples](https://github.com/justybase/xlspy/blob/main/examples/README.md)

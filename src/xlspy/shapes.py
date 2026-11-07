@@ -40,6 +40,30 @@ class Shape:
     ``anchor`` is the top-left cell, ``width`` and ``height`` are in pixels.
     ``fill`` and ``line`` are ``#RRGGBB`` colours, or ``None`` for no fill or
     no outline. ``text`` may hold several lines separated by ``"\\n"``.
+
+    Examples:
+        A titled card above a table:
+
+        ```python
+        from xlspy import Shape, XlsxWriter
+
+        with XlsxWriter("shapes.xlsx") as workbook:
+            workbook.add_sheet("Dashboard")
+            workbook.write_sheet(
+                [["Region", "Sales"], ["North", 120], ["South", 90]],
+                shapes=[
+                    Shape("A4", width=240, height=60, kind="round",
+                          text="Sales overview", fill="#183C52",
+                          font_color="#FFFFFF", bold=True, valign="center")
+                ],
+            )
+        ```
+
+        ``kind`` is ``"rect"``, ``"round"``, ``"ellipse"`` or ``"textbox"``.
+        Set ``link_cell`` to make the shape navigate to a cell.
+
+    See Also:
+        `Image` for a picture and `Chart` for a chart anchored the same way.
     """
 
     anchor: str

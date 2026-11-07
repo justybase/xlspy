@@ -1,3 +1,7 @@
+---
+description: "Charts, formulas, pivots, comments, hyperlinks, images, shapes, slicers, sparklines and print settings."
+---
+
 # Charts and other objects
 
 Charts, formulas, notes, links, images, pivots and printing.

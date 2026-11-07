@@ -471,6 +471,46 @@ class Chart:
     A chart mixes types when some series set ``ChartSeries.chart_type`` (bar,
     line and area only); series with ``secondary_axis`` use ``y2_axis``, the
     value axis on the right.
+
+    Examples:
+        A bar chart over a written range:
+
+        ```python
+        from xlspy import Chart, ChartSeries, Style, XlsxWriter
+
+        rows = [["Region", "Q1", "Q2"], ["North", 120, 140], ["South", 90, 110]]
+        with XlsxWriter("chart.xlsx") as workbook:
+            workbook.add_sheet("Data")
+            workbook.write_sheet(
+                rows,
+                header_style=Style(bold=True),
+                charts=[
+                    Chart(
+                        "bar",
+                        [ChartSeries("B2:C3", categories="A2:A3", title="Quarter")],
+                        title="Sales by region",
+                        anchor="E2",
+                    )
+                ],
+            )
+        ```
+
+        A line chart with formatted value axis and data labels:
+
+        ```python
+        Chart(
+            "line",
+            [ChartSeries("B2:B13", title="Actual"), ChartSeries("C2:C13", title="Plan")],
+            title="Trend",
+            y_axis=ChartAxis(title="Revenue", number_format="#,##0"),
+            show_data_labels=True,
+            anchor="E18",
+        )
+        ```
+
+    See Also:
+        `ChartSeries`, `ChartAxis`, `ChartLegend`, `ChartMarker`, `DataLabels`,
+        `Trendline` and `ErrorBars` for the nested options.
     """
 
     chart_type: str
