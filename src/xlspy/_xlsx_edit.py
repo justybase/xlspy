@@ -304,6 +304,14 @@ class XlsxEditMixin:
             return
         sheets = self._workbook_sheets()
         resolved = [self._resolve_defined_name(definition, sheets) for definition in definitions]
+        # Last wins on (name, scope), like sequential set_defined_name and XLSB.
+        deduped: dict[tuple[str, str | None], DefinedName] = {}
+        for definition in resolved:
+            key = (definition.name.casefold(), definition.scope)
+            if key in deduped:
+                del deduped[key]
+            deduped[key] = definition
+        resolved = list(deduped.values())
         fragments = [definition.to_xml(sheets) for definition in resolved]
         xml = self._package.get("xl/workbook.xml").decode("utf-8")
         for definition in resolved:
