@@ -160,6 +160,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             for row in materialized:
                 for raw in row:
                     value = unwrap_cell(raw)
+                    ref: str | None
                     if isinstance(value, ArrayFormula):
                         ref = value.ref
                     elif isinstance(value, Formula):
@@ -536,6 +537,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         for row in rows:
             for raw in row:
                 value = unwrap_cell(raw)
+                ref: str | None
                 if isinstance(value, ArrayFormula):
                     ref = value.ref
                 elif isinstance(value, Formula):
