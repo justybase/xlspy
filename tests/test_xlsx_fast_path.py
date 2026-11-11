@@ -109,6 +109,12 @@ SUPPORTED_BODIES = {
     "style_then_type": '<row r="1"><c r="A1" s="1"><v>45292</v></c><c r="B1" s="0" t="n"><v>7</v></c></row>',
     "number_formats": '<row r="1"><c r="A1"><v>1E+3</v></c><c r="B1"><v>-0.5</v></c>'
                       '<c r="C1"><v>12345678901234567890</v></c><c r="D1"><v>1.5e-7</v></c></row>',
+    "extreme_float_values": '<row r="1"><c r="A1"><v>1e309</v></c><c r="B1"><v>1e-400</v></c>'
+                            '<c r="C1"><v>2.2250738585072014e-308</v></c>'
+                            '<c r="D1"><v>1.7976931348623157e308</v></c>'
+                            '<c r="E1"><v>5e-324</v></c>'
+                            '<c r="F1"><v>0.0000000000000001</v></c>'
+                            '<c r="G1"><v>-0.0</v></c></row>',
     "booleans_and_errors": '<row r="1"><c r="A1" t="b"><v>1</v></c><c r="B1" t="b"><v>0</v></c>'
                            '<c r="C1" t="e"><v>#DIV/0!</v></c></row>',
     "formula_with_cached_value": '<row r="1"><c r="A1"><f>1+1</f><v>2</v></c>'

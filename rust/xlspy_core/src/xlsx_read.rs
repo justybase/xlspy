@@ -201,22 +201,13 @@ fn py_int<'py>(py: Python<'py>, p: &[u8]) -> PyResult<Bound<'py, PyAny>> {
     py.get_type::<pyo3::types::PyInt>().call1((t,))
 }
 
-/// float(text): plain decimal text through the routine float() uses; the
-/// rest through float() itself, so nan/inf/underscores and errors match.
+/// float(text): plain decimal text through Rust's parser; the rest through
+/// float() itself, so nan/inf/underscores and errors match.
 fn py_float_value(py: Python<'_>, p: &[u8]) -> PyResult<f64> {
     if plain_float(p) {
-        let mut buf = Vec::with_capacity(p.len() + 1);
-        buf.extend_from_slice(p);
-        buf.push(0);
-        let mut end: *mut std::ffi::c_char = std::ptr::null_mut();
-        // SAFETY: `buf` is NUL-terminated and alive for the call; `end` receives
-        // a pointer into it. A NULL overflow exception asks for ±inf rather than
-        // an error on overflow.
-        let v = unsafe {
-            ffi::PyOS_string_to_double(buf.as_ptr().cast(), &mut end, std::ptr::null_mut())
-        };
-        let consumed = end as usize - buf.as_ptr() as usize;
-        if PyErr::take(py).is_none() && consumed == p.len() {
+        // SAFETY: plain_float accepts only ASCII bytes.
+        let s = unsafe { std::str::from_utf8_unchecked(p) };
+        if let Ok(v) = s.parse::<f64>() {
             return Ok(v);
         }
     }
