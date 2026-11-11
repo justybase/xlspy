@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.15.0] - 2026-11-11
 
 ### Added
 
@@ -52,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Plain XLSX numeric cells are parsed with Rust's standard float parser instead
+  of a per-value `Vec` and `PyOS_string_to_double`; a 65K-row XLSX read is
+  12-13% faster. Python's parser remains the fallback for non-plain values.
 - `DefinedNameList.add()`/`remove()` on a loaded workbook stage the edit and
   flush once at `save()` (single rewrite). 500 names: 1-2 s -> ~0.02 s (save).
 - The documentation site builds with Zensical (modern theme with dark mode,
@@ -1612,7 +1615,7 @@ Migration from 0.10:
 
 Releases before 0.7.0 have no changelog entries; their history is in the git log.
 
-[Unreleased]: https://github.com/justybase/xlspy/compare/v0.14.0...HEAD
+[0.15.0]: https://github.com/justybase/xlspy/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/justybase/xlspy/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/justybase/xlspy/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/justybase/xlspy/compare/v0.11.1...v0.12.0
