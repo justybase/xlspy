@@ -12,7 +12,7 @@ so changes go to the right place. It describes the code as of 2026-11-05.
 
 | Stage | Reads | Edits an existing file | Writes a new file |
 |---|---|---|---|
-| 1. Streaming (first) | `reader.py` (`ExcelReader`), `_xlsx_read.py`, `_xlsb_read.py`, `biff_reader.py` | `xlsx_updater.py` (`XlsxUpdater`, `XlsmUpdater`), `xlsb_updater.py` (`XlsbUpdater`), `_updater_base.py`, `updater_utils.py` | `xlsx_writer.py` (`XlsxWriter`), `writer.py` (`XlsbWriter`) |
+| 1. Streaming (first) | `reader.py` (`ExcelReader`), `_xlsx_read.py`, `_xlsb_read.py`, `biff_reader.py` | `xlsx_updater.py` (`XlsxUpdater`, `XlsmUpdater`), `xlsb_updater.py` (`XlsbUpdater`), `_updater_base.py`, `updater_utils.py`, `_zip_package.py`, `_xml_text.py` | `xlsx_writer.py` (`XlsxWriter`), `writer.py` (`XlsbWriter`) |
 | 2. Edit mixins | | `_xlsx_edit.py`, `_xlsb_edit.py`, `_xlsb_sheets.py` (mixed into the updaters) | |
 | 3. Object model | `workbook/_reader.py` (`load_workbook`), `workbook/_fast_sheet.py`, `workbook/_xlsb_reader.py` | `workbook/_loaded.py`, `workbook/_xlsb_loaded.py`, `workbook/_xlsb_layout.py` | `workbook/_writer.py`, `workbook/_styles.py` |
 
@@ -71,12 +71,13 @@ the host.
 Phase C started with 69 top-level names defined in more than one module (22
 with identical bodies, 47 with different ones). Decisions taken:
 
-- **Package ownership.** `ZipPackage` owns the write-back of pending parts
-  (`apply_parts`: one transaction, rolled back on failure). `XlsxEditMixin._apply_parts`
-  and the object model's `_Package.commit` both go through it, so the object model
-  writes without going through the updater. `XlsxUpdater` and `XlsbUpdater` keep
-  their public methods and stay the handle the object model uses for the sheet map
-  and the date system.
+- **Package ownership.** `_zip_package.ZipPackage` owns the write-back of pending
+  parts (`apply_parts`: one transaction, rolled back on failure).
+  `XlsxEditMixin._apply_parts` and the object model's `_Package.commit` both go
+  through it, so the object model writes without going through the updater.
+  `XlsxUpdater` and `XlsbUpdater` keep their public methods and stay the handle
+  the object model uses for the sheet map and the date system. The XML text
+  primitives live in `_xml_text.py`; `updater_utils.py` re-exports both sets.
 - **One sheet locator.** `_sheet_data.py` finds `<sheetData>` (with or without a
   prefix, empty or not) and replaces its body. `XlsxUpdater._patch_sheet_xml`,
   `_xlsx_edit` and `workbook/_loaded.py` use it.

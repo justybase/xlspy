@@ -97,6 +97,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The XLSX writer and the loaded-workbook style table render colors and borders
   through one `_style_xml.py`; the duplicate copies had already drifted on
   `tint` formatting. Column labels also come from one table.
+- `updater_utils.py` is split into `_zip_package.py` (the package transaction
+  and disk-backed string index) and `_xml_text.py` (attribute and relationship
+  helpers). `updater_utils` re-exports the old names, so existing imports keep
+  the same objects.
 
 ### Security
 

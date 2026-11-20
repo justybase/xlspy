@@ -101,9 +101,9 @@ end-to-end tests only touch incidentally: `tests/test_sort_state_validation.py`
 (7) and `tests/test_loaded_styles_unit.py` (18). The five lowest modules rose
 from 77% to 94% combined (`_sort_state` and `_table_totals` 100%, tokenizer and
 `rich_text` 99%, `workbook/_styles.py` 89%). The full native suite passed
-**10,301 tests, 343 skipped, 1 xfailed** in 5:13; the pure-Python pass took
-**9,195 tests, 1,450 skipped** in 2:54. Combined coverage is **92%** branch
-coverage over 27,263 statements.
+**10,311 tests, 343 skipped, 1 xfailed** in 5:03; the pure-Python pass took
+**9,205 tests, 1,450 skipped** in 2:47. Combined coverage is **92%** branch
+coverage over 27,240 statements.
 
 `.github/workflows/nightly.yml` adds two off-PR checks: a long randomized-edit
 and native-fuzz run (`XLSPY_FUZZ_ITERATIONS=2000`) across seeds 7, 101 and
@@ -114,6 +114,9 @@ The writer and the loaded style table now share `_style_xml.py` for color and
 border fragments; `tests/test_style_xml_shared.py` compares both callers and
 pins the `tint` spelling. `chart_parts.column_letters()` was corrected to end
 at `XFD` after 16,384 entries instead of continuing with invalid labels.
+`updater_utils.py` was split into `_zip_package.py` and `_xml_text.py`;
+`tests/test_updater_utils_split.py` keeps the old names bound to the same
+objects.
 
 ## Compatibility refresh (2026-11-17)
 
