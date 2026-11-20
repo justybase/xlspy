@@ -233,7 +233,9 @@ class XlsbSheetsMixin:
             return
         parts: dict[str, Any] = {}
         parts["xl/workbook.bin"] = self._rewrite_sheet_list(workbook, entries, parts)
-        self._apply_parts(parts)
+        removed: list[str] = []
+        self._invalidate_calculation(parts, removed)
+        self._apply_parts(parts, removed)
         self._sheets = {name: self._sheets[name] for name in order}
 
     def set_sheet_state(self, name: str, state: str) -> None:

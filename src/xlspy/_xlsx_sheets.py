@@ -9,7 +9,7 @@ names and ``activeTab`` in the workbook view.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any
 
 from ._metadata import MAIN, element_pattern, replace_element, tag_attributes
@@ -38,6 +38,7 @@ class XlsxSheetsMixin:
         _sheets: dict[str, str]
 
         def _apply_parts(self, parts: Mapping[str, Any], removed: Iterable[str] = ()) -> None: ...
+        def _recalculate(self, updates: MutableMapping[str, Any], removed: list[str]) -> None: ...
 
     def _workbook_xml(self) -> str:
         return self._package.get("xl/workbook.xml").decode("utf-8")
@@ -166,7 +167,10 @@ class XlsxSheetsMixin:
                 + xml[view.start() + len(opening):]
             )
 
-        self._apply_parts({"xl/workbook.xml": xml})
+        updates: dict[str, Any] = {"xl/workbook.xml": xml}
+        removed: list[str] = []
+        self._recalculate(updates, removed)
+        self._apply_parts(updates, removed)
         self._sheets = {name: self._sheets[name] for name in order}
 
 
