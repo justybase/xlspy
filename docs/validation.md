@@ -38,12 +38,31 @@ keeps the result reviewable.
 
 | Date | Excel | Commit | Result |
 | :--- | :--- | :--- | :--- |
-| 2026-11-20 | 16.0 (20527.0) | _pending first artifact_ | _pending_ |
+| 2026-11-20 | 16.0 (20527.0) | `4343d33` | 316 passed, 0 failed, 22 skipped |
+
+The first artifact is
+`validation/excel-validation-2026-11-20-4343d33.json`. The skips are
+environment limits (no default printer, display scaling, VBA trust); the Excel
+conformance tests themselves all passed.
 
 The LibreOffice tests (`pytest -m libreoffice`) are a secondary check: headless
 LibreOffice can convert the output and read basic cells, but its XLSX/XLSB
 support is not Excel. A LibreOffice failure is informative, not release-blocking,
 unless it shows a package that Excel also refuses.
+
+## Quality-signal refresh (2026-11-20)
+
+Windows 11, Python 3.14.2. Coverage now runs without the broad
+`raise NotImplementedError/UnsupportedFeatureError` exclusion: the combined
+native and pure-Python run measures **91%** branch coverage (the floor is 90%,
+and only explicit `pragma: no cover` lines are excluded). The native run passed
+**10,109 tests, 343 skipped, 1 xfailed** in 4:55; the fallback run passed
+**9,003 tests, 1,450 skipped** in 3:20. The openpyxl harness reads its expected
+gaps from `tests/openpyxl_compat/expected_gaps.toml` and passes **93** tests;
+`cargo test` passes **68** unit tests; the LibreOffice smoke suite passes **31**.
+The Excel 365 corpus in `tests/data/excel_365/` loads in both formats and
+exposed Excel's `indexed="81"` colors, which the model now accepts. The local
+COM run recorded above passed 316 tests with Excel 16.0 (build 20527.0).
 
 ## Compatibility refresh (2026-11-17)
 

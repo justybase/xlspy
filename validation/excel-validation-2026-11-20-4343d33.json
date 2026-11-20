@@ -1,0 +1,30 @@
+{
+  "tool": "tools/excel_validation.py",
+  "created": "2026-11-20T18:27:52+00:00",
+  "excel": {
+    "version": "16.0",
+    "build": "20527.0",
+    "operating_system": "Windows (64-bit) NT 10.00"
+  },
+  "git": {
+    "commit": "4343d33cb5bf14653f4b8d742473e3e12e850aa3",
+    "dirty": false
+  },
+  "xlspy": "0.15.0",
+  "python": "3.14.2",
+  "platform": "win32",
+  "command": [
+    "pytest",
+    "-m",
+    "com"
+  ],
+  "result": {
+    "tests": 338,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 22,
+    "seconds": 591.174,
+    "wall_seconds": 593.528,
+    "exit_code": 0
+  }
+}
