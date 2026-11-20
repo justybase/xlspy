@@ -10,8 +10,8 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyString, PyType};
 
 /// Registered classes, read on every encode call: an atomic pointer instead
-/// of a lock.  Each holds a strong reference that is never released, so a
-/// class replaced while a call is using it stays alive.
+/// of a lock.  Each holds one strong reference; registering a replacement
+/// swaps the pointer and releases the old reference under the GIL.
 static ERROR_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
 static STYLE_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
 static FORMULA_TYPE: AtomicPtr<ffi::PyObject> = AtomicPtr::new(ptr::null_mut());
@@ -24,7 +24,9 @@ fn registered<'py>(py: Python<'py>, slot: &AtomicPtr<ffi::PyObject>) -> Option<B
     if p.is_null() {
         return None;
     }
-    // SAFETY: the slot owns a reference that is never released.
+    // SAFETY: the slot owns a reference, and from_borrowed_ptr takes a new one;
+    // registration also runs under the GIL, so the class cannot be released
+    // between the load and the increment.
     Some(unsafe { Bound::from_borrowed_ptr(py, p).cast_into_unchecked() })
 }
 
@@ -32,12 +34,15 @@ fn register(type_: &Bound<'_, PyAny>, slot: &AtomicPtr<ffi::PyObject>, what: &st
     let type_ = type_
         .cast::<PyType>()
         .map_err(|_| PyTypeError::new_err(format!("{what} expects a class")))?;
-    if slot.load(Ordering::Acquire) == type_.as_ptr() {
-        return Ok(()); // registered again (a module reload): keep the one reference
+    // Replacing the pointer keeps exactly one reference: the new one is stored,
+    // the old one is released.  This runs with the GIL, as does every reader of
+    // the slot, so no borrowed pointer to the old class can be in use.
+    let previous = slot.swap(type_.clone().into_ptr(), Ordering::AcqRel);
+    if !previous.is_null() {
+        // SAFETY: `previous` is the reference the slot held; the clone above
+        // replaces it (a re-registration of the same class balances to zero).
+        unsafe { ffi::Py_DECREF(previous) };
     }
-    // A class replaced by another stays referenced: a borrowed pointer to it
-    // may still be in use, so it is never released (one reference per class).
-    slot.store(type_.clone().into_ptr(), Ordering::Release);
     Ok(())
 }
 

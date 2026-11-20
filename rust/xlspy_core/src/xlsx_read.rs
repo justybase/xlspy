@@ -11,7 +11,7 @@
 use std::ffi::CStr;
 
 use memchr::memmem;
-use pyo3::exceptions::{PyIndexError, PyOverflowError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
@@ -499,7 +499,7 @@ impl State {
         let m = self
             .model
             .as_ref()
-            .expect("model_* methods run only for a model load");
+            .ok_or_else(|| PyRuntimeError::new_err("model cell parsed outside a model load"))?;
         let typed = matches!(c.t, Some(b"s" | b"b" | b"e" | b"d" | b"str" | b"inlineStr"));
         let (value, data_type) = if !typed {
             let value = if v.is_empty() {
@@ -585,7 +585,7 @@ impl State {
         let m = self
             .model
             .as_mut()
-            .expect("model_* methods run only for a model load");
+            .ok_or_else(|| PyRuntimeError::new_err("model cell parsed outside a model load"))?;
         let column = match &m.column_numbers[col as usize] {
             Some(c) => c.bind(py).clone(),
             None => {
@@ -776,12 +776,12 @@ impl State {
         let Some(value) = self.value(py, &c)? else {
             return Ok(None);
         };
-        cells
-            .expect("a plain read passes its row list")
-            .append(PyTuple::new(
-                py,
-                [col.into_pyobject(py)?.into_any(), value],
-            )?)?;
+        let cells =
+            cells.ok_or_else(|| PyRuntimeError::new_err("plain row parsed without a row list"))?;
+        cells.append(PyTuple::new(
+            py,
+            [col.into_pyobject(py)?.into_any(), value],
+        )?)?;
         *pos = i;
         Ok(Some(()))
     }
@@ -837,7 +837,7 @@ impl State {
         let m = self
             .model
             .as_mut()
-            .expect("model_* methods run only for a model load");
+            .ok_or_else(|| PyRuntimeError::new_err("model row parsed outside a model load"))?;
         if body.is_some_and(|b| !m.data_only && memmem::find(b, b"<f").is_some()) {
             return Ok(None);
         }
@@ -850,7 +850,7 @@ impl State {
         let m = self
             .model
             .as_mut()
-            .expect("model_* methods run only for a model load");
+            .ok_or_else(|| PyRuntimeError::new_err("model row parsed outside a model load"))?;
         let cells = std::mem::take(&mut m.row_cells);
         let parsed = parsed.and_then(|ok| {
             if ok.is_some() && !cells.is_empty() {

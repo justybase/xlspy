@@ -8,9 +8,16 @@ use pyo3::exceptions::PyBufferError;
 use pyo3::ffi;
 use pyo3::prelude::*;
 
+enum Buffer {
+    /// An immutable Python buffer, held by its exporter until release.
+    Borrowed(ffi::Py_buffer),
+    /// A copy taken from a writable Python buffer (see `ByteView::new`).
+    Owned(Vec<u8>),
+}
+
 /// A C-contiguous byte buffer (`PyBUF_SIMPLE`), released on drop.
 pub struct ByteView {
-    view: ffi::Py_buffer,
+    buffer: Buffer,
 }
 
 impl ByteView {
@@ -24,34 +31,66 @@ impl ByteView {
             return Err(PyErr::take(obj.py())
                 .unwrap_or_else(|| PyBufferError::new_err("cannot get a buffer")));
         }
-        Ok(ByteView { view })
+        // A writable export (bytearray, a writable memoryview, a numpy array)
+        // can change without the GIL, so borrowing it would make `as_slice`
+        // unsound: copy it instead.  Immutable buffers stay zero-copy.
+        if view.readonly == 0 {
+            let copy = if view.buf.is_null() || view.len <= 0 {
+                Vec::new()
+            } else {
+                // SAFETY: a PyBUF_SIMPLE view is `len` contiguous bytes at `buf`,
+                // valid until PyBuffer_Release just below.
+                unsafe {
+                    std::slice::from_raw_parts(view.buf as *const u8, view.len as usize).to_vec()
+                }
+            };
+            // SAFETY: `view` was filled by the successful PyObject_GetBuffer
+            // above and is released exactly once, here.
+            unsafe { ffi::PyBuffer_Release(&mut view) };
+            return Ok(ByteView {
+                buffer: Buffer::Owned(copy),
+            });
+        }
+        Ok(ByteView {
+            buffer: Buffer::Borrowed(view),
+        })
     }
 
     pub fn as_slice(&self) -> &[u8] {
-        if self.view.buf.is_null() || self.view.len <= 0 {
-            return &[];
+        match &self.buffer {
+            Buffer::Owned(bytes) => bytes,
+            Buffer::Borrowed(view) => {
+                if view.buf.is_null() || view.len <= 0 {
+                    return &[];
+                }
+                // SAFETY: a PyBUF_SIMPLE view is `len` contiguous bytes at `buf`,
+                // valid until PyBuffer_Release in drop; the slice borrows `self`,
+                // so it cannot outlive the view.  A borrowed view is read-only
+                // (see `new`), so no other thread can change it.  Null and empty
+                // buffers returned early above.
+                unsafe { std::slice::from_raw_parts(view.buf as *const u8, view.len as usize) }
+            }
         }
-        // SAFETY: a PyBUF_SIMPLE view is `len` contiguous bytes at `buf`, valid
-        // until PyBuffer_Release in drop; the slice borrows `self`, so it cannot
-        // outlive the view. Null and empty buffers returned early above.
-        unsafe { std::slice::from_raw_parts(self.view.buf as *const u8, self.view.len as usize) }
     }
 }
 
-// SAFETY: the exporter keeps the buffer valid until release, whatever thread
-// reads it; it is only read, and released in drop with the GIL held
-// (pyclass deallocation).
+// SAFETY: a borrowed view is read-only (writable exports are copied in `new`),
+// the exporter keeps it valid until release, and it is released in drop with
+// the GIL held (pyclass deallocation).  The owned variant is a plain Vec.
 unsafe impl Send for ByteView {}
-// SAFETY: as for Send: the view is never written through, so shared reads
+// SAFETY: as for Send: the bytes are never written through, so shared reads
 // from several threads are sound.
 unsafe impl Sync for ByteView {}
 
 impl Drop for ByteView {
     fn drop(&mut self) {
-        // SAFETY: `view` was filled by a successful PyObject_GetBuffer (new()
-        // returns no ByteView otherwise) and is released exactly once, here.
-        // Every ByteView lives inside a call or a pyclass that holds the GIL.
-        unsafe { ffi::PyBuffer_Release(&mut self.view) };
+        if let Buffer::Borrowed(view) = &mut self.buffer {
+            // SAFETY: `view` was filled by a successful PyObject_GetBuffer (new()
+            // returns no borrowed view otherwise) and is released exactly once,
+            // here.  Every ByteView lives inside a call or a pyclass that holds
+            // the GIL.
+            unsafe { ffi::PyBuffer_Release(view) };
+        }
     }
 }
 
@@ -193,5 +232,30 @@ mod tests {
         assert_eq!(le_u32(&[0xFF; 4], 0), Some(u32::MAX));
         assert_eq!(le_f64(&2.5f64.to_le_bytes(), 0), 2.5);
         assert_eq!(le_f64(&[0; 7], 0), 0.0);
+    }
+
+    #[test]
+    fn an_immutable_buffer_is_read_without_a_copy() {
+        Python::initialize();
+        Python::attach(|py| {
+            let data = pyo3::types::PyBytes::new(py, b"xyz");
+            let view = ByteView::new(data.as_any()).unwrap();
+            assert_eq!(view.as_slice(), b"xyz");
+        });
+    }
+
+    #[test]
+    fn a_writable_buffer_is_copied_so_later_writes_do_not_show() {
+        Python::initialize();
+        Python::attach(|py| {
+            let data = pyo3::types::PyByteArray::new(py, b"abc");
+            let view = ByteView::new(data.as_any()).unwrap();
+            let locals = pyo3::types::PyDict::new(py);
+            locals.set_item("b", &data).unwrap();
+            py.run(c"b[0] = 122", None, Some(&locals)).unwrap();
+            // SAFETY: the GIL is held and nothing else mutates `data` now.
+            assert_eq!(unsafe { data.as_bytes() }, b"zbc");
+            assert_eq!(view.as_slice(), b"abc");
+        });
     }
 }

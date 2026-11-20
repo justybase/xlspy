@@ -45,6 +45,9 @@ impl CellClass {
                 ));
             }
         };
+        // SAFETY: `cell_type` is a live type object; tp_basicsize is its full
+        // instance size, base slots included.
+        let basicsize = unsafe { (*cell_type.as_type_ptr()).tp_basicsize };
         let mut offsets = [0isize; COUNT];
         for (i, d) in descriptors.iter().enumerate() {
             // SAFETY: the type check guarantees the member-descriptor layout.
@@ -61,9 +64,22 @@ impl CellClass {
                         .then(|| (*def).offset)
                 }
             };
-            offsets[i] = member.ok_or_else(|| {
+            let offset = member.ok_or_else(|| {
                 PyTypeError::new_err("Cell slot descriptors must be __slots__ members")
             })?;
+            if offset < 0
+                || offset as usize + std::mem::size_of::<*mut ffi::PyObject>() > basicsize as usize
+            {
+                return Err(PyTypeError::new_err(
+                    "Cell slot descriptor offset is outside the Cell layout",
+                ));
+            }
+            if offsets[..i].contains(&offset) {
+                return Err(PyTypeError::new_err(
+                    "Cell slot descriptors must name distinct slots",
+                ));
+            }
+            offsets[i] = offset;
         }
         Ok(CellClass {
             type_: cell_type.clone().unbind(),
@@ -453,6 +469,13 @@ mod tests {
             assert!(CellClass::new(&cell_type, &short).is_err());
             let not_a_class = 1i64.into_pyobject(py).unwrap().into_any();
             assert!(CellClass::new(&not_a_class, &descriptors(&cell_type)).is_err());
+
+            // One descriptor repeated: the offsets would alias one slot.
+            let repeated: Vec<_> = (0..COUNT)
+                .map(|_| cell_type.getattr("_row").unwrap())
+                .collect();
+            let repeated = PyTuple::new(py, repeated).unwrap();
+            assert!(CellClass::new(&cell_type, &repeated).is_err());
         });
     }
 }

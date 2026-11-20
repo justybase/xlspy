@@ -7,7 +7,7 @@
 //! undersized records are ignored.  A record cut short by the end of the data
 //! raises InvalidFileError.
 
-use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySet, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
@@ -664,7 +664,9 @@ pub fn xlsb_load_cells<'py>(
             };
             row = Some((key, dict));
         }
-        let (row_key, row_dict) = row.as_ref().expect("the row dict was set just above");
+        let (row_key, row_dict) = row
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("row dict missing after creation"))?;
         let col_obj = match &mut columns[column as usize] {
             Some(c) => &*c,
             slot @ None => &*slot.insert((column + 1).into_pyobject(py)?.into_any()),

@@ -30,6 +30,8 @@ const EPOCH_1900_EARLY: i64 = 693_595;
 const EPOCH_1904: i64 = 695_056;
 /// Python's `date.toordinal()` of 1970-01-01, the zero of `days_from_civil`.
 const UNIX_ORDINAL: i64 = 719_163;
+/// Widest row Excel can hold (columns A..XFD).
+const MAX_COLUMNS: u32 = 16384;
 
 /// The cell's value: `(value, "format")` wrappers unwrapped, as `unwrap_cell`.
 fn unwrapped<'py>(cell: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -92,16 +94,22 @@ fn write_number(py: Python<'_>, out: &mut Vec<u8>, v: f64) -> PyResult<()> {
 
 /// Column letters of a 0-based column (0: A).
 fn write_letters(out: &mut Vec<u8>, column: u32) {
-    let mut n = column + 1;
-    let mut letters = [0u8; 4];
-    let mut len = 0;
+    let mut n = u64::from(column) + 1;
+    let start = out.len();
     while n > 0 {
         let rem = (n - 1) % 26;
-        letters[len] = b'A' + rem as u8;
-        len += 1;
+        out.push(b'A' + rem as u8);
         n = (n - 1) / 26;
     }
-    out.extend(letters[..len].iter().rev());
+    out[start..].reverse();
+}
+
+/// The error for a row that carries a value past Excel's last column.
+fn too_wide(column: usize) -> PyErr {
+    PyValueError::new_err(format!(
+        "row has a value in column {}; Excel holds at most {MAX_COLUMNS} columns",
+        column + 1
+    ))
 }
 
 /// The column's xf from a list of xfs (missing: 0).
@@ -160,6 +168,9 @@ pub fn encode_update_xlsx_row<'py>(
         let value = unwrapped(&raw)?;
         if value.is_none() {
             continue;
+        }
+        if column >= MAX_COLUMNS as usize {
+            return Err(too_wide(column));
         }
         let mut style = column_style(&styles, column);
         let open = |out: &mut Vec<u8>, style: u32| {
@@ -276,6 +287,12 @@ pub fn encode_update_xlsb_row<'py>(
     cell_bytes: &Bound<'py, PyAny>,
     date_1904: bool,
 ) -> PyResult<Bound<'py, PyBytes>> {
+    if last_col >= MAX_COLUMNS {
+        return Err(PyValueError::new_err(format!(
+            "last column is {}; Excel holds at most {MAX_COLUMNS} columns",
+            last_col + 1
+        )));
+    }
     let seq = FastSeq::new(row, c"row must be a sequence")?;
     let styles = style_list(styles)?;
     let mut out = Vec::with_capacity(32 + seq.len() * 16);
@@ -292,6 +309,9 @@ pub fn encode_update_xlsb_row<'py>(
         i += 1;
         if raw.is_none() {
             continue;
+        }
+        if column >= MAX_COLUMNS {
+            return Err(too_wide(column as usize));
         }
         let value = unwrapped(&raw)?;
         let style = column_style(&styles, column as usize);
@@ -428,6 +448,69 @@ mod tests {
         assert_eq!(letters(701), "ZZ");
         assert_eq!(letters(702), "AAA");
         assert_eq!(letters(16_383), "XFD");
+    }
+
+    #[test]
+    fn a_row_past_the_last_column_raises_instead_of_panicking() {
+        Python::initialize();
+        Python::attach(|py| {
+            let row = pyo3::types::PyList::empty(py);
+            for _ in 0..MAX_COLUMNS {
+                row.append(py.None()).unwrap();
+            }
+            row.append("x").unwrap();
+            let styles = pyo3::types::PyList::empty(py);
+            let nothing = py.None().into_bound(py);
+
+            let xlsx = encode_update_xlsx_row(
+                py,
+                row.as_any(),
+                1,
+                styles.as_any(),
+                0,
+                "",
+                &nothing,
+                &nothing,
+                false,
+            );
+            let err = xlsx.expect_err("XLSX: a value past XFD must raise");
+            assert!(err.is_instance_of::<PyValueError>(py));
+
+            let xlsb = encode_update_xlsb_row(
+                py,
+                row.as_any(),
+                1,
+                MAX_COLUMNS - 1,
+                styles.as_any(),
+                0,
+                &nothing,
+                &nothing,
+                false,
+            );
+            let err = xlsb.expect_err("XLSB: a value past XFD must raise");
+            assert!(err.is_instance_of::<PyValueError>(py));
+
+            let empty = pyo3::types::PyList::empty(py);
+            let bad_header = encode_update_xlsb_row(
+                py,
+                empty.as_any(),
+                1,
+                MAX_COLUMNS,
+                styles.as_any(),
+                0,
+                &nothing,
+                &nothing,
+                false,
+            );
+            assert!(bad_header.is_err(), "XLSB: last column must be in range");
+        });
+    }
+
+    #[test]
+    fn letter_encoding_is_unbounded_for_the_error_path() {
+        // The callers refuse columns past XFD, but write_letters itself must
+        // never overflow or index out of bounds for any u32.
+        assert_eq!(letters(u32::MAX).len(), 7);
     }
 
     #[test]
