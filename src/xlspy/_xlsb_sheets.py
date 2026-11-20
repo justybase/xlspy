@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from .exceptions import UnsupportedFeatureError
 import posixpath
+import re
 import struct
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
@@ -26,7 +27,12 @@ from ._xlsb_formulas import SUP_SELF, FormulaContext, parsed_formula
 from ._xlsb_metadata import read_wide, records, wide_string
 from .biff_utils import build_record
 from .refs import check_sheet_name
-from .updater_utils import renamed_chart_parts, sheet_has_pivots, sheet_has_slicers
+from .updater_utils import (
+    rename_formula_sheet_references,
+    renamed_chart_parts,
+    sheet_has_pivots,
+    sheet_has_slicers,
+)
 
 if TYPE_CHECKING:
     from .updater_utils import ZipPackage
@@ -212,6 +218,12 @@ class XlsbSheetsMixin:
             if entry.name == old:
                 entry.name = new
         parts = renamed_chart_parts(self._package, old, new)
+        for name in self._package.names():
+            if re.fullmatch(r"xl/worksheets/sheet[^/]*\.bin", name):
+                data = self._package.get(name)
+                updated = _rename_hyperlink_locations(data, old, new)
+                if updated != data:
+                    parts[name] = updated
         parts["xl/workbook.bin"] = self._rewrite_sheet_list(workbook, entries, parts)
         self._apply_parts(parts)
         self._sheets = {(new if name == old else name): path for name, path in self._sheets.items()}
@@ -299,6 +311,47 @@ class XlsbSheetsMixin:
 
             workbook = _patch_book_views(workbook, remap_view)
         return workbook
+
+
+def _rename_hyperlink_locations(data: bytes, old: str, new: str) -> bytes:
+    output: list[bytes] = []
+    changed = False
+    for record, payload in records(data):
+        if record.record_id == 0x1EE:
+            updated = _rename_hlink_payload(payload, old, new)
+            changed = changed or updated != payload
+            output.append(build_record(0x1EE, updated))
+        else:
+            output.append(data[record.header_start:record.data_end])
+    return b"".join(output) if changed else data
+
+
+def _rename_hlink_payload(payload: bytes, old: str, new: str) -> bytes:
+    if len(payload) < 16:
+        return payload
+    try:
+        relationship, first = read_wide(payload, 16)
+        location, second = read_wide(payload, first)
+        tooltip, third = read_wide(payload, second)
+        display, end = read_wide(payload, third)
+    except (ValueError, UnicodeDecodeError, struct.error):
+        return payload
+    renamed_location = rename_formula_sheet_references(location, old, new)
+    renamed_display = (
+        rename_formula_sheet_references(display, old, new)
+        if not relationship and display == location
+        else display
+    )
+    if renamed_location == location and renamed_display == display:
+        return payload
+    return (
+        payload[:16]
+        + wide_string(relationship)
+        + wide_string(renamed_location)
+        + wide_string(tooltip)
+        + wide_string(renamed_display)
+        + payload[end:]
+    )
 
 
 def _remap_context(context: FormulaContext, mapping: dict[int, int]) -> None:

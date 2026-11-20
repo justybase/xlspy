@@ -13,22 +13,46 @@ import re
 from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any
 from xml.etree import ElementTree as ET
-from xml.sax.saxutils import quoteattr
+from xml.sax.saxutils import escape as _xml_escape, quoteattr
 
-from .comments import rels_path as _part_rels_path
-from .exceptions import UnsupportedFeatureError
 from ._metadata import CT, MAIN, PKG_REL, REL, element_pattern, replace_element, tag_attributes
 from ._safe_xml import fromstring as safe_fromstring
 from ._xlsx_edit import _bytes as _xml
-from ._xml_text import replace_or_add_xml_attribute
+from ._xml_text import replace_or_add_xml_attribute, unescape_xml_text
+from .comments import rels_path as _part_rels_path
+from .exceptions import UnsupportedFeatureError
 from .refs import check_sheet_name
-from .updater_utils import sheet_has_pivots, sheet_has_slicers
+from .updater_utils import (
+    rename_formula_sheet_references,
+    renamed_chart_parts,
+    sheet_has_pivots,
+    sheet_has_slicers,
+)
 
 if TYPE_CHECKING:
     from .updater_utils import ZipPackage
 
 
 _SHEET_STATES = frozenset({"visible", "hidden", "veryHidden"})
+_FORMULA_TAGS = (
+    r"(?:f|formula|formula1|formula2|calculatedColumnFormula)"
+)
+_FORMULA_ELEMENT = re.compile(
+    rf"(<(?:[A-Za-z_][\w.-]*:)?{_FORMULA_TAGS}\b[^>]*?(?<!/)>)"
+    rf"(.*?)(</(?:[A-Za-z_][\w.-]*:)?{_FORMULA_TAGS}\s*>)",
+    re.DOTALL,
+)
+_HYPERLINK_LOCATION = re.compile(
+    r"(<(?:[A-Za-z_][\w.-]*:)?hyperlink\b[^>]*?\blocation\s*=\s*)"
+    r"(\"[^\"]*\"|'[^']*')",
+    re.DOTALL,
+)
+_DEFINED_NAME_ELEMENT = re.compile(
+    r"(<(?:[A-Za-z_][\w.-]*:)?definedName\b[^>]*>)"
+    r"(.*?)(</(?:[A-Za-z_][\w.-]*:)?definedName\s*>)",
+    re.DOTALL,
+)
+_REFERENCE_PART = re.compile(r"xl/(?:worksheets|chartsheets|tables)/[^/]+\.xml")
 _WORKSHEET_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
 )
@@ -275,6 +299,30 @@ class XlsxSheetsMixin:
         self._sheets = {sheet: self._sheets[sheet] for sheet in order}
         self._chartsheets.discard(name)
 
+    def rename_sheet(self, old: str, new: str) -> None:
+        """Rename sheet ``old`` to ``new``; raises KeyError when ``old`` is absent."""
+        if old not in self._sheets:
+            raise KeyError(f"Worksheet not found: {old}")
+        if old == new:
+            return
+        check_sheet_name(new, [name for name in self._sheets if name != old])
+        workbook_xml = self._workbook_xml()
+        updated, found = _rename_sheet_entry(workbook_xml, old, new)
+        if not found:
+            raise KeyError(f"Worksheet not found: {old}")
+        updated = _rename_defined_names(updated, old, new)
+        updates: dict[str, Any] = {"xl/workbook.xml": updated}
+        updates.update(_renamed_reference_parts(self._package, old, new))
+        updates.update(renamed_chart_parts(self._package, old, new))
+        self._apply_parts(updates)
+        self._sheets = {
+            (new if name == old else name): path
+            for name, path in self._sheets.items()
+        }
+        if old in self._chartsheets:
+            self._chartsheets.discard(old)
+            self._chartsheets.add(new)
+
     def reorder_sheets(self, order: Iterable[str]) -> None:
         """Put the sheets in ``order`` (every sheet name, once)."""
         order = list(order)
@@ -330,6 +378,75 @@ class XlsxSheetsMixin:
         self._recalculate(updates, removed)
         self._apply_parts(updates, removed)
         self._sheets = {name: self._sheets[name] for name in order}
+
+
+def _rename_sheet_entry(
+    workbook_xml: str, old: str, new: str
+) -> tuple[str, bool]:
+    for match in list(element_pattern("sheet").finditer(workbook_xml)):
+        if tag_attributes(match.group(0)).get("name") != old:
+            continue
+        opening = _opening_tag(match.group(0))
+        renamed = replace_or_add_xml_attribute(opening, "name", new)
+        return (
+            workbook_xml[:match.start()] + renamed
+            + workbook_xml[match.start() + len(opening):],
+            True,
+        )
+    return workbook_xml, False
+
+
+def _rename_formula_text(text: str, old: str, new: str) -> str:
+    decoded = unescape_xml_text(text)
+    updated = rename_formula_sheet_references(decoded, old, new)
+    return text if updated == decoded else _xml_escape(updated)
+
+
+def _rename_hyperlink_location(
+    match: re.Match[str], old: str, new: str
+) -> str:
+    quoted = match.group(2)
+    decoded = unescape_xml_text(quoted[1:-1])
+    updated = rename_formula_sheet_references(decoded, old, new)
+    if updated == decoded:
+        return match.group(0)
+    return match.group(1) + quoteattr(updated)
+
+
+def _renamed_reference_parts(
+    package: ZipPackage, old: str, new: str
+) -> dict[str, bytes]:
+    parts: dict[str, bytes] = {}
+    for name in package.names():
+        if _REFERENCE_PART.fullmatch(name) is None:
+            continue
+        xml = package.get(name).decode("utf-8")
+        updated = _FORMULA_ELEMENT.sub(
+            lambda match: (
+                match.group(1)
+                + _rename_formula_text(match.group(2), old, new)
+                + match.group(3)
+            ),
+            xml,
+        )
+        updated = _HYPERLINK_LOCATION.sub(
+            lambda match: _rename_hyperlink_location(match, old, new),
+            updated,
+        )
+        if updated != xml:
+            parts[name] = updated.encode("utf-8")
+    return parts
+
+
+def _rename_defined_names(workbook_xml: str, old: str, new: str) -> str:
+    return _DEFINED_NAME_ELEMENT.sub(
+        lambda match: (
+            match.group(1)
+            + _rename_formula_text(match.group(2), old, new)
+            + match.group(3)
+        ),
+        workbook_xml,
+    )
 
 
 def _remove_sheet_entry(workbook_xml: str, name: str) -> tuple[str, str | None]:

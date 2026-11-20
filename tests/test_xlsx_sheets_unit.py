@@ -11,7 +11,9 @@ from xlspy import (
     ChartSeries,
     Comment,
     ExcelTable,
+    Formula,
     Slicer,
+    SparklineGroup,
     UnsupportedFeatureError,
     Workbook,
     XlsxUpdater,
@@ -187,6 +189,87 @@ def test_remove_sheet_drops_its_comments_drawing_and_chart_parts(tmp_path):
         assert loaded["Other"]["A1"].value == "keep"
     finally:
         loaded.close()
+
+
+def test_rename_rewrites_chart_and_sparkline_formulas(tmp_path):
+    path = tmp_path / "rename-references.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet([["A", "B"], [1, 2], [3, 4]])
+        writer.add_sheet("Report")
+        writer.write_sheet(
+            [["report"]],
+            sparklines=[SparklineGroup(data="Data!B2:B3", location="C2")],
+            charts=[
+                Chart(
+                    "bar",
+                    [ChartSeries("Data!B2:B3", categories="Data!A2:A3")],
+                    anchor="E2",
+                )
+            ],
+        )
+
+    updater = XlsxUpdater(path)
+    try:
+        updater.rename_sheet("Data", "Renamed")
+        chart = updater._package.get("xl/charts/chart1.xml").decode("utf-8")
+        report = updater._package.get("xl/worksheets/sheet2.xml").decode("utf-8")
+        assert "Renamed" in chart and "Data!" not in chart
+        assert "Renamed" in report and "Data!" not in report
+        updater.save(path)
+    finally:
+        updater.close()
+
+
+def test_rename_quotes_a_name_that_needs_it(tmp_path):
+    path = tmp_path / "rename-quoted.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("Data Set")
+        writer.write_sheet([[1]])
+        writer.add_sheet("Other")
+        writer.write_sheet([[Formula("'Data Set'!A1")]])
+
+    updater = XlsxUpdater(path)
+    try:
+        updater.rename_sheet("Data Set", "New Name")
+        updater.save(path)
+    finally:
+        updater.close()
+
+    loaded = load_workbook(path)
+    try:
+        assert loaded.get_sheet_names() == ["New Name", "Other"]
+        assert "'New Name'!A1" in str(loaded["Other"]["A1"].value)
+    finally:
+        loaded.close()
+
+
+def test_rename_chartsheet_keeps_it_a_chartsheet(tmp_path):
+    path = tmp_path / "chartsheet-rename.xlsx"
+    workbook = Workbook()
+    data = workbook.active
+    data.title = "Data"
+    data["A1"] = 1
+    data["A2"] = 2
+    chart = workbook.create_chartsheet("ChartOnly")
+    chart.add_chart(Chart("bar", [ChartSeries("A1:A2")]), source=data)
+    workbook.save(path)
+    workbook.close()
+
+    updater = XlsxUpdater(path)
+    try:
+        updater.rename_sheet("ChartOnly", "Overview")
+        assert updater.get_chartsheet_names() == ["Overview"]
+        updater.save(path)
+    finally:
+        updater.close()
+
+    reopened = XlsxUpdater(path)
+    try:
+        assert reopened.get_sheet_names() == ["Data", "Overview"]
+        assert reopened.get_chartsheet_names() == ["Overview"]
+    finally:
+        reopened.close()
 
 
 def test_remove_sheet_refuses_a_sheet_with_a_slicer(tmp_path):

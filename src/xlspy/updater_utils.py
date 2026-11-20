@@ -278,13 +278,23 @@ _CHART_PART = re.compile(r"xl/charts/chart[^/]*\.xml")
 _CHART_FORMULA = re.compile(r"(<(?:\w+:)?f(?:\s[^>]*)?>)([^<]*)(</(?:\w+:)?f>)")
 
 
+def rename_formula_sheet_references(text: str, old: str, new: str) -> str:
+    """Point the sheet references in formula text at a renamed sheet.
+
+    The formula parser is imported lazily: importing ``xlspy`` must not load the
+    object model or the formula package.
+    """
+    from .formula.sheets import rename_sheet_references
+
+    return rename_sheet_references(text, old, new)
+
+
 def renamed_chart_parts(package: ZipPackage, old: str, new: str) -> dict[str, bytes]:
     """The chart parts whose formulas (``<c:f>``) name sheet ``old``, pointed at ``new``."""
-    from .formula.sheets import rename_sheet_references
 
     def rename(match: re.Match[str]) -> str:
         text = unescape_xml_text(match[2])
-        updated = rename_sheet_references(text, old, new)
+        updated = rename_formula_sheet_references(text, old, new)
         if updated == text:
             return match[0]
         return match[1] + saxutils.escape(updated) + match[3]
@@ -306,11 +316,10 @@ _SPARKLINE_FORMULA = re.compile(r"(<xm:f>)([^<]*)(</xm:f>)")
 
 def renamed_sparkline_parts(package: ZipPackage, old: str, new: str) -> dict[str, bytes]:
     """The worksheet parts whose sparkline formulas (``<xm:f>``) name sheet ``old``."""
-    from .formula.sheets import rename_sheet_references
 
     def rename(match: re.Match[str]) -> str:
         text = unescape_xml_text(match[2])
-        updated = rename_sheet_references(text, old, new)
+        updated = rename_formula_sheet_references(text, old, new)
         if updated == text:
             return match[0]
         return match[1] + saxutils.escape(updated) + match[3]

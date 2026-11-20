@@ -96,13 +96,15 @@ def _replace(updater, stream: bool, rows, headers=None, **options) -> None:
 
 def _value_key(value):
     if isinstance(value, ArrayFormula):
-        return ("ArrayFormula", value.ref, value.text)
+        return ("ArrayFormula", value.ref, _name_formula_key(value.text))
     if isinstance(value, Formula):
-        return ("Formula", value.text, value.value, value.array_ref, value.spill_ref)
+        return ("Formula", _name_formula_key(value.text), value.value, value.array_ref, value.spill_ref)
     if isinstance(value, dt.datetime):
         return ("datetime", value.isoformat())
     if isinstance(value, dt.date):
         return ("date", value.isoformat())
+    if isinstance(value, str) and value.startswith("="):
+        return _name_formula_key(value)
     return value
 
 
@@ -174,7 +176,10 @@ def snapshot(path: Path) -> dict:
                         _fill_key(cell.fill),
                         cell.comment.text if cell.comment is not None else None,
                         cell.comment.author if cell.comment is not None else None,
-                        cell.hyperlink.target if cell.hyperlink is not None else None,
+                        (
+                            _name_formula_key(cell.hyperlink.target)
+                            if cell.hyperlink is not None else None
+                        ),
                         cell.hyperlink.tooltip if cell.hyperlink is not None else None,
                     )
             result["sheets_data"][name] = {
@@ -196,8 +201,11 @@ def snapshot(path: Path) -> dict:
                     (
                         rule.type,
                         str(rule.sqref),
-                        str(rule.formula1),
-                        None if rule.formula2 is None else str(rule.formula2),
+                        _name_formula_key(str(rule.formula1)),
+                        (
+                            None if rule.formula2 is None
+                            else _name_formula_key(str(rule.formula2))
+                        ),
                         rule.operator,
                         rule.allow_blank,
                         rule.show_dropdown,
@@ -844,6 +852,51 @@ def test_remove_sheet_errors_match(tmp_path, change, error):
     for ext in FORMATS:
         kind, _message = _error(tmp_path, ext, change)
         assert kind is error
+
+
+def test_renamed_sheet_rewrites_formulas_names_validation_and_links(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.set_defined_name(
+            DefinedName("RefData", "Data!$A$1")
+        ),
+        lambda updater: updater.update_cells(
+            "Other", {"A2": Formula("Data!A1", value=1)}
+        ),
+        lambda updater: updater.set_data_validations(
+            "Other",
+            [DataValidation("list", "B2", formula1="Data!$A$1")],
+        ),
+        lambda updater: updater.update_cells("Other", {"C2": "link"}),
+        lambda updater: updater.set_hyperlinks(
+            "Other", {"C2": Hyperlink("#Data!A1")}
+        ),
+        lambda updater: updater.rename_sheet("Data", "Renamed"),
+    )
+    assert xlsx == xlsb
+    assert xlsx["sheets"] == ["Renamed", "Other"]
+    assert xlsx["names"][0][0] == "RefData"
+    assert xlsx["names"][0][1] == "Renamed!$A$1"
+    other = xlsx["sheets_data"]["Other"]
+    assert other["cells"]["A2"][0] == "=Renamed!A1"
+    assert other["validations"][0][2] == "Renamed!$A$1"
+    assert other["cells"]["C2"][6] == "#Renamed!A1"
+
+
+def test_rename_missing_sheet_errors_match(tmp_path):
+    for ext in FORMATS:
+        kind, _message = _error(
+            tmp_path, ext, lambda updater: updater.rename_sheet("Nope", "New")
+        )
+        assert kind is KeyError
+
+
+def test_rename_to_an_existing_sheet_errors_match(tmp_path):
+    for ext in FORMATS:
+        kind, _message = _error(
+            tmp_path, ext, lambda updater: updater.rename_sheet("Data", "Other")
+        )
+        assert kind is ValueError
 
 
 def test_added_sheets_land_in_the_same_order(tmp_path):
