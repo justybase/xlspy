@@ -121,6 +121,11 @@ materialisation and the table-header guard; each subclass implements
 `formula_range_bounds` / `check_formula_anchor` in `updater_utils.py` are the
 one reading of array and spill ranges, which XLSX uses to widen `<dimension>`
 and the auto-filter and XLSB uses for its row headers and member cells.
+`normalize_merges` is likewise the one overlap check for merged ranges; the
+writers and both `set_merged_cells` implementations call it. XLSX's
+`update_cells(styles=...)`, `set_merged_cells` and `set_data_validations` sit
+in `_xlsx_edit.py` beside the other worksheet edits; XLSB keeps its binary
+encoders in `_xlsb_edit.py`.
 `tests/test_updater_differential.py` runs every edit on both formats and
 compares the loaded model, while the package's raw dimension/filter attributes
 are checked separately because XLSB stores array member cells and XLSX does

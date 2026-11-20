@@ -37,7 +37,7 @@ from ._text import check_cell_text, xml_space_attribute, xstring_escape
 from .exceptions import UnsupportedFeatureError
 from .comments import rels_path
 from .formulas import ArrayFormula, DataTableFormula, Formula
-from .refs import parse_cell_range
+from .refs import RangeIndex, parse_cell_range
 
 
 STREAM_BUFFER_SIZE = 1024 * 1024
@@ -464,6 +464,35 @@ def check_formula_anchor(bounds: tuple[int, int, int, int], column: int, row: in
     c1, r1, _c2, _r2 = bounds
     if (column, row) != (c1, r1):
         raise ValueError("array formula must be written in its top-left cell")
+
+
+def normalize_merges(merges: Iterable[str]) -> list[str]:
+    """The merged ranges in order, refusing two ranges that overlap.
+
+    Excel repairs a workbook whose merged ranges overlap, so both the writers
+    and the updaters reject them before writing anything.
+    """
+
+    refs: list[tuple[str, int, int, int, int]] = []
+    if not merges:
+        return []
+    index = RangeIndex()
+    clash = False
+    for ref in merges:
+        first_col, first_row, last_col, last_row = parse_cell_range(ref)
+        refs.append((ref, first_col, first_row, last_col, last_row))
+        bounds = (first_col, first_row, last_col, last_row)
+        clash = clash or bool(index.overlapping(bounds))
+        index.add(bounds)
+    if not clash:
+        return [ref for ref, *_ in refs]
+    for i, (ref_a, c1a, r1a, c2a, r2a) in enumerate(refs):
+        for ref_b, c1b, r1b, c2b, r2b in refs[i + 1:]:
+            if c1a <= c2b and c1b <= c2a and r1a <= r2b and r1b <= r2a:
+                raise ValueError(
+                    f"overlapping merged ranges {ref_a!r} and {ref_b!r}"
+                )
+    return [ref for ref, *_ in refs]
 
 
 def escape_xml_text(value: Any) -> str:

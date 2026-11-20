@@ -79,6 +79,19 @@ took **9,060 tests, 1,450 skipped** in 2:33. Combined coverage is **91%** branch
 coverage over 27,214 statements (the floor is 90%). The LibreOffice smoke suite
 passes **31** tests.
 
+## Updater option parity (2026-11-20)
+
+Windows 11, Python 3.14.2. The differential harness grew to **65 tests** and
+now also compares `update_cells(styles=...)`, `set_merged_cells()` and
+`set_data_validations()` across both formats, including clearing the last two
+and the overlap/type errors. It found that XLSX dropped `allow_blank=False`
+through a round trip because the writer omitted `allowBlank`; the writer now
+emits `allowBlank="0"`, matching the reader's default. The full native suite
+passed **10,174 tests, 343 skipped, 1 xfailed** in 5:05; the pure-Python pass
+took **9,068 tests, 1,450 skipped** in 2:47. Combined coverage is **91%**
+branch coverage over 27,263 statements (the floor is 90%). The LibreOffice
+smoke suite passes **31** tests.
+
 ## Compatibility refresh (2026-11-17)
 
 Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native

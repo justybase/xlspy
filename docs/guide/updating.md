@@ -90,6 +90,22 @@ The table's range is not changed. Formula cells are written as formulas in XLSX,
 with `Formula.value` as the cached result. In XLSB, `replace_sheet_data()` raises
 `UnsupportedFeatureError` for a formula; use `update_cells()` for formulas there.
 
+Besides values, both updaters can replace sheet options. `update_cells()` takes
+`styles={address: XF index}`; an address given only there keeps its value (or
+becomes a styled blank). `set_merged_cells()` replaces the merged ranges and
+`set_data_validations()` replaces the validation rules; pass an empty iterable
+to remove them. For example:
+
+```python
+from xlspy import DataValidation
+
+updater.update_cells("Data", {"B2": 42}, styles={"B2": 7})
+updater.set_merged_cells("Data", ["A1:C1"])
+updater.set_data_validations(
+    "Data", [DataValidation("list", "B2:B20", formula1='"New,Active,Closed"')]
+)
+```
+
 When a pivot cache is present, keep the source column schema (column order and
 count) unchanged; changing the schema requires rebuilding the pivot cache and
 is outside the updater's scope.

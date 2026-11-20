@@ -20,7 +20,8 @@ from ._sort_state import check_sort_state
 from .shapes import normalize_shapes
 from .slicers import normalize_slicers
 from .sparklines import normalize_sparklines
-from .refs import RangeIndex, check_sheet_name, parse_cell_range
+from .refs import check_sheet_name, parse_cell_range
+from .updater_utils import normalize_merges
 from .styles import (
     EXTRA_CF_RULES, CellIsRule, ColorScaleRule, DataBarRule, ExcelTable, FormulaRule,
     IconSetRule, Style, _column_index, check_header_rows, check_sheet_view, check_zoom,
@@ -275,26 +276,7 @@ class WriterFrontEnd:
 
     @staticmethod
     def _normalize_merges(merges):
-        if not merges:
-            return []
-        refs = []
-        index = RangeIndex()
-        clash = False
-        for ref in merges:
-            first_col, first_row, last_col, last_row = parse_cell_range(ref)
-            refs.append((ref, first_col, first_row, last_col, last_row))
-            bounds = (first_col, first_row, last_col, last_row)
-            clash = clash or bool(index.overlapping(bounds))
-            index.add(bounds)
-        if not clash:
-            return [ref for ref, *_ in refs]
-        for i, (ref_a, c1a, r1a, c2a, r2a) in enumerate(refs):
-            for ref_b, c1b, r1b, c2b, r2b in refs[i + 1:]:
-                if c1a <= c2b and c1b <= c2a and r1a <= r2b and r1b <= r2a:
-                    raise ValueError(
-                        f"overlapping merged ranges {ref_a!r} and {ref_b!r}"
-                    )
-        return [ref for ref, *_ in refs]
+        return normalize_merges(merges)
 
     def _normalize_tables(self, tables):
         if not tables:

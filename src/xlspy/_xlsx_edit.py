@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from collections.abc import Collection, Iterable, Mapping, MutableMapping, Sequence
 import datetime
@@ -28,12 +28,13 @@ from .comments import (
     Comment, COMMENTS_TYPE, VML_TYPE, V, comments_xml, vml_xml, normalize_comments,
     NotePartsEdit, comment_part_targets, find_comment_parts, read_comments, resolve_part, rels_path,
 )
+from .data_validation import DataValidation, data_validation_xml, normalize_validations
 from .excel_dates import datetime_to_serial
 from .exceptions import UnsupportedFeatureError
 from .formulas import ArrayFormula, DataTableFormula, Formula
 from .hyperlinks import Hyperlink
 from .refs import RangeIndex, _column_index, parse_cell_range, column_label
-from .updater_utils import unwrap_cell, replace_or_add_xml_attribute
+from .updater_utils import normalize_merges, unwrap_cell, replace_or_add_xml_attribute
 from .rich_text import CellRichText
 
 if TYPE_CHECKING:
@@ -53,6 +54,8 @@ def _required_match(match: re.Match[str] | None, what: str) -> re.Match[str]:
 
 
 _HYPERLINK_TYPE = REL + "/hyperlink"
+# A cell addressed only by ``update_cells(styles=...)``: keep its value.
+_KEEP = object()
 # The <worksheet> children that follow <hyperlinks> (CT_Worksheet).
 _AFTER_HYPERLINKS = (
     "printOptions", "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks",
@@ -368,6 +371,46 @@ class XlsxEditMixin:
         xml = replace_element(xml, "sheetProtection", protection.to_xml(), before=("protectedRanges", "scenarios", "autoFilter", "sortState", "dataConsolidate", "customSheetViews", "mergeCells", "phoneticPr", "conditionalFormatting", "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks", "drawing", "legacyDrawing", "tableParts", "extLst"))
         self._apply_parts({path: xml})
 
+    def set_merged_cells(self, sheet_name: str, ranges: Iterable[str]) -> None:
+        """Replace the sheet's merged ranges with ``ranges`` (A1 range strings)."""
+        path, xml = self._sheet_xml(sheet_name)
+        refs = normalize_merges(ranges)
+        fragment = ""
+        if refs:
+            cells = "".join(f"<mergeCell ref={quoteattr(ref)}/>" for ref in refs)
+            fragment = (
+                f'<mergeCells xmlns="{MAIN}" count="{len(refs)}">'
+                f"{cells}</mergeCells>"
+            )
+        updated = replace_element(
+            xml,
+            "mergeCells",
+            fragment,
+            before=("phoneticPr", "conditionalFormatting", "dataValidations", "hyperlinks", *_AFTER_HYPERLINKS),
+        )
+        if updated != xml:
+            self._apply_parts({path: updated})
+
+    def set_data_validations(self, sheet_name: str, rules: Sequence[DataValidation]) -> None:
+        """Replace the sheet's data validation rules with ``rules``."""
+        rules = normalize_validations(rules)
+        path, xml = self._sheet_xml(sheet_name)
+        fragment = ""
+        if rules:
+            body = "".join(data_validation_xml(rule) for rule in rules)
+            fragment = (
+                f'<dataValidations xmlns="{MAIN}" count="{len(rules)}">'
+                f"{body}</dataValidations>"
+            )
+        updated = replace_element(
+            xml,
+            "dataValidations",
+            fragment,
+            before=("hyperlinks", *_AFTER_HYPERLINKS),
+        )
+        if updated != xml:
+            self._apply_parts({path: updated})
+
     def set_workbook_protection(self, protection: WorkbookProtection) -> None:
         """Set or replace the workbook protection."""
         if not isinstance(protection, WorkbookProtection):
@@ -376,10 +419,17 @@ class XlsxEditMixin:
         xml = replace_element(xml, "workbookProtection", protection.to_xml(), before=("bookViews", "sheets"))
         self._apply_parts({"xl/workbook.xml": xml})
 
-    def update_cells(self, sheet_name: str, cells: Mapping[str, object]) -> None:
-        """Update sparse cells, preserving styles, notes and untouched cell XML."""
+    def update_cells(self, sheet_name: str, cells: Mapping[str, object], *,
+                     styles: Mapping[str, int] | None = None) -> None:
+        """Update sparse cells, preserving styles, notes and untouched cell XML.
+
+        ``styles`` maps addresses to cell XF indexes. An address only in
+        ``styles`` keeps its value (or becomes a styled blank).
+        """
         if not isinstance(cells, Mapping):
             raise TypeError("cells must map cell references to values")
+        if styles is not None and not isinstance(styles, Mapping):
+            raise TypeError("styles must map cell references to XF indexes")
         path, xml, root, fast = self._sheet_scan_source(sheet_name)
         values = {}
         for ref, value in cells.items():
@@ -387,7 +437,16 @@ class XlsxEditMixin:
             if ref in values:
                 raise ValueError(f"duplicate cell reference: {ref}")
             values[ref] = unwrap_cell(value)
-        if not values:
+        style_ids = {}
+        for ref, xf in (styles or {}).items():
+            ref = cell_ref(ref)
+            if not isinstance(xf, int) or isinstance(xf, bool) or not 0 <= xf < 0xFFFFFF:
+                raise ValueError(f"invalid cell style index {xf!r} for {ref}")
+            style_ids[ref] = xf
+        targets = dict(values)
+        for ref in style_ids:
+            targets.setdefault(ref, _KEEP)
+        if not targets:
             return
         scan = None if fast is None else _fast_scan(xml, fast, list(values))
         if scan is None:
@@ -417,14 +476,17 @@ class XlsxEditMixin:
         prefix = sheet_data["prefix"] or ""
         # Validate and encode all input before staging any mutation.
         encoded = {ref: _cell_xml_value(value, self._date_1904, prefix) for ref, value in values.items()}
-        pending = dict(encoded)
+        pending: dict[str, Any] = dict(encoded)
+        for ref in style_ids:
+            pending.setdefault(ref, _KEEP)
         by_row_targets: dict[int, dict[str, Any]] = {}
-        for ref, value in encoded.items():
+        for ref, value in pending.items():
             by_row_targets.setdefault(parse_cell_range(ref)[1] + 1, {})[ref] = value
 
         def patch_row(row_num: int, row_xml: str) -> str:
             # Popped, so a second <row> with the same number stays as it is.
-            return _patch_row(row_xml, by_row_targets.pop(row_num), pending, prefix, row_num)
+            return _patch_row(row_xml, by_row_targets.pop(row_num), pending, prefix,
+                              row_num, style_ids)
 
         body = patch_rows(sheet_data[0], patch_row, by_row_targets.keys())
         # The cells left in ``pending`` are in rows the sheet does not have yet.
@@ -433,12 +495,15 @@ class XlsxEditMixin:
             by_row.setdefault(parse_cell_range(ref)[1] + 1, []).append(ref)
         new_rows = {}
         for row_num, refs in by_row.items():
-            content = "".join(_cell_xml(ref, encoded[ref], prefix) for ref in sorted(refs, key=lambda r: parse_cell_range(r)[0]))
+            content = "".join(
+                _cell_xml(ref, pending[ref], prefix, style=style_ids.get(ref))
+                for ref in sorted(refs, key=lambda r: parse_cell_range(r)[0])
+            )
             new_rows[row_num] = f'<{prefix}row r="{row_num}">{content}</{prefix}row>'
         body = insert_rows(body, new_rows)
         xml = xml[:sheet_data.start()] + body + xml[sheet_data.end():]
         # Expand dimensions, never shrink existing coverage or filters/tables.
-        refs = list(values)
+        refs = list(targets)
         if scan.dimension:
             refs.extend(scan.dimension.split(":"))
         spans: list[Sequence[int]] = [parse_cell_range(ref) for ref in refs]
@@ -738,13 +803,25 @@ def _cell_xml_value(value: Any, date_1904: bool, prefix: str) -> tuple[str | Non
     return "inlineStr", f'<{prefix}is><{prefix}t xml:space="preserve">{text}</{prefix}t></{prefix}is>'
 
 
-def _cell_xml(ref: str, encoded: tuple[str | None, str], prefix: str, old: str | None = None) -> str:
-    kind, content = encoded
+def _cell_xml(ref: str, encoded: Any, prefix: str, old: str | None = None,
+              style: int | None = None) -> str:
+    if encoded is _KEEP:
+        if old is None:
+            style_attr = "" if style is None else f' s="{style}"'
+            return f'<{prefix}c r="{ref}"{style_attr}/>'
+        opening_end = old.index(">")
+        opening = old[:opening_end]
+        if style is not None:
+            opening = replace_or_add_xml_attribute(opening, "s", style)
+        return opening + old[opening_end:]
+    kind, content = cast("tuple[str | None, str]", encoded)
     attrs = tag_attributes(old) if old else {"r": ref}
     attrs["r"] = ref
     attrs.pop("t", None)
     # A dynamic-array anchor's cm attribute belongs to the formula it described.
     attrs.pop("cm", None)
+    if style is not None:
+        attrs["s"] = str(style)
     if kind:
         attrs["t"] = kind
     opening = f'<{prefix}c ' + " ".join(f"{key}={quoteattr(value)}" for key, value in attrs.items()) + ">"
@@ -783,8 +860,10 @@ def _located_cell(reference: str | None, next_column: int, row_number: int,
     return reference, column, row
 
 
-def _patch_row(row_xml: str, targets: dict[str, Any], pending: dict[str, Any], prefix: str, row_num: int) -> str:
+def _patch_row(row_xml: str, targets: dict[str, Any], pending: dict[str, Any], prefix: str,
+               row_num: int, styles: Mapping[str, int] | None = None) -> str:
     additions = dict(targets)
+    styles = styles or {}
     next_col = 0
     def patch_cell(match: re.Match[str]) -> str:
         nonlocal next_col
@@ -794,17 +873,22 @@ def _patch_row(row_xml: str, targets: dict[str, Any], pending: dict[str, Any], p
         col = parse_cell_range(ref)[0]
         for new_ref in sorted(additions, key=lambda r: parse_cell_range(r)[0]):
             if parse_cell_range(new_ref)[0] < col:
-                result.append(_cell_xml(new_ref, additions.pop(new_ref), prefix))
+                result.append(_cell_xml(new_ref, additions.pop(new_ref), prefix,
+                                        style=styles.get(new_ref)))
                 pending.pop(new_ref)
         if ref in additions:
-            result.append(_cell_xml(ref, additions.pop(ref), prefix, match[0]))
+            result.append(_cell_xml(ref, additions.pop(ref), prefix, match[0],
+                                    styles.get(ref)))
             pending.pop(ref)
         else:
             result.append(match[0])
         return "".join(result)
     row_xml = element_pattern("c").sub(patch_cell, row_xml)
     if additions:
-        content = "".join(_cell_xml(ref, additions[ref], prefix) for ref in sorted(additions, key=lambda r: parse_cell_range(r)[0]))
+        content = "".join(
+            _cell_xml(ref, additions[ref], prefix, style=styles.get(ref))
+            for ref in sorted(additions, key=lambda r: parse_cell_range(r)[0])
+        )
         row_xml = append_child(row_xml, "row", content)
         for ref in additions:
             pending.pop(ref)

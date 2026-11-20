@@ -24,6 +24,7 @@ from xlspy import (
     ChartSeries,
     Comment,
     DataTableFormula,
+    DataValidation,
     DefinedName,
     ExcelReader,
     ExcelTable,
@@ -190,6 +191,26 @@ def snapshot(path: Path) -> dict:
                 ),
                 "state": sheet.sheet_state,
                 "protection": _protection_key(sheet.protection),
+                "validations": [
+                    (
+                        rule.type,
+                        str(rule.sqref),
+                        str(rule.formula1),
+                        None if rule.formula2 is None else str(rule.formula2),
+                        rule.operator,
+                        rule.allow_blank,
+                        rule.show_dropdown,
+                        rule.show_input_message,
+                        rule.prompt_title,
+                        rule.prompt,
+                        rule.show_error_message,
+                        rule.error_title,
+                        rule.error,
+                        rule.error_style,
+                        rule.ime_mode,
+                    )
+                    for rule in sheet.data_validations.dataValidation
+                ],
             }
         return result
     finally:
@@ -536,6 +557,136 @@ def test_update_cells_values_match(tmp_path):
     assert data["cells"]["E5"][0] == 45450  # no date style on column E
     assert data["cells"]["F6"][0] == "=1+1"
     assert data["cells"]["Z9"][0] == "far"
+
+
+def test_update_cells_styles_match(tmp_path):
+    # XF 7 is the "0.00" style of column A in _source.
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.update_cells(
+            "Data", {"D4": "styled"}, styles={"A2": 7, "D4": 7, "G10": 7}
+        ),
+    )
+    assert xlsx == xlsb
+    data = xlsx["sheets_data"]["Data"]
+    assert data["cells"]["A2"][0] == 1
+    assert data["cells"]["A2"][1] == "0.00"
+    assert data["cells"]["D4"][0] == "styled"
+    assert data["cells"]["D4"][1] == "0.00"
+    assert data["cells"]["G10"][0] is None
+    assert data["cells"]["G10"][1] == "0.00"
+    assert data["max_row"] == 10 and data["max_column"] == 7
+
+
+def test_an_invalid_cell_style_is_refused_in_both_formats(tmp_path):
+    for ext in FORMATS:
+        directory = tmp_path / ext
+        directory.mkdir()
+        path = _source(directory, ext)
+        with pytest.raises(ValueError, match="invalid cell style index"):
+            _apply(
+                path,
+                ext,
+                lambda updater: updater.update_cells(
+                    "Data", {}, styles={"A1": -1}
+                ),
+            )
+
+
+# --- merged cells and data validations ---------------------------------------
+
+
+def test_merged_ranges_match(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.set_merged_cells("Data", ["A1:B1", "C3:D4"]),
+    )
+    assert xlsx == xlsb
+    assert xlsx["sheets_data"]["Data"]["merged"] == ["A1:B1", "C3:D4"]
+
+
+def test_merged_ranges_can_be_removed_again(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.set_merged_cells("Data", ["A1:B1", "C3:D4"]),
+        lambda updater: updater.set_merged_cells("Data", []),
+    )
+    assert xlsx == xlsb
+    assert xlsx["sheets_data"]["Data"]["merged"] == []
+
+
+def test_overlapping_merged_ranges_are_refused_in_both(tmp_path):
+    messages = {}
+    for ext in FORMATS:
+        directory = tmp_path / ext
+        directory.mkdir()
+        path = _source(directory, ext)
+        with pytest.raises(ValueError) as caught:
+            _apply(
+                path,
+                ext,
+                lambda updater: updater.set_merged_cells(
+                    "Data", ["A1:B2", "B2:C3"]
+                ),
+            )
+        messages[ext] = str(caught.value)
+    assert messages["xlsx"] == messages["xlsb"]
+
+
+def test_data_validations_match(tmp_path):
+    rules = [
+        DataValidation("list", "A2:A9", formula1='"x,y"', allow_blank=False),
+        DataValidation(
+            "whole",
+            "B2:B9",
+            formula1=1,
+            formula2=10,
+            operator="not_between",
+            error_style="warning",
+            error_title="Out of range",
+            error="Enter 1..10",
+        ),
+        DataValidation(
+            "date",
+            "C2:C9",
+            formula1=dt.date(2024, 1, 1),
+            operator="greater_than",
+            show_input_message=True,
+            prompt_title="Date",
+            prompt="Enter a date",
+        ),
+    ]
+    xlsx, xlsb = _run_both(
+        tmp_path, lambda updater: updater.set_data_validations("Data", rules)
+    )
+    assert xlsx == xlsb
+    assert len(xlsx["sheets_data"]["Data"]["validations"]) == 3
+
+
+def test_data_validations_can_be_removed_again(tmp_path):
+    rule = DataValidation("list", "A2:A9", formula1='"x,y"')
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.set_data_validations("Data", [rule]),
+        lambda updater: updater.set_data_validations("Data", []),
+    )
+    assert xlsx == xlsb
+    assert xlsx["sheets_data"]["Data"]["validations"] == []
+
+
+def test_data_validations_are_type_checked_in_both(tmp_path):
+    for ext in FORMATS:
+        directory = tmp_path / ext
+        directory.mkdir()
+        path = _source(directory, ext)
+        with pytest.raises(TypeError, match="DataValidation"):
+            _apply(
+                path,
+                ext,
+                lambda updater: updater.set_data_validations(
+                    "Data", [object()]  # type: ignore[list-item]
+                ),
+            )
 
 
 # --- preservation and repetition --------------------------------------------

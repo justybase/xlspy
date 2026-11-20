@@ -306,8 +306,8 @@ def data_validation_xml(rule: DataValidation) -> str:
         attrs.append(f'errorStyle="{rule.error_style}"')
     if rule.operator is not None and rule.operator != "between":
         attrs.append(f'operator="{OPERATORS[rule.operator]}"')
-    if rule.allow_blank:
-        attrs.append('allowBlank="1"')
+    # The reader's default is True, so False must be written explicitly.
+    attrs.append(f'allowBlank="{1 if rule.allow_blank else 0}"')
     if rule.show_input_message:
         attrs.append('showInputMessage="1"')
     if rule.show_error_message:

@@ -32,8 +32,8 @@ from .comments import Comment, NotePartsEdit, V, VML_TYPE, comment_part_targets,
 from .excel_dates import datetime_to_serial
 from .formulas import ArrayFormula, DataTableFormula, Formula
 from .refs import column_label, parse_cell_range
-from .updater_utils import unwrap_cell
-from .writer import XlsbWriter, _hlink_payload
+from .updater_utils import normalize_merges, unwrap_cell
+from .writer import _hlink_payload
 from .hyperlinks import Hyperlink
 from ._xlsb_validation import BRT_BEGIN_DVALS, BRT_DVAL, BRT_END_DVALS, validations_bin
 from .data_validation import DataValidation
@@ -306,7 +306,7 @@ class XlsbEditMixin(XlsxEditMixin):
         """Replace the sheet's merged ranges with ``ranges`` (A1 range strings)."""
 
         path, data = self._sheet_bin(sheet_name)
-        refs = XlsbWriter._normalize_merges(list(ranges)) or []
+        refs = normalize_merges(list(ranges))
         block = b""
         if refs:
             pieces = [build_record(0xB1, struct.pack('<I', len(refs)))]
