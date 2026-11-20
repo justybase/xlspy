@@ -40,6 +40,7 @@ from ..styles import (
     split_style,
 )
 from ..xlsx_writer import _alignment_xml, _format_number, _protection_xml
+from .._style_xml import border_xml, color_attrs
 import copy
 
 # ECMA-376 / openpyxl's built-in number formats.  Only the codes that are
@@ -773,17 +774,7 @@ class XlsxStyleTable:
     # -- XML serialisation -------------------------------------------
     @staticmethod
     def _color_attrs(key) -> str:
-        kind = key[0]
-        if kind == "rgb":
-            return f'rgb="{key[1]}"'
-        if kind == "indexed":
-            return f'indexed="{key[1]}"'
-        if kind == "auto":
-            return 'auto="1"'
-        _, theme, tint = key
-        if tint is None:
-            return f'theme="{theme}"'
-        return f'theme="{theme}" tint="{_format_number(tint)}"'
+        return color_attrs(key)
 
     def _color_xml(self, key) -> str:
         if key is None:
@@ -859,44 +850,8 @@ class XlsxStyleTable:
             bg_xml = f'<bgColor {self._color_attrs(bg_key)}/>' if bg_key is not None else ""
         return f'<fill><patternFill patternType="{pattern_type}">{fg_xml}{bg_xml}</patternFill></fill>'
 
-    @staticmethod
-    def _border_side_xml(tag: str, side_key, color_attrs) -> str:
-        style, color = side_key
-        if style is None and color is None:
-            return f"<{tag}/>"
-        inner = f"<color {color_attrs(color)}/>" if color is not None else ""
-        if style is None:
-            return f"<{tag}>{inner}</{tag}>"
-        return f'<{tag} style="{style}">{inner}</{tag}>'
-
     def _border_xml_for(self, key) -> str:
-        attrs = ""
-        if key.diagonal_up:
-            attrs += ' diagonalUp="1"'
-        if key.diagonal_down:
-            attrs += ' diagonalDown="1"'
-        if key.outline is False:
-            attrs += ' outline="0"'
-        # Excel reads <start>/<end> as the left/right edges (in a
-        # left-to-right sheet), so an empty <start/> would hide <left>:
-        # write them only when set, like <vertical>/<horizontal>.
-        parts = [
-            self._border_side_xml(tag, getattr(key, tag), self._color_attrs)
-            for tag in ("start", "end")
-            if getattr(key, tag) != (None, None)
-        ]
-        parts += [
-            self._border_side_xml("left", key.left, self._color_attrs),
-            self._border_side_xml("right", key.right, self._color_attrs),
-            self._border_side_xml("top", key.top, self._color_attrs),
-            self._border_side_xml("bottom", key.bottom, self._color_attrs),
-            self._border_side_xml("diagonal", key.diagonal, self._color_attrs),
-        ]
-        if key.vertical != (None, None):
-            parts.append(self._border_side_xml("vertical", key.vertical, self._color_attrs))
-        if key.horizontal != (None, None):
-            parts.append(self._border_side_xml("horizontal", key.horizontal, self._color_attrs))
-        return f"<border{attrs}>{''.join(parts)}</border>"
+        return border_xml(key)
 
     def _xf_xml_for(self, font_id, fill_id, border_id, numfmt_id, align_key, prot_key,
                     *, quote_prefix: bool = False, pivot_button: bool = False) -> str:

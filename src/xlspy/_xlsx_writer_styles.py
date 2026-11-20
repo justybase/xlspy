@@ -29,6 +29,7 @@ from .styles import (
     split_style,
 )
 from ._xlsx_writer_xml import _alignment_xml, _format_number, _protection_xml
+from ._style_xml import border_xml, color_attrs
 from ._xlsx_writer_host import _XlsxWriterHost
 from .styles import _coerce_color
 
@@ -156,17 +157,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
 
     @staticmethod
     def _color_attrs(color_key) -> str:
-        kind = color_key[0]
-        if kind == "rgb":
-            return f'rgb="{color_key[1]}"'
-        if kind == "indexed":
-            return f'indexed="{color_key[1]}"'
-        if kind == "auto":
-            return 'auto="1"'
-        _, theme, tint = color_key
-        if tint is None:
-            return f'theme="{theme}"'
-        return f'theme="{theme}" tint="{tint}"'
+        return color_attrs(color_key)
 
     def _color_xml(self, color_key) -> str:
         if color_key is None:
@@ -271,44 +262,8 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             bg_xml = f'<bgColor {self._color_attrs(bg_key)}/>' if bg_key is not None else ""
         return f'<fill><patternFill patternType="{pattern_type}">{fg_xml}{bg_xml}</patternFill></fill>'
 
-    @staticmethod
-    def _border_side_xml(tag, side_key, color_attrs) -> str:
-        style, color_key = side_key
-        if style is None and color_key is None:
-            return f"<{tag}/>"
-        inner = f"<color {color_attrs(color_key)}/>" if color_key is not None else ""
-        if style is None:
-            return f"<{tag}>{inner}</{tag}>"
-        return f'<{tag} style="{style}">{inner}</{tag}>'
-
     def _border_xml(self, border_key) -> str:
-        attrs = ""
-        if border_key.diagonal_up:
-            attrs += ' diagonalUp="1"'
-        if border_key.diagonal_down:
-            attrs += ' diagonalDown="1"'
-        if border_key.outline is False:
-            attrs += ' outline="0"'
-        # Excel reads <start>/<end> as the left/right edges (in a
-        # left-to-right sheet), so an empty <start/> would hide <left>:
-        # write them only when set, like <vertical>/<horizontal>.
-        parts = [
-            self._border_side_xml(tag, getattr(border_key, tag), self._color_attrs)
-            for tag in ("start", "end")
-            if getattr(border_key, tag) != (None, None)
-        ]
-        parts += [
-            self._border_side_xml("left", border_key.left, self._color_attrs),
-            self._border_side_xml("right", border_key.right, self._color_attrs),
-            self._border_side_xml("top", border_key.top, self._color_attrs),
-            self._border_side_xml("bottom", border_key.bottom, self._color_attrs),
-            self._border_side_xml("diagonal", border_key.diagonal, self._color_attrs),
-        ]
-        if border_key.vertical != (None, None):
-            parts.append(self._border_side_xml("vertical", border_key.vertical, self._color_attrs))
-        if border_key.horizontal != (None, None):
-            parts.append(self._border_side_xml("horizontal", border_key.horizontal, self._color_attrs))
-        return f"<border{attrs}>{''.join(parts)}</border>"
+        return border_xml(border_key)
 
     def _create_styles_xml(self) -> str:
         numfmts = ""

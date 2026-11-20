@@ -90,19 +90,17 @@ _LEGACY_ACCENTS = ("4F81BD", "C0504D", "9BBB59", "8064A2", "4BACC6", "F79646")
 
 
 def column_letters() -> list[str]:
-    """Column labels ``A`` … ``XFD`` (shared with the writers)."""
-    letters = []
-    for i in range(26):
-        letters.append(chr(65 + i))
+    """Exactly Excel's column labels, ``A`` through ``XFD`` (shared by the writers)."""
+    letters = [chr(65 + i) for i in range(26)]
     for i in range(26):
         for j in range(26):
             letters.append(chr(65 + i) + chr(65 + j))
-    for i in range(24):
+    for i in range(26):
         for j in range(26):
             for k in range(26):
-                if i == 23 and j > 24:
-                    break
                 letters.append(chr(65 + i) + chr(65 + j) + chr(65 + k))
+                if len(letters) == 16384:
+                    return letters
     return letters
 
 

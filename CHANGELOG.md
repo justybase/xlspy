@@ -67,6 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reader's default (`True`).
 - A `sortBy` value that is not a string now raises `TypeError` before the
   allowed-value check, matching the other sort-state fields.
+- `column_letters()` now holds exactly Excel's 16,384 labels, ending at
+  `XFD`; the table previously continued with 516 invalid labels past it.
 - `style.copy(size=20, sz=14)` refuses both spellings of one field instead of
   silently keeping the last one, and a chart range with an empty or malformed
   sheet name (`"!A2:A3"`, `"A1:B2!B2:B3"`) is refused instead of being written
@@ -92,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A nightly workflow runs a larger randomized-edit/native-fuzz budget across
   three seeds and a non-blocking latest `openpyxl`/`pandas`/`polars` job. The
   pull-request suite keeps its short deterministic budget.
+- The XLSX writer and the loaded-workbook style table render colors and borders
+  through one `_style_xml.py`; the duplicate copies had already drifted on
+  `tint` formatting. Column labels also come from one table.
 
 ### Security
 

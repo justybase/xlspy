@@ -287,19 +287,7 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
         return self._spool_max_bytes
 
     def _generate_column_letters(self) -> list[str]:
-        letters = []
-        for i in range(26):
-            letters.append(chr(65 + i))
-        for i in range(26):
-            for j in range(26):
-                letters.append(chr(65 + i) + chr(65 + j))
-        for i in range(24):
-            for j in range(26):
-                for k in range(26):
-                    if i == 23 and j > 24:
-                        break
-                    letters.append(chr(65 + i) + chr(65 + j) + chr(65 + k))
-        return letters
+        return chart_parts.column_letters()
 
     def _register_format(self, fmt_string: str) -> int:
         if fmt_string in self._format_xf_map:

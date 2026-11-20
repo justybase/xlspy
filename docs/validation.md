@@ -110,6 +110,11 @@ and native-fuzz run (`XLSPY_FUZZ_ITERATIONS=2000`) across seeds 7, 101 and
 2024, and a non-blocking job on the latest `openpyxl`, `pandas` and `polars`.
 The regular CI matrix keeps the short deterministic fuzz budget.
 
+The writer and the loaded style table now share `_style_xml.py` for color and
+border fragments; `tests/test_style_xml_shared.py` compares both callers and
+pins the `tint` spelling. `chart_parts.column_letters()` was corrected to end
+at `XFD` after 16,384 entries instead of continuing with invalid labels.
+
 ## Compatibility refresh (2026-11-17)
 
 Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native

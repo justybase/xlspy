@@ -85,6 +85,10 @@ with identical bodies, 47 with different ones). Decisions taken:
   thing. `tests/test_no_duplicate_top_level_names.py` keeps it that way, with no
   exceptions left (the model classes became `WorksheetProtection`,
   `WorksheetPageMargins`, and the writer's outline index `OutlineIndex`).
+- **One style XML encoder.** `_style_xml.py` renders color and border fragments
+  for both `XlsxWriter` and the loaded `XlsxStyleTable`; `chart_parts.column_letters`
+  is the one A–XFD label table. `tests/test_style_xml_shared.py` compares the two
+  callers, because their copies had already drifted on `tint` formatting.
 
 ## Layers and the updater boundary (Q4)
 
