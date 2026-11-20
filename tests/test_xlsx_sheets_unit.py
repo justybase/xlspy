@@ -4,7 +4,20 @@ from __future__ import annotations
 
 import re
 
-from xlspy import XlsxUpdater, XlsxWriter
+import pytest
+
+from xlspy import (
+    Chart,
+    ChartSeries,
+    Comment,
+    ExcelTable,
+    Slicer,
+    UnsupportedFeatureError,
+    Workbook,
+    XlsxUpdater,
+    XlsxWriter,
+    load_workbook,
+)
 
 
 def _workbook(path, names=("One", "Two")):
@@ -137,6 +150,93 @@ def test_reorder_remaps_the_tab_bar_position(tmp_path):
         assert re.search(r'activeTab="2"', xml)
     finally:
         updater.close()
+
+
+def test_remove_sheet_drops_its_comments_drawing_and_chart_parts(tmp_path):
+    path = tmp_path / "owned.xlsx"
+    workbook = Workbook()
+    data = workbook.active
+    data.title = "Data"
+    data["A1"] = 1
+    data["A2"] = 2
+    data["A1"].comment = Comment("note", "author")
+    data.add_chart(Chart("bar", [ChartSeries("A1:A2")]), "D2")
+    other = workbook.create_sheet("Other")
+    other["A1"] = "keep"
+    workbook.save(path)
+    workbook.close()
+
+    updater = XlsxUpdater(path)
+    try:
+        owned = {
+            name for name in updater._package.names()
+            if "comments" in name or "vmlDrawing" in name
+            or "/drawings/" in name or "/charts/" in name
+        }
+        assert owned
+        updater.remove_sheet("Data")
+        assert owned.isdisjoint(updater._package.names())
+        assert updater.get_sheet_names() == ["Other"]
+        updater.save(path)
+    finally:
+        updater.close()
+
+    loaded = load_workbook(path)
+    try:
+        assert loaded.get_sheet_names() == ["Other"]
+        assert loaded["Other"]["A1"].value == "keep"
+    finally:
+        loaded.close()
+
+
+def test_remove_sheet_refuses_a_sheet_with_a_slicer(tmp_path):
+    path = tmp_path / "slicer.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet(
+            [["Region", "Sales"], ["North", 1]],
+            tables=[ExcelTable("Sales", "A1:B2")],
+            slicers=[Slicer("Sales", "Region", anchor="D2")],
+        )
+        writer.add_sheet("Other")
+        writer.write_sheet([["keep"]])
+
+    updater = XlsxUpdater(path)
+    try:
+        with pytest.raises(UnsupportedFeatureError):
+            updater.remove_sheet("Data")
+        assert updater.get_sheet_names() == ["Data", "Other"]
+    finally:
+        updater.close()
+
+
+def test_remove_chartsheet_drops_its_parts(tmp_path):
+    path = tmp_path / "chartsheet-remove.xlsx"
+    workbook = Workbook()
+    data = workbook.active
+    data.title = "Data"
+    data["A1"] = 1
+    data["A2"] = 2
+    chart = workbook.create_chartsheet("ChartOnly")
+    chart.add_chart(Chart("bar", [ChartSeries("A1:A2")]), source=data)
+    workbook.save(path)
+    workbook.close()
+
+    updater = XlsxUpdater(path)
+    try:
+        assert updater.get_chartsheet_names() == ["ChartOnly"]
+        updater.remove_sheet("ChartOnly")
+        assert updater.get_sheet_names() == ["Data"]
+        assert updater.get_chartsheet_names() == []
+        updater.save(path)
+    finally:
+        updater.close()
+
+    loaded = load_workbook(path)
+    try:
+        assert loaded.get_sheet_names() == ["Data"]
+    finally:
+        loaded.close()
 
 
 def test_reorder_moves_away_from_a_hidden_active_sheet(tmp_path):

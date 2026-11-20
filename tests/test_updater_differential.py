@@ -790,6 +790,62 @@ def _xlsx_with_chartsheet(tmp_path: Path) -> Path:
     return path
 
 
+def test_removed_sheets_match(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.add_sheet("Temp", 1),
+        lambda updater: updater.remove_sheet("Temp"),
+    )
+    assert xlsx == xlsb
+    assert xlsx["sheets"] == ["Data", "Other"]
+
+
+def test_remove_the_active_sheet_selects_the_next_visible_one(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.set_sheet_state("Other", "hidden"),
+        lambda updater: updater.set_active_sheet(0),
+        lambda updater: updater.remove_sheet("Data"),
+    )
+    assert xlsx == xlsb
+    assert xlsx["sheets"] == ["Other"]
+    assert xlsx["active"] == 0
+
+
+def test_local_names_of_a_removed_sheet_are_dropped(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.set_defined_name(
+            DefinedName("LocalData", "Data!$A$1", localSheetId=0)
+        ),
+        lambda updater: updater.set_defined_name(
+            DefinedName("LocalOther", "Other!$A$1", localSheetId=1)
+        ),
+        lambda updater: updater.remove_sheet("Data"),
+    )
+    assert xlsx == xlsb
+    assert [name for name, *_rest in xlsx["names"]] == ["LocalOther"]
+
+
+@pytest.mark.parametrize(
+    "change, error",
+    [
+        (lambda updater: updater.remove_sheet("Nope"), KeyError),
+        (
+            lambda updater: (
+                updater.remove_sheet("Data"),
+                updater.remove_sheet("Other"),
+            ),
+            ValueError,
+        ),
+    ],
+)
+def test_remove_sheet_errors_match(tmp_path, change, error):
+    for ext in FORMATS:
+        kind, _message = _error(tmp_path, ext, change)
+        assert kind is error
+
+
 def test_added_sheets_land_in_the_same_order(tmp_path):
     xlsx, xlsb = _run_both(
         tmp_path,

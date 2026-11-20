@@ -15,11 +15,14 @@ from typing import TYPE_CHECKING, Any
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import quoteattr
 
+from .comments import rels_path as _part_rels_path
+from .exceptions import UnsupportedFeatureError
 from ._metadata import CT, MAIN, PKG_REL, REL, element_pattern, replace_element, tag_attributes
 from ._safe_xml import fromstring as safe_fromstring
 from ._xlsx_edit import _bytes as _xml
 from ._xml_text import replace_or_add_xml_attribute
 from .refs import check_sheet_name
+from .updater_utils import sheet_has_pivots, sheet_has_slicers
 
 if TYPE_CHECKING:
     from .updater_utils import ZipPackage
@@ -48,6 +51,7 @@ class XlsxSheetsMixin:
         # Provided by XlsxUpdater.
         _package: ZipPackage
         _sheets: dict[str, str]
+        _chartsheets: set[str]
 
         def _apply_parts(self, parts: Mapping[str, Any], removed: Iterable[str] = ()) -> None: ...
         def _recalculate(self, updates: MutableMapping[str, Any], removed: list[str]) -> None: ...
@@ -194,6 +198,83 @@ class XlsxSheetsMixin:
         }
         return path
 
+    def remove_sheet(self, name: str) -> None:
+        """Remove a sheet, its part and the parts only it refers to.
+
+        References to it become ``#REF!`` and names local to it are dropped.
+        """
+        path = self._sheets.get(name)
+        if path is None:
+            raise KeyError(f"Worksheet not found: {name}")
+        if len(self._sheets) == 1:
+            raise ValueError("a workbook must keep at least one sheet")
+        package = self._package
+        # As for XLSB: slicers and pivots own workbook-level caches that would
+        # be left pointing at a removed sheet.
+        if sheet_has_slicers(package, path):
+            raise UnsupportedFeatureError(
+                f"sheet {name!r} holds table slicers; removing it is not supported yet"
+            )
+        if sheet_has_pivots(package, path):
+            raise UnsupportedFeatureError(
+                f"sheet {name!r} holds pivot tables; removing it is not supported yet"
+            )
+
+        current = list(self._sheets)
+        removed_index = current.index(name)
+        order = [sheet for sheet in current if sheet != name]
+        xml = self._workbook_xml()
+        xml, rid = _remove_sheet_entry(xml, name)
+        xml = _strip_local_sheet_names(xml, removed_index)
+        mapping = {
+            old: order.index(sheet)
+            for old, sheet in enumerate(current)
+            if sheet != name
+        }
+        previous_active = self.get_active_sheet()
+        active = mapping.get(previous_active, min(previous_active, len(order) - 1))
+        states = self.get_sheet_states()
+        states.pop(name, None)
+        if (
+            not 0 <= active < len(order)
+            or states.get(order[active], "visible") != "visible"
+        ):
+            active = next(
+                (place for place, sheet in enumerate(order)
+                 if states.get(sheet, "visible") == "visible"),
+                0,
+            )
+        view = element_pattern("workbookView").search(xml)
+        first = None
+        if view is not None:
+            opening = _opening_tag(view.group(0))
+            first = _int_attribute(tag_attributes(opening).get("firstSheet"))
+            if first is not None:
+                first = min(mapping.get(first, 0), active)
+        xml = _write_view(xml, active, first)
+
+        rels_path = "xl/_rels/workbook.xml.rels"
+        rels = safe_fromstring(package.get(rels_path))
+        for node in list(rels):
+            if rid is not None and node.get("Id") == rid:
+                rels.remove(node)
+        types = safe_fromstring(package.get("[Content_Types].xml"))
+
+        removed: list[str] = []
+        skip = {_part_rels_path(path)}
+        _drop_sheet_part_tree(package, path, removed, skip)
+        _remove_part_overrides(types, removed)
+
+        updates: dict[str, Any] = {
+            "xl/workbook.xml": xml,
+            rels_path: _xml(rels),
+            "[Content_Types].xml": _xml(types),
+        }
+        self._recalculate(updates, removed)
+        self._apply_parts(updates, removed)
+        self._sheets = {sheet: self._sheets[sheet] for sheet in order}
+        self._chartsheets.discard(name)
+
     def reorder_sheets(self, order: Iterable[str]) -> None:
         """Put the sheets in ``order`` (every sheet name, once)."""
         order = list(order)
@@ -249,6 +330,102 @@ class XlsxSheetsMixin:
         self._recalculate(updates, removed)
         self._apply_parts(updates, removed)
         self._sheets = {name: self._sheets[name] for name in order}
+
+
+def _remove_sheet_entry(workbook_xml: str, name: str) -> tuple[str, str | None]:
+    for match in list(element_pattern("sheet").finditer(workbook_xml)):
+        attrs = tag_attributes(match.group(0))
+        if attrs.get("name") != name:
+            continue
+        rid = next(
+            (value for key, value in attrs.items() if key.rsplit(":", 1)[-1] == "id"),
+            None,
+        )
+        return (
+            workbook_xml[:match.start()] + workbook_xml[match.end():],
+            rid,
+        )
+    return workbook_xml, None
+
+
+def _strip_local_sheet_names(workbook_xml: str, removed_index: int) -> str:
+    def change(match: re.Match[str]) -> str:
+        opening = _opening_tag(match.group(0))
+        value = _int_attribute(tag_attributes(opening).get("localSheetId"))
+        if value is None:
+            return match.group(0)
+        if value == removed_index:
+            return ""
+        if value > removed_index:
+            return (
+                replace_or_add_xml_attribute(opening, "localSheetId", value - 1)
+                + match.group(0)[len(opening):]
+            )
+        return match.group(0)
+
+    return element_pattern("definedName").sub(change, workbook_xml)
+
+
+def _sheet_part_target(source: str, target: str) -> str:
+    if target.startswith("/"):
+        return target[1:]
+    return posixpath.normpath(posixpath.join(posixpath.dirname(source), target))
+
+
+def _sheet_part_referenced(
+    package: ZipPackage, part: str, skip: set[str]
+) -> bool:
+    for name in package.names():
+        if not name.endswith(".rels") or name in skip:
+            continue
+        try:
+            root = safe_fromstring(package.get(name))
+        except Exception:
+            return True
+        if name.startswith("_rels/"):
+            source = ""
+        else:
+            source = name[:-5].replace("/_rels/", "/")
+        for node in root:
+            if node.get("TargetMode") == "External":
+                continue
+            target = node.get("Target")
+            if target and _sheet_part_target(source, target) == part:
+                return True
+    return False
+
+
+def _drop_sheet_part_tree(
+    package: ZipPackage,
+    part: str,
+    removed: list[str],
+    skip: set[str],
+) -> None:
+    if part in removed or not package.has(part):
+        return
+    removed.append(part)
+    rels_name = _part_rels_path(part)
+    skip.add(rels_name)
+    targets: list[str] = []
+    if package.has(rels_name):
+        root = safe_fromstring(package.get(rels_name))
+        for node in root:
+            if node.get("TargetMode") == "External":
+                continue
+            target = node.get("Target")
+            if target:
+                targets.append(_sheet_part_target(part, target))
+        removed.append(rels_name)
+    for target in targets:
+        if target not in removed and not _sheet_part_referenced(package, target, skip):
+            _drop_sheet_part_tree(package, target, removed, skip)
+
+
+def _remove_part_overrides(types: ET.Element, parts: Iterable[str]) -> None:
+    names = {"/" + part for part in parts}
+    for node in list(types):
+        if node.tag == f"{{{CT}}}Override" and node.get("PartName") in names:
+            types.remove(node)
 
 
 def _new_sheet_path(package: ZipPackage) -> str:
