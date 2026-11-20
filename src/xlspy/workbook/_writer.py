@@ -61,8 +61,18 @@ def _cell_values(sheet: Worksheet):
     """Rows for the writer. A styled cell with a value is written as
     ``(value, Style)``; styled empty cells go to ``_styles``."""
     if isinstance(sheet, WriteOnlyWorksheet):
-        for row in sheet._rows:
-            yield list(row)
+        for number, (row, row_styles) in enumerate(zip(sheet._rows, sheet._row_styles), 1):
+            queued = list(row)
+            for column, style in row_styles.items():
+                if column < len(queued):
+                    queued[column] = (queued[column], style)
+            if number == 1:
+                # The writers make first-row text bold by default; a queued
+                # cell keeps the look it has, as in openpyxl.
+                for column, value in enumerate(queued):
+                    if isinstance(value, (str, CellRichText)) and column not in row_styles:
+                        queued[column] = (value, _PLAIN_STYLE)
+            yield queued
         return
     max_row = max(sheet.max_row, 1)
     # A row past the last cell still goes out when it has a height, a flag or an outline
@@ -71,19 +81,19 @@ def _cell_values(sheet: Worksheet):
         if number > max_row and (dimension.height or dimension.hidden or dimension.outlineLevel or dimension.collapsed):
             max_row = number
     style_at = sheet._workbook._styles.style_at
-    styles: dict[int, Style] = {}
+    cached_styles: dict[int, Style] = {}
     plain_types = _WRITER_PLAIN_TYPES
-    cells = sheet._cells
+    cell_rows = sheet._cells
     native = NATIVE_CELLS
     for row_number in range(1, max_row + 1):
-        row_cells = cells.get(row_number)
+        row_cells = cell_rows.get(row_number)
         if not row_cells:
             # An empty row: the writers count rows by position, so it is still yielded.
             yield []
             continue
         # Not the first row, whose text has its own rule below.
         if native is not None and row_number != 1:
-            plain_row = native.row_values(row_cells, styles, style_at)
+            plain_row = native.row_values(row_cells, cached_styles, style_at)
             if plain_row is not None:
                 yield plain_row
                 continue
@@ -101,10 +111,11 @@ def _cell_values(sheet: Worksheet):
                 value = _value_for_new(cell)
             style_id = cell._style_id
             if style_id and value is not None:
-                style = styles.get(style_id)
-                if style is None:
-                    style = styles[style_id] = style_at(style_id)
-                value = (value, style)
+                cached = cached_styles.get(style_id)
+                if cached is None:
+                    cached = style_at(style_id)
+                    cached_styles[style_id] = cached
+                value = (value, cached)
             elif row_number == 1 and isinstance(value, (str, CellRichText)):
                 # The writers make first-row text bold by default; a model
                 # cell keeps the look it has, as in openpyxl.

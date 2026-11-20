@@ -260,6 +260,18 @@ class TableList(list):
 
 
 class DataValidationList(list):
+    """The sheet's data validation rules; openpyxl calls the list ``dataValidation``."""
+
+    @property
+    def dataValidation(self) -> DataValidationList:
+        """The live rules, under openpyxl's spelling.
+
+        openpyxl keeps the rules in this attribute, so
+        ``ws.data_validations.dataValidation.append(rule)`` adds a rule; this
+        property returns the list itself for the same reason.
+        """
+        return self
+
     def add(self, rule) -> None:
         self.append(rule)
 

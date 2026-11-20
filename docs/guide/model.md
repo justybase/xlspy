@@ -40,24 +40,43 @@ Supported model features:
 - `Workbook`: `active`, `sheetnames`, `worksheets`, `create_sheet(title,
   index)`, `remove()`, `copy_worksheet()`, `properties`, `defined_names`
   (read), `save()` and `close()`. `Workbook(write_only=True)` creates
-  append-only sheets.
-- `Worksheet`: `cell()`, `ws["A1"]`, ranges such as `ws["A1:B3"]`, `append()`,
+  append-only sheets. `"Name" in workbook` tests a sheet title and
+  `workbook.index("Name")` gives its position; new sheets are named `Sheet`,
+  `Sheet1`, `Sheet2` as openpyxl names them.
+- `Worksheet`: `cell()`, `ws["A1"]`, ranges such as `ws["A1:B3"]`, whole rows
+  and columns (`ws[3]`, `ws["3"]`, `ws["A"]`, `ws["A:C"]`, `ws["1:3"]`, and the
+  slices `ws[1:3]`/`ws["A":"C"]`), `append()`, iterating the sheet or
   `iter_rows()`/`iter_cols()` (with `values_only`), `rows`, `values`,
   `merge_cells()`/`unmerge_cells()`, `column_dimensions`/`row_dimensions`
   (width/height, hidden, outline level), `freeze_panes`, `auto_filter.ref`,
-  `sheet_state`, `sheet_properties.tabColor` and `sheet_view` options
-  (a new XLSX/XLSB workbook saves `sheet_view.showGridLines`; a loaded one
-  also keeps the other view settings).
+  `sheet_state`, `sheet_view`/`views`, `sheet_properties.tabColor` and
+  `sheet_view` options (a new XLSX/XLSB workbook saves
+  `sheet_view.showGridLines`; a loaded one also keeps the other view settings).
+  `ws.defined_names` is a write-through map of the names scoped to the sheet
+  (assigning one or calling `.add()` stores it on the workbook with this sheet
+  as its scope);
+  `ws.scenarios` is None (scenarios are preserved, not modelled, and assigning
+  an empty container is allowed) and `ws.legacy_drawing` is a placeholder that
+  currently always reads None.
 - `Cell`: `value` (numbers, text, booleans, dates/times, `Formula`,
   `ArrayFormula`, `DataTableFormula`, or text starting with `=`, `CellRichText`),
   `font`, `fill`, `border`, `alignment`,
   `protection`, `number_format`, `comment` and `hyperlink`. `style_id`,
-  `has_style` and `col_idx` follow openpyxl's names.
+  `has_style`, `col_idx`, `quotePrefix` and `pivotButton` follow openpyxl's
+  names; the two flags are read from a loaded workbook's cell formats and are
+  read-only. `check_error()`/`check_string()` behave as openpyxl's. An unset
+  component reads as openpyxl's default object (`cell.border.left.style` and
+  `cell.protection.locked` need no `None` guard), and `cell.hyperlink` takes a
+  target string as well as a `Hyperlink`.
 - openpyxl aliases on the model: `Worksheet.parent`, `encoding`, `mime_type`,
   `path`, `merged_cell_ranges`, `array_formulae` and `column_groups`;
   `Workbook.data_only`, `excel_base_date`, `path`, `mime_type`, `style_names`,
-  `get_index()`, `get_sheet_names()`, `remove_sheet()` and
-  `create_named_range()`.
+  `get_index()`, `get_sheet_names()`, `remove_sheet()`,
+  `create_named_range()`, `is_template`, `code_name` and `encoding`. The style
+  value objects take openpyxl's keyword spellings (`Font(sz=, b=)`,
+  `PatternFill("solid", fgColor=)`, `Border(diagonalUp=)`,
+  `Alignment(wrapText=)`, `Side(border_style=)`) and have `copy(**changes)`;
+  the spellings are readable properties too.
 - Rows and columns: `insert_rows()`, `delete_rows()`, `insert_cols()`,
   `delete_cols()` and `move_range(range, rows, cols, translate=False)`, also
   in loaded workbooks.
@@ -80,6 +99,8 @@ Most report scripts only change their imports. The differences:
 | `insert_rows()` keeps row heights in place | Heights and widths move with their rows and columns, as in Excel. Cell contents, styles, comments and hyperlinks move as in openpyxl; merged ranges and formulas do not (`move_range(translate=True)` shifts the references of moved formulas). |
 | `CellRichText`, `TextBlock`, `InlineFont` from `openpyxl.cell.rich_text` / `.text` | The same names from `xlspy`; `load_workbook(..., rich_text=True)` returns them. |
 | Named styles | Register with `add_named_style()` and assign by name with `cell.style = "Name"`; saved in new and loaded XLSX/XLSB workbooks. |
+| A file object as input | `load_workbook()` and `ExcelReader()` take a binary stream such as `io.BytesIO`; the format is detected from the package, and the caller's stream is never closed. |
+| Chart ranges on another sheet | `ChartSeries("Data!B2:B4", categories="Data!A2:A4")` writes `'Data'!$B$2:$B$4`; the sheet name may be quoted (`"'My Data'!B2:B4"`). |
 
 The first row of a model sheet is written as stored: unlike `XlsxWriter`, the
 model does not make first-row text bold.
@@ -189,7 +210,7 @@ workbook can be built with `Workbook()` and saved as `.xlsb`.
 
 ### Read-only mode
 
-`load_workbook(path, read_only=True)` streams XLSX, XLSM and XLSB worksheets
+`load_workbook(path_or_file, read_only=True)` streams XLSX, XLSM and XLSB worksheets
 without building the cell model, following openpyxl's read-only semantics:
 
 - Rows and columns use worksheet coordinates. `iter_rows()` starts at row 1 and

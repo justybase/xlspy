@@ -106,8 +106,19 @@ def column_letters() -> list[str]:
     return letters
 
 
+def _split_sheet_ref(reference: str) -> tuple[str | None, str]:
+    """Split ``"Data!B2:B4"`` into its sheet and A1 range; without ``!`` the sheet is None."""
+    if "!" not in reference:
+        return None, reference
+    sheet, _, cells = reference.rpartition("!")
+    if len(sheet) >= 2 and sheet.startswith("'") and sheet.endswith("'"):
+        sheet = sheet[1:-1].replace("''", "'")
+    return sheet, cells
+
+
 def chart_ref(letters: list[str], sheet_name: str, ref: str, *,
               absolute: bool = True) -> str:
+    owning_sheet, ref = _split_sheet_ref(ref)
     first_col, first_row, last_col, last_row = parse_cell_range(ref)
     if absolute:
         start = f"${letters[first_col]}${first_row + 1}"
@@ -120,7 +131,12 @@ def chart_ref(letters: list[str], sheet_name: str, ref: str, *,
             f"{letters[first_col]}{first_row + 1}"
             f":{letters[last_col]}{last_row + 1}"
         )
-    return f"{quote_sheet_name(sheet_name)}!{range_ref}"
+    return f"{quote_sheet_name(owning_sheet or sheet_name)}!{range_ref}"
+
+
+def _local_ref(ref: str) -> str | None:
+    """``ref`` when it names cells of the chart's own sheet, else None."""
+    return ref if "!" not in ref else None
 
 
 def chart_cell_spans(charts) -> dict[int, tuple[int, int]]:
@@ -128,15 +144,18 @@ def chart_cell_spans(charts) -> dict[int, tuple[int, int]]:
 
     The XLSB writer keeps only those cells while the rows stream past, in one
     list per column (see ``new_cell_store``), so the sheet is never held.
+    A series that reads another sheet (``"Data!B2:B4"``) contributes nothing:
+    its values are not in this sheet's rows.
     """
     spans: dict[int, tuple[int, int]] = {}
     for chart in charts:
         for series in chart.series:
             for ref in (series.values, series.categories, series.x_values,
                         series.title_cell):
-                if ref is None:
+                local = _local_ref(ref) if ref is not None else None
+                if local is None:
                     continue
-                first_col, first_row, last_col, last_row = parse_cell_range(ref)
+                first_col, first_row, last_col, last_row = parse_cell_range(local)
                 for col_idx in range(first_col, last_col + 1):
                     low, high = spans.get(col_idx, (first_row, last_row))
                     spans[col_idx] = (min(low, first_row), max(high, last_row))
@@ -155,11 +174,16 @@ def _range_values(cells: dict | None, ref: str) -> list:
     """Cell values covered by ``ref`` in row-major order.
 
     ``cells`` comes from ``new_cell_store``; cells outside the captured span
-    read as ``None``.
+    read as ``None``. A reference to another sheet has no captured cells, so
+    every value is ``None``.
     """
     if cells is None:
         raise ValueError("chart caches need the sheet cells; pass cells=...")
-    first_col, first_row, last_col, last_row = parse_cell_range(ref)
+    local = _local_ref(ref)
+    if local is None:
+        first_col, first_row, last_col, last_row = parse_cell_range(_split_sheet_ref(ref)[1])
+        return [None] * ((last_row - first_row + 1) * (last_col - first_col + 1))
+    first_col, first_row, last_col, last_row = parse_cell_range(local)
     values = []
     for row_idx in range(first_row, last_row + 1):
         for col_idx in range(first_col, last_col + 1):

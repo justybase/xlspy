@@ -70,6 +70,7 @@ from ._properties import (
     Pane as Pane,
     Selection as Selection,
     SheetView as SheetView,
+    SheetViewList as SheetViewList,
     FilterColumn as FilterColumn,
     SortCondition as SortCondition,
     SortState as SortState,

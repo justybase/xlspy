@@ -10,13 +10,16 @@ import io
 import os
 import posixpath
 import re
+import shutil
+import tempfile
+import weakref
 import zipfile
-from typing import Any, Literal, NoReturn, overload
+from typing import IO, Any, Literal, NoReturn, overload
 from collections.abc import Callable, Iterable, Iterator
 
 from .._untrusted import SafeZipFile
 from xml.etree import ElementTree as ET
-from ..exceptions import reading
+from ..exceptions import _source_label, reading
 from .._safe_xml import fromstring as safe_fromstring, iterparse as safe_iterparse
 
 from .._metadata import MAIN, REL, local_name as _local, qname, read_defined_names
@@ -28,8 +31,9 @@ from ..external_links import read_external_links
 from ..formulas import ArrayFormula, DataTableFormula, Formula
 from ..hyperlinks import Hyperlink
 from ..ignored_errors import FLAGS as IGNORED_ERROR_FLAGS, IgnoredError
-from ..reader import ExcelReader
+from ..reader import ExcelReader, _is_xlsb_source, _source_reference
 from ..refs import cell_position, column_label, parse_cell_range
+from ..utils.cell import range_boundaries
 from ..styles import (
     AboveAverageRule,
     BlanksRule,
@@ -1218,23 +1222,23 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
     _attach_comments(sheet, package, sheet_path)
 
 
-def _read_only_bounds(path: str, sheet_path: str) -> tuple[int, int, int, int] | None:
+def _read_only_bounds(archive: zipfile.ZipFile,
+                      sheet_path: str) -> tuple[int, int, int, int] | None:
     """Return ``(min_col, min_row, max_col, max_row)`` from a worksheet
     ``dimension`` ref, or None when the sheet is unsized (as openpyxl)."""
     if not sheet_path.endswith(".xml"):
         return None
     try:
-        with SafeZipFile(path) as archive:
-            with archive.open(sheet_path) as stream:
-                for _event, node in safe_iterparse(stream, events=("start",)):
-                    if _local(node.tag) == "dimension" and node.get("ref"):
-                        try:
-                            c1, r1, c2, r2 = parse_cell_range(node.get("ref"))
-                        except (TypeError, ValueError):
-                            return None
-                        return c1 + 1, r1 + 1, c2 + 1, r2 + 1
-                    if _local(node.tag) == "sheetData":
+        with archive.open(sheet_path) as stream:
+            for _event, node in safe_iterparse(stream, events=("start",)):
+                if _local(node.tag) == "dimension" and node.get("ref"):
+                    try:
+                        c1, r1, c2, r2 = parse_cell_range(node.get("ref"))
+                    except (TypeError, ValueError):
                         return None
+                    return c1 + 1, r1 + 1, c2 + 1, r2 + 1
+                if _local(node.tag) == "sheetData":
+                    return None
     except (KeyError, ET.ParseError, zipfile.BadZipFile):
         return None
     return None
@@ -1458,14 +1462,38 @@ class ReadOnlyWorksheet(Worksheet):
                 return first
         return EMPTY_CELL
 
-    def __getitem__(self, key: str | int) -> Any:
-        if isinstance(key, int):
-            return next(self.iter_rows(min_row=key, max_row=key), ())
-        if isinstance(key, str) and ":" not in key:
-            col, row, _, _ = parse_cell_range(key)
-            return self.cell(row + 1, col + 1)
-        c1, r1, c2, r2 = parse_cell_range(key)
-        return tuple(self.iter_rows(min_row=r1 + 1, max_row=r2 + 1, min_col=c1 + 1, max_col=c2 + 1))
+    def __getitem__(self, key: str | int | slice) -> Any:
+        """Address rows, columns and ranges as openpyxl's read-only sheet does.
+
+        ``ro["A1"]`` is one cell, ``ro["1:3"]``/``ro[1:3]`` rows of cells, and
+        ``ro["2"]`` its cells. Column ranges need ``iter_cols``, which a
+        streaming sheet cannot provide, so they raise AttributeError as in
+        openpyxl.
+        """
+        if isinstance(key, slice):
+            if not key.start or not key.stop:
+                raise IndexError(f"{key} is not a valid coordinate or range")
+            key = f"{key.start}:{key.stop}"
+        elif isinstance(key, int) and not isinstance(key, bool):
+            key = str(key)
+        elif not isinstance(key, str):
+            raise TypeError("worksheet indices must be A1 references or row numbers")
+
+        min_col, min_row, max_col, max_row = range_boundaries(key)
+        if not any((min_col, min_row, max_col, max_row)):
+            raise IndexError(f"{key!r} is not a valid coordinate or range")
+        if min_row is None:
+            return tuple(self.iter_cols(min_col, max_col))
+        if min_col is None:
+            rows = tuple(self.iter_rows(
+                min_row=min_row, max_row=max_row, max_col=self.max_column,
+            ))
+            return rows[0] if min_row == max_row else rows
+        if ":" not in key:
+            return self.cell(min_row, min_col)
+        return tuple(self.iter_rows(
+            min_row=min_row, min_col=min_col, max_row=max_row, max_col=max_col,
+        ))
 
     def __setitem__(self, key: str, value: Any) -> NoReturn:
         raise AttributeError("read-only worksheets cannot be modified")
@@ -1475,7 +1503,7 @@ class ReadOnlyWorksheet(Worksheet):
         raise AttributeError("read-only worksheets cannot be modified")
 
 
-def load_workbook(filename: str | os.PathLike[str], *, read_only: bool = False, data_only: bool = False,
+def load_workbook(filename: str | os.PathLike[str] | IO[bytes], *, read_only: bool = False, data_only: bool = False,
                   keep_vba: bool = False, rich_text: bool = False,
                   keep_links: bool = True) -> Workbook:
     """Load an XLSX/XLSM workbook, or stream an XLSB/XLSX with ``read_only``.
@@ -1484,7 +1512,8 @@ def load_workbook(filename: str | os.PathLike[str], *, read_only: bool = False, 
     This function adds coordinates, styles, merges, dimensions and editing.
 
     Args:
-        filename: Path to an ``.xlsx``, ``.xlsm`` or ``.xlsb`` file.
+        filename: Path to an ``.xlsx``, ``.xlsm`` or ``.xlsb`` file, or a
+            binary file object such as ``io.BytesIO``. The object is not closed.
         read_only: Stream rows instead of building the full model. Read-only
             sheets cannot be edited or saved.
         data_only: Return cached formula results instead of formula text.
@@ -1519,10 +1548,45 @@ def load_workbook(filename: str | os.PathLike[str], *, read_only: bool = False, 
         `ExcelReader` for the fastest values-only path, and `Workbook` for the
         in-memory model this function returns.
     """
-    path = os.fspath(filename)
-    with reading(path):
-        return _load_workbook(path, read_only=read_only, data_only=data_only, keep_vba=keep_vba,
-                              rich_text=rich_text, keep_links=keep_links)
+    path = _source_reference(filename)
+    staged_directory: str | None = None
+    if path is None:
+        raise TypeError("filename must be a path or a binary file object, not None")
+    if isinstance(path, str):
+        source_label = path
+    else:
+        # A file object: copy it once into a private temporary file, because
+        # the updater and the reader each open the package by path. The copy
+        # lives as long as the workbook; close() removes it. openpyxl reads a
+        # stream from its start, so rewind the caller's object first: a stream
+        # left at EOF by save() is the normal way to hand a workbook over.
+        source = path
+        try:
+            source.seek(0)
+        except (AttributeError, OSError):
+            pass
+        staged_directory = tempfile.mkdtemp(prefix="xlspy-source-")
+        staged = os.path.join(staged_directory, "workbook.xlsx")
+        try:
+            with open(staged, "wb") as target:
+                shutil.copyfileobj(source, target)
+        except BaseException:
+            shutil.rmtree(staged_directory, ignore_errors=True)
+            raise
+        source_label, path = _source_label(filename), staged
+    with reading(source_label):
+        try:
+            workbook = _load_workbook(path, read_only=read_only, data_only=data_only,
+                                      keep_vba=keep_vba, rich_text=rich_text, keep_links=keep_links)
+        except BaseException:
+            if staged_directory is not None:
+                shutil.rmtree(staged_directory, ignore_errors=True)
+            raise
+    if staged_directory is not None:
+        workbook._source_staging = weakref.finalize(
+            workbook, shutil.rmtree, staged_directory, ignore_errors=True
+        )
+    return workbook
 
 
 def _read_only_workbook(reader: ExcelReader, path: str, *, data_only: bool) -> Workbook:
@@ -1534,6 +1598,7 @@ def _read_only_workbook(reader: ExcelReader, path: str, *, data_only: bool) -> W
     workbook._data_only = data_only
     workbook._source_path = path
     cellless = set(reader.get_chartsheet_names())
+    archive = reader._zip()
     for index, name in enumerate(reader.get_sheet_names()):
         if name in cellless:
             continue  # as in a full load, chartsheets are not worksheets
@@ -1546,7 +1611,7 @@ def _read_only_workbook(reader: ExcelReader, path: str, *, data_only: bool) -> W
         else:
             part = reader._sheet_part(name)
             if part is not None:
-                sheet._set_bounds(_read_only_bounds(path, part))
+                sheet._set_bounds(_read_only_bounds(archive, part))
         workbook._sheets.append(sheet)
     if workbook._sheets:
         workbook._active_index = 0
@@ -1555,7 +1620,6 @@ def _read_only_workbook(reader: ExcelReader, path: str, *, data_only: bool) -> W
 
 def _load_workbook(path: str, *, read_only: bool, data_only: bool, keep_vba: bool, rich_text: bool,
                    keep_links: bool) -> Workbook:
-    lower = path.lower()
     if read_only:
         reader = ExcelReader(path)
         reader.open(path)
@@ -1565,7 +1629,7 @@ def _load_workbook(path: str, *, read_only: bool, data_only: bool, keep_vba: boo
             reader.close()  # the workbook is not returned, so nothing else closes it
             raise
 
-    if lower.endswith(".xlsb"):
+    if _is_xlsb_source(path):
         from ._xlsb_reader import load_workbook_xlsb
 
         return load_workbook_xlsb(path, data_only=data_only)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from ..exceptions import UnsupportedFeatureError
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import replace
 import datetime as _datetime
 from typing import TYPE_CHECKING, Any, Literal, overload
@@ -15,7 +15,9 @@ from ..images import Image
 from ..refs import parse_cell_range, quote_sheet_name
 from ..styles import (
     ExcelTable,
+    Style,
 )
+from ..utils.cell import range_boundaries
 from . import _shift
 from ._print import (
     HeaderFooter,
@@ -26,7 +28,7 @@ from ._print import (
 from ._cell import Cell, MergedCell, NATIVE_CELLS, WriteOnlyCell, _CELL_TYPE_KINDS, _new_cell
 from ._coords import MultiCellRange, _CELL_RE, _coerce_column, _coerce_row, _coordinate, _normalize_range
 from ._dimensions import ColumnDimension, DimensionHolder, RowDimension, _column_key, _row_key
-from ._properties import AutoFilter, ColBreak, Pane, RowBreak, Selection, SheetFormatProperties, SheetProperties, SheetView, WorksheetProtection, _as_model_page_margins, _as_model_protection
+from ._properties import AutoFilter, ColBreak, Pane, RowBreak, Selection, SheetFormatProperties, SheetProperties, SheetView, SheetViewList, WorksheetProtection, _as_model_page_margins, _as_model_protection, _SheetDefinedNames
 from ._tables import ConditionalFormattingList, DataValidationList, Table, TableList, _expect
 
 if TYPE_CHECKING:
@@ -86,6 +88,10 @@ class Worksheet:
         self._sheet_state = "visible"
         self._sheet_properties = SheetProperties()
         self._sheet_view = SheetView(showGridLines=True)
+        self._views = SheetViewList(self._sheet_view)
+        # Scenarios and legacy VML are preserved, not modelled; openpyxl reports them.
+        self._scenarios: Any = None
+        self._legacy_drawing: str | None = None
         self._dirty = False
         self._dirty_cells: set[tuple[int, int]] = set()
         self._dirty_styles: set[str] = set()
@@ -124,7 +130,6 @@ class Worksheet:
         self._print_title_rows: str | None = None
         self._print_title_cols: str | None = None
         self._comments: dict[str, Comment] = {}
-        self._legacy_drawing = None
 
     def __repr__(self) -> str:
         return f"<Worksheet {self._title!r}>"
@@ -236,12 +241,18 @@ class Worksheet:
     def freeze_panes(self) -> str | None:
         """The top-left cell of the scrolling pane, or None.
 
-        ``"B2"`` freezes row 1 and column A.
+        ``"B2"`` freezes row 1 and column A. Read from ``sheet_view.pane``, as
+        openpyxl does, so a pane set through the view is visible here.
         """
+        pane = self._sheet_view.pane
+        if pane is not None:
+            return pane.topLeftCell
         return self._freeze_panes
 
     @freeze_panes.setter
     def freeze_panes(self, value: str | None) -> None:
+        if value == "A1":
+            value = None  # freezing at A1 freezes nothing, as in openpyxl
         if value == "":
             value = None
         if value is not None:
@@ -301,6 +312,50 @@ class Worksheet:
     def sheet_view(self) -> SheetView:
         """The first sheet view: zoom, grid lines, selection and panes."""
         return self._sheet_view
+
+    @property
+    def views(self) -> SheetViewList:
+        """Every sheet view, as openpyxl's ``ws.views``."""
+        return self._views
+
+    @property
+    def defined_names(self) -> MutableMapping[str, Any]:
+        """The defined names scoped to this sheet, keyed by name, as openpyxl's
+        map.
+
+        Assigning an entry stores it on the workbook with this sheet as its
+        scope, so it is written on save. Deleting one removes only this sheet's
+        entry.
+        """
+        mapping = getattr(self, "_defined_names_view", None)
+        if mapping is None:
+            mapping = self._defined_names_view = _SheetDefinedNames(self._workbook, self)
+        return mapping
+
+    @property
+    def scenarios(self) -> Any:
+        """The sheet's scenarios: always None, because xlspy preserves but does
+        not model them.
+
+        openpyxl reports an empty ``ScenarioList`` on a sheet without scenarios.
+        """
+        return self._scenarios
+
+    @scenarios.setter
+    def scenarios(self, value: Any) -> None:
+        if value is None or (isinstance(value, (list, tuple)) and not value):
+            self._scenarios = None
+            return
+        raise UnsupportedFeatureError("scenarios are preserved, not modelled")
+
+    @property
+    def legacy_drawing(self) -> str | None:
+        """The relationship id of the sheet's legacy VML drawing.
+
+        Always None: the loaders preserve the part but do not expose its id, so
+        this is a placeholder for openpyxl's attribute.
+        """
+        return self._legacy_drawing
 
     @property
     def active_cell(self) -> str | None:
@@ -592,21 +647,45 @@ class Worksheet:
     def _existing_cell(self, row: int, column: int) -> Cell | None:
         return self._cells.get(row, {}).get(column)
 
-    def __getitem__(self, key: str | int) -> Any:
-        if isinstance(key, str):
-            if ":" in key:
-                c1, r1, c2, r2 = parse_cell_range(key)
-                return tuple(
-                    tuple(self.cell(row + 1, col + 1) for col in range(c1, c2 + 1))
-                    for row in range(r1, r2 + 1)
-                )
-            if _CELL_RE.match(key):
-                col, row, _, _ = parse_cell_range(key)
-                return self.cell(row + 1, col + 1)
-        if isinstance(key, int) and not isinstance(key, bool):
-            row = _coerce_row(key)
-            return tuple(self.cell(row, col) for col in range(1, self._max_column + 1))
-        raise TypeError("worksheet indices must be A1 references or row numbers")
+    def __getitem__(self, key: str | int | slice) -> Any:
+        """Address cells, rows and columns the way openpyxl does.
+
+        ``ws["A1"]`` is a cell, ``ws["A1:C3"]`` a tuple of rows of cells,
+        ``ws["A:A"]``/``ws["A"]`` a tuple of column cells, ``ws["1:3"]``/``ws[3]``
+        a tuple of row cells, and ``ws["A:C"]`` a tuple of rows. A slice such as
+        ``ws[1:3]`` or ``ws["A":"C"]`` is the same as its colon form.
+        """
+        if isinstance(key, slice):
+            if not key.start or not key.stop:
+                raise IndexError(f"{key} is not a valid coordinate or range")
+            key = f"{key.start}:{key.stop}"
+        elif isinstance(key, int) and not isinstance(key, bool):
+            key = str(key)
+        elif not isinstance(key, str):
+            raise TypeError("worksheet indices must be A1 references or row numbers")
+
+        min_col, min_row, max_col, max_row = range_boundaries(key)
+        if not any((min_col, min_row, max_col, max_row)):
+            raise IndexError(f"{key!r} is not a valid coordinate or range")
+        if min_row is None:
+            columns = tuple(self.iter_cols(
+                min_col, max_col, max_row=max(self._max_row, 1),
+            ))
+            return columns[0] if min_col == max_col else columns
+        if min_col is None:
+            rows = tuple(self.iter_rows(
+                min_row=min_row, max_row=max_row, max_col=max(self._max_column, 1),
+            ))
+            return rows[0] if min_row == max_row else rows
+        if ":" not in key:
+            return self.cell(min_row, min_col)
+        return tuple(self.iter_rows(
+            min_row=min_row, min_col=min_col, max_row=max_row, max_col=max_col,
+        ))
+
+    def __iter__(self) -> Iterator[tuple[Cell, ...]]:
+        """Yield the rows of the used range, as ``iter_rows()`` does."""
+        return self.iter_rows()
 
     def __setitem__(self, key: str, value: Any) -> None:
         if isinstance(key, str) and ":" in key:
@@ -626,7 +705,9 @@ class Worksheet:
             return
         if isinstance(key, str) and _CELL_RE.match(key):
             col, row, _, _ = parse_cell_range(key)
-            self.cell(row + 1, col + 1, value)
+            # Assign through the cell, not cell(row, column, value): assigning
+            # None clears a value, while cell(..., None) means "no value given".
+            self.cell(row + 1, col + 1).value = value
             return
         raise TypeError("worksheet indices must be A1 references")
 
@@ -880,18 +961,47 @@ class Worksheet:
         self._dirty_meta.clear()
 
 
+def _write_only_style(cell: WriteOnlyCell) -> Style | None:
+    """The Style a ``WriteOnlyCell`` carries, or None when it sets nothing.
+
+    openpyxl stores each style component on the cell; when one was assigned,
+    the writer applies it to that cell only.
+    """
+    number_format = None if cell.number_format in (None, "General") else cell.number_format
+    if all(
+        value is None
+        for value in (cell.font, cell.fill, cell.border, cell.alignment,
+                      cell.protection, number_format)
+    ):
+        return None
+    return Style(
+        font=cell.font,
+        fill=cell.fill,
+        border=cell.border,
+        alignment=cell.alignment,
+        protection=cell.protection,
+        number_format=number_format,
+    )
+
+
 class WriteOnlyWorksheet(Worksheet):
     """Streaming-friendly sheet that stores rows rather than Cell objects."""
 
     def __init__(self, workbook: Workbook, title: str, *, index: int | None = None) -> None:
         super().__init__(workbook, title, index=index)
         self._rows: list[list[Any]] = []
+        # Per row, the columns whose WriteOnlyCell carried a style; the writer
+        # turns them into (value, Style) cells.
+        self._row_styles: list[dict[int, Style]] = []
 
     def append(self, iterable: Iterable[Any]) -> int:
         """Queue a row for writing and return its row number.
 
         A mapping places its values by column letter or 1-based column number.
+        A ``WriteOnlyCell`` contributes its value and, when it has one, its
+        style; the writer then writes the cell with that style.
         """
+        styles: dict[int, Style] = {}
         if isinstance(iterable, Mapping):
             entries = []
             for key, value in iterable.items():
@@ -903,7 +1013,12 @@ class WriteOnlyWorksheet(Worksheet):
                     column = key
                 else:
                     raise TypeError("dict keys must be column letters or 1-based ints")
-                entries.append((column, value.value if isinstance(value, WriteOnlyCell) else value))
+                if isinstance(value, WriteOnlyCell):
+                    style = _write_only_style(value)
+                    if style is not None:
+                        styles[column - 1] = style
+                    value = value.value
+                entries.append((column, value))
             row = [None] * (max((column for column, _ in entries), default=0))
             for column, value in entries:
                 row[column - 1] = value
@@ -911,10 +1026,16 @@ class WriteOnlyWorksheet(Worksheet):
         else:
             if isinstance(iterable, (str, bytes, bytearray)):
                 raise TypeError("a row must be an iterable of cells, not text")
-            self._rows.append([
-                value.value if isinstance(value, WriteOnlyCell) else value
-                for value in iterable
-            ])
+            values = []
+            for column, value in enumerate(iterable):
+                if isinstance(value, WriteOnlyCell):
+                    style = _write_only_style(value)
+                    if style is not None:
+                        styles[column] = style
+                    value = value.value
+                values.append(value)
+            self._rows.append(values)
+        self._row_styles.append(styles)
         self._max_row = len(self._rows)
         self._max_column = max((len(row) for row in self._rows), default=0)
         self._mark_dirty("rows")

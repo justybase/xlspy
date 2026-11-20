@@ -7,7 +7,7 @@ imports working while adding openpyxl-compatible submodules such as
 from __future__ import annotations
 
 from .core import *  # noqa: F401,F403
-from .named_styles import NamedStyle as NamedStyle, NamedStyleList as NamedStyleList
+from .named_styles import NamedStyle as NamedStyle, NamedStyleList as NamedStyleList, StyleArray as StyleArray
 from .core import (
     _EMPTY_STYLES as _EMPTY_STYLES,
     _FontKey as _FontKey,

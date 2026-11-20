@@ -17,6 +17,8 @@ class Style:
     ``underline``, ``number_format``, ``horizontal``, ``vertical``, ``wrap``)
     cover the legacy API; the structured fields (``font``, ``pattern``,
     ``border``, ``alignment``, ``protection``) are the openpyxl-like API.
+    ``quote_prefix`` and ``pivot_button`` mirror openpyxl's flags on the cell
+    format.
     ``fill`` accepts a color string (solid), ``PatternFill``, or
     ``GradientFill``. On conflict the structured object wins per property; a
     ``None`` sub-property falls back to the corresponding flat shorthand.
@@ -54,6 +56,8 @@ class Style:
     border: Border | None = None
     alignment: Alignment | None = None
     protection: Protection | None = None
+    quote_prefix: bool | None = None
+    pivot_button: bool | None = None
 
     def __post_init__(self) -> None:
         fill = self.fill
@@ -86,7 +90,7 @@ class Style:
             "top", "center", "bottom", "justify", "distributed"
         }:
             raise ValueError("invalid vertical alignment")
-        for name in ("bold", "italic", "underline", "wrap"):
+        for name in ("bold", "italic", "underline", "wrap", "quote_prefix", "pivot_button"):
             value = getattr(self, name)
             if value is not None and not isinstance(value, bool):
                 raise TypeError(f"{name} must be bool or None")

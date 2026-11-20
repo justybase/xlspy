@@ -44,6 +44,10 @@ ERROR_BAR_KINDS = {
 ERROR_BAR_DIRECTIONS = frozenset({"both", "plus", "minus"})
 
 _RGB_RE = re.compile(r"[0-9A-Fa-f]{6}")
+# Characters Excel forbids in a worksheet name. A chart range's sheet part is
+# rejected when it contains one, so a mistyped reference cannot be written as
+# a sheet name Excel will not resolve.
+_INVALID_SHEET_NAME_CHARS = frozenset('[]:*?/\\')
 MARKER_SYMBOLS = frozenset(
     {"circle", "square", "diamond", "triangle", "x", "star", "dot", "dash", "plus", "none"}
 )
@@ -73,10 +77,29 @@ _LABEL_POSITIONS_BY_TYPE = {
 
 
 def _validate_chart_range(reference: str, kind: str) -> tuple[int, int, int, int]:
-    """Parse an A1 range on the chart's own sheet (no ``!`` allowed)."""
-    if not isinstance(reference, str) or "!" in reference:
-        raise ValueError(f"{kind} must be a range on the chart sheet, got {reference!r}")
-    return parse_cell_range(reference)
+    """Parse an A1 range that a chart series reads.
+
+    The range is on the chart's own sheet, or on another sheet when it carries
+    that sheet's name: ``"Data!B2:B4"`` or ``"'My Data'!B2:B4"``. Both parts
+    are validated: an empty or malformed sheet name would otherwise be written
+    as a reference Excel cannot resolve.
+    """
+    if not isinstance(reference, str):
+        raise ValueError(f"{kind} must be an A1 range, got {reference!r}")
+    if "!" in reference:
+        sheet, _, cells = reference.rpartition("!")
+        if len(sheet) >= 2 and sheet.startswith("'") and sheet.endswith("'"):
+            sheet = sheet[1:-1].replace("''", "'")
+        if not sheet:
+            raise ValueError(f"{kind} must name a sheet before '!' in {reference!r}")
+        if (len(sheet) > 31 or _INVALID_SHEET_NAME_CHARS.intersection(sheet)
+                or sheet.startswith("'") or sheet.endswith("'")):
+            raise ValueError(f"{kind} names an invalid sheet {sheet!r}")
+    else:
+        cells = reference
+    if not cells:
+        raise ValueError(f"{kind} must be an A1 range, got {reference!r}")
+    return parse_cell_range(cells)
 
 
 def _normalize_rgb(value: str | None, kind: str) -> str | None:

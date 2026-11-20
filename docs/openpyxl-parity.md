@@ -19,7 +19,55 @@ The harness in `tests/openpyxl_compat/` is the executable version of this
 matrix.  A missing attribute is reported as `xfail` with the ID below; when a
 gap is implemented the same test starts passing without changes.
 
-## Implementation history (initial status 2026-10-27; limits refreshed 2026-11-05)
+## Implementation history (initial status 2026-10-27; limits refreshed 2026-11-15)
+
+### Compatibility refresh — 2026-11-15
+
+Usability gap fixes, each covered by `tests/test_openpyxl_model_parity.py`:
+
+- **Style keyword aliases**: `Font(sz=, b=, i=, u=, strikethrough=)`,
+  `PatternFill("solid", fgColor=, bgColor=)`, `GradientFill(type=)`,
+  `Side(border_style=)`, `Border(diagonalUp=, diagonalDown=)`,
+  `Alignment(textRotation=, wrapText=, shrinkToFit=, relativeIndent=,
+  justifyLastLine=, readingOrder=)` are accepted beside the long names, the
+  same spellings are readable properties, and passing both raises `TypeError`.
+  Every style object gained openpyxl's `copy(**changes)`.
+- **Worksheet addressing**: `ws["A"]`, `ws["A:A"]`, `ws["A:C"]`, `ws["3"]`,
+  `ws["1:3"]` and the slices `ws[1:3]` / `ws["A":"C"]` return what openpyxl
+  returns, and iterating a worksheet yields its rows. Read-only sheets support
+  single cells and row ranges (and their slices); column ranges need
+  `iter_cols`, which streaming does not provide, so they raise `AttributeError`
+  as openpyxl's read-only sheet does. `ws["A1"] = None` clears the cell.
+- **Workbook helpers**: `"Name" in workbook`, `workbook.index("Name")`,
+  `workbook.get_index("Name")`, default titles `Sheet`, `Sheet1`, `Sheet2`,
+  `copy_worksheet()` names (`Sheet Copy`, `Sheet Copy1`), `is_template`
+  (a no-op, as in openpyxl) and `encoding`. `code_name` is stored but not
+  written to the package yet.
+- **Unstyled cells** report openpyxl's default font, fill, border, alignment
+  and protection objects instead of `None`, and `cell.hyperlink = "https://..."`
+  is accepted as openpyxl accepts it.
+- **Dict-like lists**: `named_styles.keys()/values()/items()/get()`,
+  `defined_names.keys()/values()/items()/get()`, `ws.defined_names.add()`, and
+  `NamedStyle.as_tuple()`, which returns openpyxl's nine-field `StyleArray`
+  (all zeros until the writer assigns ids); the class is importable from
+  `xlspy.styles` and `xlspy`. These are xlspy extensions; openpyxl's
+  `named_styles` is a plain list of names.
+- **File-object input**: `ExcelReader(path_or_file)` and
+  `load_workbook(file_object)` accept a binary stream (`io.BytesIO`), detect
+  XLSX/XLSB by content instead of extension, and never close the caller's
+  stream. `load_workbook` stages a file object to a private temporary copy that
+  `close()` removes. A `bytes` path is refused with openpyxl's
+  `InvalidFileException` rather than failing later with `AttributeError`.
+- **Write-only styles**: a `WriteOnlyCell` that sets `font`, `fill`,
+  `border`, `alignment`, `protection` or `number_format` is written with that
+  style, and the writer no longer bolds the first row of a write-only sheet
+  behind the caller's back.
+- **Cross-sheet chart ranges**: `ChartSeries(values="Data!B2:B4")` and the
+  same form for `categories`, `x_values` and `title_cell` are written as
+  `'Data'!$B$2:$B$4`, with a quoted sheet name. Both parts are checked: an
+  empty or malformed sheet name raises `ValueError` instead of being written.
+- **`range_boundaries`** matches openpyxl for one-ended ranges (`"A"`, `"2"`,
+  `""`), absolute references and reversed ranges.
 
 ### Completed
 

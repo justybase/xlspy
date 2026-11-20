@@ -6,8 +6,9 @@ import re
 import zipfile
 
 from ._untrusted import SafeZipFile
-from .exceptions import InvalidFileError, reading, reading_rows
-from typing import Any, TYPE_CHECKING, Literal
+from .exceptions import InvalidFileError, _source_label, reading, reading_rows
+from .utils.exceptions import InvalidFileException
+from typing import IO, Any, TYPE_CHECKING, Literal
 from collections.abc import Generator
 from types import TracebackType
 from xml.parsers.expat import ParserCreate
@@ -34,6 +35,58 @@ if TYPE_CHECKING:
 _SST_ITEM = re.compile(r"<si>(.*?)</si>", re.DOTALL)
 _SST_TEXT = re.compile(r"<t(?:\s[^>]*)?>(.*?)</t>", re.DOTALL)
 _SST_UNSAFE = re.compile(r"<!\[CDATA\[|<!--|&#|<\w+:|<si\s|<si/>|<t\b[^>]*/>")
+
+
+def _source_reference(source: str | os.PathLike[str] | IO[bytes] | None) -> str | IO[bytes] | None:
+    """The source kept for reopening: its file name, or the file object itself.
+
+    A path is kept as a ``str``. ``os.PathLike`` returning ``bytes`` is refused
+    with the exception openpyxl raises for unsupported file names, instead of
+    failing later when the value is passed to ``zipfile`` as if it were a file.
+    """
+    if isinstance(source, (str, bytes, os.PathLike)):
+        path = os.fspath(source)
+        if isinstance(path, bytes):
+            raise InvalidFileException(
+                f"cannot read {_source_label(source)!r}: file paths must be "
+                "str, not bytes; decode it with os.fsdecode()"
+            )
+        return path
+    return source
+
+
+def _is_xlsb_source(source: str | IO[bytes]) -> bool:
+    """True when the package at ``source`` has ``xl/workbook.bin``, i.e. is XLSB.
+
+    A source that is not a readable ZIP package reports False: opening it then
+    raises the InvalidFileError (or FileNotFoundError) that names the problem.
+    A file object is left where the caller had it.
+    """
+    def has_bin(archive: zipfile.ZipFile) -> bool:
+        return 'xl/workbook.bin' in archive.namelist()
+
+    if isinstance(source, str):
+        try:
+            with SafeZipFile(source, 'r') as archive:
+                return has_bin(archive)
+        except (OSError, ValueError):
+            return False
+    position: int | None
+    try:
+        position = source.tell()
+    except (AttributeError, OSError):
+        position = None
+    try:
+        with SafeZipFile(source, 'r') as archive:
+            return has_bin(archive)
+    except (OSError, ValueError):
+        return False
+    finally:
+        if position is not None:
+            try:
+                source.seek(position)
+            except (AttributeError, OSError):
+                pass
 
 
 def _parse_shared_strings_fast(content: str) -> list[str] | None:
@@ -173,7 +226,7 @@ class ExcelReader:
 
     def __init__(
         self,
-        path: str | None = None,
+        path: str | os.PathLike[str] | IO[bytes] | None = None,
         use_memory_stream_for_xlsb: bool = True,
         errors: str = "legacy",
     ) -> None:
@@ -193,22 +246,25 @@ class ExcelReader:
         self._shared_strings_location: str | None = None
         self._styles_location: str | None = None
         self._date_1904 = False
-        self._path: str | None = None if path is None else os.fspath(path)
+        self._path = _source_reference(path)
         # The file last opened, named in InvalidFileError messages.
-        self._opened_path = self._path or ""
+        self._opened_path = "" if self._path is None else _source_label(self._path)
         self.use_memory_stream_for_xlsb = use_memory_stream_for_xlsb
 
-    def open(self, path: str | os.PathLike[str]) -> None:
+    def open(self, path: str | os.PathLike[str] | IO[bytes]) -> None:
         """Open ``path`` and read its sheet list, shared strings and styles.
 
-        A name ending in ``.xlsb`` is read as XLSB, any other as XLSX/XLSM. Raises
-        InvalidFileError for a damaged file.
+        ``path`` is a file name, or a binary file object such as ``io.BytesIO``.
+        An XLSB package is detected by its ``xl/workbook.bin`` part, any other
+        package is read as XLSX/XLSM. Raises InvalidFileError for a damaged file.
         """
         # Re-opening the same instance must not leak the previous archive nor
         # accumulate worksheet/style/shared-string state from the previous file.
-        path = os.fspath(path)
+        source = _source_reference(path)
+        assert source is not None  # open() has no None form
         self.close()
-        self._opened_path = path
+        self._opened_path = _source_label(source)
+        self._path = source
         self._worksheet_id_to_name = {}
         self._worksheet_name_to_id = {}
         self._worksheet_id_to_location = {}
@@ -220,13 +276,13 @@ class ExcelReader:
         self._styles_location = None
         self._date_1904 = False
 
-        self._is_xlsb = path.lower().endswith('xlsb')
+        self._is_xlsb = _is_xlsb_source(source)
         try:
-            with reading(path):
+            with reading(self._opened_path):
                 if self._is_xlsb:
-                    self._open_xlsb(path)
+                    self._open_xlsb(source)
                 else:
-                    self._open_xlsx(path)
+                    self._open_xlsx(source)
         except BaseException:
             # A file that fails to parse must not keep the archive (and, on
             # Windows, the file) open: `with` never reaches __exit__ here.
@@ -351,7 +407,7 @@ class ExcelReader:
             ).defined_names()
         return read_defined_names(self._zip().read("xl/workbook.xml"), self.get_sheet_names())
 
-    def _open_xlsx(self, path: str) -> None:
+    def _open_xlsx(self, path: str | IO[bytes]) -> None:
         self._archive = SafeZipFile(path, 'r')
 
         with self._zip().open('xl/workbook.xml') as f:
@@ -366,7 +422,7 @@ class ExcelReader:
         if self._shared_strings_location is not None:
             self._fill_shared_strings()
 
-    def _open_xlsb(self, path: str) -> None:
+    def _open_xlsb(self, path: str | IO[bytes]) -> None:
         self._archive = SafeZipFile(path, 'r')
 
         with self._zip().open('xl/workbook.bin') as f:

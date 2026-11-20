@@ -9,8 +9,10 @@ from .exceptions import CellCoordinatesException
 
 _COORD_RE = re.compile(r"^\$?([A-Za-z]{1,3})\$?(\d+)$")
 _ABS_RE = re.compile(
-    r"^\$?([A-Za-z]{1,3})?\$?([1-9][0-9]*)?"
-    r"(?::\$?([A-Za-z]{1,3})?\$?([1-9][0-9]*)?)?$"
+    r"^\$?(?P<min_col>[A-Za-z]{1,3})?"
+    r"\$?(?P<min_row>\d+)?"
+    r"(?::\$?(?P<max_col>[A-Za-z]{1,3})?"
+    r"\$?(?P<max_row>\d+)?)?$"
 )
 # Room for every column (A..XFD is 16,384; the helpers accept up to ZZZ). Mixed-case
 # names would otherwise grow the letter cache to ~140,000 entries.
@@ -71,36 +73,34 @@ def coordinate_to_tuple(coordinate: str) -> tuple[int, int]:
 def range_boundaries(range_string: str) -> tuple[int | None, int | None, int | None, int | None]:
     """Convert an A1 range to ``(min_col, min_row, max_col, max_row)``.
 
-    Whole-column (``A:C``) and whole-row (``1:3``) ranges leave the missing
-    row/column bounds as ``None``, as openpyxl does.
+    A single cell fills both ends, and a whole-column (``A:C``) or whole-row
+    (``1:3``) range leaves the missing row/column bounds as ``None``, as
+    openpyxl does. ``"A"`` and ``"2"`` are one-ended ranges (a whole column and
+    a whole row) and ``""`` has every bound ``None``. Raises ValueError for
+    anything else, such as ``"A:1"``.
     """
+    message = f"{range_string} is not a valid coordinate or range"
     match = _ABS_RE.match(range_string)
     if match is None:
-        raise ValueError(f"{range_string} is not a valid coordinate or range")
-    c1, r1, c2, r2 = match.groups()
-    has_colon = ":" in range_string
+        raise ValueError(message)
+    min_col, min_row, max_col, max_row = match.groups()
 
-    if not has_colon:
-        if c1 is None or r1 is None:
-            raise ValueError(f"{range_string} is not a valid coordinate or range")
-        c2, r2 = c1, r1
-    else:
-        if c1 is None and r1 is None and c2 is None and r2 is None:
-            raise ValueError(f"{range_string} is not a valid coordinate or range")
-        if (c1 is None) != (c2 is None) or (r1 is None) != (r2 is None):
-            raise ValueError(f"{range_string} is not a valid coordinate or range")
-        if c1 is None and r1 is None:
-            raise ValueError(f"{range_string} is not a valid coordinate or range")
+    if ":" in range_string:
+        cols = (min_col, max_col)
+        rows = (min_row, max_row)
+        if not (
+            all(cols + rows)
+            or all(cols) and not any(rows)
+            or all(rows) and not any(cols)
+        ):
+            raise ValueError(message)
 
-    min_col = column_index_from_string(c1) if c1 is not None else None
-    max_col = column_index_from_string(c2) if c2 is not None else min_col
-    min_row = int(r1) if r1 is not None else None
-    max_row = int(r2) if r2 is not None else min_row
-
-    if min_col is not None and max_col is not None and max_col < min_col:
-        raise ValueError(f"{range_string} is not a valid coordinate or range")
-    if min_row is not None and max_row is not None and max_row < min_row:
-        raise ValueError(f"{range_string} is not a valid coordinate or range")
+    if min_col is not None:
+        min_col = column_index_from_string(min_col)
+    if min_row is not None:
+        min_row = int(min_row)
+    max_col = column_index_from_string(max_col) if max_col is not None else min_col
+    max_row = int(max_row) if max_row is not None else min_row
     return min_col, min_row, max_col, max_row
 
 

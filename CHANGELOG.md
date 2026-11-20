@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- openpyxl's style keyword aliases: `Font(sz=, b=, i=, u=, strikethrough=)`,
+  `PatternFill("solid", fgColor=, bgColor=)`, `GradientFill(type=)`,
+  `Side(border_style=)`, `Border(diagonalUp=, diagonalDown=)`,
+  `Alignment(textRotation=, wrapText=, shrinkToFit=, relativeIndent=,
+  justifyLastLine=, readingOrder=)`. The same spellings are readable properties,
+  and every style value object gained openpyxl's `copy(**changes)`.
+- Worksheet addressing like openpyxl: `ws["A"]`, `ws["A:A"]`, `ws["A:C"]`,
+  `ws["3"]`, `ws["1:3"]` and the slices `ws[1:3]`/`ws["A":"C"]`, iterating a
+  worksheet (`for row in ws`), and `ws["A1"] = None` clearing the cell.
+- `"Name" in workbook`, `workbook.index("Name")`/`get_index("Name")`,
+  openpyxl's default titles (`Sheet`, `Sheet1`, `Sheet2`), `Workbook.is_template`,
+  `code_name` and `encoding`.
+- Dict-like access on `Workbook.named_styles` and `Workbook.defined_names`
+  (`keys()`, `values()`, `items()`, `get()`), `ws.defined_names.add()`, and
+  `NamedStyle.as_tuple()`, which returns the public `xlspy.styles.StyleArray`
+  (`xlspy.StyleArray` as well).
+- `ExcelReader` and `load_workbook()` accept a binary file object
+  (`io.BytesIO`): XLSX/XLSB is detected from the package, the caller's stream
+  stays open, and a staged temporary copy is removed by `workbook.close()`.
+- `WriteOnlyCell` styles are written (font, fill, border, alignment, protection,
+  number format), and a write-only sheet no longer bolds its first row behind
+  the caller's back.
+- Chart series ranges may name another sheet: `ChartSeries("Data!B2:B4",
+  categories="Data!A2:A4", title_cell="Data!B1")` writes `'Data'!$B$2:$B$4`.
+- openpyxl read-only views on the model: `ws.views`/`SheetViewList`,
+  `ws.defined_names` (a write-through mapping), `ws.scenarios` (always None;
+  empty assignments are accepted), `ws.legacy_drawing` (always None until the
+  loaders expose the VML relationship), `ws.data_validations.dataValidation`,
+  `wb.rels` (always empty), `wb.shared_strings` (always empty), `wb.loaded_theme`
+  (always None), `Cell.quotePrefix`, `Cell.pivotButton` (read from the loaded
+  cell format; read-only), `Cell.check_error()` and `Cell.check_string()`.
+- A cell's `font`, `fill`, `border`, `alignment` and `protection` report
+  openpyxl's defaults when its style sets nothing, so `cell.border.left.style`
+  and `cell.protection.locked` read without a `None` guard. Assigning a link as
+  a plain string (`cell.hyperlink = "https://..."`) works as in openpyxl, and
+  `copy_worksheet()` names its copy `"<title> Copy"`, `"<title> Copy1"`, ...
+- `xlspy.utils.cell.range_boundaries` matches openpyxl for `"A"`, `"2"`, `""`,
+  absolute references and reversed ranges.
+
+### Fixed
+
+- A `bytes` path (`load_workbook(path.encode())`, `ExcelReader(...)`) raises
+  openpyxl's `InvalidFileException` instead of failing with `AttributeError`;
+  out-of-range slices such as `ws[0:3]` raise `IndexError` as openpyxl does.
+- `style.copy(size=20, sz=14)` refuses both spellings of one field instead of
+  silently keeping the last one, and a chart range with an empty or malformed
+  sheet name (`"!A2:A3"`, `"A1:B2!B2:B3"`) is refused instead of being written
+  as a reference Excel cannot resolve.
+- `Workbook.sheetnames` and `__contains__` list worksheets only; chartsheets
+  stay in `workbook.chartsheets`. This differs from openpyxl, whose
+  `sheetnames` includes chartsheets: intentional, so chartsheet code must use
+  the dedicated list.
+
 ## [0.15.0] - 2026-11-11
 
 ### Added

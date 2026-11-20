@@ -42,8 +42,10 @@ def test_chart_model_rejects_invalid_input():
         ChartSeries("B2:B4", title_cell="A1:A2")
     with pytest.raises(ValueError, match="invalid A1 range"):
         ChartSeries("B2:B4", categories="nope")
-    with pytest.raises(ValueError, match="chart sheet"):
-        ChartSeries("B2:B4", categories="Other!A1:A3")
+    # A range on another sheet is accepted, as openpyxl accepts a Reference.
+    ChartSeries("B2:B4", categories="Other!A1:A3")
+    with pytest.raises(ValueError, match="A1 range"):
+        ChartSeries("B2:B4", categories="Other!")
 
 
 def test_charts_must_be_chart_instances(tmp_path):

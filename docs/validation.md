@@ -15,6 +15,14 @@ description: "Platform test results, Excel COM conformance and known limitations
   workbook is being copied in, it holds part of the workbook (see
   [Failure handling](guide/writing.md#failure-handling)).
 
+## Compatibility refresh (2026-11-17)
+
+Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native
+backend: **10,087 passed, 343 skipped, 1 xfailed** in 4:37. The single xfail is
+the known rich-text inline-string native gap. The openpyxl compatibility harness
+passes **91**; the new `tests/test_openpyxl_model_parity.py` compares the added
+behaviour with openpyxl itself. Ruff and mypy (142 source files) pass.
+
 ## Release candidate qualification (2026-11-05)
 
 Windows, Python 3.14.2. The focused feature tests passed (**116 passed, 5

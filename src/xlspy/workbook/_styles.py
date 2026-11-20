@@ -353,6 +353,8 @@ class _Xf:
     num_fmt_id: int = 0
     alignment: Alignment | None = None
     protection: Protection | None = None
+    quote_prefix: bool = False
+    pivot_button: bool = False
 
 
 class XlsxStyleTable:
@@ -534,6 +536,8 @@ class XlsxStyleTable:
                     num_fmt_id=_int(node.get("numFmtId")) or 0,
                     alignment=_read_alignment(node.find(qname("alignment"))),
                     protection=_read_protection(node.find(qname("protection"))),
+                    quote_prefix=bool(_attr_flag(node, "quotePrefix")),
+                    pivot_button=bool(_attr_flag(node, "pivotButton")),
                 )
                 self.xfs.append(xf)
                 self._xf_xml.append(ET.tostring(node, encoding="unicode"))
@@ -655,7 +659,7 @@ class XlsxStyleTable:
                 prot_key = None
             key = (
                 xf.font_id, xf.fill_id, xf.border_id, xf.num_fmt_id,
-                align_key, prot_key,
+                align_key, prot_key, xf.quote_prefix, xf.pivot_button,
             )
             self._xf_index[key] = index
             font_key = self._font_keys[xf.font_id] if xf.font_id < len(self._font_keys) else None
@@ -673,6 +677,8 @@ class XlsxStyleTable:
                     alignment=xf.alignment,
                     protection=xf.protection,
                     number_format=fmt,
+                    quote_prefix=xf.quote_prefix,
+                    pivot_button=xf.pivot_button,
                 )
             )
 
@@ -740,18 +746,27 @@ class XlsxStyleTable:
             align_key = None
         if prot_key is not None and all(value is None for value in prot_key):
             prot_key = None
-        key = (font_id, fill_id, border_id, numfmt_id, align_key, prot_key)
+        key = (
+            font_id, fill_id, border_id, numfmt_id, align_key, prot_key,
+            bool(style.quote_prefix), bool(style.pivot_button),
+        )
         existing = self._xf_index.get(key)
         if existing is not None:
             return existing
         index = len(self.xfs)
         alignment = _alignment_from_key(align_key)
         protection = _protection_from_key(prot_key)
+        quote_prefix = bool(style.quote_prefix)
+        pivot_button = bool(style.pivot_button)
         self.xfs.append(
-            _Xf(font_id, fill_id, border_id, numfmt_id, alignment, protection)
+            _Xf(font_id, fill_id, border_id, numfmt_id, alignment, protection,
+                quote_prefix=quote_prefix, pivot_button=pivot_button)
         )
         self.styles.append(style)
-        self._xf_xml.append(self._xf_xml_for(font_id, fill_id, border_id, numfmt_id, align_key, prot_key))
+        self._xf_xml.append(self._xf_xml_for(
+            font_id, fill_id, border_id, numfmt_id, align_key, prot_key,
+            quote_prefix=quote_prefix, pivot_button=pivot_button,
+        ))
         self._xf_index[key] = index
         return index
 
@@ -883,11 +898,16 @@ class XlsxStyleTable:
             parts.append(self._border_side_xml("horizontal", key.horizontal, self._color_attrs))
         return f"<border{attrs}>{''.join(parts)}</border>"
 
-    def _xf_xml_for(self, font_id, fill_id, border_id, numfmt_id, align_key, prot_key) -> str:
+    def _xf_xml_for(self, font_id, fill_id, border_id, numfmt_id, align_key, prot_key,
+                    *, quote_prefix: bool = False, pivot_button: bool = False) -> str:
         attrs = [
             f'numFmtId="{numfmt_id}"', f'fontId="{font_id}"',
             f'fillId="{fill_id}"', f'borderId="{border_id}"', 'xfId="0"',
         ]
+        if quote_prefix:
+            attrs.append('quotePrefix="1"')
+        if pivot_button:
+            attrs.append('pivotButton="1"')
         if numfmt_id:
             attrs.append('applyNumberFormat="1"')
         if font_id:

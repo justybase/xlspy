@@ -34,6 +34,7 @@ from .styles import (
     Side,
     Stop,
     Style,
+    StyleArray,
 )
 from .rich_text import CellRichText, InlineFont, TextBlock
 from .charts import (
@@ -128,6 +129,7 @@ __all__ = [
     'ExcelReader',
     'F',
     'Style',
+    'StyleArray',
     'Font',
     'PatternFill',
     'GradientFill',

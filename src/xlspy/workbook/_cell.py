@@ -5,6 +5,7 @@ from ..exceptions import UnsupportedFeatureError
 from dataclasses import replace
 import datetime as _datetime
 from decimal import Decimal
+import re
 from typing import TYPE_CHECKING, Any
 from ..comments import Comment
 from ..formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT
@@ -12,6 +13,7 @@ from ..formulas import ArrayFormula, DataTableFormula, Formula
 from ..hyperlinks import Hyperlink
 from ..refs import column_label
 from ..rich_text import CellRichText
+from ..utils.exceptions import IllegalCharacterError
 from ..styles import (
     Alignment,
     Border,
@@ -20,6 +22,7 @@ from ..styles import (
     NamedStyle,
     PatternFill,
     Protection,
+    Side,
     Style,
 )
 from ._coords import _coerce_column, _coerce_row, _coordinate
@@ -31,6 +34,20 @@ if TYPE_CHECKING:
 
 _new_cell = object.__new__
 _CELL_TYPE_KINDS = {int: "n", float: "n", bool: "b", str: "s"}
+# openpyxl's ``ILLEGAL_CHARACTERS_RE``: the C0 controls XML 1.0 cannot carry
+# in element text. It is narrower than ``_XML_FORBIDDEN`` (which also covers
+# surrogates and U+FFFE/U+FFFF, characters the writers cannot encode), and
+# ``check_string`` must match openpyxl, not the writers.
+_ILLEGAL_CHARACTERS = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
+
+# The objects openpyxl reports for a cell whose style sets nothing. They are
+# read-only views: assigning one still stores the object in the cell's style.
+_DEFAULT_BORDER = Border(
+    left=Side(), right=Side(), top=Side(), bottom=Side(), diagonal=Side(),
+)
+_DEFAULT_ALIGNMENT = Alignment()
+_DEFAULT_PROTECTION = Protection(locked=True, hidden=False)
+_DEFAULT_FILL = PatternFill()
 
 
 class Cell:
@@ -206,9 +223,19 @@ class Cell:
         return self._hyperlink
 
     @hyperlink.setter
-    def hyperlink(self, value: Hyperlink | None) -> None:
+    def hyperlink(self, value: Hyperlink | str | None) -> None:
+        """Set the link; a plain string is a target, as openpyxl accepts.
+
+        Setting a link on an empty cell shows its target as the cell text.
+        """
         if value is not None and not isinstance(value, Hyperlink):
-            raise TypeError("hyperlink must be a xlspy Hyperlink or None")
+            if isinstance(value, str):
+                value = Hyperlink(value)
+            else:
+                raise TypeError("hyperlink must be a xlspy Hyperlink, a target string or None")
+        if value is not None and self._value is None:
+            self._value = value.display_text
+            self._data_type = "s"
         self._hyperlink = value
         self._sheet._dirty_hyperlinks.add(self.coordinate)
         self._sheet._mark_dirty("hyperlinks")
@@ -267,7 +294,10 @@ class Cell:
 
     @property
     def font(self) -> Font | None:
-        """The cell font, or None. Assigning one replaces the font of the cell's style."""
+        """The cell font, or None when its style sets no font.
+
+        Assigning one replaces the font of the cell's style.
+        """
         return self._style().font
 
     @font.setter
@@ -278,9 +308,16 @@ class Cell:
                                 underline=None, font_color=None))
 
     @property
-    def fill(self) -> str | PatternFill | GradientFill | None:
-        """The cell fill: a colour, a PatternFill or a GradientFill, or None."""
-        return self._style().fill
+    def fill(self) -> str | PatternFill | GradientFill:
+        """The cell fill: a colour, a PatternFill or a GradientFill.
+
+        A cell without a fill reports openpyxl's empty pattern fill.
+        """
+        fill = self._style().fill
+        if isinstance(fill, PatternFill) and fill.fill_type in (None, "none") \
+                and fill.start_color is None and fill.end_color is None:
+            return _DEFAULT_FILL
+        return fill or _DEFAULT_FILL
 
     @fill.setter
     def fill(self, value: str | PatternFill | GradientFill | None) -> None:
@@ -289,9 +326,9 @@ class Cell:
         self._set_style(replace(self._style(), fill=value, pattern=None))
 
     @property
-    def border(self) -> Border | None:
-        """The cell border, or None."""
-        return self._style().border
+    def border(self) -> Border:
+        """The cell border; a cell without one reports openpyxl's empty border."""
+        return self._style().border or _DEFAULT_BORDER
 
     @border.setter
     def border(self, value: Border | None) -> None:
@@ -300,9 +337,9 @@ class Cell:
         self._set_style(replace(self._style(), border=value))
 
     @property
-    def alignment(self) -> Alignment | None:
-        """The cell alignment, or None."""
-        return self._style().alignment
+    def alignment(self) -> Alignment:
+        """The cell alignment; a cell without one reports openpyxl's default."""
+        return self._style().alignment or _DEFAULT_ALIGNMENT
 
     @alignment.setter
     def alignment(self, value: Alignment | None) -> None:
@@ -312,15 +349,53 @@ class Cell:
                                 horizontal=None, vertical=None, wrap=None))
 
     @property
-    def protection(self) -> Protection | None:
-        """The cell protection (locked, hidden), or None."""
-        return self._style().protection
+    def protection(self) -> Protection:
+        """The cell protection (locked, hidden).
+
+        A cell without explicit protection reports openpyxl's locked, visible
+        default.
+        """
+        return self._style().protection or _DEFAULT_PROTECTION
 
     @protection.setter
     def protection(self, value: Protection | None) -> None:
         if value is not None and not isinstance(value, Protection):
             raise TypeError("protection must be a xlspy Protection or None")
         self._set_style(replace(self._style(), protection=value))
+
+    @property
+    def quotePrefix(self) -> bool:
+        """True when the cell's format sets Excel's quote prefix, as openpyxl's."""
+        return bool(self._style().quote_prefix)
+
+    @property
+    def pivotButton(self) -> bool:
+        """True when the cell's format sets Excel's pivot-button flag."""
+        return bool(self._style().pivot_button)
+
+    def check_error(self, value: Any) -> str:
+        """The text openpyxl stores for an error value: ``str(value)`` or ``"#N/A"``."""
+        try:
+            return str(value)
+        except UnicodeDecodeError:
+            return "#N/A"
+
+    def check_string(self, value: Any) -> Any:
+        """The stored text for ``value``, as openpyxl stores it.
+
+        Text is truncated to 32,767 characters and illegal control characters
+        in what remains raise ``IllegalCharacterError`` with openpyxl's
+        message. A non-string is decoded with the cell's UTF-8 encoding, as
+        openpyxl decodes it.
+        """
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            value = str(value, self.encoding)
+        value = str(value)[:32767]
+        if _ILLEGAL_CHARACTERS.search(value) is not None:
+            raise IllegalCharacterError(f"{value} cannot be used in worksheets.")
+        return value
 
     @property
     def number_format(self) -> str:

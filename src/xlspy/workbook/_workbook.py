@@ -16,7 +16,7 @@ from ..styles import (
 )
 from ._styles import XlsxStyleTable
 from ._coords import MultiCellRange
-from ._properties import BookView, CalcProperties, CustomPropertyList, DefinedNameList, DocumentProperties, WorkbookSecurity
+from ._properties import BookView, CalcProperties, CustomPropertyList, DefinedNameList, DocumentProperties, SheetViewList, WorkbookSecurity
 from ._worksheet import Chartsheet, Worksheet, WriteOnlyWorksheet
 
 if TYPE_CHECKING:
@@ -69,6 +69,9 @@ class Workbook:
         self._defined_names = DefinedNameList(self)
         self._defined_names_dirty = False
         self.template = False
+        self.is_template = False
+        self.code_name: str | None = None
+        self.encoding = "utf-8"
         self.epoch = _datetime.datetime(1899, 12, 30)
         self.vba_archive: zipfile.ZipFile | None = None
         self.security = WorkbookSecurity()
@@ -76,6 +79,11 @@ class Workbook:
         self.views = [BookView()]
         self.custom_doc_props = CustomPropertyList()
         self.external_links: list = []
+        # openpyxl's read-only package views: xlspy keeps neither package
+        # relationships nor the theme bytes in the model.
+        self.rels: list = []
+        self.shared_strings: list[str] = []
+        self.loaded_theme: bytes | None = None
         self.named_styles = NamedStyleList(["Normal"])
         self._format = "xlsx"
         self._loaded = False
@@ -85,6 +93,8 @@ class Workbook:
         self._read_only = False
         self._updater = None
         self._source_path: str | None = None
+        # Removes the private copy load_workbook staged from a file object.
+        self._source_staging: Any = None
         self._sheet_visibility: dict[str, str] = {}
         self._loaded_worksheet_names: set[str] = set()
         self._mark_loaded = False
@@ -96,8 +106,38 @@ class Workbook:
 
     @property
     def sheetnames(self) -> list[str]:
-        """The worksheet names, in order."""
+        """The worksheet names, in order.
+
+        Chartsheets are kept in ``chartsheets`` and are not listed here. This
+        is deliberate: openpyxl's ``sheetnames`` includes chartsheets, so code
+        that needs them must read ``chartsheets``.
+        """
         return [sheet.title for sheet in self._sheets]
+
+    def __contains__(self, key: object) -> bool:
+        """True when a worksheet with this title exists, as ``"Name" in wb``.
+
+        Chartsheets are not tested; openpyxl's ``__contains__`` tests them too.
+        """
+        return isinstance(key, str) and key in self.sheetnames
+
+    def _default_sheet_title(self) -> str:
+        """The next default title, picked the way openpyxl picks it.
+
+        ``"Sheet"`` when it is free; otherwise ``"Sheet<N>"`` with ``N`` one
+        more than the highest numbered default name already present. So the
+        second sheet of a new workbook is ``"Sheet1"``.
+        """
+        base = "Sheet"
+        taken = {sheet.title.casefold() for sheet in self._all_sheets()}
+        if base.casefold() not in taken:
+            return base
+        numbers = [
+            int(name[len(base):])
+            for name in taken
+            if name.startswith(base.casefold()) and name[len(base):].isdigit()
+        ]
+        return f"{base}{max(numbers, default=0) + 1}"
 
     def _check_title(self, title: str, sheet: Worksheet | Chartsheet | None = None) -> None:
         """Raise unless ``title`` can name ``sheet`` (default: a new sheet).
@@ -198,23 +238,28 @@ class Workbook:
         """The worksheet names, as openpyxl's deprecated alias for ``sheetnames``."""
         return self.sheetnames
 
-    def get_index(self, worksheet: Worksheet) -> int:
-        """Return the 0-based position of ``worksheet``, as openpyxl's alias for ``index``."""
+    def get_index(self, worksheet: Worksheet | str) -> int:
+        """Return the 0-based position of ``worksheet`` or its title, as openpyxl's alias for ``index``."""
         return self.index(worksheet)
 
-    def index(self, worksheet: Worksheet) -> int:
-        """Return the 0-based position of ``worksheet``."""
+    def index(self, worksheet: Worksheet | str) -> int:
+        """Return the 0-based position of ``worksheet``, or of a sheet title."""
+        if isinstance(worksheet, str):
+            for position, sheet in enumerate(self._sheets):
+                if sheet.title == worksheet:
+                    return position
+            raise ValueError(f"Worksheet {worksheet!r} does not exist")
         return self._sheets.index(worksheet)
 
     def create_sheet(self, title: str | None = None, index: int | None = None) -> Worksheet:
         """Add a worksheet and return it.
 
-        Without a title it is named ``SheetN``; without an index it is added last.
+        Without a title it is named like openpyxl names it: ``"Sheet"``, then
+        ``"Sheet1"``, ``"Sheet2"`` and so on, skipping a name already taken.
+        Without an index it is added last.
         """
-        if len(self._sheets) >= 1 and title is None:
-            title = f"Sheet{len(self._sheets) + 1}"
-        elif title is None:
-            title = "Sheet"
+        if title is None:
+            title = self._default_sheet_title()
         self._check_title(title)
         cls =WriteOnlyWorksheet if self.write_only else Worksheet
         sheet = cls(self, title, index=index)
@@ -288,11 +333,11 @@ class Workbook:
         if self.write_only:
             raise TypeError("copy_worksheet is not available in write-only mode")
         title = from_worksheet.title
-        base = title
+        base = f"{title} Copy"
         counter = 1
         taken = {sheet.title.casefold() for sheet in self._all_sheets()}
         while title.casefold() in taken:
-            title = f"{base}{counter}"
+            title = base if counter == 1 else f"{base}{counter - 1}"
             counter += 1
         target = self.create_sheet(title)
         for row_number, row in from_worksheet._cells.items():
@@ -313,6 +358,9 @@ class Workbook:
         target._sheet_state = from_worksheet.sheet_state
         target._sheet_properties = copy.deepcopy(from_worksheet.sheet_properties)
         target._sheet_view = copy.deepcopy(from_worksheet.sheet_view)
+        # The view list holds the object, not a copy; rebind it or ``views``
+        # keeps reporting the default view the new sheet was created with.
+        target._views = SheetViewList(target._sheet_view)
         for name in ("page_setup", "page_margins", "print_options", "HeaderFooter",
                      "sheet_format", "row_breaks", "col_breaks", "ignored_errors"):
             setattr(target, name, copy.deepcopy(getattr(from_worksheet, name)))
@@ -437,3 +485,6 @@ class Workbook:
             if reader is not None:
                 reader.close()
                 sheet._reader = None
+        if self._source_staging is not None:
+            self._source_staging()  # removes the staged copy now, not at collection
+            self._source_staging = None

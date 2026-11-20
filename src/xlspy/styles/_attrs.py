@@ -1,8 +1,10 @@
 """Value objects of the cell style model: colours, fonts, fills, borders, alignment, protection."""
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from functools import wraps
 import re
+from typing import Any, ClassVar, Self
 from ..refs import _column_index
 
 
@@ -56,6 +58,86 @@ _CELL_IS_OPERATORS = {
 }
 _FORMAT_OBJECT_TYPES = {"min", "max", "num", "percent", "percentile", "formula"}
 _CFVO_TYPES = {"num", "percent", "percentile", "formula"}
+
+
+def _alias_property(target: str, alias: str) -> property:
+    """A read-only property that exposes ``target`` under openpyxl's ``alias``."""
+
+    def getter(self: Any) -> Any:
+        return getattr(self, target)
+
+    getter.__name__ = alias
+    getter.__doc__ = f"Alias of ``{target}``, the spelling openpyxl uses."
+    return property(getter)
+
+
+def _with_aliases(cls: type) -> type:
+    """Accept openpyxl's alternative keyword names and expose them as properties.
+
+    A dataclass generates ``__init__`` after the class body, so the aliases are
+    installed here instead: ``Font(sz=12, b=True)`` is the same call as
+    ``Font(size=12, bold=True)``. Passing both spellings raises TypeError, as
+    a repeated argument would.
+    """
+    aliases: dict[str, str] = getattr(cls, "_ALIASES")
+    original = cls.__dict__["__init__"]
+
+    @wraps(original)
+    def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
+        for alias, name in aliases.items():
+            if alias not in kwargs:
+                continue
+            value = kwargs.pop(alias)
+            if name in kwargs:
+                if kwargs[name] is not None and value is not None:
+                    raise TypeError(
+                        f"got both {name!r} and its openpyxl alias {alias!r}"
+                    )
+                if kwargs[name] is not None:
+                    continue  # the long name wins, as in openpyxl
+            kwargs[name] = value
+        original(self, *args, **kwargs)
+
+    cls.__init__ = __init__  # type: ignore[misc]  # the dataclass initialiser
+    for alias, name in aliases.items():
+        setattr(cls, alias, _alias_property(name, alias))
+    return cls
+
+
+class _Copyable:
+    """``copy(**changes)`` for the frozen style value objects, as openpyxl has it."""
+
+    __slots__ = ()
+    _ALIASES: ClassVar[dict[str, str]] = {}
+
+    def copy(self, **changes: Any) -> Self:
+        """Return a copy of this object with the given fields replaced.
+
+        The keyword names are the field names; openpyxl's short spellings
+        (``sz``, ``b``, ``fgColor`` and so on) are accepted as well. Passing
+        both spellings of one field raises TypeError, as the constructor does.
+        """
+        for alias, name in self._ALIASES.items():
+            if alias not in changes:
+                continue
+            value = changes.pop(alias)
+            if name in changes:
+                if changes[name] is not None and value is not None:
+                    raise TypeError(
+                        f"{type(self).__name__}.copy() got both {name!r} and "
+                        f"its openpyxl alias {alias!r}"
+                    )
+                if changes[name] is not None:
+                    continue  # the long name wins, as in the constructor
+            changes[name] = value
+        values = {field.name: getattr(self, field.name) for field in fields(self)}  # type: ignore[arg-type]  # a frozen dataclass instance
+        for key, value in changes.items():
+            if key not in values:
+                raise TypeError(
+                    f"{type(self).__name__}.copy() got an unexpected keyword argument {key!r}"
+                )
+            values[key] = value
+        return type(self)(**values)
 
 
 def _normalize_argb(value: str) -> str:
@@ -130,9 +212,20 @@ class Color:
                 raise ValueError("tint needs a theme color")
 
 
+@_with_aliases
 @dataclass(frozen=True, slots=True)
-class Font:
-    """An openpyxl-like font. All-``None`` means “no font override”."""
+class Font(_Copyable):
+    """An openpyxl-like font. All-``None`` means “no font override”.
+
+    Both the xlspy field names and openpyxl's spellings work: ``size``/``sz``,
+    ``bold``/``b``, ``italic``/``i``, ``underline``/``u`` and
+    ``strike``/``strikethrough``. ``copy(**changes)`` returns a modified copy.
+    """
+
+    _ALIASES: ClassVar[dict[str, str]] = {
+        "sz": "size", "b": "bold", "i": "italic", "u": "underline",
+        "strikethrough": "strike",
+    }
 
     name: str | None = None
     size: float | None = None
@@ -190,9 +283,20 @@ class Font:
                 raise TypeError(f"{attr} must be bool or None")
 
 
+@_with_aliases
 @dataclass(frozen=True, slots=True)
-class PatternFill:
-    """An openpyxl-like pattern fill. All-``None`` means “no fill override”."""
+class PatternFill(_Copyable):
+    """An openpyxl-like pattern fill. All-``None`` means “no fill override”.
+
+    ``fill_type``/``patternType``, ``start_color``/``fgColor`` and
+    ``end_color``/``bgColor`` are interchangeable names.
+    """
+
+    _ALIASES: ClassVar[dict[str, str]] = {
+        "patternType": "fill_type",
+        "fgColor": "start_color",
+        "bgColor": "end_color",
+    }
 
     fill_type: str | None = None
     start_color: Color | str | None = None
@@ -229,13 +333,17 @@ class Stop:
             raise ValueError("position must be between 0 and 1")
 
 
+@_with_aliases
 @dataclass(frozen=True, slots=True)
-class GradientFill:
+class GradientFill(_Copyable):
     """An openpyxl-like gradient fill (``linear`` or ``path``).
 
     ``stop`` accepts ``Stop`` objects or plain colors; plain colors are spread
-    evenly between position 0 and 1, matching openpyxl.
+    evenly between position 0 and 1, matching openpyxl. ``type`` is the
+    openpyxl spelling of ``fill_type``.
     """
+
+    _ALIASES: ClassVar[dict[str, str]] = {"type": "fill_type"}
 
     fill_type: str = "linear"
     degree: float | None = None
@@ -278,9 +386,15 @@ class GradientFill:
         object.__setattr__(self, "stop", tuple(stops))
 
 
+@_with_aliases
 @dataclass(frozen=True, slots=True)
-class Side:
-    """One border edge."""
+class Side(_Copyable):
+    """One border edge.
+
+    ``style`` accepts openpyxl's ``border_style`` spelling as well.
+    """
+
+    _ALIASES: ClassVar[dict[str, str]] = {"border_style": "style"}
 
     style: str | None = None
     color: Color | str | None = None
@@ -291,9 +405,19 @@ class Side:
         object.__setattr__(self, "color", _coerce_color(self.color, "color"))
 
 
+@_with_aliases
 @dataclass(frozen=True, slots=True)
-class Border:
-    """An openpyxl-like border. All-``None`` means “no border override”."""
+class Border(_Copyable):
+    """An openpyxl-like border. All-``None`` means “no border override”.
+
+    ``diagonalUp``/``diagonalDown`` are openpyxl's spellings of
+    ``diagonal_up``/``diagonal_down``.
+    """
+
+    _ALIASES: ClassVar[dict[str, str]] = {
+        "diagonalUp": "diagonal_up",
+        "diagonalDown": "diagonal_down",
+    }
 
     left: Side | None = None
     right: Side | None = None
@@ -330,9 +454,24 @@ class Border:
                 raise TypeError(f"{attr} must be bool or None")
 
 
+@_with_aliases
 @dataclass(frozen=True, slots=True)
-class Alignment:
-    """An openpyxl-like alignment. All-``None`` means “no override”."""
+class Alignment(_Copyable):
+    """An openpyxl-like alignment. All-``None`` means “no override”.
+
+    openpyxl's camelCase spellings (``textRotation``, ``wrapText``,
+    ``shrinkToFit``, ``relativeIndent``, ``justifyLastLine``,
+    ``readingOrder``) are aliases of the snake_case fields.
+    """
+
+    _ALIASES: ClassVar[dict[str, str]] = {
+        "textRotation": "text_rotation",
+        "wrapText": "wrap_text",
+        "shrinkToFit": "shrink_to_fit",
+        "relativeIndent": "relative_indent",
+        "justifyLastLine": "justify_last_line",
+        "readingOrder": "reading_order",
+    }
 
     horizontal: str | None = None
     vertical: str | None = None
@@ -378,7 +517,7 @@ class Alignment:
 
 
 @dataclass(frozen=True, slots=True)
-class Protection:
+class Protection(_Copyable):
     """Cell protection flags. All-``None`` means “no override”."""
 
     locked: bool | None = None

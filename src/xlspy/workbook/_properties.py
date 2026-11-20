@@ -1,8 +1,8 @@
 """Workbook and sheet property objects: views, calculation, protection, filters, breaks."""
 
 from __future__ import annotations
-from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Iterator, MutableMapping
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 import datetime as _datetime
 from ..printing import PageMargins as PublicPageMargins
@@ -17,6 +17,7 @@ from ._print import (
 
 if TYPE_CHECKING:
     from ._workbook import Workbook
+    from ._worksheet import Worksheet
 
 
 @dataclass
@@ -132,6 +133,25 @@ class DefinedNameList:
         """The defined names, in order."""
         return [definition.name for definition in self._items]
 
+    def keys(self) -> list[str]:
+        """The defined names' names, as a dict-like view over the list."""
+        return self.names
+
+    def values(self) -> list[DefinedName]:
+        """The defined names, as a dict-like view over the list."""
+        return list(self._items)
+
+    def items(self) -> list[tuple[str, DefinedName]]:
+        """The names and their definitions, as a dict-like view over the list."""
+        return [(definition.name, definition) for definition in self._items]
+
+    def get(self, name: str, default: object = None) -> object:
+        """The definition called ``name``, or ``default`` when there is none."""
+        try:
+            return self[name]
+        except KeyError:
+            return default
+
     def add(self, definition: DefinedName, *, stage: bool = True) -> None:
         """Add a defined name, replacing one with the same name and scope."""
         if not isinstance(definition, DefinedName):
@@ -170,6 +190,68 @@ class DefinedNameList:
         if self._workbook is not None:
             self._workbook._defined_names_dirty = True
         return target
+
+
+class _SheetDefinedNames(MutableMapping[str, DefinedName]):
+    """The defined names scoped to one worksheet, as openpyxl exposes them.
+
+    openpyxl keeps a per-sheet ``DefinedNameDict`` and writes it to the file as
+    names with that sheet's ``localSheetId``. This view reads and writes the
+    workbook's list instead, scoping every entry to the sheet's current title,
+    so the names survive a save and follow a rename.
+    """
+
+    __slots__ = ("_workbook", "_sheet")
+
+    def __init__(self, workbook: Workbook, sheet: Worksheet) -> None:
+        self._workbook = workbook
+        self._sheet = sheet
+
+    def _scoped(self) -> list[DefinedName]:
+        return [
+            definition
+            for definition in self._workbook.defined_names
+            if definition.scope == self._sheet.title
+        ]
+
+    def __getitem__(self, name: str) -> DefinedName:
+        for definition in self._scoped():
+            if definition.name == name:
+                return definition
+        raise KeyError(name)
+
+    def __setitem__(self, name: str, definition: DefinedName) -> None:
+        if not isinstance(definition, DefinedName):
+            raise TypeError("value must be a DefinedName")
+        if definition.name != name:
+            raise ValueError("key must be the same as the name")
+        self._workbook.defined_names.add(
+            replace(definition, scope=self._sheet.title, localSheetId=None)
+        )
+
+    def add(self, definition: DefinedName) -> None:
+        """Add a name scoped to this sheet, replacing one with the same name."""
+        if not isinstance(definition, DefinedName):
+            raise TypeError("value must be a DefinedName")
+        self._workbook.defined_names.add(
+            replace(definition, scope=self._sheet.title, localSheetId=None)
+        )
+
+    def __delitem__(self, name: str) -> None:
+        for definition in self._scoped():
+            if definition.name == name:
+                self._workbook.defined_names.remove(name, scope=self._sheet.title)
+                return
+        raise KeyError(name)
+
+    def __iter__(self) -> Iterator[str]:
+        return (definition.name for definition in self._scoped())
+
+    def __len__(self) -> int:
+        return len(self._scoped())
+
+    def __repr__(self) -> str:
+        return repr(dict(self))
 
 
 @dataclass
@@ -269,6 +351,39 @@ class SheetView:
     workbookViewId: int = 0
     selection: list[Selection] = field(default_factory=list)
     pane: Pane | None = None
+
+
+class SheetViewList:
+    """The sheet's views, as openpyxl's ``ws.views``.
+
+    A sheet has one view in the model; ``sheetView`` is that view and
+    ``active`` the first one, as in openpyxl's list, so code that reads
+    ``ws.views.sheetView[0]`` or ``ws.views.active`` keeps working.
+    """
+
+    __slots__ = ("_views",)
+
+    def __init__(self, view: SheetView) -> None:
+        self._views = [view]
+
+    @property
+    def sheetView(self) -> list[SheetView]:
+        """The live list of views, as openpyxl's attribute of the same name."""
+        return self._views
+
+    @property
+    def active(self) -> SheetView:
+        """The first view, which is the active one."""
+        return self._views[0]
+
+    def __iter__(self) -> Iterator[SheetView]:
+        return iter(self._views)
+
+    def __len__(self) -> int:
+        return len(self._views)
+
+    def __getitem__(self, index: int) -> SheetView:
+        return self._views[index]
 
 
 @dataclass

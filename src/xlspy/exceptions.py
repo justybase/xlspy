@@ -22,7 +22,7 @@ import zipfile
 import zlib
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from typing import TypeVar
+from typing import IO, TypeVar
 from xml.etree.ElementTree import ParseError
 from xml.parsers.expat import ExpatError
 
@@ -67,30 +67,47 @@ def _register_panic_type(panic_type: type[BaseException]) -> None:
     _panic_types = (panic_type,)
 
 
-def _invalid(path: str | os.PathLike[str], exc: BaseException) -> InvalidFileError:
-    return InvalidFileError(f"cannot read {os.fspath(path)!r}: {type(exc).__name__}: {exc}")
+def _source_label(source: object) -> str:
+    """A name for ``source`` in error messages: its path, its ``name`` or its repr."""
+    if isinstance(source, str):
+        return source
+    if isinstance(source, os.PathLike):
+        path = os.fspath(source)
+        return path if isinstance(path, str) else path.decode("utf-8", "replace")
+    name = getattr(source, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    return repr(source)
+
+
+def _invalid(source: object, exc: BaseException) -> InvalidFileError:
+    return InvalidFileError(f"cannot read {_source_label(source)!r}: {type(exc).__name__}: {exc}")
 
 
 @contextmanager
-def reading(path: str | os.PathLike[str]) -> Iterator[None]:
-    """Report a decoding error raised inside the block as InvalidFileError."""
+def reading(source: str | os.PathLike[str] | IO[bytes]) -> Iterator[None]:
+    """Report a decoding error raised inside the block as InvalidFileError.
+
+    ``source`` is a file name or an open binary file object; the message names
+    whichever one the caller gave.
+    """
     try:
         yield
     except InvalidFileError:
         raise
     except _DECODE_ERRORS as exc:
-        raise _invalid(path, exc) from exc
+        raise _invalid(source, exc) from exc
     except LookupError as exc:
         if isinstance(exc, KeyError):
             raise
-        raise _invalid(path, exc) from exc  # an unknown text encoding
+        raise _invalid(source, exc) from exc  # an unknown text encoding
     except BaseException as exc:
         if isinstance(exc, _panic_types):
-            raise _invalid(path, exc) from exc
+            raise _invalid(source, exc) from exc
         raise
 
 
-def reading_rows(path: str | os.PathLike[str], rows: Iterable[_T]) -> Iterator[_T]:
+def reading_rows(source: str | os.PathLike[str] | IO[bytes], rows: Iterable[_T]) -> Iterator[_T]:
     """``rows``, with decoding errors raised while iterating reported as InvalidFileError."""
-    with reading(path):
+    with reading(source):
         yield from rows
