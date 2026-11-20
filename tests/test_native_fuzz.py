@@ -17,7 +17,7 @@ import zipfile
 
 import pytest
 
-from xlspy import ExcelReader, XlsbWriter, XlsxWriter, _accel
+from xlspy import ExcelReader, XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWriter, _accel
 from xlspy.exceptions import InvalidFileError
 
 pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
@@ -144,3 +144,20 @@ def test_mutated_workbook_parts_fail_cleanly(tmp_path, kind, part):
             slowest = max(slowest, time.perf_counter() - started)
 
     assert slowest < CASE_SECONDS, f"a corrupt {part} took {slowest:.1f}s to read"
+
+
+@pytest.mark.parametrize("kind", ["xlsx", "xlsb"])
+@pytest.mark.parametrize("width", [16385, 20000, 65536])
+def test_updater_rows_past_xfd_are_refused_without_a_panic(tmp_path, kind, width):
+    """A value past column XFD is a 4-byte-buffer overflow in a naive encoder."""
+    updater_type = XlsbUpdater if kind == "xlsb" else XlsxUpdater
+    source = tmp_path / f"wide.{kind}"
+    _write_fixture(source, kind)
+    updater = updater_type(str(source))
+    try:
+        row = [None] * (width - 1) + ["x"]
+        with pytest.raises(ValueError) as raised:
+            updater.replace_sheet_data("Data", [row])
+        assert type(raised.value.__cause__).__name__ != "PanicException"
+    finally:
+        updater.close()

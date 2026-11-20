@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
-import re
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -12,27 +12,37 @@ import pytest
 
 IGNORED_PARTS = {"docProps/core.xml"}
 
-# The parity table lists every gap with an ID (A1, C6, ...). A row marked
-# **done** is no longer a gap, so a test that still reports it as missing fails.
-_PARITY_DOC = Path(__file__).resolve().parents[2] / "docs" / "openpyxl-parity.md"
-_PARITY_ROW = re.compile(r"^\|\s*([A-Z]\d+)\s*\|(.*)$", re.MULTILINE)
+# The manifest is the harness's source of truth: a test xfails only for a gap
+# listed here. The documentation table is kept in sync by
+# tests/openpyxl_compat/test_gap_manifest.py, not read by this harness.
+_GAPS_FILE = Path(__file__).with_name("expected_gaps.toml")
 
 
-def _open_gaps() -> frozenset[str]:
-    text = _PARITY_DOC.read_text(encoding="utf-8")
-    return frozenset(gap for gap, row in _PARITY_ROW.findall(text) if "**done**" not in row)
+def _open_gaps() -> dict[str, dict]:
+    data = tomllib.loads(_GAPS_FILE.read_text(encoding="utf-8"))
+    gaps = {}
+    for entry in data["gap"]:
+        gap = entry["id"]
+        if gap in gaps:
+            raise RuntimeError(f"duplicate gap {gap} in {_GAPS_FILE.name}")
+        if not entry.get("reason"):
+            raise RuntimeError(f"gap {gap} has no reason in {_GAPS_FILE.name}")
+        gaps[gap] = entry
+    return gaps
 
 
-OPEN_GAPS = _open_gaps()
+GAPS = _open_gaps()
+OPEN_GAPS = frozenset(GAPS)
 
 
 def gap_xfail(message: str) -> None:
     """Expected failure for an open gap; any other missing feature fails the test."""
     gap = message.split(":", 1)[0]
-    if gap in OPEN_GAPS:
-        pytest.xfail(message)
+    entry = GAPS.get(gap)
+    if entry is not None:
+        pytest.xfail(f"{message} ({entry['area']})")
     pytest.fail(
-        f"{message} (gap {gap!r} is not an open gap in docs/openpyxl-parity.md)",
+        f"{message} (gap {gap!r} is not listed in tests/openpyxl_compat/expected_gaps.toml)",
         pytrace=False,
     )
 

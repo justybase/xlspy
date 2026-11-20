@@ -135,3 +135,35 @@ pub fn read_xlsb_shared_strings<'py>(
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn masks_wrap_like_the_c_argument_format() {
+        Python::initialize();
+        Python::attach(|py| {
+            let minus_one = (-1i64).into_pyobject(py).unwrap().into_any();
+            assert_eq!(u32_mask(&minus_one).unwrap(), u32::MAX);
+            let text = PyString::new(py, "x").into_any();
+            assert!(u32_mask(&text).is_err());
+        });
+    }
+
+    #[test]
+    fn shared_strings_round_trip() {
+        Python::initialize();
+        Python::attach(|py| {
+            let values = PyList::new(py, ["plain", "zażółć", "😀 emoji"]).unwrap();
+            let count = values.len().into_pyobject(py).unwrap().into_any();
+            let encoded = encode_xlsb_sst(py, values.as_any(), &count, &count).unwrap();
+            let decoded = read_xlsb_shared_strings(py, encoded.as_any()).unwrap();
+            let strings: Vec<String> = decoded
+                .iter()
+                .map(|item| item.extract::<String>().unwrap())
+                .collect();
+            assert_eq!(strings, ["plain", "zażółć", "😀 emoji"]);
+        });
+    }
+}

@@ -116,6 +116,23 @@ def test_native_rows_match_python_rows(tmp_path, monkeypatch, updater, writer, s
 
 
 @pytest.mark.parametrize("updater, writer, suffix", UPDATERS)
+@pytest.mark.parametrize("stream", [False, True])
+def test_a_row_past_column_xfd_is_refused_with_a_value_error(
+    tmp_path, updater, writer, suffix, stream
+):
+    source = tmp_path / f"wide-source.{suffix}"
+    _source(source, writer, shared=True)
+    rows = [[None] * 16384 + ["x"]]
+    book = updater(str(source))
+    try:
+        replace = book.replace_sheet_data_stream if stream else book.replace_sheet_data
+        with pytest.raises(ValueError, match="at most 16384 columns"):
+            replace("S", iter(rows) if stream else rows)
+    finally:
+        book.close()
+
+
+@pytest.mark.parametrize("updater, writer, suffix", UPDATERS)
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), "x" * 40000], ids=["nan", "inf", "long-text"])
 def test_errors_are_the_python_errors(tmp_path, monkeypatch, updater, writer, suffix, bad):
     errors = []

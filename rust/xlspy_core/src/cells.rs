@@ -275,6 +275,7 @@ pub fn date_style_xf(
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Serial {
     Value(f64),
     /// Year outside 1900..=9999: the writers store str(cell).
@@ -451,5 +452,90 @@ impl<'a, 'py> Styles<'a, 'py> {
             break;
         }
         Ok(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_fits_counts_utf16_units() {
+        Python::initialize();
+        Python::attach(|py| {
+            assert!(text_fits(&PyString::new(py, &"a".repeat(32_767))).unwrap());
+            assert!(!text_fits(&PyString::new(py, &"a".repeat(32_768))).unwrap());
+            // A non-BMP character is two UTF-16 units.
+            assert!(text_fits(&PyString::new(py, &"😀".repeat(16_383))).unwrap());
+            assert!(!text_fits(&PyString::new(py, &"😀".repeat(16_384))).unwrap());
+        });
+    }
+
+    #[test]
+    fn excel_serials_match_the_python_epoch() {
+        Python::initialize();
+        Python::attach(|py| {
+            let date = PyDate::new(py, 2024, 1, 1).unwrap();
+            assert_eq!(excel_serial(date.as_any(), false), Serial::Value(45_292.0));
+            let moment = PyDateTime::new(py, 2024, 1, 1, 12, 0, 0, 0, None).unwrap();
+            assert_eq!(excel_serial(moment.as_any(), true), Serial::Value(45_292.5));
+            // The 1900 leap-year fiction: 1900-01-01 is serial 1.
+            let early = PyDate::new(py, 1900, 1, 1).unwrap();
+            assert_eq!(excel_serial(early.as_any(), false), Serial::Value(1.0));
+        });
+    }
+
+    #[test]
+    fn the_shared_string_table_counts_and_reuses() {
+        Python::initialize();
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            let list = PyList::empty(py);
+            let mut sst = Sst {
+                dict: &dict,
+                list: &list,
+                uniq: 0,
+                all: 0,
+            };
+            let a = PyString::new(py, "a");
+            let b = PyString::new(py, "b");
+            assert_eq!(sst.index(&a).unwrap(), 0);
+            assert_eq!(sst.index(&b).unwrap(), 1);
+            assert_eq!(sst.index(&a).unwrap(), 0);
+            assert_eq!((sst.uniq, sst.all), (2, 3));
+            let stored: Vec<String> = list
+                .iter()
+                .map(|item| item.extract::<String>().unwrap())
+                .collect();
+            assert_eq!(stored, ["a", "b"]);
+        });
+    }
+
+    #[test]
+    fn styles_follow_dense_and_sparse_lists() {
+        Python::initialize();
+        Python::attach(|py| {
+            let dense = PyList::new(py, [3u32, 7]).unwrap().into_any();
+            let mut styles = Styles::new(&dense, true).unwrap();
+            assert_eq!(styles.for_column(0).unwrap(), 3);
+            assert_eq!(styles.for_column(1).unwrap(), 7);
+            assert_eq!(styles.for_column(2).unwrap(), 0);
+
+            let sparse = PyTuple::new(py, [(1u32, 5u32), (3, 9)]).unwrap().into_any();
+            let mut styles = Styles::new(&sparse, true).unwrap();
+            assert_eq!(styles.for_column(0).unwrap(), 0);
+            assert_eq!(styles.for_column(1).unwrap(), 5);
+            assert_eq!(styles.for_column(2).unwrap(), 0);
+            assert_eq!(styles.for_column(3).unwrap(), 9);
+        });
+    }
+
+    #[test]
+    fn style_ids_refuse_negative_values() {
+        Python::initialize();
+        Python::attach(|py| {
+            let negative = (-1i64).into_pyobject(py).unwrap().into_any();
+            assert!(as_unsigned_long(&negative).is_err());
+        });
     }
 }

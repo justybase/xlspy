@@ -4,6 +4,7 @@
 //! NA and NaT) are decided here; every other cell goes to the Python normaliser
 //! one cell at a time, so the result is what the Python loop gives.
 
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
 
@@ -25,9 +26,12 @@ pub fn convert_frame_row<'py>(
     slow: &Bound<'py, PyAny>,
 ) -> PyResult<Option<Bound<'py, PyList>>> {
     let py = row.py();
-    let Ok(row) = FastSeq::new(row, c"row must be a sequence") else {
-        PyErr::take(py);
-        return Ok(None);
+    // A TypeError means "not a sequence": the caller converts it.  Any other
+    // error (a custom iterable's __iter__, a MemoryError) must not be hidden.
+    let row = match FastSeq::new(row, c"row must be a sequence") {
+        Ok(row) => row,
+        Err(error) if error.is_instance_of::<PyTypeError>(py) => return Ok(None),
+        Err(error) => return Err(error),
     };
     let n = row.len().min(formats.len());
     let out = PyList::empty(py);
@@ -69,4 +73,89 @@ pub fn convert_frame_row<'py>(
         }
     }
     Ok(Some(out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pyo3::types::{PyList, PyTuple};
+
+    #[test]
+    fn plain_values_and_nan_are_normalised() {
+        Python::initialize();
+        Python::attach(|py| {
+            let row = PyList::empty(py);
+            row.append("a").unwrap();
+            row.append(1i64).unwrap();
+            row.append(f64::NAN).unwrap();
+            let formats = PyList::empty(py);
+            for _ in 0..3 {
+                formats.append(py.None()).unwrap();
+            }
+            let na_rep = "NA".into_pyobject(py).unwrap().into_any();
+            let missing = PyTuple::empty(py);
+            let nothing = py.None().into_bound(py);
+            let result = convert_frame_row(
+                row.as_any(),
+                &formats,
+                &na_rep,
+                &missing,
+                &nothing,
+                &nothing,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(
+                result.get_item(0).unwrap().extract::<String>().unwrap(),
+                "a"
+            );
+            assert_eq!(result.get_item(1).unwrap().extract::<i64>().unwrap(), 1);
+            assert_eq!(
+                result.get_item(2).unwrap().extract::<String>().unwrap(),
+                "NA"
+            );
+        });
+    }
+
+    #[test]
+    fn a_non_sequence_is_left_to_the_caller() {
+        Python::initialize();
+        Python::attach(|py| {
+            let row = 5i64.into_pyobject(py).unwrap().into_any();
+            let formats = PyList::empty(py);
+            let na_rep = py.None().into_bound(py);
+            let missing = PyTuple::empty(py);
+            assert!(
+                convert_frame_row(row.as_any(), &formats, &na_rep, &missing, &na_rep, &na_rep)
+                    .unwrap()
+                    .is_none()
+            );
+        });
+    }
+
+    #[test]
+    fn an_iterators_own_error_is_not_hidden() {
+        Python::initialize();
+        Python::attach(|py| {
+            let globals = pyo3::types::PyDict::new(py);
+            py.run(
+                c"class Broken:\n    def __iter__(self):\n        raise RuntimeError('boom')\n",
+                Some(&globals),
+                None,
+            )
+            .unwrap();
+            let row = globals
+                .get_item("Broken")
+                .unwrap()
+                .unwrap()
+                .call0()
+                .unwrap();
+            let formats = PyList::empty(py);
+            let na_rep = py.None().into_bound(py);
+            let missing = PyTuple::empty(py);
+            let error =
+                convert_frame_row(&row, &formats, &na_rep, &missing, &na_rep, &na_rep).unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+        });
+    }
 }

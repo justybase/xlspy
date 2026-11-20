@@ -15,6 +15,36 @@ description: "Platform test results, Excel COM conformance and known limitations
   workbook is being copied in, it holds part of the workbook (see
   [Failure handling](guide/writing.md#failure-handling)).
 
+## Local Excel validation
+
+GitHub Actions has no Microsoft Excel, so the `com` tests (and the `printer`
+tests, which need a default printer) are opt-in. Before a release, run them on a
+Windows machine with desktop Excel and commit the artifact:
+
+```powershell
+python tools/excel_validation.py                    # pytest -m com
+python tools/excel_validation.py --include-printer  # also PageSetup tests
+python tools/excel_validation.py --check            # before tagging
+```
+
+The tool records the Excel version and build, the commit, the Python version and
+the JUnit counts in `validation/excel-validation-<date>-<sha>.json`, and prints
+the table row below. `--check` refuses an artifact that was recorded from a dirty
+tree, is older than 90 days, or whose commit is no longer an ancestor of `HEAD`
+(changes confined to `docs/`, `validation/` and `CHANGELOG.md` are allowed).
+Excel 2016 and Microsoft 365 both report version 16.0; the build number
+distinguishes them. CI cannot replace this step, but the committed artifact
+keeps the result reviewable.
+
+| Date | Excel | Commit | Result |
+| :--- | :--- | :--- | :--- |
+| 2026-11-20 | 16.0 (20527.0) | _pending first artifact_ | _pending_ |
+
+The LibreOffice tests (`pytest -m libreoffice`) are a secondary check: headless
+LibreOffice can convert the output and read basic cells, but its XLSX/XLSB
+support is not Excel. A LibreOffice failure is informative, not release-blocking,
+unless it shows a package that Excel also refuses.
+
 ## Compatibility refresh (2026-11-17)
 
 Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native

@@ -61,6 +61,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stay in `workbook.chartsheets`. This differs from openpyxl, whose
   `sheetnames` includes chartsheets: intentional, so chartsheet code must use
   the dedicated list.
+- Excel 365 styles that use `indexed="81"` load instead of raising
+  `ValueError`; `Color(indexed=...)` accepts the OOXML unsigned range.
+- A custom row iterator's own exception (a `RuntimeError` from `__iter__`, a
+  `MemoryError`) now propagates from the native writers instead of being
+  mistaken for a non-sequence and hidden by the Python fallback.
+
+### Security
+
+- The native module copies writable Python buffers (`bytearray`, writable
+  `memoryview`, numpy arrays) instead of borrowing them across calls, so a
+  concurrent write cannot race a reader; immutable `bytes` stay zero-copy.
+  XLSX/XLSB updater rows that carry a value past column XFD raise `ValueError`
+  instead of panicking, and the native model validates Cell slot descriptors
+  and releases replaced class references.
 
 ## [0.15.0] - 2026-11-11
 

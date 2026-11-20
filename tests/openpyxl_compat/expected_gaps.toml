@@ -1,0 +1,404 @@
+# Open openpyxl parity gaps. This file is the harness's source of truth:
+# a test xfails only for an ID listed here, with its area and reason.
+# Update it (and docs/openpyxl-parity.md) when a gap is closed;
+# tests/openpyxl_compat/test_gap_manifest.py keeps the two in sync.
+version = 1
+
+[[gap]]
+id = "A2"
+area = "Loaded worksheet objects"
+reason = "tables, validations, CF, charts, images are invisible after load"
+target = "L3"
+phase = "3–4"
+
+[[gap]]
+id = "A3"
+area = "Workbook metadata"
+reason = "no `security`, `calculation`, `views`, `epoch`, `template`, `vba_archive`"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "A4"
+area = "Defined names"
+reason = "read-only list; `DefinedName(name, formula, scope)`"
+target = "L3"
+phase = "1"
+
+[[gap]]
+id = "A6"
+area = "External links"
+reason = "preservation only"
+target = "L2"
+phase = "7"
+
+[[gap]]
+id = "A9"
+area = "OLE / controls / shapes"
+reason = "preservation only"
+target = "L1/L2"
+phase = "7"
+
+[[gap]]
+id = "A10"
+area = "read-only / write-only"
+reason = "no `ReadOnlyCell.number_format`, no `WriteOnlyCell`"
+target = "L3"
+phase = "1"
+
+[[gap]]
+id = "A11"
+area = "Custom document properties"
+reason = "writer-only; model does not read/write `custom.xml`"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "A12"
+area = "Document properties"
+reason = "no `lastPrinted`; model ignores `app.xml`/custom"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B1"
+area = "Sheet views"
+reason = "6 fields; no `Pane`/`Selection`/split panes"
+target = "L3"
+phase = "1–2"
+
+[[gap]]
+id = "B2"
+area = "Sheet format"
+reason = "no `SheetFormatProperties`"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B3"
+area = "Worksheet properties"
+reason = "no `outlinePr` and most flags"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B4"
+area = "AutoFilter"
+reason = "only `ref`; filters/sort raise `NotImplementedError`"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B5"
+area = "PageSetup"
+reason = "5 fields"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B6"
+area = "PrintOptions"
+reason = "centring only"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B7"
+area = "HeaderFooter"
+reason = "odd header/footer only"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B8"
+area = "Page breaks"
+reason = "writer only; no model API"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B9"
+area = "Print area/titles"
+reason = "string only; no `print_titles`"
+target = "L3"
+phase = "1–2"
+
+[[gap]]
+id = "B10"
+area = "Sheet protection"
+reason = "3 flags + password"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B11"
+area = "Workbook protection/security"
+reason = "2 fields"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B12"
+area = "Ignored errors/background/scenarios/smart tags"
+reason = "absent"
+target = "L2"
+phase = "7"
+
+[[gap]]
+id = "B13"
+area = "Row/column dimensions"
+reason = "missing `min`, `max`, `index`, `autoSize`"
+target = "L3"
+phase = "2"
+
+[[gap]]
+id = "B14"
+area = "`copy_worksheet`"
+reason = "does not copy hyperlinks"
+target = "L3 for cells/metadata"
+phase = "1"
+
+[[gap]]
+id = "C1"
+area = "Tables"
+reason = "write/add only; `ExcelTable` subset"
+target = "L3"
+phase = "3"
+
+[[gap]]
+id = "C2"
+area = "Data validation"
+reason = "write/add only; no `imeMode`/camelCase aliases"
+target = "L3"
+phase = "3"
+
+[[gap]]
+id = "C3"
+area = "Conditional formatting"
+reason = "write/add only; no read/generic `Rule`/dxf read"
+target = "L3"
+phase = "3"
+
+[[gap]]
+id = "C4"
+area = "Named styles"
+reason = "`NotImplementedError`"
+target = "L3"
+phase = "3"
+
+[[gap]]
+id = "C5"
+area = "Table styles"
+reason = "only `style_name`"
+target = "L2/L3"
+phase = "7"
+
+[[gap]]
+id = "C6"
+area = "Charts"
+reason = "7 types; no read/preserve/edit; no combined/3D/error bars"
+target = "L2/L3 practical"
+phase = "4"
+
+[[gap]]
+id = "C7"
+area = "Images"
+reason = "4 formats; cell anchor + pixels only; no read/edit"
+target = "L3"
+phase = "4"
+
+[[gap]]
+id = "C8"
+area = "Chartsheets"
+reason = "absent → XLSX read and create"
+target = "L2/L3"
+phase = "4"
+
+[[gap]]
+id = "C9"
+area = "Drawings/shapes/connectors"
+reason = "preservation only"
+target = "L1/L2 preserve"
+phase = "7"
+
+[[gap]]
+id = "D1"
+area = "`styles.numbers`"
+reason = "absent"
+target = "L3"
+phase = "1"
+
+[[gap]]
+id = "D2"
+area = "`utils.*`"
+reason = "internal helpers only"
+target = "L3"
+phase = "1"
+
+[[gap]]
+id = "D3"
+area = "Formula API"
+reason = "internal normalizer/translator only"
+target = "L3"
+phase = "1"
+
+[[gap]]
+id = "D4"
+area = "CellRange / MultiCellRange"
+reason = "minimal `str` subclass"
+target = "L3"
+phase = "1"
+
+[[gap]]
+id = "D5"
+area = "NamedStyle / StyleProxy / StyleableObject"
+reason = "absent"
+target = "L3"
+phase = "3"
+
+[[gap]]
+id = "D6"
+area = "Rich text phonetics"
+reason = "absent"
+target = "L2"
+phase = "7"
+
+[[gap]]
+id = "D7"
+area = "Error representation"
+reason = "`ExcelReader` uses `error:#DIV/0!`; model uses `#DIV/0!`"
+target = "L3 consistent"
+phase = "1"
+
+[[gap]]
+id = "D8"
+area = "Date/time behaviour"
+reason = "mostly covered; public helpers missing"
+target = "L3"
+phase = "1–2"
+
+[[gap]]
+id = "E2"
+area = "XLSB model edit"
+reason = "sparse `update_cells` only → values, styles, merges, hyperlinks, DV, CF, comments, names, layout, print, protection, properties"
+target = "L3"
+phase = "6"
+
+[[gap]]
+id = "E5"
+area = "XLSB objects edit"
+reason = "writer can create; updater cannot edit → DV and CF edits saved, charts/images addable and removable; tables addable"
+target = "L3"
+phase = "6"
+
+[[gap]]
+id = "F1"
+area = "External links"
+reason = "parity target L2, effort 7"
+target = "L2"
+phase = "7"
+
+[[gap]]
+id = "F2"
+area = "Pivot tables"
+reason = "parity target L2, effort 7"
+target = "L2"
+phase = "7"
+
+[[gap]]
+id = "F3"
+area = "OLE / controls"
+reason = "parity target L1/L2, effort 7"
+target = "L1/L2"
+phase = "7"
+
+[[gap]]
+id = "F5"
+area = "Themes / custom themes"
+reason = "parity target L1/L2, effort 7"
+target = "L1/L2"
+phase = "7"
+
+[[gap]]
+id = "F6"
+area = "Encryption"
+reason = "parity target out of scope (openpyxl has none), effort —"
+target = "out of scope (openpyxl has none)"
+phase = "—"
+
+[[gap]]
+id = "F7"
+area = "Legacy `.xls`"
+reason = "parity target out of scope (openpyxl has none), effort —"
+target = "out of scope (openpyxl has none)"
+phase = "—"
+
+[[gap]]
+id = "G1"
+area = "API compatibility"
+reason = "`ExcelReader` errors use `error:#DIV/0!`; decision: opt-in `errors=\"openpyxl\"`; keep legacy default"
+target = ""
+phase = ""
+
+[[gap]]
+id = "G2"
+area = "API compatibility"
+reason = "`Worksheet.append()` rejects `dict`; decision: accept letter/index keys"
+target = ""
+phase = ""
+
+[[gap]]
+id = "G3"
+area = "API compatibility"
+reason = "OOXML `showDropDown` is inverted; decision: openpyxl-compatible alias inverts it"
+target = ""
+phase = ""
+
+[[gap]]
+id = "G4"
+area = "API compatibility"
+reason = "`freeze_panes` is a string, not `Pane`; decision: add `SheetView.pane`; accept both"
+target = ""
+phase = ""
+
+[[gap]]
+id = "G5"
+area = "API compatibility"
+reason = "`print_area` is a string; decision: accept string or list"
+target = ""
+phase = ""
+
+[[gap]]
+id = "G6"
+area = "API compatibility"
+reason = "`Cell.style` rejects names; decision: add `NamedStyle` in phase 3"
+target = ""
+phase = ""
+
+[[gap]]
+id = "G7"
+area = "API compatibility"
+reason = "`Workbook.defined_names` is a list; decision: hybrid list/dict keyed by name"
+target = ""
+phase = ""
+
+[[gap]]
+id = "G8"
+area = "API compatibility"
+reason = "`Worksheet.tables` is a list; decision: hybrid list/dict keyed by name: `[name]`, `in`, `del`, `get`, `keys`, `values`, `items`; iterating gives tables, not names"
+target = ""
+phase = ""
+
+[[gap]]
+id = "G9"
+area = "API compatibility"
+reason = "no `Worksheet.sheet_format`; decision: add in phase 2"
+target = ""
+phase = ""
+
+[[gap]]
+id = "G10"
+area = "API compatibility"
+reason = "partial `Worksheet.page_setup`; decision: add in phase 2"
+target = ""
+phase = ""

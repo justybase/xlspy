@@ -2,7 +2,7 @@
 //! cell by cell.  Rows it cannot encode exactly as the Python writer would
 //! return None, and the Python row writer then handles (or rejects) them.
 
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::{
     PyBool, PyBytes, PyDate, PyDateTime, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple,
@@ -320,8 +320,9 @@ impl Row<'_, '_> {
                         0 => {}
                         1 => return Ok(Cell::Fallback),
                         _ => {
-                            PyErr::take(py);
-                            return Ok(Cell::Fallback);
+                            return Err(PyErr::take(py).unwrap_or_else(|| {
+                                PyRuntimeError::new_err("a float comparison failed")
+                            }));
                         }
                     }
                 }
@@ -568,9 +569,12 @@ pub fn encode_xlsx_row<'py>(
     };
     let mut styles = Styles::new(style_ids, true)?;
 
-    // A non-sequence row goes to the Python writer.
-    let Ok(seq) = FastSeq::new(row, c"row must be a sequence") else {
-        return Ok(None);
+    // A non-sequence row goes to the Python writer; an iterator's own error
+    // (a RuntimeError from __iter__, a MemoryError) must propagate.
+    let seq = match FastSeq::new(row, c"row must be a sequence") {
+        Ok(seq) => seq,
+        Err(error) if error.is_instance_of::<PyTypeError>(py) => return Ok(None),
+        Err(error) => return Err(error),
     };
     let n = seq.len();
     let list_before = list.len();

@@ -198,8 +198,11 @@ class Color:
         if self.indexed is not None:
             if not isinstance(self.indexed, int):
                 raise TypeError("indexed must be an int or None")
-            if not 0 <= self.indexed <= 65:
-                raise ValueError("indexed must be 0..65")
+            # OOXML's indexed is an unsigned int.  Excel 365 writes 81 (the
+            # automatic/legacy slot) in ordinary styles; openpyxl accepts it,
+            # so restricting to the 64-entry palette refuses real workbooks.
+            if not 0 <= self.indexed <= 0xFFFFFFFF:
+                raise ValueError("indexed must be 0..4294967295")
         if self.theme is not None:
             if not isinstance(self.theme, int):
                 raise TypeError("theme must be an int or None")

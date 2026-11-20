@@ -1,6 +1,7 @@
 //! The formatted-cell pre-scan of the XLSB writer.
 
 use crate::pyseq::FastSeq;
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
@@ -14,8 +15,12 @@ pub fn xlsb_row_has_formatted<'py>(
     py: Python<'py>,
     row: &Bound<'py, PyAny>,
 ) -> PyResult<Option<bool>> {
-    let Ok(seq) = FastSeq::new(row, c"row must be a sequence") else {
-        return Ok(None);
+    // A TypeError means "not a sequence": the Python check handles it.  Any
+    // other error from a custom iterable must propagate.
+    let seq = match FastSeq::new(row, c"row must be a sequence") {
+        Ok(seq) => seq,
+        Err(error) if error.is_instance_of::<PyTypeError>(py) => return Ok(None),
+        Err(error) => return Err(error),
     };
     let n = seq.len();
     let mut style = None; // looked up at the first tuple: most rows have none
@@ -41,4 +46,47 @@ pub fn xlsb_row_has_formatted<'py>(
         }
     }
     Ok(Some(false))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pyo3::types::{PyList, PyTuple};
+
+    #[test]
+    fn formatted_cells_are_detected() {
+        Python::initialize();
+        Python::attach(|py| {
+            let plain = PyList::new(py, [1i64, 2]).unwrap().into_any();
+            assert_eq!(xlsb_row_has_formatted(py, &plain).unwrap(), Some(false));
+
+            let formatted = PyList::empty(py);
+            formatted.append(1i64).unwrap();
+            let pair = PyTuple::new(
+                py,
+                [
+                    2i64.into_pyobject(py).unwrap().into_any(),
+                    "0.00".into_pyobject(py).unwrap().into_any(),
+                ],
+            )
+            .unwrap();
+            formatted.append(pair).unwrap();
+            assert_eq!(
+                xlsb_row_has_formatted(py, formatted.as_any()).unwrap(),
+                Some(true)
+            );
+
+            let wrong_tuple = PyList::empty(py);
+            wrong_tuple
+                .append(PyTuple::new(py, [1i64, 2i64, 3i64]).unwrap())
+                .unwrap();
+            assert_eq!(
+                xlsb_row_has_formatted(py, wrong_tuple.as_any()).unwrap(),
+                Some(false)
+            );
+
+            let not_a_row = 5i64.into_pyobject(py).unwrap().into_any();
+            assert_eq!(xlsb_row_has_formatted(py, &not_a_row).unwrap(), None);
+        });
+    }
 }

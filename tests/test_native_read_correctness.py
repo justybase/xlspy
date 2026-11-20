@@ -13,7 +13,7 @@ import datetime as dt
 
 import pytest
 
-from xlspy import ExcelReader, XlsbWriter
+from xlspy import ExcelReader, XlsbWriter, _accel
 from xlspy import reader as reader_module
 from xlspy._accel import HAVE_NATIVE
 
@@ -73,6 +73,23 @@ def _rewrite_sheet(source, destination, transform):
             if name == SHEET_PART:
                 payload = _write_records(transform(_read_records(payload)))
             zout.writestr(name, payload)
+
+
+def test_a_writable_sheet_buffer_is_copied_before_the_reader_reads_it(tmp_path):
+    path = tmp_path / "buffer.xlsb"
+    with XlsbWriter(str(path), use_shared_strings=False) as writer:
+        writer.add_sheet("S")
+        writer.write_sheet([[1, 2], [3, 4]])
+    with zipfile.ZipFile(path) as archive:
+        original = archive.read(SHEET_PART)
+    expected = [
+        list(row)
+        for row in _accel.read_xlsb_worksheet(bytes(original), [], [], set(), False)
+    ]
+    mutable = bytearray(original)
+    reader = _accel.read_xlsb_worksheet(mutable, [], [], set(), False)
+    mutable[:] = b"\x00" * len(mutable)
+    assert [list(row) for row in reader] == expected
 
 
 def _read(path, *, force_python=False, monkeypatch):

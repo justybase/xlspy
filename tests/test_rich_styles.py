@@ -217,7 +217,9 @@ def test_model_validation_rejects_bad_input():
     with pytest.raises(ValueError):
         Color(rgb="not-a-color")
     with pytest.raises(ValueError):
-        Color(indexed=99)
+        Color(indexed=-1)
+    # Excel 365 writes indexed="81"; the palette is not a 0..63 limit.
+    assert Color(indexed=81).indexed == 81
     with pytest.raises(ValueError):
         Font(size=0)
     with pytest.raises(ValueError):

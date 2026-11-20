@@ -16,8 +16,11 @@ implementation plan.  Status levels:
 | L4 | openpyxl-equivalent behaviour, including edge cases |
 
 The harness in `tests/openpyxl_compat/` is the executable version of this
-matrix.  A missing attribute is reported as `xfail` with the ID below; when a
-gap is implemented the same test starts passing without changes.
+matrix. Its expected gaps live in
+`tests/openpyxl_compat/expected_gaps.toml`; `test_gap_manifest.py` keeps that
+manifest in sync with the table below. A missing attribute is reported as
+`xfail` with the ID below; when a gap is implemented the same test starts
+passing without changes.
 
 ## Implementation history (initial status 2026-10-27; limits refreshed 2026-11-15)
 

@@ -64,6 +64,14 @@ XLSPY_ACCEL=python python -m pytest
 Run one pytest session at a time: every session shares `.test_tmp` and deletes it when
 it ends.
 
+CI cannot run Microsoft Excel. Before a release, run the local Excel validation on a
+Windows machine and commit the artifact; `--check` verifies the newest one:
+
+```powershell
+python tools/excel_validation.py
+python tools/excel_validation.py --check
+```
+
 Lint, types and the native module's stub:
 
 ```bash

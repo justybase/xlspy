@@ -1,6 +1,6 @@
 //! XLSB row encoders (BrtRowHdr + cell records), shared-string and inline.
 
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::{
     PyBool, PyBytes, PyDate, PyDateTime, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple, PyType,
@@ -209,10 +209,13 @@ fn encode_row<'py>(
 ) -> PyResult<Option<Vec<u8>>> {
     let py = row.py();
     // A list or tuple is read in place, any other sequence (a numpy row) as
-    // list(row); a non-sequence goes to the Python encoder, as in XLSX.
-    let Ok(row) = FastSeq::new(row, c"row must be a sequence") else {
-        PyErr::take(py);
-        return Ok(None);
+    // list(row); a non-sequence goes to the Python encoder, as in XLSX.  A
+    // TypeError from a custom iterable is the fallback signal; other errors
+    // propagate.
+    let row = match FastSeq::new(row, c"row must be a sequence") {
+        Ok(row) => row,
+        Err(error) if error.is_instance_of::<PyTypeError>(py) => return Ok(None),
+        Err(error) => return Err(error),
     };
     let fmt_xf = if fmt_xf.is_none() {
         None
@@ -376,7 +379,9 @@ pub fn encode_xlsb_row<'py>(
         cell_hook.unwrap_or(&none),
     );
     let Strings::Shared(sst) = strings else {
-        unreachable!()
+        return Err(PyRuntimeError::new_err(
+            "the shared-string encoder lost its table",
+        ));
     };
     match result {
         Ok(Some(bytes)) => Ok(Some((PyBytes::new(py, &bytes), sst.uniq, sst.all))),

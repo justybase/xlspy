@@ -140,3 +140,60 @@ pub fn overlay_kind(item: &Bound<'_, PyAny>, style: Option<&Bound<'_, PyType>>) 
         0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pyo3::types::{PyDict, PyString};
+
+    #[test]
+    fn int_as_i64_reports_overflow_without_leaving_an_error() {
+        Python::initialize();
+        Python::attach(|py| {
+            let max = i64::MAX.into_pyobject(py).unwrap().into_any();
+            assert_eq!(int_as_i64(&max), Some(i64::MAX));
+            let too_big = (u128::from(u64::MAX) + 1)
+                .into_pyobject(py)
+                .unwrap()
+                .into_any();
+            assert_eq!(int_as_i64(&too_big), None);
+            // The OverflowError was cleared: the interpreter is still usable.
+            py.run(c"assert 1 + 1 == 2", None, None).unwrap();
+        });
+    }
+
+    #[test]
+    fn overlay_kind_separates_formats_styles_and_other_values() {
+        Python::initialize();
+        Python::attach(|py| {
+            let text = PyString::new(py, "0.00").into_any();
+            assert_eq!(overlay_kind(&text, None), 1);
+            let number = 5i64.into_pyobject(py).unwrap().into_any();
+            assert_eq!(overlay_kind(&number, None), 0);
+
+            let globals = PyDict::new(py);
+            py.run(
+                c"class Style:\n    pass\nclass Sub(Style):\n    pass\n",
+                Some(&globals),
+                None,
+            )
+            .unwrap();
+            let style = globals
+                .get_item("Style")
+                .unwrap()
+                .unwrap()
+                .cast_into::<PyType>()
+                .unwrap();
+            let sub = globals
+                .get_item("Sub")
+                .unwrap()
+                .unwrap()
+                .cast_into::<PyType>()
+                .unwrap();
+            let instance = style.call0().unwrap();
+            assert_eq!(overlay_kind(&instance, Some(&style)), 2);
+            let sub_instance = sub.call0().unwrap();
+            assert_eq!(overlay_kind(&sub_instance, Some(&style)), 2);
+        });
+    }
+}

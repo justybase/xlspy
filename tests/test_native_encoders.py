@@ -19,6 +19,26 @@ class BadHash(str):
         raise RuntimeError("hash failed on purpose")
 
 
+class BrokenIterable:
+    """A row whose own iteration raises: the error is not a fallback signal."""
+
+    def __iter__(self):
+        raise RuntimeError("iterator failed on purpose")
+
+
+def test_row_iterators_own_errors_propagate():
+    ss_dict, ss_list = {}, []
+    with pytest.raises(RuntimeError, match="iterator failed"):
+        _accel.encode_xlsb_row(BrokenIterable(), ss_dict, ss_list, 0, 0, 1)
+    with pytest.raises(RuntimeError, match="iterator failed"):
+        _accel.encode_xlsx_row(BrokenIterable(), ss_dict, ss_list, 0, 0, 1, True)
+    with pytest.raises(RuntimeError, match="iterator failed"):
+        _accel.xlsb_row_has_formatted(BrokenIterable())
+    if _accel.convert_frame_row is not None:
+        with pytest.raises(RuntimeError, match="iterator failed"):
+            _accel.convert_frame_row(BrokenIterable(), [], None, (), None, None)
+
+
 def test_xlsb_row_that_raises_leaves_the_table_as_it_was():
     ss_dict, ss_list = {}, []
     with pytest.raises(RuntimeError, match="hash failed"):

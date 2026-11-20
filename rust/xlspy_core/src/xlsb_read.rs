@@ -88,31 +88,25 @@ pub fn error_text(code: u8) -> &'static str {
 
 /// One flag per cell style (xf index): 1 when its number format is a date
 /// format.  Built once per sheet, so the cell loop does no lookups.
-pub fn date_xf_flags(styles: &Bound<'_, PyList>, date_num_fmts: &Bound<'_, PyAny>) -> Vec<u8> {
-    styles
-        .iter()
-        .map(|style| {
-            let Ok(style) = style.cast::<PyDict>() else {
-                return 0;
-            };
-            // PyDict_GetItemString semantics: lookup errors count as a miss.
-            let Ok(Some(nf)) = style.get_item("numFmtId") else {
-                return 0;
-            };
-            // PySet_Contains; errors (a non-set argument too) count as a miss.
-            // SAFETY: both objects are live with the GIL held; PySet_Contains
-            // reports a non-set argument or a hashing failure as -1 with an
-            // exception set, which the last arm clears.
-            match unsafe { pyo3::ffi::PySet_Contains(date_num_fmts.as_ptr(), nf.as_ptr()) } {
-                1 => 1,
-                0 => 0,
-                _ => {
-                    PyErr::take(date_num_fmts.py());
-                    0
-                }
-            }
-        })
-        .collect()
+pub fn date_xf_flags(
+    styles: &Bound<'_, PyList>,
+    date_num_fmts: &Bound<'_, PySet>,
+) -> PyResult<Vec<u8>> {
+    let mut flags = Vec::with_capacity(styles.len());
+    for style in styles.iter() {
+        let Ok(style) = style.cast::<PyDict>() else {
+            flags.push(0);
+            continue;
+        };
+        let Some(nf) = style.get_item("numFmtId")? else {
+            flags.push(0);
+            continue;
+        };
+        // A hashing failure (an unhashable numFmtId) is a real error: the
+        // Python caller would raise it, so a native call must not hide it.
+        flags.push(u8::from(date_num_fmts.contains(&nf)?));
+    }
+    Ok(flags)
 }
 
 /// Number cell value: an int for whole finite doubles, else a float.
@@ -469,7 +463,7 @@ pub fn read_xlsb_worksheet<'py>(
         done: false,
         shared_strings: shared_strings.clone().unbind(),
         ss_len: shared_strings.len(),
-        date_xf: date_xf_flags(styles_list, date_num_fmts.as_any()),
+        date_xf: date_xf_flags(styles_list, date_num_fmts)?,
         cur_cells: Vec::new(),
         cur_row_num: -1,
         gap_rows_remaining: 0,
@@ -520,7 +514,10 @@ pub fn xlsb_load_cells<'py>(
     let (type_n, type_s, type_b, type_e) = (intern("n"), intern("s"), intern("b"), intern("e"));
     let none = py.None().into_bound(py);
     let mut columns: Vec<Option<Bound<'py, PyAny>>> = vec![None; 16384];
-    let date_xf = date_xf_flags(styles_list, date_num_fmts);
+    let date_num_fmts = date_num_fmts
+        .cast::<PySet>()
+        .map_err(|_| PyTypeError::new_err("date_num_fmts must be a set"))?;
+    let date_xf = date_xf_flags(styles_list, date_num_fmts)?;
     let ctx = CellContext {
         shared_strings,
         ss_len: shared_strings.len(),

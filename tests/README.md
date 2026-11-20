@@ -56,7 +56,8 @@ python -m pytest --randomly-seed=12345
 ```
 
 To measure coverage the way CI does, over both backends (the branch-coverage
-threshold, `fail_under` in `pyproject.toml`, is 89%):
+threshold, `fail_under` in `pyproject.toml`, is 90%; only explicit
+`pragma: no cover` lines are excluded):
 
 ```bash
 python -m pytest --cov --cov-report=
@@ -76,8 +77,10 @@ python tools/compare_openpyxl_model.py LEFT.xlsx RIGHT.xlsx
 ```
 
 The harness uses openpyxl 3.1.5 (pinned in the `test` extra). A missing feature is
-reported as `xfail` with the ID from
-[`docs/openpyxl-parity.md`](../docs/openpyxl-parity.md), which also records the
+reported as `xfail` with an ID from
+`tests/openpyxl_compat/expected_gaps.toml`. That manifest is the source of truth
+for the expected gaps; `test_gap_manifest.py` keeps it in sync with
+[`docs/openpyxl-parity.md`](../docs/openpyxl-parity.md), which records the
 current implementation status and the remaining phases.
 
 The notes/template regression suites are `test_comments_and_editing.py` and
@@ -90,6 +93,38 @@ python -m pytest tests/test_excel_com_metadata.py
 python -m pytest tests/test_xlsb_metadata_com.py
 python -m pytest tests/test_excel_com_review_fixes.py
 python -m pytest tests/test_excel_com_conformance.py tests/test_excel_com_ignored_errors.py
+```
+
+## Excel-written corpus and local Excel validation
+
+`tests/data/excel_365/` holds `features.xlsx` and `features.xlsb` written by
+desktop Excel (Microsoft 365 reports version 16.0) plus `manifest.json` with the
+build and file hashes. CI reads the committed corpus without Excel; regenerate
+it on Windows with office installed:
+
+```bash
+python tools/make_excel_fixtures.py
+python -m pytest tests/test_excel_fixtures.py
+```
+
+The COM and printer tests are opt-in because GitHub Actions has no Excel. Before
+a release, record a local run as an artifact and check it:
+
+```powershell
+python tools/excel_validation.py
+python tools/excel_validation.py --check
+```
+
+`--include-printer` adds the PageSetup tests. The artifact records the Excel
+version/build, commit and JUnit counts in `validation/`; see
+[`docs/validation.md`](../docs/validation.md#local-excel-validation).
+
+LibreOffice is a secondary consumer, not an Excel replacement. Its smoke tests
+convert xlspy output with headless LibreOffice and are skipped when `soffice` is
+not installed; CI runs them as a non-blocking job:
+
+```bash
+python -m pytest tests/test_libreoffice_xlsb.py -q -m libreoffice
 ```
 
 ## Native extension

@@ -232,6 +232,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.11", "3.14"]
+        include:
+          # Every supported version runs the fallback somewhere; the OS matrix
+          # above already covers platform-specific behaviour on the oldest and
+          # newest stable versions.
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.15"
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -245,6 +255,7 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
           cache: pip
           cache-dependency-path: pyproject.toml
 
@@ -262,6 +273,41 @@ jobs:
         env:
           XLSPY_ACCEL: python
         run: python -m pytest tests/ -v --tb=short
+
+  libreoffice:
+    name: LibreOffice smoke (secondary, non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # LibreOffice is a second consumer, not a reference implementation: its
+    # XLSX/XLSB support differs from Excel. Keep the result visible without
+    # making an upstream renderer a release gate.
+    continue-on-error: true
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src
+      XLSPY_ACCEL: python
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install LibreOffice Calc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-calc
+
+      - name: Install test dependencies without building the package
+        run: |
+          python -m pip install --upgrade pip
+          python -c 'import pathlib, subprocess, sys, tomllib; deps=tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["optional-dependencies"]["test"]; subprocess.check_call([sys.executable, "-m", "pip", "install", *deps])'
+
+      - name: Run the LibreOffice smoke tests
+        run: python -m pytest tests/test_libreoffice_xlsb.py -q -m libreoffice
 
   wheel-smoke:
     name: Wheel smoke test (installed wheel, clean venv)

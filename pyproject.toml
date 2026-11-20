@@ -124,13 +124,12 @@ branch = true
 show_missing = true
 skip_covered = true
 # CI combines a native run and an XLSPY_ACCEL=python run. Both together reach
-# 90% branch coverage (2026-11-02, with pandas/polars installed); the floor is
-# one point under that.
-fail_under = 89
+# 91% branch coverage (2026-11-20, with pandas/polars installed); the floor is
+# one point under that. Only explicit pragma: no cover lines are excluded.
+fail_under = 90
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
-    'raise (NotImplementedError|UnsupportedFeatureError)\b',
 ]
 
 [tool.ruff]
