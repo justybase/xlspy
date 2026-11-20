@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A data validation with `allow_blank=False` keeps that value through an XLSX
   round trip: the writer now emits `allowBlank="0"` instead of relying on the
   reader's default (`True`).
+- A `sortBy` value that is not a string now raises `TypeError` before the
+  allowed-value check, matching the other sort-state fields.
 - `style.copy(size=20, sz=14)` refuses both spellings of one field instead of
   silently keeping the last one, and a chart range with an empty or malformed
   sheet name (`"!A2:A3"`, `"A1:B2!B2:B3"`) is refused instead of being written
@@ -84,6 +86,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   formats. A `None` header becomes an empty cell in XLSX too, and the
   pure-Python row encoder refuses a value past column XFD instead of writing
   an invalid reference.
+
+### Changed
+
+- A nightly workflow runs a larger randomized-edit/native-fuzz budget across
+  three seeds and a non-blocking latest `openpyxl`/`pandas`/`polars` job. The
+  pull-request suite keeps its short deterministic budget.
 
 ### Security
 

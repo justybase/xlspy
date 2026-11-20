@@ -170,6 +170,20 @@ FORMULAS = [
     "=TRUE",
     '=A1&"x"',
     "=SUM(A:A)",
+    # Edge cases: empty input, literals, whitespace, escaped quotes, errors,
+    # structured references, bare parentheses and prefix operators.
+    "",
+    "A1",
+    "= A1 ",
+    '="a""b"',
+    "=#N/A",
+    "=Table1[Column]",
+    "=[1]Sheet1!A1",
+    "=A1[[#Headers],[Col]]",
+    "=(A1+A2)",
+    "=+A1",
+    "=SUM(A1;A2)",
+    "=TRUE+FALSE",
 ]
 
 

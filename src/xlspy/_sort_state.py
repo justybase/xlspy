@@ -58,10 +58,10 @@ def _check_condition(condition: Any) -> None:
         raise TypeError("descending must be a bool or None")
 
     sort_by = getattr(condition, "sortBy", None)
-    if sort_by is not None and sort_by not in SORT_BY_VALUES:
-        raise ValueError(f"invalid sortBy {sort_by!r}")
     if sort_by is not None and not isinstance(sort_by, str):
         raise TypeError("sortBy must be a string or None")
+    if sort_by is not None and sort_by not in SORT_BY_VALUES:
+        raise ValueError(f"invalid sortBy {sort_by!r}")
 
     custom_list = getattr(condition, "customList", None)
     if custom_list is not None and not isinstance(custom_list, str):

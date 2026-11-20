@@ -92,6 +92,24 @@ took **9,068 tests, 1,450 skipped** in 2:47. Combined coverage is **91%**
 branch coverage over 27,263 statements (the floor is 90%). The LibreOffice
 smoke suite passes **31** tests.
 
+## Coverage hardening and nightly stress (2026-11-20)
+
+Windows 11, Python 3.14.2. Added direct unit suites for the rules that the
+end-to-end tests only touch incidentally: `tests/test_sort_state_validation.py`
+(24 tests), `tests/test_table_totals_units.py` (38),
+`tests/test_rich_text_units.py` (27), `tests/test_formula_tokenizer_edges.py`
+(7) and `tests/test_loaded_styles_unit.py` (18). The five lowest modules rose
+from 77% to 94% combined (`_sort_state` and `_table_totals` 100%, tokenizer and
+`rich_text` 99%, `workbook/_styles.py` 89%). The full native suite passed
+**10,301 tests, 343 skipped, 1 xfailed** in 5:13; the pure-Python pass took
+**9,195 tests, 1,450 skipped** in 2:54. Combined coverage is **92%** branch
+coverage over 27,263 statements.
+
+`.github/workflows/nightly.yml` adds two off-PR checks: a long randomized-edit
+and native-fuzz run (`XLSPY_FUZZ_ITERATIONS=2000`) across seeds 7, 101 and
+2024, and a non-blocking job on the latest `openpyxl`, `pandas` and `polars`.
+The regular CI matrix keeps the short deterministic fuzz budget.
+
 ## Compatibility refresh (2026-11-17)
 
 Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native

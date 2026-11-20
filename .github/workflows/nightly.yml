@@ -1,0 +1,97 @@
+name: Nightly
+
+on:
+  schedule:
+    # A long fuzz run and a dependency-drift check, off the pull-request path.
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stress:
+    name: Long fuzz (seed ${{ matrix.seed }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: ["7", "101", "2024"]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
+
+      - name: Install package with test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Verify the native extension is loaded
+        run: |
+          python -c "from xlspy._accel import HAVE_NATIVE, ACCEL_BACKEND; print('native:', HAVE_NATIVE, ACCEL_BACKEND); assert HAVE_NATIVE and set(ACCEL_BACKEND.values()) == {'rust'}, 'native extension not loaded!'"
+
+      # The default run keeps each seed small. Nightly raises the budget and
+      # rotates the seed, so a rare edit sequence is not hidden behind the
+      # deterministic PR run.
+      - name: Long randomized edits and native fuzz
+        env:
+          XLSPY_FUZZ_ITERATIONS: "2000"
+          XLSPY_FUZZ_SEED: ${{ matrix.seed }}
+        run: |
+          python -m pytest tests/test_edit_sequences_fuzz.py tests/test_native_fuzz.py -q
+
+  latest-deps:
+    name: Latest openpyxl/pandas/polars (non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Upstream releases are a signal, not a release gate: the pinned suite in
+    # ci.yml stays the reference.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
+
+      - name: Install package with test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Move to the latest test dependencies
+        run: |
+          pip install --upgrade openpyxl pandas polars
+          python -c "import openpyxl, pandas, polars; print('openpyxl', openpyxl.__version__); print('pandas', pandas.__version__); print('polars', polars.__version__)"
+
+      - name: Compatibility and dataframe tests
+        run: |
+          python -m pytest tests/openpyxl_compat tests/test_openpyxl_model_parity.py \
+            tests/test_dataframe.py tests/test_updater_differential.py -q
