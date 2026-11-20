@@ -44,6 +44,7 @@ class _UpdaterBase:
     _package: ZipPackage
     _date_1904: bool
     _sheets: dict[str, str]
+    _chartsheets: set[str]
     _shared_strings_loaded: bool
     _shared_strings_values: list[str]
     _shared_string_indices: dict[str, int]
@@ -51,6 +52,17 @@ class _UpdaterBase:
     _shared_strings_pending: list[str]
     _shared_strings_dirty: bool
     _stream_shared_strings: DiskStringIndex | None
+
+    def _init_shared_string_state(self) -> None:
+        """Reset the bookkeeping both formats keep for a replacement."""
+
+        self._shared_strings_loaded = False
+        self._shared_strings_values = []
+        self._shared_string_indices = {}
+        self._shared_strings_total = 0
+        self._shared_strings_pending = []
+        self._shared_strings_dirty = False
+        self._stream_shared_strings = None
 
     def _ensure_stream_shared_strings(self) -> None:
         """Load the shared-string store used by streaming replacements (subclass hook)."""
@@ -97,9 +109,66 @@ class _UpdaterBase:
             pass
 
     def get_sheet_names(self) -> list[str]:
-        """Return worksheet names in workbook order."""
+        """Return worksheet and chartsheet names in workbook order."""
 
         return list(self._sheets)
+
+    def get_worksheet_names(self) -> list[str]:
+        """The names of the worksheets alone, in workbook order."""
+
+        return [name for name in self._sheets if name not in self._chartsheets]
+
+    def get_chartsheet_names(self) -> list[str]:
+        """The chartsheet names, in workbook order."""
+
+        return [name for name in self._sheets if name in self._chartsheets]
+
+    def replace_sheet_data(
+        self,
+        sheet_name: str,
+        rows: Iterable[Sequence[Any]],
+        *,
+        headers: Sequence[str] | None = None,
+        style_fallback: StyleFallback = "inherit",
+    ) -> None:
+        """Replace one worksheet's used data region.
+
+        ``rows`` is materialised once, so generators are supported but the
+        operation remains atomic with respect to the in-memory package. A
+        ``(value, format_string)`` cell is accepted for compatibility with the
+        writers; its value is used and no new style is created. Once a
+        streaming shared-string store is loaded, the call is forwarded to
+        ``replace_sheet_data_stream``.
+        """
+
+        sheet_path = self._replacement_sheet_path(sheet_name, style_fallback)
+        if self._stream_shared_strings is not None:
+            self.replace_sheet_data_stream(
+                sheet_name,
+                rows,
+                headers=headers,
+                style_fallback=style_fallback,
+            )
+            return
+        materialized, header_values = self._checked_rows(sheet_name, sheet_path, rows, headers)
+        self._replace_loaded_rows(
+            sheet_name,
+            sheet_path,
+            materialized,
+            header_values,
+            style_fallback,
+        )
+
+    def _replace_loaded_rows(
+        self,
+        sheet_name: str,
+        sheet_path: str,
+        materialized: list[list[Any]],
+        header_values: list[str] | None,
+        style_fallback: StyleFallback,
+    ) -> None:
+        """Write materialized rows into one sheet part (subclass hook)."""
+        raise NotImplementedError
 
     def _read_table_header(self, table_part: bytes) -> TableHeader | None:
         """Parse one table part of this format into its header row (subclass hook)."""
@@ -252,7 +321,7 @@ class _UpdaterBase:
         self._package.save(output_path)
 
     def to_bytes(self) -> bytes:
-        """Return the current package as XLSX bytes."""
+        """Return the current package as bytes in the updater's format."""
 
         return self._package.to_bytes()
 

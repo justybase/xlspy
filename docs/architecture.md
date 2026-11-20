@@ -114,6 +114,18 @@ keeps the existing `<dimension>` element and adds a missing one in schema order.
 `XlsxUpdater._patch_sheet_file` works on the byte stream, without parsing the
 part, and `workbook/_xlsb_layout._patch_xlsb_rows` edits binary records.
 
+**Updater convergence (Q5).** `_UpdaterBase.replace_sheet_data` owns the
+prologue both formats need: argument checks, the streaming hand-off, row
+materialisation and the table-header guard; each subclass implements
+`_replace_loaded_rows`, which only encodes and patches its own part.
+`formula_range_bounds` / `check_formula_anchor` in `updater_utils.py` are the
+one reading of array and spill ranges, which XLSX uses to widen `<dimension>`
+and the auto-filter and XLSB uses for its row headers and member cells.
+`tests/test_updater_differential.py` runs every edit on both formats and
+compares the loaded model, while the package's raw dimension/filter attributes
+are checked separately because XLSB stores array member cells and XLSX does
+not.
+
 **XLSB: who does what.**
 
 | Concern | Updater side | Model side |

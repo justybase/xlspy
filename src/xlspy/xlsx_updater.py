@@ -14,13 +14,16 @@ from pathlib import Path
 from typing import Any, cast
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from xml.parsers import expat
-from ._safe_xml import harden_expat
+from ._safe_xml import fromstring as safe_fromstring, harden_expat
 from ._text import xml_space_attribute
 
 from .updater_utils import (
     DiskStringIndex,
     TrailingRowTrimmer,
+    check_formula_anchor,
+    check_row_columns,
     dominant_styles,
+    formula_range_bounds,
     row_cells,
     ZipPackage,
     column_index_to_letter,
@@ -99,46 +102,23 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         except BaseException:
             self._package.close()
             raise
-        self._shared_strings_loaded = False
-        self._shared_strings_values: list[str] = []
-        self._shared_string_indices: dict[str, int] = {}
-        self._shared_strings_total = 0
-        self._shared_strings_pending: list[str] = []
+        self._init_shared_string_state()
         self._shared_strings_prefix = ""
-        self._shared_strings_dirty = False
         self._use_shared_strings = False
-        self._stream_shared_strings: DiskStringIndex | None = None
 
     def _read_table_header(self, table_part: bytes) -> TableHeader | None:
         return xml_table_header(table_part)
 
-    def replace_sheet_data(
+    def _replace_loaded_rows(
         self,
         sheet_name: str,
-        rows: Iterable[Sequence[Any]],
-        *,
-        headers: Sequence[str] | None = None,
-        style_fallback: StyleFallback = "inherit",
+        sheet_path: str,
+        materialized: list[list[Any]],
+        header_values: list[str] | None,
+        style_fallback: StyleFallback,
     ) -> None:
-        """Replace one worksheet's used data region.
+        """Write the replacement rows into an XLSX worksheet part."""
 
-        ``rows`` is materialised once, so generators are supported but the
-        operation remains atomic with respect to the in-memory package.  A
-        ``(value, format_string)`` cell is accepted for compatibility with
-        the writers; its value is used and no new style is created.
-        """
-
-        sheet_path = self._replacement_sheet_path(sheet_name, style_fallback)
-        if self._stream_shared_strings is not None:
-            self.replace_sheet_data_stream(
-                sheet_name,
-                rows,
-                headers=headers,
-                style_fallback=style_fallback,
-            )
-            return
-
-        materialized, header_values = self._checked_rows(sheet_name, sheet_path, rows, headers)
         old_sheet_xml = self._package.get(sheet_path).decode("utf-8")
         self._ensure_shared_strings_loaded()
         if self._use_shared_strings:
@@ -150,25 +130,26 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             self._shared_strings_dirty = True
 
         header_styles, data_styles = self._collect_styles(
-            old_sheet_xml, headers_provided=headers is not None
+            old_sheet_xml, headers_provided=header_values is not None
         )
         date_style = self._find_date_style() if style_fallback == "inherit" else None
         worksheet_prefix = self._tag_prefix(old_sheet_xml, "sheetData")
         total_rows, width = self._region_size(materialized, header_values)
-        last_col = width - 1
-        dimension_ref = self._dimension_ref(total_rows, last_col)
 
         writer = _XlsxRowWriter(self, header_styles, data_styles, date_style, style_fallback, worksheet_prefix)
         rows_xml: list[bytes] = []
         next_row = 1
         if header_values is not None:
-            rows_xml.append(writer.row(header_values, next_row, header=True))
+            rows_xml.append(writer.row(header_row_texts(header_values), next_row, header=True))
             next_row += 1
 
         for row in materialized:
             rows_xml.append(writer.row(row, next_row, header=False))
             next_row += 1
 
+        # Array and spill ranges reach past the data rows and columns.
+        total_rows = max(total_rows, writer.formula_rows)
+        dimension_ref = self._dimension_ref(total_rows, max(width, writer.formula_cols) - 1)
         updated_sheet_xml = self._patch_sheet_xml(
             old_sheet_xml, b"".join(rows_xml).decode("utf-8"), dimension_ref
         )
@@ -199,6 +180,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
 
         sheet_path = self._replacement_sheet_path(sheet_name, style_fallback)
         header_values = list(headers) if headers is not None else None
+        header_texts = header_row_texts(header_values) if header_values is not None else None
         guard = self._table_header_guard(sheet_name, sheet_path)
         original_sheet = self._stage_part_copy(sheet_path, ".xml")
 
@@ -235,9 +217,9 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             with rows_file.open("wb") as output:
                 trimmer = TrailingRowTrimmer(output, len(header_values) if header_values is not None else 0)
                 next_row = 1
-                if header_values is not None:
-                    guard.check_row(0, header_row_texts(header_values))
-                    output.write(writer.row(header_values, next_row, header=True))
+                if header_texts is not None:
+                    guard.check_row(0, header_texts)
+                    output.write(writer.row(header_texts, next_row, header=True))
                     trimmer.keep()
                     next_row += 1
 
@@ -251,9 +233,14 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
                 guard.finish()
                 trimmer.finish()
 
-            total_rows = trimmer.kept_rows + (1 if header_values is not None else 0)
-            last_col = trimmer.width - 1
-            dimension_ref = self._dimension_ref(total_rows, last_col)
+            # Array and spill ranges reach past the streamed rows and columns.
+            total_rows = max(
+                trimmer.kept_rows + (1 if header_values is not None else 0),
+                writer.formula_rows,
+            )
+            dimension_ref = self._dimension_ref(
+                total_rows, max(trimmer.width, writer.formula_cols) - 1
+            )
             updated_sheet = self._package.temporary_path(suffix=".xml")
             self._patch_sheet_file(
                 original_sheet,
@@ -281,7 +268,14 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
         workbook_rels_path = "xl/_rels/workbook.xml.rels"
         if not self._package.has(workbook_rels_path):
             raise ValueError("XLSX workbook relationships were not found")
-        relationships = parse_relationships_xml(self._package.get(workbook_rels_path))
+        rels_data = self._package.get(workbook_rels_path)
+        relationships = parse_relationships_xml(rels_data)
+        chart_ids = {
+            relationship.get("Id")
+            for relationship in safe_fromstring(rels_data)
+            if (relationship.get("Type") or "").endswith("/chartsheet")
+        }
+        self._chartsheets = set()
 
         sheets: dict[str, str] = {}
         parser = harden_expat(expat.ParserCreate())
@@ -300,6 +294,8 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
             if not self._package.has(sheet_path):
                 raise ValueError(f"Worksheet part was not found: {sheet_path}")
             sheets[sheet_name] = sheet_path
+            if relationship_id in chart_ids:
+                self._chartsheets.add(sheet_name)
 
         parser.StartElementHandler = start_element
         parser.Parse(self._package.get("xl/workbook.xml"), True)
@@ -870,6 +866,10 @@ class _XlsxRowWriter:
         self._prefix = prefix
         self.formulas = False
         self.spill = False
+        # End row and column (both one past zero-based) of the array and spill
+        # ranges written, which the sheet dimension must cover.
+        self.formula_rows = 0
+        self.formula_cols = 0
         self._row_number = 0
         self._header = False
         general = style_fallback == "general"
@@ -888,6 +888,13 @@ class _XlsxRowWriter:
             self.formulas = True
             if isinstance(unwrapped, Formula) and unwrapped.spill_ref is not None:
                 self.spill = True
+        bounds = formula_range_bounds(unwrapped)
+        if bounds is not None:
+            # ``_row_number`` addresses the XML row (one-based); formula bounds
+            # are zero-based like ``column``.
+            check_formula_anchor(bounds, column, self._row_number - 1)
+            self.formula_rows = max(self.formula_rows, bounds[3] + 1)
+            self.formula_cols = max(self.formula_cols, bounds[2] + 1)
         header_styles, data_styles = self._styles
         return self._updater._value_cell(
             value, column, self._row_number, header_styles, data_styles, self._date_style,
@@ -895,6 +902,7 @@ class _XlsxRowWriter:
         )
 
     def row(self, row: Sequence[Any], row_number: int, *, header: bool) -> bytes:
+        check_row_columns(row)
         self._row_number, self._header = row_number, header
         if encode_update_xlsx_row is not None:
             return bytes(encode_update_xlsx_row(

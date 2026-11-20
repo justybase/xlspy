@@ -36,10 +36,12 @@ from xml.sax import saxutils
 from ._text import check_cell_text, xml_space_attribute, xstring_escape
 from .exceptions import UnsupportedFeatureError
 from .comments import rels_path
+from .formulas import ArrayFormula, DataTableFormula, Formula
 from .refs import parse_cell_range
 
 
 STREAM_BUFFER_SIZE = 1024 * 1024
+UPDATER_MAX_COLUMNS = 16384
 
 
 def copy_stream(source: IO[bytes], target: IO[bytes], *, length: int = STREAM_BUFFER_SIZE) -> None:
@@ -414,6 +416,54 @@ def unwrap_cell(cell: Any) -> Any:
     """Return the value from the optional writer-style format wrapper."""
 
     return cell[0] if is_formatted_cell(cell) else cell
+
+
+def check_row_columns(row: Sequence[Any]) -> None:
+    """Refuse a row that carries a value past Excel's last column."""
+
+    if len(row) <= UPDATER_MAX_COLUMNS:
+        return
+    for column in range(UPDATER_MAX_COLUMNS, len(row)):
+        if unwrap_cell(row[column]) is not None:
+            raise ValueError(
+                f"row has a value in column {column + 1}; "
+                f"Excel holds at most {UPDATER_MAX_COLUMNS} columns"
+            )
+
+
+def check_last_column(last_col: int) -> None:
+    """Refuse an XLSB row header whose last column is past Excel's last column."""
+
+    if last_col >= UPDATER_MAX_COLUMNS:
+        raise ValueError(
+            f"last column is {last_col + 1}; "
+            f"Excel holds at most {UPDATER_MAX_COLUMNS} columns"
+        )
+
+
+def formula_range_bounds(cell: Any) -> tuple[int, int, int, int] | None:
+    """The zero-based bounds of a multi-cell formula, else None.
+
+    ``ArrayFormula``, ``DataTableFormula`` and ``Formula(..., array_ref=...)``
+    / ``spill_ref=...`` cover a range; a scalar formula or a plain value does
+    not.
+    """
+
+    value = unwrap_cell(cell)
+    if isinstance(value, (ArrayFormula, DataTableFormula)):
+        return parse_cell_range(value.ref)
+    if isinstance(value, Formula):
+        reference = value.array_ref or value.spill_ref
+        return None if reference is None else parse_cell_range(reference)
+    return None
+
+
+def check_formula_anchor(bounds: tuple[int, int, int, int], column: int, row: int) -> None:
+    """Refuse an array or spill formula outside the top-left cell of its range."""
+
+    c1, r1, _c2, _r2 = bounds
+    if (column, row) != (c1, r1):
+        raise ValueError("array formula must be written in its top-left cell")
 
 
 def escape_xml_text(value: Any) -> str:

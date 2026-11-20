@@ -64,6 +64,21 @@ The Excel 365 corpus in `tests/data/excel_365/` loads in both formats and
 exposed Excel's `indexed="81"` colors, which the model now accepts. The local
 COM run recorded above passed 316 tests with Excel 16.0 (build 20527.0).
 
+## Updater convergence (2026-11-20)
+
+Windows 11, Python 3.14.2. `tests/test_updater_differential.py` (58 tests) runs
+the same replacement, formula, note, link, name and protection edits through
+`XlsxUpdater` and `XlsbUpdater` and compares the loaded model; array and spill
+ranges are compared in the saved package (dimension and auto-filter), because
+XLSB stores the member cells and XLSX does not. The harness found and fixed
+three differences: XLSX did not widen `<dimension>`/auto-filter for array and
+spill ranges, a `None` header was not written as an empty cell in XLSX, and the
+pure-Python row encoder accepted values past column XFD. The full native suite
+passed **10,164 tests, 343 skipped, 1 xfailed** in 5:10; the pure-Python pass
+took **9,060 tests, 1,450 skipped** in 2:33. Combined coverage is **91%** branch
+coverage over 27,214 statements (the floor is 90%). The LibreOffice smoke suite
+passes **31** tests.
+
 ## Compatibility refresh (2026-11-17)
 
 Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native

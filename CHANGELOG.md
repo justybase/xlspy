@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `copy_worksheet()` names its copy `"<title> Copy"`, `"<title> Copy1"`, ...
 - `xlspy.utils.cell.range_boundaries` matches openpyxl for `"A"`, `"2"`, `""`,
   absolute references and reversed ranges.
+- `XlsxUpdater.get_worksheet_names()` and `get_chartsheet_names()`, matching
+  `XlsbUpdater`; both updaters now share the `replace_sheet_data` prologue and
+  the worksheet/chartsheet listing in `_updater_base.py`.
 
 ### Fixed
 
@@ -66,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A custom row iterator's own exception (a `RuntimeError` from `__iter__`, a
   `MemoryError`) now propagates from the native writers instead of being
   mistaken for a non-sequence and hidden by the Python fallback.
+- `XlsxUpdater.replace_sheet_data` expands the sheet dimension and auto-filter
+  range to cover array and spill formulas, as `XlsbUpdater` already did; a
+  formula outside the top-left cell of its range raises `ValueError` in both
+  formats. A `None` header becomes an empty cell in XLSX too, and the
+  pure-Python row encoder refuses a value past column XFD instead of writing
+  an invalid reference.
 
 ### Security
 

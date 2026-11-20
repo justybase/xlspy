@@ -22,7 +22,6 @@ from ._xlsb_table_part import parse_table_part
 from ._xlsb_sheets import XlsbSheetsMixin
 from .exceptions import InvalidFileError, UnsupportedFeatureError, reading
 from .formulas import ArrayFormula, DataTableFormula, Formula
-from .refs import parse_cell_range
 
 from .biff_utils import (
     Biff12Record,
@@ -36,7 +35,10 @@ from .biff_utils import (
 )
 from .updater_utils import (
     TrailingRowTrimmer,
+    check_formula_anchor,
+    check_last_column,
     dominant_styles,
+    formula_range_bounds,
     row_cells,
     DiskStringIndex,
     TableHeader,
@@ -75,27 +77,12 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         except BaseException:
             self._package.close()
             raise
-        self._shared_strings_loaded = False
+        self._init_shared_string_state()
         self._shared_strings_data: bytes | None = None
-        self._shared_strings_values: list[str] = []
-        self._shared_string_indices: dict[str, int] = {}
-        self._shared_strings_total = 0
-        self._shared_strings_pending: list[str] = []
-        self._shared_strings_dirty = False
-        self._stream_shared_strings: DiskStringIndex | None = None
         self._replace_formula_context: FormulaContext | None = None
 
     def _part_or_none(self, path: str) -> bytes | None:
         return self._package.get(path) if self._package.has(path) else None
-
-    def get_worksheet_names(self) -> list[str]:
-        """The names of the worksheets alone, in workbook order."""
-
-        return [name for name in self._sheets if name not in self._chartsheets]
-
-    def get_chartsheet_names(self) -> list[str]:
-        """The chartsheet names, in workbook order."""
-        return [name for name in self._sheets if name in self._chartsheets]
 
     def _read_table_header(self, table_part: bytes) -> TableHeader | None:
         table = parse_table_part(table_part)
@@ -108,27 +95,16 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             [column.name or "" for column in table.columns],
         )
 
-    def replace_sheet_data(
+    def _replace_loaded_rows(
         self,
         sheet_name: str,
-        rows: Iterable[Sequence[Any]],
-        *,
-        headers: Sequence[str] | None = None,
-        style_fallback: StyleFallback = "inherit",
+        sheet_path: str,
+        materialized: list[list[Any]],
+        header_values: list[str] | None,
+        style_fallback: StyleFallback,
     ) -> None:
-        """Replace one worksheet's used data region and preserve sheet wrappers."""
+        """Write the replacement rows into an XLSB worksheet part."""
 
-        sheet_path = self._replacement_sheet_path(sheet_name, style_fallback)
-        if self._stream_shared_strings is not None:
-            self.replace_sheet_data_stream(
-                sheet_name,
-                rows,
-                headers=headers,
-                style_fallback=style_fallback,
-            )
-            return
-
-        materialized, header_values = self._checked_rows(sheet_name, sheet_path, rows, headers)
         sheet_data = self._package.get(sheet_path)
         self._ensure_shared_strings_loaded()
         if self._shared_strings_data is not None:
@@ -140,7 +116,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             self._shared_strings_dirty = True
 
         header_styles, data_styles = self._collect_styles(
-            sheet_data, headers_provided=headers is not None
+            sheet_data, headers_provided=header_values is not None
         )
         date_xf = self._find_date_style() if style_fallback == "inherit" else None
         total_rows, width = self._region_size(materialized, header_values)
@@ -159,18 +135,10 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         if wrote_spill or wrote_formula:
             for row in materialized:
                 for raw in row:
-                    value = unwrap_cell(raw)
-                    ref: str | None
-                    if isinstance(value, ArrayFormula):
-                        ref = value.ref
-                    elif isinstance(value, Formula):
-                        ref = value.array_ref or value.spill_ref
-                    else:
-                        ref = None
-                    if ref is not None:
-                        _c1, _r1, c2, r2 = parse_cell_range(ref)
-                        last_row = max(last_row, r2)
-                        last_col = max(last_col, c2)
+                    bounds = formula_range_bounds(raw)
+                    if bounds is not None:
+                        last_row = max(last_row, bounds[3])
+                        last_col = max(last_col, bounds[2])
 
         region = self._find_rows_region(sheet_data)
         old_rows_length = region.rows_end - region.rows_start
@@ -270,6 +238,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                 trimmer.finish()
 
             last_col = max(0, trimmer.width - 1)
+            check_last_column(last_col)
             self._patch_row_headers_file(rows_file, last_col)
             region = self._find_rows_region_stream(original_sheet)
             updated_sheet = self._package.temporary_path(suffix=".bin")
@@ -536,17 +505,10 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         # shorter; the row headers must name that last column.
         for row in rows:
             for raw in row:
-                value = unwrap_cell(raw)
-                ref: str | None
-                if isinstance(value, ArrayFormula):
-                    ref = value.ref
-                elif isinstance(value, Formula):
-                    ref = value.array_ref or value.spill_ref
-                else:
-                    ref = None
-                if ref is not None:
-                    _c1, _r1, c2, _r2 = parse_cell_range(ref)
-                    max_col = max(max_col, c2 + 1)
+                bounds = formula_range_bounds(raw)
+                if bounds is not None:
+                    max_col = max(max_col, bounds[2] + 1)
+        check_last_column(max(0, max_col - 1))
         writer = _XlsbRowWriter(
             self, header_styles, data_styles, date_xf, style_fallback,
             max(0, max_col - 1), sheet_name,
@@ -859,13 +821,11 @@ class _XlsbRowWriter:
     def _register_array_range(
         self, formula: Formula, column: int, row_number: int
     ) -> None:
-        ref = formula.array_ref or formula.spill_ref
-        if ref is None:
+        bounds = formula_range_bounds(formula)
+        if bounds is None:
             return
-        bounds = parse_cell_range(ref)
+        check_formula_anchor(bounds, column, row_number)
         c1, r1, c2, r2 = bounds
-        if formula.array_ref is not None and (column, row_number) != (c1, r1):
-            raise ValueError("array formula must be written in its top-left cell")
         if (column, row_number) in self._array_anchors:
             return
         self._array_anchors.add((column, row_number))

@@ -84,7 +84,10 @@ for the expected gaps; `test_gap_manifest.py` keeps it in sync with
 current implementation status and the remaining phases.
 
 The notes/template regression suites are `test_comments_and_editing.py` and
-`test_xlsx_reader_streaming.py`. For native Excel validation of notes, dimensions,
+`test_xlsx_reader_streaming.py`. `test_updater_differential.py` runs the same
+edit through `XlsxUpdater` and `XlsbUpdater` and compares the loaded values,
+styles, notes, links, names and protection; array/spill ranges are compared in
+the saved package (dimension and auto-filter), not in the model. For native Excel validation of notes, dimensions,
 named ranges, protection and preserved form controls:
 
 ```powershell
