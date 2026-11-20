@@ -790,6 +790,44 @@ def _xlsx_with_chartsheet(tmp_path: Path) -> Path:
     return path
 
 
+def test_added_sheets_land_in_the_same_order(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.add_sheet("First", 0),
+        lambda updater: updater.add_sheet("Last"),
+        lambda updater: updater.add_sheet("Middle", 1, state="hidden"),
+    )
+    assert xlsx == xlsb
+    assert xlsx["sheets"] == ["First", "Middle", "Data", "Other", "Last"]
+    assert xlsx["sheets_data"]["Middle"]["state"] == "hidden"
+
+
+@pytest.mark.parametrize(
+    "change, error",
+    [
+        (lambda updater: updater.add_sheet("Data"), ValueError),
+        (lambda updater: updater.add_sheet("bad/name"), ValueError),
+        (lambda updater: updater.add_sheet("Hidden", state="bogus"), ValueError),
+        (lambda updater: updater.add_sheet("History"), ValueError),
+    ],
+)
+def test_add_sheet_errors_match(tmp_path, change, error):
+    for ext in FORMATS:
+        kind, _message = _error(tmp_path, ext, change)
+        assert kind is error
+
+
+def test_added_sheet_is_active_after_an_insertion_before_it(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.set_active_sheet(1),
+        lambda updater: updater.add_sheet("Zero", 0),
+    )
+    assert xlsx == xlsb
+    assert xlsx["sheets"] == ["Zero", "Data", "Other"]
+    assert xlsx["active"] == 2
+
+
 def test_sheet_states_and_active_survive_a_reorder(tmp_path):
     xlsx, xlsb = _run_both(
         tmp_path,

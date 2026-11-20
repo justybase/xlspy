@@ -8,19 +8,31 @@ names and ``activeTab`` in the workbook view.
 
 from __future__ import annotations
 
+import posixpath
 import re
-from collections.abc import Iterable, Mapping, MutableMapping
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any
+from xml.etree import ElementTree as ET
+from xml.sax.saxutils import quoteattr
 
-from ._metadata import MAIN, element_pattern, replace_element, tag_attributes
+from ._metadata import CT, MAIN, PKG_REL, REL, element_pattern, replace_element, tag_attributes
 from ._safe_xml import fromstring as safe_fromstring
+from ._xlsx_edit import _bytes as _xml
 from ._xml_text import replace_or_add_xml_attribute
+from .refs import check_sheet_name
 
 if TYPE_CHECKING:
     from .updater_utils import ZipPackage
 
 
 _SHEET_STATES = frozenset({"visible", "hidden", "veryHidden"})
+_WORKSHEET_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
+)
+_EMPTY_WORKSHEET = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    f'<worksheet xmlns="{MAIN}"><sheetData/></worksheet>'
+).encode()
 _WORKBOOK_VIEW_SUCCESSORS = (
     "sheets", "functionGroups", "externalReferences", "definedNames",
     "calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr",
@@ -69,23 +81,10 @@ class XlsxSheetsMixin:
             raise IndexError("active sheet index out of range")
         xml = self._workbook_xml()
         match = element_pattern("workbookView").search(xml)
+        first = None
         if match is not None:
-            opening = _opening_tag(match.group(0))
-            updated_opening = replace_or_add_xml_attribute(opening, "activeTab", index)
-            first = _int_attribute(tag_attributes(opening).get("firstSheet"))
-            if first is not None and first > index:
-                updated_opening = replace_or_add_xml_attribute(updated_opening, "firstSheet", index)
-            updated = (
-                xml[:match.start()] + updated_opening
-                + xml[match.start() + len(opening):]
-            )
-        else:
-            fragment = (
-                f'<bookViews xmlns="{MAIN}">'
-                f'<workbookView activeTab="{index}"/>'
-                "</bookViews>"
-            )
-            updated = replace_element(xml, "bookViews", fragment, before=_WORKBOOK_VIEW_SUCCESSORS)
+            first = _int_attribute(tag_attributes(_opening_tag(match.group(0))).get("firstSheet"))
+        updated = _write_view(xml, index, first)
         if updated != xml:
             self._apply_parts({"xl/workbook.xml": updated})
 
@@ -112,6 +111,88 @@ class XlsxSheetsMixin:
             raise KeyError(f"Worksheet not found: {name}")
         if updated != xml:
             self._apply_parts({"xl/workbook.xml": updated})
+
+    def add_sheet(
+        self, name: str, index: int | None = None, *, state: str = "visible"
+    ) -> str:
+        """Add an empty worksheet at ``index`` (default: last); return its part path."""
+        check_sheet_name(name, self._sheets)
+        if state not in _SHEET_STATES:
+            raise ValueError(f"invalid sheet state {state!r}")
+
+        current = list(self._sheets)
+        position = len(current) if index is None else max(0, min(index, len(current)))
+        path = _new_sheet_path(self._package)
+        xml = self._workbook_xml()
+        root = safe_fromstring(xml)
+        sheet_id = max(
+            (
+                int(node.get("sheetId", "0") or 0)
+                for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
+            ),
+            default=0,
+        ) + 1
+
+        rels_path = "xl/_rels/workbook.xml.rels"
+        rels = safe_fromstring(self._package.get(rels_path))
+        rid = _next_relationship_id(rels)
+        ET.SubElement(
+            rels,
+            f"{{{PKG_REL}}}Relationship",
+            {
+                "Id": rid,
+                "Type": REL + "/worksheet",
+                "Target": posixpath.relpath(path, "xl"),
+            },
+        )
+        types = safe_fromstring(self._package.get("[Content_Types].xml"))
+        ET.SubElement(
+            types,
+            f"{{{CT}}}Override",
+            {"PartName": "/" + path, "ContentType": _WORKSHEET_CONTENT_TYPE},
+        )
+
+        state_attribute = "" if state == "visible" else f' state="{state}"'
+        fragment = (
+            f'<sheet xmlns:r="{REL}" name={quoteattr(name)} sheetId="{sheet_id}" '
+            f'r:id="{rid}"{state_attribute}/>'
+        )
+        xml = _splice_sheet_entry(xml, fragment, position)
+
+        order = current[:position] + [name] + current[position:]
+        mapping = {old: order.index(existing) for old, existing in enumerate(current)}
+        previous_active = self.get_active_sheet()
+        active = mapping.get(previous_active, previous_active)
+        states = self.get_sheet_states()
+        states[name] = state
+        if not 0 <= active < len(order) or states.get(order[active], "visible") != "visible":
+            active = next(
+                (place for place, sheet in enumerate(order)
+                 if states.get(sheet, "visible") == "visible"),
+                0,
+            )
+        view = element_pattern("workbookView").search(xml)
+        first = None
+        if view is not None:
+            opening = _opening_tag(view.group(0))
+            first = _int_attribute(tag_attributes(opening).get("firstSheet"))
+            if first is not None:
+                first = min(mapping.get(first, 0), active)
+        xml = _write_view(xml, active, first)
+
+        updates: dict[str, Any] = {
+            "xl/workbook.xml": xml,
+            path: _EMPTY_WORKSHEET,
+            rels_path: _xml(rels),
+            "[Content_Types].xml": _xml(types),
+        }
+        removed: list[str] = []
+        self._recalculate(updates, removed)
+        self._apply_parts(updates, removed)
+        self._sheets = {
+            sheet: (path if sheet == name else self._sheets[sheet]) for sheet in order
+        }
+        return path
 
     def reorder_sheets(self, order: Iterable[str]) -> None:
         """Put the sheets in ``order`` (every sheet name, once)."""
@@ -155,23 +236,83 @@ class XlsxSheetsMixin:
                 0,
             )
         view = element_pattern("workbookView").search(xml)
+        first = None
         if view is not None:
             opening = _opening_tag(view.group(0))
-            updated_opening = replace_or_add_xml_attribute(opening, "activeTab", active)
             first = _int_attribute(tag_attributes(opening).get("firstSheet"))
             if first is not None:
                 first = min(mapping.get(first, 0), active)
-                updated_opening = replace_or_add_xml_attribute(updated_opening, "firstSheet", first)
-            xml = (
-                xml[:view.start()] + updated_opening
-                + xml[view.start() + len(opening):]
-            )
+        xml = _write_view(xml, active, first)
 
         updates: dict[str, Any] = {"xl/workbook.xml": xml}
         removed: list[str] = []
         self._recalculate(updates, removed)
         self._apply_parts(updates, removed)
         self._sheets = {name: self._sheets[name] for name in order}
+
+
+def _new_sheet_path(package: ZipPackage) -> str:
+    highest = 0
+    for name in package.names():
+        match = re.fullmatch(r"xl/worksheets/sheet(\d+)\.xml", name)
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return f"xl/worksheets/sheet{highest + 1}.xml"
+
+
+def _next_relationship_id(rels: ET.Element) -> str:
+    highest = 0
+    for node in rels:
+        match = re.fullmatch(r"rId(\d+)", node.get("Id", ""))
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return f"rId{highest + 1}"
+
+
+def _splice_sheet_entry(workbook_xml: str, fragment: str, index: int) -> str:
+    match = element_pattern("sheets").search(workbook_xml)
+    if match is None:
+        raise ValueError("workbook.xml sheets element was not found")
+    body = match.group(0)
+    rows = list(element_pattern("sheet").finditer(body))
+    position = rows[index].start() if index < len(rows) else body.rfind("</")
+    if position < 0:
+        position = len(body)
+    body = body[:position] + fragment + body[position:]
+    return workbook_xml[:match.start()] + body + workbook_xml[match.end():]
+
+
+def _patch_opening(xml: str, tag: str, change: Callable[[str], str]) -> str:
+    match = element_pattern(tag).search(xml)
+    if match is None:
+        return xml
+    opening = _opening_tag(match.group(0))
+    return (
+        xml[:match.start()] + change(opening)
+        + xml[match.start() + len(opening):]
+    )
+
+
+def _set_view_attributes(opening: str, active: int, first: int | None) -> str:
+    updated = replace_or_add_xml_attribute(opening, "activeTab", active)
+    if first is not None:
+        updated = replace_or_add_xml_attribute(updated, "firstSheet", min(first, active))
+    return updated
+
+
+def _write_view(xml: str, active: int, first: int | None) -> str:
+    if element_pattern("workbookView").search(xml) is None:
+        first_attribute = "" if first is None else f' firstSheet="{min(first, active)}"'
+        fragment = (
+            f'<bookViews xmlns="{MAIN}">'
+            f'<workbookView activeTab="{active}"{first_attribute}/>'
+            "</bookViews>"
+        )
+        return replace_element(xml, "bookViews", fragment, before=_WORKBOOK_VIEW_SUCCESSORS)
+    return _patch_opening(
+        xml, "workbookView",
+        lambda opening: _set_view_attributes(opening, active, first),
+    )
 
 
 def _opening_tag(fragment: str) -> str:

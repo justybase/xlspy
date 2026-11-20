@@ -20,6 +20,46 @@ def _rewrite_workbook(updater, change):
     updater._package.set("xl/workbook.xml", change(xml).encode("utf-8"))
 
 
+def test_add_sheet_creates_a_worksheet_part_and_relationships(tmp_path):
+    path = _workbook(tmp_path / "add.xlsx", ("One", "Two"))
+    updater = XlsxUpdater(path)
+    try:
+        added = updater.add_sheet("Three", 1)
+        assert added == "xl/worksheets/sheet3.xml"
+        package = updater._package
+        assert package.has(added)
+        assert b"Three" in package.get("xl/workbook.xml")
+        rels = package.get("xl/_rels/workbook.xml.rels").decode("utf-8")
+        assert 'Target="worksheets/sheet3.xml"' in rels
+        assert 'PartName="/xl/worksheets/sheet3.xml"' in package.get(
+            "[Content_Types].xml"
+        ).decode("utf-8")
+        assert updater.get_sheet_names() == ["One", "Three", "Two"]
+        updater.save(path)
+    finally:
+        updater.close()
+
+    reopened = XlsxUpdater(path)
+    try:
+        assert reopened.get_sheet_names() == ["One", "Three", "Two"]
+        assert reopened.get_sheet_states()["Three"] == "visible"
+    finally:
+        reopened.close()
+
+
+def test_add_sheet_keeps_the_active_sheet_and_tab_bar_in_place(tmp_path):
+    path = _workbook(tmp_path / "add-active.xlsx", ("One", "Two"))
+    updater = XlsxUpdater(path)
+    try:
+        updater.set_active_sheet(1)
+        updater.add_sheet("Zero", 0)
+        assert updater.get_active_sheet() == 2
+        xml = updater._package.get("xl/workbook.xml").decode("utf-8")
+        assert re.search(r'activeTab="2"', xml)
+    finally:
+        updater.close()
+
+
 def test_active_sheet_is_created_before_the_sheet_list(tmp_path):
     path = _workbook(tmp_path / "active.xlsx")
     updater = XlsxUpdater(path)

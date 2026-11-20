@@ -564,8 +564,8 @@ class XlsxEditMixin:
         fragment = f'<calcPr xmlns="{MAIN}" ' + " ".join(f"{key}={quoteattr(value)}" for key, value in attrs.items() if not key.startswith("xmlns")) + "/>"
         updates["xl/workbook.xml"] = replace_element(xml, "calcPr", fragment, before=("oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"))
         rp = "xl/_rels/workbook.xml.rels"
-        rels = safe_fromstring(self._package.get(rp))
-        types = safe_fromstring(self._package.get("[Content_Types].xml"))
+        rels = safe_fromstring(updates.get(rp) or self._package.get(rp))
+        types = safe_fromstring(updates.get("[Content_Types].xml") or self._package.get("[Content_Types].xml"))
         for node in list(rels):
             if node.get("Type") == REL + "/calcChain":
                 part = resolve_part("xl/workbook.xml", node.attrib["Target"])
