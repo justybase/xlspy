@@ -148,6 +148,7 @@ def snapshot(path: Path) -> dict:
     try:
         result = {
             "sheets": workbook.get_sheet_names(),
+            "active": workbook.index(workbook.active.title),
             "names": [
                 (
                     name.name,
@@ -787,6 +788,98 @@ def _xlsx_with_chartsheet(tmp_path: Path) -> Path:
     workbook.save(str(path))
     workbook.close()
     return path
+
+
+def test_sheet_states_and_active_survive_a_reorder(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.set_sheet_state("Other", "hidden"),
+        lambda updater: updater.set_active_sheet(0),
+        lambda updater: updater.reorder_sheets(["Other", "Data"]),
+    )
+    assert xlsx == xlsb
+    assert xlsx["sheets"] == ["Other", "Data"]
+    assert xlsx["active"] == 1
+    assert xlsx["sheets_data"]["Other"]["state"] == "hidden"
+
+
+def test_reorder_leaves_a_visible_active_sheet(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.set_sheet_state("Data", "hidden"),
+        lambda updater: updater.set_active_sheet(0),
+        lambda updater: updater.reorder_sheets(["Other", "Data"]),
+    )
+    assert xlsx == xlsb
+    assert xlsx["active"] == 0
+    assert xlsx["sheets"] == ["Other", "Data"]
+
+
+def test_local_names_follow_a_reorder(tmp_path):
+    xlsx, xlsb = _run_both(
+        tmp_path,
+        lambda updater: updater.set_defined_name(
+            DefinedName("LocalData", "Data!$A$1", localSheetId=0)
+        ),
+        lambda updater: updater.set_defined_name(
+            DefinedName("LocalOther", "Other!$A$1", localSheetId=1)
+        ),
+        lambda updater: updater.reorder_sheets(["Other", "Data"]),
+    )
+    assert xlsx == xlsb
+    scopes = {name: scope for name, _formula, scope, _hidden in xlsx["names"]}
+    assert scopes == {"LocalData": "Data", "LocalOther": "Other"}
+
+
+@pytest.mark.parametrize(
+    "change, error",
+    [
+        (lambda updater: updater.set_sheet_state("Nope", "hidden"), KeyError),
+        (lambda updater: updater.set_sheet_state("Data", "bogus"), ValueError),
+        (lambda updater: updater.reorder_sheets(["Data"]), ValueError),
+        (lambda updater: updater.reorder_sheets(["Data", "Data"]), ValueError),
+        (lambda updater: updater.set_active_sheet(5), IndexError),
+    ],
+)
+def test_sheet_management_errors_match(tmp_path, change, error):
+    for ext in FORMATS:
+        kind, _message = _error(tmp_path, ext, change)
+        assert kind is error
+
+
+def test_xlsx_sheet_management_includes_chartsheets(tmp_path):
+    path = _xlsx_with_chartsheet(tmp_path)
+    updater = XlsxUpdater(str(path))
+    try:
+        assert updater.get_sheet_names() == ["Arkusz1", "ChartOnly"]
+        assert updater.get_worksheet_names() == ["Arkusz1"]
+        assert updater.get_chartsheet_names() == ["ChartOnly"]
+        assert updater.get_sheet_states() == {
+            "Arkusz1": "visible",
+            "ChartOnly": "visible",
+        }
+        updater.set_active_sheet(1)
+        updater.reorder_sheets(["ChartOnly", "Arkusz1"])
+        updater.set_sheet_state("ChartOnly", "hidden")
+        updater.set_active_sheet(1)
+        assert updater.get_sheet_names() == ["ChartOnly", "Arkusz1"]
+        assert updater.get_active_sheet() == 1
+        assert updater.get_sheet_states() == {
+            "ChartOnly": "hidden",
+            "Arkusz1": "visible",
+        }
+        updater.save(str(path))
+    finally:
+        updater.close()
+
+    reopened = XlsxUpdater(str(path))
+    try:
+        assert reopened.get_sheet_names() == ["ChartOnly", "Arkusz1"]
+        assert reopened.get_active_sheet() == 1
+        assert reopened.get_chartsheet_names() == ["ChartOnly"]
+        assert reopened.get_sheet_states()["ChartOnly"] == "hidden"
+    finally:
+        reopened.close()
 
 
 def test_formula_range_bounds_understands_every_multi_cell_formula():

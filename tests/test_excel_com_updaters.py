@@ -20,16 +20,26 @@ def test_updated_files_open_in_excel_com(tmp_path):
     with XlsxWriter(xlsx_path) as writer:
         writer.add_sheet("Data")
         writer.write_sheet([["old", 1], ["old2", 2]])
+        writer.add_sheet("Notes")
+        writer.write_sheet([["note"]])
     with XlsbWriter(xlsb_path) as writer:
         writer.add_sheet("Data")
         writer.write_sheet([["old", 1], ["old2", 2]])
+        writer.add_sheet("Notes")
+        writer.write_sheet([["note"]])
 
     xlsx_updater = XlsxUpdater(xlsx_path)
     xlsx_updater.replace_sheet_data("Data", [["new", 10], ["newer", 20]], headers=["Name", "Value"])
+    xlsx_updater.set_sheet_state("Notes", "hidden")
+    xlsx_updater.reorder_sheets(["Notes", "Data"])
+    xlsx_updater.set_active_sheet(1)
     xlsx_updater.save()
 
     xlsb_updater = XlsbUpdater(xlsb_path)
     xlsb_updater.replace_sheet_data("Data", [["new", 10], ["newer", 20]], headers=["Name", "Value"])
+    xlsb_updater.set_sheet_state("Notes", "hidden")
+    xlsb_updater.reorder_sheets(["Notes", "Data"])
+    xlsb_updater.set_active_sheet(1)
     xlsb_updater.save()
 
     script = Path(__file__).parents[1] / "tools" / "validate_excel_com.ps1"

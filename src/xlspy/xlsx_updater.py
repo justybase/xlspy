@@ -48,6 +48,7 @@ from ._text import check_cell_text
 from ._updater_base import StyleFallback, _UpdaterBase
 from ._sheet_data import replace_sheet_data_body, set_dimension_ref, tag_prefix
 from ._xlsx_edit import XlsxEditMixin
+from ._xlsx_sheets import XlsxSheetsMixin
 from ._accel import encode_update_xlsx_row
 from .formulas import ArrayFormula, DataTableFormula, Formula
 
@@ -74,7 +75,7 @@ def _number_text(value: float) -> str:
     return text[:-2] if text.endswith(".0") else text
 
 
-class XlsxUpdater(_UpdaterBase, XlsxEditMixin):
+class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
     """Replace the data region of sheets in an existing XLSX or XLSM file.
 
     The workbook, styles, drawings and all unrelated ZIP members are kept in

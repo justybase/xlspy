@@ -6,6 +6,9 @@ byte-for-byte by ``ZipPackage``.
 """
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from .._package_handle import PackageHandle
 from ..comments import rels_path
 from ..updater_utils import sheet_has_pivots, sheet_has_slicers
@@ -40,6 +43,9 @@ from ._model import Workbook, Worksheet, _coordinate, _normalize_range
 from ._styles import XlsxStyleTable
 from ._chartsheets import check_chartsheets, add_chartsheets
 from ._props import save_properties
+
+if TYPE_CHECKING:
+    from ..xlsx_updater import XlsxUpdater
 
 _CONTENT_WORKSHEET = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
 
@@ -1006,25 +1012,12 @@ def _sheet_order(updater) -> list[str]:
     return [node.get("name", "") for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")]
 
 
-def _sheet_states(updater) -> dict[str, str]:
-    handle = PackageHandle(updater)
-    root = safe_fromstring(handle.package.get("xl/workbook.xml"))
-    return {
-        node.get("name", ""): node.get("state", "visible")
-        for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
-    }
+def _sheet_states(updater: XlsxUpdater) -> dict[str, str]:
+    return updater.get_sheet_states()
 
 
-def _active_tab(updater) -> int:
-    handle = PackageHandle(updater)
-    root = safe_fromstring(handle.package.get("xl/workbook.xml"))
-    view = root.find(f"{{{MAIN}}}bookViews/{{{MAIN}}}workbookView")
-    if view is None:
-        return 0
-    try:
-        return int(view.get("activeTab", "0"))
-    except ValueError:
-        return 0
+def _active_tab(updater: XlsxUpdater) -> int:
+    return updater.get_active_sheet()
 
 
 def _remap_local_names(updater, before: list[str], renamed: dict[str, str]) -> None:

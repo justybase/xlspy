@@ -64,6 +64,20 @@ updater.update_cells(
 Values may be strings, finite numbers, booleans, dates/datetimes, `Formula`, or
 `None`. Existing styles and comments stay attached to the same addresses.
 
+## Sheet tabs
+
+Both updaters expose the sheet tab metadata. `get_sheet_states()` returns
+`"visible"`, `"hidden"` or `"veryHidden"` by name; `get_active_sheet()` and
+`set_active_sheet()` read and set the tab Excel opens; `set_sheet_state()`
+changes visibility; and `reorder_sheets()` moves tabs. Chartsheets count as
+sheets, and reordering keeps the active tab on a visible sheet.
+
+```python
+updater.set_sheet_state("Notes", "hidden")
+updater.reorder_sheets(["Summary", "Data", "Notes"])
+updater.set_active_sheet(0)
+```
+
 ## XLSM templates
 
 `XlsmUpdater` is an alias of `XlsxUpdater`. The VBA project is copied

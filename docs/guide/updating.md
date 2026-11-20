@@ -106,6 +106,20 @@ updater.set_data_validations(
 )
 ```
 
+Both updaters also expose the workbook's sheet metadata. `get_sheet_states()`
+returns `"visible"`, `"hidden"` or `"veryHidden"` by name; `get_active_sheet()`
+and `set_active_sheet()` read and set the tab Excel opens; `set_sheet_state()`
+changes visibility; and `reorder_sheets(["First", "Second", ...])` moves the
+tabs. Chartsheets count as sheets. Reordering carries names local to a sheet
+and the active tab with it, and activates the first visible sheet when the
+active one becomes hidden.
+
+```python
+updater.set_sheet_state("Notes", "hidden")
+updater.reorder_sheets(["Summary", "Data", "Notes"])
+updater.set_active_sheet(0)
+```
+
 When a pivot cache is present, keep the source column schema (column order and
 count) unchanged; changing the schema requires rebuilding the pivot cache and
 is outside the updater's scope.

@@ -50,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `XlsxUpdater.get_worksheet_names()` and `get_chartsheet_names()`, matching
   `XlsbUpdater`; both updaters now share the `replace_sheet_data` prologue and
   the worksheet/chartsheet listing in `_updater_base.py`.
+- `XlsxUpdater.get_sheet_states()`, `get_active_sheet()`, `set_active_sheet()`,
+  `set_sheet_state()` and `reorder_sheets()`, matching the XLSB updater.
+  Chartsheets count as sheets, and reordering remaps `localSheetId` on defined
+  names and keeps the active tab on a visible sheet.
 - `XlsxUpdater.update_cells(..., styles=...)`, `set_merged_cells()` and
   `set_data_validations()`, matching the XLSB updater. A style-only address
   keeps its value (or becomes a styled blank), and an empty iterable clears

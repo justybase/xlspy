@@ -118,6 +118,29 @@ at `XFD` after 16,384 entries instead of continuing with invalid labels.
 `tests/test_updater_utils_split.py` keeps the old names bound to the same
 objects.
 
+## XLSX sheet management (2026-11-20)
+
+`XlsxUpdater` now has the sheet metadata API that `XlsbUpdater` already had:
+`get_sheet_states()`, `get_active_sheet()`, `set_active_sheet()`,
+`set_sheet_state()` and `reorder_sheets()`. The XLSX side edits `<sheet>`
+attributes and the workbook view in `xl/workbook.xml`; a reorder carries the
+`localSheetId` of defined names and the `firstSheet` tab-bar position with the
+sheets, and falls back to the first visible sheet when the active one becomes
+hidden. Chartsheets are included in the order.
+
+`tests/test_updater_differential.py` grew from 65 to 74 tests and compares both
+formats for visibility, active tab, local names and the error cases.
+`tests/test_xlsx_sheets_unit.py` adds 6 XML-level tests (missing `<bookViews>`,
+invalid `activeTab`, unknown state, tab-bar remapping, hidden active sheet).
+The full native suite passed **10,326 tests, 343 skipped, 1 xfailed** in 4:16;
+the pure-Python pass took **9,220 tests, 1,450 skipped** in 2:47. Combined
+coverage is **92%** branch coverage over 27,353 statements (the floor is 90%).
+`ruff` and `mypy` (146 files) are clean, `cargo test` passes 68, and the
+LibreOffice smoke suite passes 31. The opt-in Excel COM test, extended to
+reorder and hide tabs in both formats, passes locally; a LibreOffice conversion
+of a reordered XLSX kept the order, visibility and active sheet (LibreOffice
+reads `veryHidden` back as `hidden`).
+
 ## Compatibility refresh (2026-11-17)
 
 Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native
