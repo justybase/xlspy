@@ -15,6 +15,7 @@ parts, as before.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any, cast
 from datetime import date, datetime
 from decimal import Decimal
@@ -54,7 +55,7 @@ _FUNCTION_LABELS = {
 _NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 
 
-def _pivot_number_text(value) -> str:
+def _pivot_number_text(value: Any) -> str:
     if isinstance(value, float):
         if math.isnan(value):
             return "NaN"
@@ -77,7 +78,7 @@ _BLANK = _Blank()
 _NO_COLUMN = object()
 
 
-def _pivot_cell_value(cell):
+def _pivot_cell_value(cell: Any) -> Any:
     """The value a pivot reads from a written cell (formats and links unwrapped)."""
     cell = _unwrap_cell(cell)
     if cell is None or isinstance(cell, _PIVOT_PLAIN_TYPES):
@@ -94,7 +95,7 @@ def _pivot_cell_value(cell):
     return str(cell)
 
 
-def _key(value):
+def _key(value: Any) -> Any:
     """The grouping key: blanks collapse to one item, NaN follows the sheet."""
     if value is None or value == "":
         return _BLANK
@@ -103,7 +104,7 @@ def _key(value):
     return value
 
 
-def _sort_key(value):
+def _sort_key(value: Any) -> tuple[Any, ...]:
     """Excel-like ascending order; blanks last and text case-insensitive."""
     if value is _BLANK:
         return (3, "")
@@ -116,13 +117,13 @@ def _sort_key(value):
     return (2, str(value).casefold())
 
 
-def _label(value):
+def _label(value: Any) -> Any:
     if value is _BLANK:
         return "(blank)"
     return value
 
 
-def _shared_item_xml(value) -> str:
+def _shared_item_xml(value: Any) -> str:
     if value is _BLANK:
         return "<m/>"
     if isinstance(value, bool):
@@ -152,7 +153,7 @@ class PivotValue:
     name: str | None = None
     number_format: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.field, str) or not self.field:
             raise ValueError("pivot value field must be a non-empty string")
         if not isinstance(self.function, str):
@@ -173,7 +174,7 @@ class PivotValue:
         return f"{_FUNCTION_LABELS[self.function]} {self.field}"
 
 
-def _pivot_axis_fields(value, name: str) -> tuple[str, ...]:
+def _pivot_axis_fields(value: Any, name: str) -> tuple[str, ...]:
     if value is None:
         return ()
     if isinstance(value, str):
@@ -188,7 +189,7 @@ def _pivot_axis_fields(value, name: str) -> tuple[str, ...]:
     return items
 
 
-def _value_spec(value) -> PivotValue:
+def _value_spec(value: Any) -> PivotValue:
     if isinstance(value, PivotValue):
         return value
     if isinstance(value, str):
@@ -200,7 +201,7 @@ def _value_spec(value) -> PivotValue:
     raise TypeError("pivot values must be PivotValue instances, field names or (field, function, ...) tuples")
 
 
-def _values(value) -> tuple[PivotValue, ...]:
+def _values(value: Any) -> tuple[PivotValue, ...]:
     if value is None:
         raise ValueError("a pivot table needs at least one value field")
     if isinstance(value, (PivotValue, str)):
@@ -299,7 +300,7 @@ class PivotTable:
     # refresh (when the file opens), overriding the widths the sheet was given.
     autofit_columns: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         rows = _pivot_axis_fields(self.rows, "rows")
         if len(rows) != 1:
             raise ValueError("the compact pivot layout needs exactly one row field")
@@ -361,7 +362,12 @@ class _PivotPlan:
     start_row: int
 
 
-def normalize_pivots(pivots, tables, used_names: set[str], current_sheet: str) -> list[_PivotPlan]:
+def normalize_pivots(
+    pivots: Iterable[PivotTable] | None,
+    tables: Iterable[ExcelTable],
+    used_names: set[str],
+    current_sheet: str,
+) -> list[_PivotPlan]:
     """Validate pivots against this call's tables and reserve their names."""
     if not pivots:
         return []
@@ -369,7 +375,7 @@ def normalize_pivots(pivots, tables, used_names: set[str], current_sheet: str) -
         raise TypeError("pivots must be a list of PivotTable objects or None")
     by_name = {table.display_name.casefold(): table for table in tables}
     names = set(used_names)
-    plans = []
+    plans: list[_PivotPlan] = []
     for pivot in pivots:
         if not isinstance(pivot, PivotTable):
             raise TypeError("pivots must be PivotTable instances")
@@ -409,15 +415,15 @@ class _Metric:
 
     __slots__ = ("records", "count", "count_num", "total", "minimum", "maximum")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.records = 0
         self.count = 0
         self.count_num = 0
         self.total = 0.0
-        self.minimum = None
-        self.maximum = None
+        self.minimum: float | None = None
+        self.maximum: float | None = None
 
-    def add(self, value) -> None:
+    def add(self, value: Any) -> None:
         self.records += 1
         if value is None or value == "":
             return
@@ -434,7 +440,7 @@ class _Metric:
         if self.maximum is None or number > self.maximum:
             self.maximum = number
 
-    def result(self, function: str):
+    def result(self, function: str) -> Any:
         if function == "count":
             return self.count if self.records else None
         if not self.count_num:
@@ -445,9 +451,9 @@ class _Metric:
         if function == "average":
             return self.total / self.count_num
         if function == "min":
-            value = self.minimum
+            value = cast(float, self.minimum)
             return int(value) if value.is_integer() else value
-        value = self.maximum
+        value = cast(float, self.maximum)
         return int(value) if value.is_integer() else value
 
 
@@ -464,7 +470,7 @@ class PivotFeeder:
     last row (the totals row, when the table has one, is not source data).
     """
 
-    def __init__(self, plan: _PivotPlan, *, track_all_fields: bool = False):
+    def __init__(self, plan: _PivotPlan, *, track_all_fields: bool = False) -> None:
         # The binary cache types every field, so XLSB tracks the unused ones too.
         self._track_all_fields = track_all_fields
         self.plan = plan
@@ -490,7 +496,7 @@ class PivotFeeder:
         self._filter_seen: dict[int, dict[object, int]] = {}
         self._value_stats: dict[int, _Stats] = {}
 
-    def feed(self, row_idx: int, row) -> None:
+    def feed(self, row_idx: int, row: Sequence[Any]) -> None:
         if self._names is None:
             if row_idx == self._first_row:
                 cells = [_unwrap_cell(cell) for cell in row]
@@ -524,12 +530,12 @@ class PivotFeeder:
         self._value_stats = {index: _Stats() for index in sorted(stat_fields)}
         self._grand = _new_metrics(len(self.pivot.value_specs))
 
-    def _feed_row(self, row) -> None:
-        def cell_value_at(index: int):
+    def _feed_row(self, row: Sequence[Any]) -> None:
+        def cell_value_at(index: int) -> Any:
             column = self._first_col + index
             return _pivot_cell_value(row[column]) if column < len(row) else None
 
-        def cell(index: int):
+        def cell(index: int) -> Any:
             return _key(cell_value_at(index))
 
         row_key = cell(self._row_index)
@@ -611,12 +617,12 @@ class PivotFeeder:
             return 1
         return 2 if len(self.pivot.value_specs) == 1 else 3
 
-    def _render_cells(self, row_display, col_display) -> list[tuple[int, int, object]]:
+    def _render_cells(self, row_display: list[Any], col_display: list[Any]) -> list[tuple[int, int, object]]:
         cells: list[tuple[int, int, object]] = []
         start_col = self.plan.start_col
         start_row = self.plan.start_row
 
-        def put(row: int, column: int, value, fmt: str | None = None) -> None:
+        def put(row: int, column: int, value: Any, fmt: str | None = None) -> None:
             if value is None:
                 return
             cells.append((row, column, (value, fmt) if fmt is not None else value))
@@ -718,7 +724,7 @@ class PivotFeeder:
             put(grand_row, total_start + index, metric.result(specs[index].function), formats[index])
         return cells
 
-    def _render_ref(self, row_display, col_display) -> str:
+    def _render_ref(self, row_display: list[Any], col_display: list[Any]) -> str:
         start_col = self.plan.start_col
         start_row = self.plan.start_row
         count = len(self.pivot.value_specs)
@@ -788,7 +794,7 @@ class PivotRender:
         self.cache_id = pivot_id
 
 
-def tee_rows(rows, feeders: list[PivotFeeder]):
+def tee_rows(rows: Iterable[list[Any]], feeders: list[PivotFeeder]) -> Iterator[list[Any]]:
     """Yield ``rows`` unchanged while each feeder aggregates them."""
     for row_idx, row in enumerate(rows):
         for feeder in feeders:
@@ -808,12 +814,12 @@ def merge_cells(renders: list[PivotRender]) -> dict[tuple[int, int], object]:
     return merged
 
 
-def overlay_rows(rows, renders: list[PivotRender]):
+def overlay_rows(rows: Iterable[list[Any]], renders: list[PivotRender]) -> Iterator[list[Any]]:
     """Yield ``rows`` with the pending pivot cells merged in, row by row."""
     merged = merge_cells(renders)
     by_row: dict[int, dict[int, object]] = {}
-    for (row, column), value in merged.items():
-        by_row.setdefault(row, {})[column] = value
+    for (merged_row, column), value in merged.items():
+        by_row.setdefault(merged_row, {})[column] = value
     last = max(by_row, default=-1)
     emitted = -1
     for row_idx, row in enumerate(rows):
@@ -831,7 +837,7 @@ def overlay_rows(rows, renders: list[PivotRender]):
             yield []
 
 
-def _merge_row(row, cells: dict[int, object], row_idx: int):
+def _merge_row(row: Sequence[Any], cells: dict[int, object], row_idx: int) -> list[Any]:
     width = max(max(cells), len(row) - 1) + 1
     merged = list(row) + [None] * (width - len(row))
     for column, value in cells.items():
@@ -841,7 +847,7 @@ def _merge_row(row, cells: dict[int, object], row_idx: int):
     return merged
 
 
-def _is_number(value) -> bool:
+def _is_number(value: object) -> bool:
     return isinstance(value, (int, float, Decimal)) and not isinstance(value, bool)
 
 
@@ -855,17 +861,17 @@ class _Stats:
 
     __slots__ = ("blank", "other", "text", "unsupported", "count", "integer", "low", "high")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.blank = False  # some cells are empty
         self.other = False  # some cells are text, bool, date or NaN/inf
         self.text = False  # some cells are text
         self.unsupported = False  # some cells are bool, date or NaN/inf
         self.count = 0  # numeric cells
         self.integer = True  # every numeric cell is a whole number
-        self.low = None
-        self.high = None
+        self.low: float | None = None
+        self.high: float | None = None
 
-    def add(self, value) -> None:
+    def add(self, value: Any) -> None:
         if value is _BLANK or value is None or value == "":
             self.blank = True
             return
@@ -899,7 +905,7 @@ class _Stats:
         return attrs
 
 
-def _shared_items_xml(values: list) -> str:
+def _shared_items_xml(values: list[Any]) -> str:
     """The shared items of an axis field, with the flags its values call for."""
     if not values:
         return "<sharedItems/>"
@@ -1069,7 +1075,9 @@ def pivot_table_rels_xml(cache_id: int, extension: str = ".xml") -> str:
     )
 
 
-def append_rows(rows, feeders: list[PivotFeeder], sheet_name: str, sink: list):
+def append_rows(
+    rows: Iterable[list[Any]], feeders: list[PivotFeeder], sheet_name: str, sink: list[Any]
+) -> Iterator[list[Any]]:
     """Yield ``rows``, then the rows of the pivots that sit on this sheet.
 
     The feeders have seen every row once the stream ends, so the pivots can be
@@ -1085,8 +1093,8 @@ def append_rows(rows, feeders: list[PivotFeeder], sheet_name: str, sink: list):
     sink.extend(renders)
     own = [r for r in renders if r.plan.target_sheet.casefold() == sheet_name.casefold()]
     by_row: dict[int, dict[int, object]] = {}
-    for (row, column), value in merge_cells(own).items():
-        by_row.setdefault(row, {})[column] = value
+    for (merged_row, column), value in merge_cells(own).items():
+        by_row.setdefault(merged_row, {})[column] = value
     if not by_row:
         return
     if min(by_row) < count:
@@ -1099,7 +1107,7 @@ def append_rows(rows, feeders: list[PivotFeeder], sheet_name: str, sink: list):
         if not cells:
             yield []
             continue
-        row = [None] * (max(cells) + 1)
+        row_cells: list[Any] = [None] * (max(cells) + 1)
         for column, value in cells.items():
-            row[column] = value
-        yield row
+            row_cells[column] = value
+        yield row_cells
