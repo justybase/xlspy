@@ -518,9 +518,11 @@ class Workbook:
             self._mark_loaded = True
 
     def save(self, filename: WriteTarget) -> None:
-        """Write the workbook to ``filename``, a path or a writable binary file.
+        """Write the workbook to ``filename``, a path, a ``scheme://`` URI or a
+        writable binary file.
 
-        Raises ValueError for a workbook loaded with ``read_only=True``.
+        A URI is uploaded through fsspec; the extension of its path chooses the
+        format. Raises ValueError for a workbook loaded with ``read_only=True``.
         """
         if self._read_only:
             raise ValueError("a read-only workbook cannot be saved")

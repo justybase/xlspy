@@ -9,7 +9,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..utils.datetime import time_to_days, timedelta_to_days
 from .._metadata import SheetProtection as MetadataProtection
@@ -27,6 +27,7 @@ from ..hyperlinks import Hyperlink
 from ._chartsheets import add_chartsheets, check_chartsheets, pending_chartsheets
 from ._package_kind import set_package_kind
 from ._reader import load_workbook
+from .._remote import is_remote_uri, uri_extension, upload_remote
 from ..xlsx_updater import XlsxUpdater
 
 if TYPE_CHECKING:
@@ -310,7 +311,19 @@ def _save_loaded_to_path(workbook: Workbook, filename: WriteTarget) -> None:
             shutil.copyfileobj(source, filename)
 
 
+def _save_remote(workbook: Workbook, uri: str) -> None:
+    """Write the workbook locally under the URI's extension, then upload it."""
+    extension = uri_extension(uri)
+    with tempfile.TemporaryDirectory(prefix="xlspy-workbook-") as directory:
+        temporary = os.path.join(directory, f"workbook.{extension}")
+        save_workbook(workbook, temporary)
+        upload_remote(temporary, uri)
+
+
 def save_workbook(workbook: Workbook, filename: WriteTarget) -> None:
+    if is_remote_uri(filename):
+        _save_remote(workbook, cast(str, filename))
+        return
     if not workbook._sheets:
         workbook.create_sheet("Sheet")
     if workbook._loaded:

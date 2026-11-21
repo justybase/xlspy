@@ -129,6 +129,32 @@ the object model; saving that workbook with another extension raises instead of
 dropping the project. An existing `.xlsm` is updated with `XlsmUpdater`, which
 copies the project unchanged.
 
+## Remote files
+
+A `scheme://` path is written through [fsspec](https://filesystem-spec.readthedocs.io/),
+so a workbook can go straight to object storage:
+
+```bash
+pip install "xlspy[remote]"
+```
+
+```python
+from xlspy import Workbook, XlsxWriter
+
+with XlsxWriter("s3://bucket/report.xlsx") as writer:
+    writer.add_sheet("Data")
+    writer.write_sheet(rows)
+
+workbook = Workbook()
+workbook.active["A1"] = "report"
+workbook.save("s3://bucket/book.xlsx")   # the URI's extension chooses the format
+```
+
+The workbook is built in a local staging spool and uploaded only when the save
+succeeds. A failed write leaves an existing remote file unchanged. The same
+URI support applies to XLSB, XLSM and loaded workbooks; `workbook.save()` uses
+the extension of the URI's path, `.xlsx` when there is none.
+
 ## Streaming large exports
 
 `write_sheet` consumes its input exactly once, row by row:

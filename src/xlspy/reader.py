@@ -34,6 +34,7 @@ from .threaded_comments import (
     read_threaded_comments,
 )
 from ._metadata import read_defined_names, MAIN, namespace_of, relationship_namespace, relationship_kind
+from ._remote import is_remote_uri, open_remote
 
 if TYPE_CHECKING:
     from ._metadata import DefinedName
@@ -250,6 +251,7 @@ class ExcelReader:
             raise ValueError("errors must be 'legacy' or 'openpyxl'")
         self._errors = errors
         self._archive: zipfile.ZipFile | None = None
+        self._remote_stream: IO[bytes] | None = None
         self._is_xlsb = False
         self._worksheet_id_to_name: dict[str, str] = {}
         self._worksheet_name_to_id: dict[str, str] = {}
@@ -270,9 +272,10 @@ class ExcelReader:
     def open(self, path: str | os.PathLike[str] | IO[bytes]) -> None:
         """Open ``path`` and read its sheet list, shared strings and styles.
 
-        ``path`` is a file name, or a binary file object such as ``io.BytesIO``.
-        An XLSB package is detected by its ``xl/workbook.bin`` part, any other
-        package is read as XLSX/XLSM. Raises InvalidFileError for a damaged file.
+        ``path`` is a file name, a ``scheme://`` URI opened through fsspec, or a
+        binary file object such as ``io.BytesIO``. An XLSB package is detected
+        by its ``xl/workbook.bin`` part, any other package is read as
+        XLSX/XLSM. Raises InvalidFileError for a damaged file.
         """
         # Re-opening the same instance must not leak the previous archive nor
         # accumulate worksheet/style/shared-string state from the previous file.
@@ -292,6 +295,11 @@ class ExcelReader:
         self._styles_location = None
         self._date_1904 = False
 
+        remote_stream: IO[bytes] | None = None
+        if isinstance(source, str) and is_remote_uri(source):
+            remote_stream = open_remote(source)
+            source = remote_stream
+        self._remote_stream = remote_stream
         self._is_xlsb = _is_xlsb_source(source)
         try:
             with reading(self._opened_path):
@@ -310,6 +318,9 @@ class ExcelReader:
         if self._archive is not None:
             self._archive.close()
             self._archive = None
+        if self._remote_stream is not None:
+            self._remote_stream.close()
+            self._remote_stream = None
 
     def _zip(self) -> zipfile.ZipFile:
         """The open archive. Reading after close() raises a clear error."""

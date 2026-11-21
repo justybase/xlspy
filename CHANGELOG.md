@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Remote workbook paths: `ExcelReader`, `load_workbook`, `read_dataframe` and
+  both writers accept `scheme://` URIs through fsspec (`s3://`, `gs://`,
+  `memory://`, ...). Install `xlspy[remote]`. Saves are staged locally and
+  uploaded on success, so a failed write leaves the remote file unchanged.
 - `XlsxWriter.add_vba_project()` / `set_vba_name()` and
   `Workbook.add_vba_project()` / `set_vba_name()` embed a `vbaProject.bin`
   and make the output macro-enabled. A new `Workbook` with a project refuses

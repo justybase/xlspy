@@ -82,3 +82,26 @@ values, formula text, notes and defined names, and through
 `XlsxUpdater` and `load_workbook()` raise `NotImplementedError`, because edits
 would mix Transitional markup into a Strict package. Save the file as a
 regular `.xlsx` to edit it.
+
+## Remote files
+
+Any path with a `scheme://` prefix is opened through [fsspec](https://filesystem-spec.readthedocs.io/),
+for example `s3://bucket/report.xlsx`, `gs://...`, `az://...`, `ftp://...` or
+`memory://...`. Install the optional dependency first:
+
+```bash
+pip install "xlspy[remote]"
+```
+
+```python
+from xlspy import ExcelReader, load_workbook
+
+with ExcelReader("s3://bucket/report.xlsb") as reader:
+    rows = reader.read_all("Sales")
+
+workbook = load_workbook("s3://bucket/report.xlsx")
+```
+
+The package is downloaded once on open, then read locally. `read_dataframe`
+accepts the same URIs. Plain local paths and file objects behave as before; a
+Windows drive such as `C:\reports\book.xlsx` is not mistaken for a URI.

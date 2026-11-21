@@ -9,6 +9,8 @@ the workbook was saved and the archive was closed without error:
 * A file-object target is staged in a ``SpooledTemporaryFile`` (in memory up
   to ``spool_max_bytes``, then on disk) and copied into the stream on success.
   A failed write leaves the stream unchanged.
+* A ``scheme://`` target is staged the same way and uploaded through fsspec
+  on success. A failed write leaves any existing remote file unchanged.
 
 The copy into a caller's stream is the one step that cannot be rolled back:
 if the stream itself fails part-way through that copy, the bytes it already
@@ -28,6 +30,7 @@ from typing import IO, TYPE_CHECKING, Any, Literal, Self, TypeAlias, cast
 
 from . import _zip_threads
 from ._metadata import WorkbookProtection
+from ._remote import is_remote_uri, upload_stream
 
 # Where a writer saves: a path, or a binary file object it writes the finished package to.
 WriteTarget: TypeAlias = "str | os.PathLike[str] | IO[bytes]"
@@ -105,8 +108,13 @@ class StagedOutput:
         self._target = target
         self._temp_path = None
         self._final_path = None
+        self._uri: str | None = None
         self._finished = False
-        if isinstance(target, (str, bytes, os.PathLike)):
+        self.stream: IO[bytes]
+        if is_remote_uri(target):
+            self._uri = cast(str, target)
+            self.stream = tempfile.SpooledTemporaryFile(max_size=spool_max_bytes, mode="w+b")
+        elif isinstance(target, (str, bytes, os.PathLike)):
             self._final_path = _final_path(target)
             self._temp_path, self.stream = _create_sibling(self._final_path)
         elif callable(getattr(target, "write", None)):
@@ -120,7 +128,10 @@ class StagedOutput:
             raise RuntimeError("the output was already published or discarded")
         self._finished = True
         try:
-            if self._final_path is not None:
+            if self._uri is not None:
+                self.stream.seek(0)
+                upload_stream(self.stream, self._uri)
+            elif self._final_path is not None:
                 self.stream.close()
                 assert self._temp_path is not None
                 try:

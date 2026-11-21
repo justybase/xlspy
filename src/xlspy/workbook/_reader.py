@@ -33,6 +33,7 @@ from ..formulas import ArrayFormula, DataTableFormula, Formula
 from ..hyperlinks import Hyperlink
 from ..ignored_errors import FLAGS as IGNORED_ERROR_FLAGS, IgnoredError
 from ..reader import ExcelReader, _is_xlsb_source, _source_reference
+from .._remote import download_remote, is_remote_uri
 from ..refs import cell_position, column_label, parse_cell_range
 from ..utils.cell import range_boundaries
 from ..styles import (
@@ -1708,8 +1709,9 @@ def load_workbook(
     This function adds coordinates, styles, merges, dimensions and editing.
 
     Args:
-        filename: Path to an ``.xlsx``, ``.xlsm`` or ``.xlsb`` file, or a
-            binary file object such as ``io.BytesIO``. The object is not closed.
+        filename: Path to an ``.xlsx``, ``.xlsm`` or ``.xlsb`` file, a
+            ``scheme://`` URI opened through fsspec, or a binary file object
+            such as ``io.BytesIO``. The object is not closed.
         read_only: Stream rows instead of building the full model. Read-only
             sheets cannot be edited or saved.
         data_only: Return cached formula results instead of formula text.
@@ -1748,7 +1750,19 @@ def load_workbook(
     staged_directory: str | None = None
     if path is None:
         raise TypeError("filename must be a path or a binary file object, not None")
-    if isinstance(path, str):
+    if is_remote_uri(path):
+        # The updater and the reader each open the package by path: keep one
+        # local copy for the life of the workbook, as for a file object.
+        source_label = path
+        staged_directory = tempfile.mkdtemp(prefix="xlspy-source-")
+        staged = os.path.join(staged_directory, "workbook.xlsx")
+        try:
+            download_remote(path, staged)
+        except BaseException:
+            shutil.rmtree(staged_directory, ignore_errors=True)
+            raise
+        path = staged
+    elif isinstance(path, str):
         source_label = path
     else:
         # A file object: copy it once into a private temporary file, because
