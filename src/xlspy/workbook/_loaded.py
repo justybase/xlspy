@@ -7,7 +7,7 @@ byte-for-byte by ``ZipPackage``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .._package_handle import PackageHandle
 from ..comments import rels_path
@@ -78,11 +78,11 @@ def _remove_attr(opening: str, name: str) -> str:
     )
 
 
-def _set_attr(opening: str, name: str, value) -> str:
+def _set_attr(opening: str, name: str, value: Any) -> str:
     return replace_or_add_xml_attribute(opening, name, value)
 
 
-def _row_dimension_attrs(dimension) -> dict[str, str]:
+def _row_dimension_attrs(dimension: Any) -> dict[str, str]:
     attrs = {}
     if dimension.height is not None:
         attrs["ht"] = f"{dimension.height:g}"
@@ -101,11 +101,11 @@ def _row_dimension_attrs(dimension) -> dict[str, str]:
     return attrs
 
 
-def _snapshot(obj) -> tuple:
+def _snapshot(obj: Any) -> tuple[Any, ...]:
     return tuple((name, getattr(obj, name)) for name in obj.__dataclass_fields__)
 
 
-def _header_footer_snapshot(footer) -> tuple:
+def _header_footer_snapshot(footer: Any) -> tuple[Any, ...]:
     return (
         footer.differentFirst,
         footer.differentOddEven,
@@ -120,11 +120,11 @@ def _header_footer_snapshot(footer) -> tuple:
     )
 
 
-def _break_snapshot(container) -> tuple:
+def _break_snapshot(container: Any) -> tuple[Any, ...]:
     return tuple((item.id, item.min, item.max, item.man, item.pt) for item in container.brk)
 
 
-def _auto_filter_snapshot(filter_) -> tuple:
+def _auto_filter_snapshot(filter_: Any) -> tuple[Any, ...]:
     sort = filter_.sortState
     return (
         filter_.ref,
@@ -152,7 +152,7 @@ def _auto_filter_snapshot(filter_) -> tuple:
     )
 
 
-def _meta_signature(sheet: Worksheet):
+def _meta_signature(sheet: Worksheet) -> tuple[Any, ...]:
     """A hashable snapshot of the sheet metadata edited through this model."""
     cols = tuple(
         (letter, dim.width, dim.hidden, dim.outlineLevel, dim.collapsed, dim.bestFit, dim.autoSize, dim.style)
@@ -436,7 +436,7 @@ def _merge_xml(sheet: Worksheet, prefix: str) -> str:
     return f'<{prefix}mergeCells count="{len(ranges)}">{body}</{prefix}mergeCells>'
 
 
-def _cell_number_text(value) -> str:
+def _cell_number_text(value: Any) -> str:
     return f"{value:g}" if isinstance(value, float) else str(value)
 
 
@@ -574,7 +574,7 @@ def _header_footer_xml(sheet: Worksheet, prefix: str) -> str:
     return f"<{prefix}headerFooter{attr_text}>{''.join(children)}</{prefix}headerFooter>"
 
 
-def _breaks_xml(container, tag: str, prefix: str, default_max: int) -> str:
+def _breaks_xml(container: Any, tag: str, prefix: str, default_max: int) -> str:
     if not container.brk:
         return ""
     items = []
@@ -678,7 +678,7 @@ def _auto_filter_xml(sheet: Worksheet, prefix: str) -> str:
     return f"<{prefix}autoFilter{attrs}>{body}</{prefix}autoFilter>" if body else f"<{prefix}autoFilter{attrs}/>"
 
 
-def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
+def patch_sheet_metadata(updater: Any, sheet: Worksheet, name: str) -> None:
     handle = PackageHandle(updater)
     path, xml = handle.sheet_xml(name)
     prefix = tag_prefix(xml, "sheetData")
@@ -829,7 +829,7 @@ def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
     handle.apply_parts({path: xml})
 
 
-def _save_hyperlinks(updater, sheet: Worksheet, name: str) -> None:
+def _save_hyperlinks(updater: Any, sheet: Worksheet, name: str) -> None:
     if not sheet._dirty_hyperlinks:
         return
     links = {}
@@ -840,7 +840,7 @@ def _save_hyperlinks(updater, sheet: Worksheet, name: str) -> None:
     updater.set_hyperlinks(name, links)
 
 
-def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
+def patch_cell_styles(updater: Any, name: str, styles: dict[str, int]) -> None:
     if not styles:
         return
     handle = PackageHandle(updater)
@@ -848,7 +848,7 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
     existing: set[str] = set()
     rows = {parse_cell_range(ref)[1] + 1 for ref in styles}
 
-    def patch_cell(ref, cell_xml):
+    def patch_cell(ref: str, cell_xml: str) -> str:
         existing.add(ref)
         if ref not in styles:
             return cell_xml
@@ -865,7 +865,7 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
     handle.apply_parts({path: patched})
 
 
-def _value_for_save(cell, date_1904: bool):
+def _value_for_save(cell: Any, date_1904: bool) -> Any:
     if isinstance(cell._formula, (Formula, ArrayFormula, DataTableFormula)):
         return cell._formula
     if isinstance(cell._formula, str):
@@ -942,7 +942,7 @@ def _sheet_xml(sheet: Worksheet, date_1904: bool, *, prefix: str = "") -> str:
     )
 
 
-def _next_rel_id(rels_root) -> str:
+def _next_rel_id(rels_root: Any) -> str:
     highest = 0
     for node in rels_root:
         match = re.fullmatch(r"rId(\d+)", node.get("Id", ""))
@@ -967,7 +967,7 @@ def _insert_sheet_fragment(workbook_xml: str, fragment: str, index: int) -> str:
     return workbook_xml[: match.start()] + body + workbook_xml[match.end() :]
 
 
-def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None:
+def add_sheet(updater: Any, workbook: Workbook, sheet: Worksheet, index: int) -> None:
     handle = PackageHandle(updater)
     package = handle.package
     path = next_sheet_part(package.names(), "xml")
@@ -1024,7 +1024,7 @@ def _remove_sheet_node(workbook_xml: str, name: str) -> tuple[str, str | None]:
     return workbook_xml, None
 
 
-def remove_sheet(updater, workbook: Workbook, name: str) -> None:
+def remove_sheet(updater: Any, workbook: Workbook, name: str) -> None:
     handle = PackageHandle(updater)
     package = handle.package
     path = handle.sheets.get(name)
@@ -1062,7 +1062,7 @@ def remove_sheet(updater, workbook: Workbook, name: str) -> None:
     handle.sheets.pop(name, None)
 
 
-def rename_sheet(updater, old: str, new: str) -> None:
+def rename_sheet(updater: Any, old: str, new: str) -> None:
     handle = PackageHandle(updater)
     package = handle.package
     workbook_path = "xl/workbook.xml"
@@ -1081,8 +1081,8 @@ def rename_sheet(updater, old: str, new: str) -> None:
         workbook_xml = workbook_xml[: match.start()] + fragment + workbook_xml[match.end() :]
         break
 
-    def rename_references(match):
-        fragment = match[0]
+    def rename_references(match: Any) -> str:
+        fragment = str(match[0])
         opening = _required_match(re.match(r"<[^>]+>", fragment), "fragment element")[0]
         body = fragment[len(opening) :]
         return opening + rename_sheet_references(body, old, new)
@@ -1097,7 +1097,7 @@ def rename_sheet(updater, old: str, new: str) -> None:
         handle.sheets[new] = path
 
 
-def _reorder_and_state(workbook: Workbook, updater) -> None:
+def _reorder_and_state(workbook: Workbook, updater: Any) -> None:
     path = "xl/workbook.xml"
     handle = PackageHandle(updater)
     original = handle.package.get(path)
@@ -1149,7 +1149,7 @@ def _reorder_and_state(workbook: Workbook, updater) -> None:
     handle.package.set(path, serialize_like(root, original))
 
 
-def _sheet_order(updater) -> list[str]:
+def _sheet_order(updater: Any) -> list[str]:
     handle = PackageHandle(updater)
     root = safe_fromstring(handle.package.get("xl/workbook.xml"))
     return [node.get("name", "") for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")]
@@ -1163,7 +1163,7 @@ def _active_tab(updater: XlsxUpdater) -> int:
     return updater.get_active_sheet()
 
 
-def _remap_local_names(updater, before: list[str], renamed: dict[str, str]) -> None:
+def _remap_local_names(updater: Any, before: list[str], renamed: dict[str, str]) -> None:
     """Keep localSheetId pointing at the same sheet after removals and reordering.
 
     Names local to a removed sheet are dropped, as Excel does.
@@ -1173,8 +1173,8 @@ def _remap_local_names(updater, before: list[str], renamed: dict[str, str]) -> N
     handle = PackageHandle(updater)
     xml = handle.package.get(path).decode("utf-8")
 
-    def remap(match):
-        fragment = match[0]
+    def remap(match: Any) -> str:
+        fragment = str(match[0])
         opening = _required_match(re.match(r"<[^>]+>", fragment), "fragment element")[0]
         scope = tag_attributes(opening).get("localSheetId")
         if scope is None:
@@ -1193,7 +1193,7 @@ def _remap_local_names(updater, before: list[str], renamed: dict[str, str]) -> N
         handle.package.set(path, updated.encode("utf-8"))
 
 
-def _workbook_meta_signature(workbook):
+def _workbook_meta_signature(workbook: Workbook) -> tuple[Any, ...]:
     return (
         _snapshot(workbook.security),
         _snapshot(workbook.calculation),
@@ -1201,7 +1201,7 @@ def _workbook_meta_signature(workbook):
     )
 
 
-def _workbook_protection_xml(workbook, prefix: str) -> str:
+def _workbook_protection_xml(workbook: Workbook, prefix: str) -> str:
     security = workbook.security
     attrs = []
     for name in ("lockStructure", "lockWindows", "lockRevision"):
@@ -1230,7 +1230,7 @@ def _workbook_protection_xml(workbook, prefix: str) -> str:
     return f"<{prefix}workbookProtection {' '.join(attrs)}/>"
 
 
-def _calc_properties_xml(workbook, prefix: str) -> str:
+def _calc_properties_xml(workbook: Workbook, prefix: str) -> str:
     calc = workbook.calculation
     attrs = []
     for name in ("calcId", "iterateCount", "concurrentManualCount"):
@@ -1260,7 +1260,7 @@ def _calc_properties_xml(workbook, prefix: str) -> str:
     return f"<{prefix}calcPr {' '.join(attrs)}/>"
 
 
-def _book_views_xml(workbook, prefix: str) -> str:
+def _book_views_xml(workbook: Workbook, prefix: str) -> str:
     if not workbook.views:
         return ""
     views = []
@@ -1290,7 +1290,7 @@ def _book_views_xml(workbook, prefix: str) -> str:
     return f"<{prefix}bookViews>{''.join(views)}</{prefix}bookViews>"
 
 
-def patch_workbook_metadata(updater, workbook: Workbook) -> None:
+def patch_workbook_metadata(updater: Any, workbook: Workbook) -> None:
     path = "xl/workbook.xml"
     handle = PackageHandle(updater)
     xml = handle.package.get(path).decode("utf-8")
@@ -1347,7 +1347,7 @@ def patch_workbook_metadata(updater, workbook: Workbook) -> None:
     handle.package.set(path, xml.encode("utf-8"))
 
 
-def save_loaded(workbook: Workbook, filename) -> None:
+def save_loaded(workbook: Workbook, filename: Any) -> None:
     updater = workbook._updater
     if updater is None:
         raise ValueError("this workbook was not loaded from an XLSX package")
@@ -1404,7 +1404,7 @@ def _flush_styles(workbook: Workbook, handle: PackageHandle) -> None:
         workbook._styles_dirty = False
 
 
-def _remove_loaded_sheets(workbook: Workbook, updater, handle: PackageHandle, keep: set[str]) -> bool:
+def _remove_loaded_sheets(workbook: Workbook, updater: Any, handle: PackageHandle, keep: set[str]) -> bool:
     """Remove the worksheets deleted from the model; returns whether any went."""
     removed_any = False
     for name in list(workbook._loaded_worksheet_names):
@@ -1421,7 +1421,7 @@ def _remove_loaded_sheets(workbook: Workbook, updater, handle: PackageHandle, ke
     return removed_any
 
 
-def _add_loaded_sheets(workbook: Workbook, updater, handle: PackageHandle) -> set[str]:
+def _add_loaded_sheets(workbook: Workbook, updater: Any, handle: PackageHandle) -> set[str]:
     """Add and rename the model's new sheets; returns the names that were added."""
     added = set()
     for index, sheet in enumerate(workbook._sheets):
@@ -1433,7 +1433,7 @@ def _add_loaded_sheets(workbook: Workbook, updater, handle: PackageHandle) -> se
     return added
 
 
-def _dirty_comment_updates(sheet) -> dict:
+def _dirty_comment_updates(sheet: Worksheet) -> dict[str, Any]:
     comments = {}
     for ref in _in_sheet_order(sheet._dirty_comments):
         col, row, _, _ = parse_cell_range(ref)
@@ -1442,7 +1442,7 @@ def _dirty_comment_updates(sheet) -> dict:
     return comments
 
 
-def _save_loaded_sheets(workbook: Workbook, updater, handle: PackageHandle, added: set[str]) -> None:
+def _save_loaded_sheets(workbook: Workbook, updater: Any, handle: PackageHandle, added: set[str]) -> None:
     for sheet in workbook._sheets:
         name = sheet.title
         if name not in added:
@@ -1484,7 +1484,7 @@ def _save_loaded_sheets(workbook: Workbook, updater, handle: PackageHandle, adde
             _save_hyperlinks(updater, sheet, name)
 
 
-def _save_loaded_objects(workbook: Workbook, updater, handle: PackageHandle, final_order: list[str]) -> None:
+def _save_loaded_objects(workbook: Workbook, updater: Any, handle: PackageHandle, final_order: list[str]) -> None:
     for sheet in workbook._sheets:
         remove_drawing_objects(updater, sheet)
         save_chart_edits(updater, sheet)
@@ -1494,7 +1494,7 @@ def _save_loaded_objects(workbook: Workbook, updater, handle: PackageHandle, fin
             add_objects(updater, workbook, sheet, final_order)
 
 
-def _save_loaded_defined_names(workbook: Workbook, updater) -> None:
+def _save_loaded_defined_names(workbook: Workbook, updater: Any) -> None:
     # Defined names staged via DefinedNameList.add/remove: single rewrite.
     if not getattr(workbook, "_defined_names_dirty", False):
         return
@@ -1533,7 +1533,7 @@ def _save_loaded_defined_names(workbook: Workbook, updater) -> None:
     workbook._defined_names_dirty = False
 
 
-def _finish_loaded_save(workbook: Workbook, updater, filename) -> None:
+def _finish_loaded_save(workbook: Workbook, updater: Any, filename: Any) -> None:
     updater.save(filename)
     for sheet in workbook._sheets:
         sheet._original_title = sheet.title

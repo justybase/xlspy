@@ -15,7 +15,8 @@ from ..exceptions import UnsupportedFeatureError
 import io
 import posixpath
 import re
-from typing import cast
+from typing import Any, cast
+from collections.abc import Iterable
 
 from .._untrusted import SafeZipFile
 from dataclasses import fields
@@ -92,14 +93,14 @@ _ANCHOR = re.compile(r"<(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b.*?</\1>",
 _OBJECT_LISTS = ("charts", "images", "tables", "data_validations", "conditional_formatting")
 
 
-def _object_values(sheet, name: str) -> list:
+def _object_values(sheet: Any, name: str) -> list[Any]:
     value = getattr(sheet, name)
     if name == "conditional_formatting":
         return list(value.all_rules())
     return list(value)
 
 
-def pending_objects(sheet) -> dict[str, list]:
+def pending_objects(sheet: Any) -> dict[str, list[Any]]:
     """The objects added since the sheet was loaded or last saved."""
     from ._drawings import new_drawing_objects
 
@@ -110,13 +111,13 @@ def pending_objects(sheet) -> dict[str, list]:
     return pending
 
 
-def has_pending_objects(sheet) -> bool:
+def has_pending_objects(sheet: Any) -> bool:
     return any(pending_objects(sheet).values()) or print_settings_for(sheet) != getattr(
         sheet, "_saved_print_settings", None
     )
 
 
-def mark_objects_saved(sheet) -> None:
+def mark_objects_saved(sheet: Any) -> None:
     from ._drawings import remember_drawing_objects
 
     remember_drawing_objects(sheet)
@@ -125,7 +126,7 @@ def mark_objects_saved(sheet) -> None:
     sheet._saved_print_settings = print_settings_for(sheet)
 
 
-def _scratch(sheet, objects, settings) -> dict[str, bytes]:
+def _scratch(sheet: Any, objects: Any, settings: Any) -> dict[str, bytes]:
     """The parts of a workbook holding only this sheet and its new objects."""
     from ._writer import _cell_values
 
@@ -176,7 +177,7 @@ def _with_namespaces(fragment: str, default: str, **prefixes: str) -> str:
 class _Package:
     """Pending part changes over the package of an updater."""
 
-    def __init__(self, updater):
+    def __init__(self, updater: Any) -> None:
         handle = PackageHandle(updater)
         self.package = handle.package
         self.parts: dict[str, bytes] = {}
@@ -263,7 +264,7 @@ class _Package:
 class _Sheet:
     """String edits of a host worksheet in whatever prefix it uses."""
 
-    def __init__(self, xml: str):
+    def __init__(self, xml: str) -> None:
         self.xml = xml
         self.prefix = _required_match(re.search(r"<([\w.-]+:)?worksheet\b", xml), "worksheet element")[1] or ""
 
@@ -277,7 +278,7 @@ class _Sheet:
             return start
         return end
 
-    def find(self, tag: str):
+    def find(self, tag: str) -> Any:
         p = re.escape(self.prefix)
         pattern = re.compile(rf"<{p}{tag}\b[^>]*?(?:/>|>.*?</{p}{tag}\s*>)", re.S)
         return pattern.search(self.xml, 0, self._limit())
@@ -303,7 +304,7 @@ class _Sheet:
                 break
         self.xml = self.xml[:position] + fragment + self.xml[position:]
 
-    def replace(self, match, fragment: str) -> None:
+    def replace(self, match: Any, fragment: str) -> None:
         self.xml = self.xml[: match.start()] + fragment + self.xml[match.end() :]
 
 
@@ -390,7 +391,7 @@ def _sheet_rels(scratch: dict[str, bytes]) -> dict[str, tuple[str, str]]:
     }
 
 
-def _add_conditional_formats(sheet: _Sheet, scratch: dict[str, bytes], donor: str, styles) -> None:
+def _add_conditional_formats(sheet: _Sheet, scratch: dict[str, bytes], donor: str, styles: Any) -> None:
     formats = _donor_elements(donor, "conditionalFormatting")
     if not formats:
         return
@@ -435,7 +436,7 @@ def _with_prefix(fragment: str, prefix: str) -> str:
     return re.sub(r"</([\w.-]+)\s*>\s*$", lambda m: f"</{prefix}{m[1]}>", fragment, count=1)
 
 
-def _add_print_setup(sheet: _Sheet, donor: str, settings) -> None:
+def _add_print_setup(sheet: _Sheet, donor: str, settings: Any) -> None:
     if settings.center_horizontally or settings.center_vertically:
         for item in _donor_elements(donor, "printOptions"):
             _merge_attributes(sheet, "printOptions", item)
@@ -475,7 +476,7 @@ _PAGE_SETUP_ATTRIBUTES = {
 }
 
 
-def _print_value_set(settings, name: str) -> bool:
+def _print_value_set(settings: Any, name: str) -> bool:
     if settings is None:
         return False
     value = getattr(settings, name)
@@ -483,7 +484,7 @@ def _print_value_set(settings, name: str) -> bool:
     return value is not None and value is not False and value != ""
 
 
-def _cleared_print_fields(saved, settings) -> set[str]:
+def _cleared_print_fields(saved: Any, settings: Any) -> set[str]:
     """The print settings the file had when loaded and the sheet no longer has."""
     if saved is None:
         return set()
@@ -494,13 +495,13 @@ def _cleared_print_fields(saved, settings) -> set[str]:
     }
 
 
-def _without_attributes(tag: str, names) -> str:
+def _without_attributes(tag: str, names: Iterable[str]) -> str:
     for name in names:
         tag = re.sub(rf"""\s{name}=(?:"[^"]*"|'[^']*')""", "", tag)
     return tag
 
 
-def _drop_attributes(sheet: _Sheet, tag: str, names) -> None:
+def _drop_attributes(sheet: _Sheet, tag: str, names: Iterable[str]) -> None:
     match = sheet.find(tag)
     if match is None:
         return
@@ -520,12 +521,13 @@ def _drop_fit_to_page(sheet: _Sheet) -> None:
     sheet.replace(setup, body[: existing.start()] + tag + body[existing.end() :])
 
 
-def _drop_print_names(package: _Package, sheet_index: int, names) -> None:
+def _drop_print_names(package: _Package, sheet_index: int, names: Iterable[str]) -> None:
     xml = package.require("xl/workbook.xml").decode("utf-8")
 
-    def drop(match):
+    def drop(match: Any) -> str:
         attributes = tag_attributes(match[0])
-        keep = not (attributes.get("name") in names and attributes.get("localSheetId") == str(sheet_index))
+        name = attributes.get("name")
+        keep = not (name is not None and name in names and attributes.get("localSheetId") == str(sheet_index))
         return match[0] if keep else ""
 
     edited = element_pattern("definedName").sub(drop, xml)
@@ -537,7 +539,7 @@ def _drop_print_names(package: _Package, sheet_index: int, names) -> None:
     package.set("xl/workbook.xml", edited)
 
 
-def _clear_print_setup(package: _Package, sheet: _Sheet, sheet_index: int, cleared: set[str], settings) -> None:
+def _clear_print_setup(package: _Package, sheet: _Sheet, sheet_index: int, cleared: set[str], settings: Any) -> None:
     """Remove the print settings the sheet had when loaded and no longer has."""
     names = []
     if "print_area" in cleared:
@@ -580,7 +582,7 @@ def _clear_print_setup(package: _Package, sheet: _Sheet, sheet_index: int, clear
             sheet.replace(match, body)
 
 
-def _set_print_names(package: _Package, scratch: dict[str, bytes], sheet_index: int, settings) -> None:
+def _set_print_names(package: _Package, scratch: dict[str, bytes], sheet_index: int, settings: Any) -> None:
     wanted = []
     if settings.print_area:
         wanted.append("_xlnm.Print_Area")
@@ -591,7 +593,7 @@ def _set_print_names(package: _Package, scratch: dict[str, bytes], sheet_index: 
     donor = scratch["xl/workbook.xml"].decode("utf-8")
     xml = package.require("xl/workbook.xml").decode("utf-8")
 
-    def drop(match):
+    def drop(match: Any) -> str:
         attributes = tag_attributes(match[0])
         keep = not (attributes.get("name") in wanted and attributes.get("localSheetId") == str(sheet_index))
         return match[0] if keep else ""
@@ -796,7 +798,7 @@ def _add_tables(
     sheet.replace(host, body)
 
 
-def _table_signature(table) -> tuple:
+def _table_signature(table: Any) -> tuple[Any, ...]:
     style = getattr(table, "tableStyleInfo", None)
     columns = getattr(table, "tableColumns", None)
     if columns is None:
@@ -815,7 +817,7 @@ def _table_signature(table) -> tuple:
     )
 
 
-def object_signatures(sheet) -> dict[str, tuple]:
+def object_signatures(sheet: Any) -> dict[str, tuple[Any, ...]]:
     return {
         "tables": tuple(_table_signature(table) for table in sheet.tables),
         "data_validations": tuple(repr(rule) for rule in sheet.data_validations),
@@ -824,7 +826,7 @@ def object_signatures(sheet) -> dict[str, tuple]:
     }
 
 
-def _as_excel_table(table):
+def _as_excel_table(table: Any) -> Any:
 
     if isinstance(table, ExcelTable):
         return table
@@ -849,7 +851,7 @@ _UNREAD_LABELS = {
 }
 
 
-def note_unread(sheet, name: str, count: int = 1) -> None:
+def note_unread(sheet: Any, name: str, count: int = 1) -> None:
     """Count loaded ``name`` objects (data validations, conditional formats)
     that the model could not read, so a save cannot drop them unnoticed."""
     if count:
@@ -857,7 +859,7 @@ def note_unread(sheet, name: str, count: int = 1) -> None:
         unread[name] = unread.get(name, 0) + count
 
 
-def check_unread(sheet, names) -> None:
+def check_unread(sheet: Any, names: Iterable[str]) -> None:
     """Refuse to rewrite the ``names`` lists of a sheet that holds objects
     of those kinds the model could not read: the rewrite would lose them."""
     unread = getattr(sheet, "_unread_objects", {})
@@ -870,7 +872,7 @@ def check_unread(sheet, names) -> None:
             )
 
 
-def check_object_rewrites(sheet) -> None:
+def check_object_rewrites(sheet: Any) -> None:
     """Before an XLSX save: the checks of ``sync_objects``, which rewrites
     the sheet's tables, validations and conditional formats together."""
     saved = getattr(sheet, "_saved_object_signatures", None)
@@ -880,13 +882,13 @@ def check_object_rewrites(sheet) -> None:
     check_unread(sheet, _UNREAD_LABELS)
 
 
-def _mark_synced_objects(sheet) -> None:
+def _mark_synced_objects(sheet: Any) -> None:
     for name in ("tables", "data_validations", "conditional_formatting"):
         sheet._saved_object_counts[name] = len(_object_values(sheet, name))
     sheet._saved_object_signatures = object_signatures(sheet)
 
 
-def _only_appended(saved, current) -> bool:
+def _only_appended(saved: Any, current: Any) -> bool:
     if saved is None:
         return False
     previous_groups = saved["conditional_formatting_groups"]
@@ -900,7 +902,7 @@ def _only_appended(saved, current) -> bool:
     return True
 
 
-def sync_objects(updater, workbook, sheet) -> None:
+def sync_objects(updater: Any, workbook: Any, sheet: Any) -> None:
     """Rewrite tables/validations/CF when any loaded object was edited or removed."""
     saved = getattr(sheet, "_saved_object_signatures", None)
     current = object_signatures(sheet)
@@ -951,7 +953,7 @@ def sync_objects(updater, workbook, sheet) -> None:
     _mark_synced_objects(sheet)
 
 
-def add_objects(updater, workbook, sheet, sheet_order: list[str]) -> None:
+def add_objects(updater: Any, workbook: Any, sheet: Any, sheet_order: list[str]) -> None:
     """Move the sheet's pending objects into the loaded package."""
     objects = pending_objects(sheet)
     settings = print_settings_for(sheet)

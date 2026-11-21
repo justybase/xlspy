@@ -99,7 +99,7 @@ class Workbook:
         self._loaded = False
         self._data_only = False
         self._loaded_active_index = 0
-        self._loaded_workbook_meta = None
+        self._loaded_workbook_meta: tuple[Any, ...] | None = None
         self._read_only = False
         self._updater = None
         self._source_path: str | None = None

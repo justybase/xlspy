@@ -213,8 +213,6 @@ disallow_incomplete_defs = true
 # must annotate each def. Remove a module from this list once it passes.
 [[tool.mypy.overrides]]
 module = [
-    "xlspy.workbook._loaded",
-    "xlspy.workbook._objects",
     "xlspy.workbook._reader",
     "xlspy.workbook._xlsb_layout",
 ]

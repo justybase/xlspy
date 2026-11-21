@@ -113,7 +113,7 @@ class Worksheet:
         self._dirty_meta: set[str] = set()
         self._loaded = False
         self._original_title = title
-        self._meta_signature = None
+        self._meta_signature: tuple[Any, ...] | None = None
         self._original_protection_hash: tuple[str | None, str | None, str | None, int | None] | None = None
         self._path: str | None = None
         self._row_heights: dict[int, float] = {}
