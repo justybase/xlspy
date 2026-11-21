@@ -54,10 +54,10 @@ unless it shows a package that Excel also refuses.
 
 Windows 11, Python 3.14.2, Excel 16.0 (20527.0):
 
-- `tests/test_threaded_comments.py`: **13 passed** — writer parts and the
+- `tests/test_threaded_comments.py`: **16 passed** — writer parts and the
   companion note, reader/loaded-model access, `XlsxUpdater` edits and removals,
-  loaded-workbook saves, row moves and sheet copies, deterministic output, and
-  the XLSB read-only rule.
+  loaded-workbook saves, row moves and sheet copies, deterministic output,
+  duplicate-id and duplicate-kind checks, and the XLSB read-only rule.
 - `tests/test_excel_com_threaded_comments.py`: **3 passed** with
   `XLSPY_RUN_EXCEL_COM=1`. Excel reads the author, reply count, reply text and
   resolved state of a conversation xlspy wrote; xlspy reads and edits a
