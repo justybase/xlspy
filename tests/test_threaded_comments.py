@@ -230,6 +230,25 @@ def test_threaded_comments_move_with_cells_and_copy(tmp_path):
     assert original.replies[0].id != duplicate.replies[0].id
 
 
+def test_workbook_model_saves_threaded_comments(tmp_path):
+    from xlspy import Workbook
+
+    path = tmp_path / "model.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet["A1"] = "value"
+    thread = conversation("Model thread", "Jan")
+    sheet["A1"].threaded_comment = thread
+    sheet["B1"].comment = Comment("classic", "Ann")
+    workbook.save(path)
+
+    loaded = load_workbook(path)
+    sheet = loaded[loaded.sheetnames[0]]
+    assert sheet["A1"].threaded_comment.text == "Model thread"
+    assert sheet["A1"].threaded_comment.replies[0].text == "A reply"
+    assert sheet["B1"].comment.text == "classic"
+
+
 def test_two_saves_are_identical_with_threaded_comments(tmp_path):
     first = tmp_path / "first.xlsx"
     second = tmp_path / "second.xlsx"
