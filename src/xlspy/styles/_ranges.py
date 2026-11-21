@@ -5,9 +5,9 @@ from dataclasses import replace
 from functools import lru_cache
 import re
 from typing import Any, overload
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from ..refs import _column_index, parse_cell_range
-from ._attrs import _coerce_color
+from ._attrs import Color, _coerce_color
 from ._keys import _color_key
 from ._style import Style
 
@@ -15,7 +15,7 @@ from ._style import Style
 _EMPTY_STYLES: dict[int, Style] = {}
 
 
-class StyleRanges(tuple):
+class StyleRanges(tuple[tuple[int, int, int, int, Style], ...]):
     """``(first_col, first_row, last_col, last_row, style)`` entries in the
     caller's order, plus a sweep that finds the ranges covering a row.
 
@@ -25,18 +25,18 @@ class StyleRanges(tuple):
     Asking for an earlier row restarts the sweep.
     """
 
-    def __init__(self, entries=()):
+    def __init__(self, entries: Iterable[tuple[int, int, int, int, Style]] = ()) -> None:
         self._by_first_row = sorted(range(len(self)), key=lambda i: self[i][1])
         self._restart()
 
-    def _restart(self):
+    def _restart(self) -> None:
         self._next = 0
         self._row = -1
-        self._open = []
-        self._expires = None
+        self._open: list[int] = []
+        self._expires: int | None = None
         self._active: tuple[Any, ...] = ()
 
-    def active(self, row_index: int):
+    def active(self, row_index: int) -> tuple[tuple[int, int, Style], ...]:
         """``(first_col, last_col, style)`` of the ranges covering ``row_index``,
         in the caller's order."""
         if row_index == self._row:
@@ -94,7 +94,7 @@ def parse_style_range(reference: str) -> tuple[int, int, int, int]:
     return parse_cell_range(reference)
 
 
-def normalize_style_ranges(styles: Mapping[str, Style] | None):
+def normalize_style_ranges(styles: Mapping[str, Style] | None) -> StyleRanges:
     if styles is None:
         return StyleRanges()
     if not isinstance(styles, Mapping):
@@ -107,7 +107,7 @@ def normalize_style_ranges(styles: Mapping[str, Style] | None):
     return StyleRanges(result)
 
 
-def check_header_rows(header_rows) -> int:
+def check_header_rows(header_rows: object) -> int:
     if isinstance(header_rows, bool) or not isinstance(header_rows, int):
         raise TypeError("header_rows must be an int")
     if not 1 <= header_rows <= _LAST_ROW + 1:
@@ -115,7 +115,9 @@ def check_header_rows(header_rows) -> int:
     return header_rows
 
 
-def header_style_ranges(style_ranges, header_style, header_rows: int):
+def header_style_ranges(
+    style_ranges: StyleRanges, header_style: Style | None, header_rows: int
+) -> tuple[StyleRanges, Style | None]:
     """``(style_ranges, header_style)`` for a header of ``header_rows`` rows.
 
     One header row keeps the header_style path. A taller header becomes a
@@ -127,7 +129,7 @@ def header_style_ranges(style_ranges, header_style, header_rows: int):
     return StyleRanges((header, *style_ranges)), None
 
 
-def check_zoom(zoom) -> int | None:
+def check_zoom(zoom: object) -> int | None:
     """A sheet's zoom in percent (10-400), or None for Excel's 100%."""
     if zoom is None:
         return None
@@ -138,7 +140,9 @@ def check_zoom(zoom) -> int | None:
     return zoom
 
 
-def check_sheet_view(show_row_col_headers, show_zero_values, right_to_left) -> tuple[bool, bool, bool]:
+def check_sheet_view(
+    show_row_col_headers: bool, show_zero_values: bool, right_to_left: bool
+) -> tuple[bool, bool, bool]:
     """The sheet view switches as ``(headers, zeros, right_to_left)``; each must be a bool."""
     for name, value in (
         ("show_row_col_headers", show_row_col_headers),
@@ -150,7 +154,7 @@ def check_sheet_view(show_row_col_headers, show_zero_values, right_to_left) -> t
     return show_row_col_headers, show_zero_values, right_to_left
 
 
-def tab_color_key(tab_color):
+def tab_color_key(tab_color: Color | str | None) -> tuple[Any, ...] | None:
     """Color key of a sheet's ``tab_color`` (a Color or color string), or None."""
     if tab_color is None:
         return None
@@ -179,13 +183,15 @@ def merge_styles(base: Style | None, overlay: Style | None) -> Style | None:
 
 
 @lru_cache(maxsize=128)
-def _uniform_row_styles(row_length: int, style: Style):
+def _uniform_row_styles(row_length: int, style: Style) -> dict[int, Style]:
     # These cached dictionaries are only read by the writers.
     return dict.fromkeys(range(row_length), style)
 
 
 @lru_cache(maxsize=128)
-def _row_styles_for_pattern(row_length: int, ranges, header_style: Style | None):
+def _row_styles_for_pattern(
+    row_length: int, ranges: Sequence[tuple[int, int, Style]], header_style: Style | None
+) -> dict[int, Style]:
     """Reuse the same immutable-in-practice map for rows with the same styles."""
     styles: dict[int, Style] = {}
     if header_style is not None:
@@ -199,7 +205,12 @@ def _row_styles_for_pattern(row_length: int, ranges, header_style: Style | None)
     return styles or _EMPTY_STYLES
 
 
-def styles_for_row(row_index: int, row_length: int, ranges, header_style: Style | None = None):
+def styles_for_row(
+    row_index: int,
+    row_length: int,
+    ranges: StyleRanges | Sequence[tuple[int, int, int, int, Style]],
+    header_style: Style | None = None,
+) -> dict[int, Style]:
     """Return sparse column->style mappings; no allocation for unstyled rows."""
     if not ranges:
         if header_style is None or row_index:

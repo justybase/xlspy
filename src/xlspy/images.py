@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import struct
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import BinaryIO, cast
 
@@ -65,7 +66,7 @@ class Image:
     pixel_width: int = 0
     pixel_height: int = 0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         source = self.path
         if isinstance(source, (bytes, bytearray, memoryview)):
             data, label = bytes(source), "image data"
@@ -110,7 +111,7 @@ class Image:
         return hashlib.sha256(self.data).hexdigest()
 
 
-def normalize_images(images) -> list[Image]:
+def normalize_images(images: Iterable[Image] | None) -> list[Image]:
     """The ``images`` option of ``write_sheet`` as a list (empty for ``None``)."""
     if not images:
         return []
@@ -123,7 +124,7 @@ def normalize_images(images) -> list[Image]:
 class MediaParts:
     """The ``xl/media`` parts of one workbook; identical pictures share a part."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._names: dict[str, str] = {}
         self.parts: list[tuple[str, bytes]] = []
 
@@ -144,7 +145,7 @@ class MediaParts:
         )
 
 
-def _pixels(value, name: str) -> int | None:
+def _pixels(value: int | None, name: str) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int):

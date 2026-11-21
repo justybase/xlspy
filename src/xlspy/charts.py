@@ -7,7 +7,9 @@ The models only validate and store settings. DrawingML serialization lives in
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Any
 
 from ._text import check_xml_text
 from .refs import parse_cell_range
@@ -157,7 +159,13 @@ def _normalize_rgb(value: str | None, kind: str) -> str | None:
     return digits.upper()
 
 
-def _check_number(value, kind: str, *, minimum=None, maximum=None):
+def _check_number(
+    value: int | float | None,
+    kind: str,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -189,7 +197,7 @@ class LoadedChart:
     xml: bytes = b""
     _saved_xml: bytes = field(default=b"", init=False, repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._saved_xml = self.xml
 
     @property
@@ -200,8 +208,8 @@ class LoadedChart:
     def _mark_saved(self) -> None:
         self._saved_xml = self.xml
 
-    def __setattr__(self, name, value):
-        if name == "title" and getattr(self, "xml", b"") and hasattr(self, "_saved_xml"):
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "title" and getattr(self, "xml", None) and hasattr(self, "_saved_xml"):
             if value is not None and not isinstance(value, str):
                 raise TypeError("chart title must be a string or None")
             object.__setattr__(self, "xml", set_chart_title(self.xml, value or None))
@@ -269,7 +277,7 @@ class ChartMarker:
     symbol: str = "circle"
     size: int = 7
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.symbol not in MARKER_SYMBOLS:
             raise ValueError(f"invalid marker symbol {self.symbol!r}; expected one of {sorted(MARKER_SYMBOLS)}")
         if isinstance(self.size, bool) or not isinstance(self.size, int):
@@ -295,7 +303,7 @@ class ChartAxis:
     reverse: bool = False
     visible: bool = True
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.title is not None and not isinstance(self.title, str):
             raise TypeError("axis title must be a string or None")
         if self.title is not None:
@@ -323,7 +331,7 @@ class ChartLegend:
     position: str = "right"
     overlay: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.position not in LEGEND_POSITIONS:
             raise ValueError(f"invalid legend position {self.position!r}; expected one of {sorted(LEGEND_POSITIONS)}")
         if not isinstance(self.overlay, bool):
@@ -339,7 +347,7 @@ class DataLabels:
     show_category: bool = False
     show_series_name: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.number_format is not None and (not isinstance(self.number_format, str) or not self.number_format):
             raise TypeError("data label number_format must be a non-empty string or None")
         if self.position is not None and self.position not in LABEL_POSITIONS:
@@ -369,7 +377,7 @@ class Trendline:
     name: str | None = None
     color: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.type not in TRENDLINE_TYPES:
             raise ValueError(f"invalid trendline type {self.type!r}; expected one of {sorted(TRENDLINE_TYPES)}")
         if self.order is not None:
@@ -414,7 +422,7 @@ class ErrorBars:
     end_cap: bool = True
     color: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.kind not in ERROR_BAR_KINDS:
             raise ValueError(f"invalid error bar kind {self.kind!r}; expected one of {sorted(ERROR_BAR_KINDS)}")
         if self.kind == "std_err":
@@ -462,7 +470,7 @@ class ChartSeries:
     trendline: Trendline | None = None
     error_bars: ErrorBars | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.values, str):
             raise TypeError("series values must be an A1 range such as 'B2:B5'")
         _validate_chart_range(self.values, "series values")
@@ -585,7 +593,7 @@ class Chart:
     font_size: float | None = None
     font_color: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.chart_type not in CHART_TYPES:
             raise ValueError(f"invalid chart type {self.chart_type!r}; expected one of {sorted(CHART_TYPES)}")
         if self.chart_type not in SUPPORTED_CHART_TYPES:
@@ -676,7 +684,7 @@ class Chart:
             ),
         )
 
-    def _check_series_for_type(self, series) -> None:
+    def _check_series_for_type(self, series: Iterable[ChartSeries]) -> None:
         for item in series:
             kind = item.chart_type or self.chart_type
             if item.chart_type is not None and self.chart_type not in COMBINABLE_TYPES:

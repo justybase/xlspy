@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from typing import Any
 from dataclasses import dataclass
 import math
@@ -52,7 +52,7 @@ class Comment:
     width: float = 144
     height: float = 79
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         xml_text(self.text)
         check_cell_text(self.text)
         xml_text(self.author)
@@ -64,7 +64,12 @@ class Comment:
                 raise ValueError(f"{name} must be a positive finite number")
 
 
-def normalize_comments(comments, *, allow_none=False, merges=()):
+def normalize_comments(
+    comments: Mapping[str, Comment | None] | None,
+    *,
+    allow_none: bool = False,
+    merges: Iterable[str] = (),
+) -> dict[str, Comment | None]:
     if comments is None:
         return {}
     if not isinstance(comments, Mapping):
@@ -90,7 +95,7 @@ def normalize_comments(comments, *, allow_none=False, merges=()):
     return result
 
 
-def comments_xml(comments, existing=None):
+def comments_xml(comments: Mapping[str, Comment | None], existing: bytes | None = None) -> bytes:
     """Patch only targeted comments; retain rich text in untouched comments."""
     if existing is None:
         xml = f'<comments xmlns="{MAIN}"><authors/><commentList/></comments>'
@@ -114,7 +119,7 @@ def comments_xml(comments, existing=None):
         xml = append_child(xml, "authors", "".join(new_authors))
     seen = set()
 
-    def patch(match):
+    def patch(match: re.Match[str]) -> str:
         # Parse inside the original namespace declarations, including prefixes.
         node = _fragment_node(xml, match[0])
         ref = cell_ref(node.attrib["ref"])
@@ -134,7 +139,7 @@ def comments_xml(comments, existing=None):
     return xml.encode("utf-8")
 
 
-def _comment_xml(ref, comment, authors):
+def _comment_xml(ref: str, comment: Comment | None, authors: dict[str, int]) -> str:
     if comment is None:
         return ""
     index = authors[xstring_escape(comment.author)]
@@ -155,7 +160,7 @@ def read_comments(data: bytes) -> dict[str, Comment]:
     return result
 
 
-def _fragment_node(xml, fragment):
+def _fragment_node(xml: str, fragment: str) -> ET.Element:
     match = re.search(r"<(?![?!])[^>]+>", xml)
     if match is None:
         raise ValueError("XML element was not found")
@@ -164,7 +169,7 @@ def _fragment_node(xml, fragment):
     return safe_fromstring(f"<wrapper {declarations}>{fragment}</wrapper>")[0]
 
 
-def vml_xml(comments, existing=None):
+def vml_xml(comments: Mapping[str, Comment | None], existing: bytes | None = None) -> bytes:
     xml = f'<xml xmlns:v="{V}" xmlns:o="{O}" xmlns:x="{X}"></xml>' if existing is None else existing.decode("utf-8")
     root = safe_fromstring(xml)  # Validate before editing any package members.
     shape_ids = {n.get("id") for n in root.iter() if n.get("id")}
@@ -173,7 +178,7 @@ def vml_xml(comments, existing=None):
         type_id += "_"
     seen = set()
 
-    def patch(match):
+    def patch(match: re.Match[str]) -> str:
         shape = _fragment_node(xml, match[0])
         client = shape.find(f"{{{X}}}ClientData")
         if client is None or client.get("ObjectType") != "Note":
@@ -215,12 +220,12 @@ def vml_xml(comments, existing=None):
     return xml.encode("utf-8")
 
 
-def rels_path(part):
+def rels_path(part: str) -> str:
     directory, name = posixpath.split(part)
     return f"{directory}/_rels/{name}.rels"
 
 
-def resolve_part(part, target):
+def resolve_part(part: str, target: str) -> str:
     resolved = (
         posixpath.normpath(posixpath.join(posixpath.dirname(part), target))
         if not target.startswith("/")
@@ -321,7 +326,7 @@ class NotePartsEdit:
                 types.remove(node)
 
 
-def comment_part_targets(get, names, sheet_part):
+def comment_part_targets(get: Callable[[str], bytes], names: Collection[str], sheet_part: str) -> set[str]:
     """All comment and VML parts a worksheet refers to."""
     path = rels_path(sheet_part)
     if path not in names:

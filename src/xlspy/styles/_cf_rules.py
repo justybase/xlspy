@@ -60,7 +60,7 @@ class CellIsRule:
     stop_if_true: bool | None = None
     priority: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _validate_sqref(self.sqref)
         if self.operator not in _CELL_IS_OPERATORS:
             raise ValueError(f"invalid operator {self.operator!r}")
@@ -82,7 +82,7 @@ class FormulaRule:
     stop_if_true: bool | None = None
     priority: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _validate_sqref(self.sqref)
         object.__setattr__(self, "formula", _normalize_formula(self.formula))
         if self.dxf is not None and not isinstance(self.dxf, DifferentialStyle):
@@ -99,7 +99,7 @@ class FormatObject:
     type: str
     value: str | float | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.type not in _FORMAT_OBJECT_TYPES:
             raise ValueError(f"invalid format object type {self.type!r}")
         if self.value is not None and not isinstance(self.value, (str, int, float)):
@@ -117,7 +117,7 @@ class ColorScaleRule:
     colors: list[Color | str] | tuple[Color | str, ...]
     priority: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _validate_sqref(self.sqref)
         for name in ("minimum", "midpoint", "maximum"):
             value = getattr(self, name)
@@ -146,7 +146,7 @@ class DataBarRule:
     max_length: int | None = None
     priority: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _validate_sqref(self.sqref)
         for name in ("minimum", "maximum"):
             value = getattr(self, name)
@@ -221,7 +221,7 @@ class IconSetRule:
             object.__setattr__(self, name, value)
         self.__post_init__()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _validate_sqref(self.sqref)
         if self.icon_style not in _ICON_SETS:
             raise ValueError(f"invalid icon set {self.icon_style!r}")
@@ -249,7 +249,7 @@ class IconSetRule:
         _validate_priority(self.priority)
 
 
-def _check_dxf_rule(rule) -> None:
+def _check_dxf_rule(rule: Any) -> None:
     """Checks shared by the rules that apply a ``DifferentialStyle``."""
     _validate_sqref(rule.sqref)
     if rule.dxf is not None and not isinstance(rule.dxf, DifferentialStyle):
@@ -259,7 +259,7 @@ def _check_dxf_rule(rule) -> None:
     _validate_priority(rule.priority)
 
 
-def _check_flag(value, name: str) -> None:
+def _check_flag(value: Any, name: str) -> None:
     if not isinstance(value, bool):
         raise TypeError(f"{name} must be a bool")
 
@@ -276,7 +276,7 @@ class TopBottomRule:
     stop_if_true: bool | None = None
     priority: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _check_dxf_rule(self)
         if isinstance(self.rank, bool) or not isinstance(self.rank, int):
             raise TypeError("rank must be an int")
@@ -299,7 +299,7 @@ class AboveAverageRule:
     stop_if_true: bool | None = None
     priority: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _check_dxf_rule(self)
         _check_flag(self.below, "below")
         _check_flag(self.equal_average, "equal_average")
@@ -325,7 +325,7 @@ class TextRule:
     stop_if_true: bool | None = None
     priority: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _check_dxf_rule(self)
         if self.operator not in TEXT_OPERATORS:
             raise ValueError(f"operator must be one of {sorted(TEXT_OPERATORS)}")
@@ -345,7 +345,7 @@ class DuplicateRule:
     stop_if_true: bool | None = None
     priority: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _check_dxf_rule(self)
         _check_flag(self.unique, "unique")
 
@@ -376,7 +376,7 @@ class TimePeriodRule:
     stop_if_true: bool | None = None
     priority: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _check_dxf_rule(self)
         if self.period not in TIME_PERIODS:
             raise ValueError(f"period must be one of {sorted(TIME_PERIODS)}")
@@ -395,7 +395,7 @@ class BlanksRule:
     stop_if_true: bool | None = None
     priority: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _check_dxf_rule(self)
         if self.kind not in BLANK_KINDS:
             raise ValueError(f"kind must be one of {sorted(BLANK_KINDS)}")

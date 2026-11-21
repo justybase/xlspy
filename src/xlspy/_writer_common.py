@@ -5,7 +5,7 @@ format priorities. The writers keep only what differs between the formats.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -93,7 +93,7 @@ class SheetSpec:
     header_rows: int
     tab_key: Any
     zoom: int | None
-    style_ranges: list[Any]
+    style_ranges: Sequence[tuple[int, int, int, int, Style]]
     header_style: Style | None
     merge_refs: list[str]
     comments: dict[str, Any]
