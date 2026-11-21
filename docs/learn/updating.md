@@ -69,12 +69,17 @@ Values may be strings, finite numbers, booleans, dates/datetimes, `Formula`, or
 Both updaters expose the sheet tab metadata. `get_sheet_states()` returns
 `"visible"`, `"hidden"` or `"veryHidden"` by name; `get_active_sheet()` and
 `set_active_sheet()` read and set the tab Excel opens; `set_sheet_state()`
-changes visibility; and `reorder_sheets()` moves tabs. Chartsheets count as
-sheets, and reordering keeps the active tab on a visible sheet.
+changes visibility; and `reorder_sheets()` moves tabs. `add_sheet(name,
+index=None, *, state="visible")` creates an empty worksheet, while
+`remove_sheet(name)` and `rename_sheet(old, new)` update the package and its
+references. Chartsheets count as sheets, and reordering keeps the active tab on
+a visible sheet.
 
 ```python
 updater.set_sheet_state("Notes", "hidden")
-updater.reorder_sheets(["Summary", "Data", "Notes"])
+updater.add_sheet("Scratch", 1)
+updater.rename_sheet("Data", "Current")
+updater.reorder_sheets(["Summary", "Current", "Notes"])
 updater.set_active_sheet(0)
 ```
 

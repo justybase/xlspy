@@ -57,6 +57,7 @@ SEED = int(os.environ.get("XLSPY_FUZZ_SEED", "7"))
 
 FORMATS = {"xlsx": (XlsxWriter, XlsxUpdater), "xlsb": (XlsbWriter, XlsbUpdater)}
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
 RNS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 VALUES = [
@@ -333,6 +334,9 @@ def _model_edit(rng: random.Random, wb, sheets, ext):
             target = rng.choice(LINKS)
             ws[ref].hyperlink = Hyperlink(target)
             sheet.links[ref] = target
+            if ref not in sheet.cells:
+                # The model shows a link target as the text of a blank cell.
+                sheet.cells[ref] = target
     elif kind == "link_off":
         if ref not in hidden:
             ws[ref].hyperlink = None
@@ -343,6 +347,12 @@ def _model_edit(rng: random.Random, wb, sheets, ext):
             return
         ws.merge_cells(merge)
         sheet.merges.add(merge)
+        for ref in _inside(merge):
+            if ref == merge.split(":")[0]:
+                continue
+            sheet.cells.pop(ref, None)
+            sheet.notes.pop(ref, None)
+            sheet.links.pop(ref, None)
     elif kind == "unmerge":
         if sheet.merges:
             merge = rng.choice(sorted(sheet.merges))
@@ -649,6 +659,10 @@ def check_model_seed(seed):
 
 def _digests(seeds):
     """The bytes of each seed's files, for comparing the backends."""
+    # The relation serializer uses the process-wide namespace registry, and an
+    # earlier edit may have registered the package namespace as the default.
+    # Fix it here so the native and pure-Python runs start from the same state.
+    ET.register_namespace("", PKG_REL)
     result = {}
     with tempfile.TemporaryDirectory() as folder:
         tmp = pathlib.Path(folder)

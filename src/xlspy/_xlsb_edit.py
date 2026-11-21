@@ -530,7 +530,7 @@ class XlsbEditMixin(XlsxEditMixin):
         if not targets:
             return
         begin_start, begin_end, end_start, row_starts, merges, groups, dimension, cell_bounds = _scan_sheet(data)
-        check_merged_refs(data, values, merges)
+        check_merged_refs(data, [ref for ref, value in values.items() if value is not None], merges)
         for r1, r2, c1, c2 in groups:
             if any(c1 <= parse_cell_range(ref)[0] <= c2 and r1 <= parse_cell_range(ref)[1] <= r2 for ref in values):
                 raise ValueError("editing members of array/shared/data-table formulas is unsupported")

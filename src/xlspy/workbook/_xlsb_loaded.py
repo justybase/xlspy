@@ -272,6 +272,11 @@ def _save_cells(sheet, updater, everything: bool) -> None:
 
 def _save_sheet(sheet, updater) -> None:
     new = getattr(sheet, "_saved_layout", None) is None
+    # Merges first: a range removed here frees its cells for the updates, and
+    # one added here already has had its interior values cleared by the model.
+    merges = sheet._merged_cells.ranges
+    if merges if new else _merge_signature(sheet) != sheet._saved_merges:
+        updater.set_merged_cells(sheet.title, sorted(str(item) for item in merges))
     _save_cells(sheet, updater, new)
     groups = changed_groups(sheet)
     handle = PackageHandle(updater)
@@ -281,9 +286,6 @@ def _save_sheet(sheet, updater) -> None:
         if patched != data:
             handle.apply_parts({path: patched})
     save_builtin_names(updater, sheet, groups)
-    merges = sheet._merged_cells.ranges
-    if merges if new else _merge_signature(sheet) != sheet._saved_merges:
-        updater.set_merged_cells(sheet.title, sorted(str(item) for item in merges))
     validations_changed = (
         bool(sheet.data_validations) if new else
         object_signatures(sheet)["data_validations"]

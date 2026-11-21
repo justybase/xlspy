@@ -458,7 +458,7 @@ class XlsxEditMixin:
             for ref in values:
                 col, row, _, _ = parse_cell_range(ref)
                 for c1, r1, _, _, _ in merged.overlapping((col, row, col, row)):
-                    if (col, row) != (c1, r1):
+                    if (col, row) != (c1, r1) and values[ref] is not None:
                         raise ValueError("merged cells must be updated through their top-left cell")
         # Refuse edits into array/shared formula groups; writing one member alone
         # would leave the other cells dependent on a missing formula master.

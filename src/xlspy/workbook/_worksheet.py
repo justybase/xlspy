@@ -921,6 +921,26 @@ class Worksheet:
         if existing is not None:
             raise ValueError(f"merge range {reference!r} overlaps {existing!r}")
         self._merged_cells.add(reference)
+        # Excel keeps only the top-left value: a merged range's other cells are
+        # removed, with their notes and links scheduled for deletion on save.
+        c1, r1, c2, r2 = parse_cell_range(reference)
+        for row in range(r1 + 1, r2 + 2):
+            for column in range(c1 + 1, c2 + 2):
+                if (row, column) == (r1 + 1, c1 + 1):
+                    continue
+                hidden = self._existing_cell(row, column)
+                if hidden is None:
+                    continue
+                # Keep the cell for the save path so its old value can be
+                # cleared from the package; notes and links are removed too.
+                hidden._value = None
+                hidden._formula = None
+                hidden._data_type = "n"
+                hidden._comment = None
+                hidden._hyperlink = None
+                self._dirty_cells.add((row, column))
+                self._dirty_comments.add(hidden.coordinate)
+                self._dirty_hyperlinks.add(hidden.coordinate)
         self._mark_dirty("merges")
 
     def unmerge_cells(self, range_string: str | None = None, start_row: int | None = None,

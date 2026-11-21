@@ -110,15 +110,25 @@ Both updaters also expose the workbook's sheet metadata. `get_sheet_states()`
 returns `"visible"`, `"hidden"` or `"veryHidden"` by name; `get_active_sheet()`
 and `set_active_sheet()` read and set the tab Excel opens; `set_sheet_state()`
 changes visibility; and `reorder_sheets(["First", "Second", ...])` moves the
-tabs. Chartsheets count as sheets. Reordering carries names local to a sheet
-and the active tab with it, and activates the first visible sheet when the
-active one becomes hidden.
+tabs. `add_sheet(name, index=None, *, state="visible")` creates an empty
+worksheet and returns its part path, while `remove_sheet(name)` and
+`rename_sheet(old, new)` update the package and every reachable reference.
+Chartsheets count as sheets. Reordering carries names local to a sheet and the
+active tab with it, and activates the first visible sheet when the active one
+becomes hidden.
 
 ```python
 updater.set_sheet_state("Notes", "hidden")
-updater.reorder_sheets(["Summary", "Data", "Notes"])
+updater.add_sheet("Scratch", 1)
+updater.rename_sheet("Data", "Current")
+updater.reorder_sheets(["Summary", "Current", "Notes"])
 updater.set_active_sheet(0)
 ```
+
+Removing a sheet is refused when it is the last one or holds pivot tables or
+table slicers; those caches are workbook-level and rebuilding them is outside
+the updater's scope. Removing a worksheet also removes the comments, drawings,
+charts and tables that only it referred to.
 
 When a pivot cache is present, keep the source column schema (column order and
 count) unchanged; changing the schema requires rebuilding the pivot cache and

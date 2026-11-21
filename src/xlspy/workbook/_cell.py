@@ -236,6 +236,7 @@ class Cell:
         if value is not None and self._value is None:
             self._value = value.display_text
             self._data_type = "s"
+            self._mark_dirty()
         self._hyperlink = value
         self._sheet._dirty_hyperlinks.add(self.coordinate)
         self._sheet._mark_dirty("hyperlinks")

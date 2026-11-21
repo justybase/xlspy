@@ -141,6 +141,40 @@ reorder and hide tabs in both formats, passes locally; a LibreOffice conversion
 of a reordered XLSX kept the order, visibility and active sheet (LibreOffice
 reads `veryHidden` back as `hidden`).
 
+## Sheet structure and edit fuzzing (2026-11-21)
+
+Windows 11, Python 3.14.2. The XLSX sheet API now matches the XLSB one end to
+end. `tests/test_updater_differential.py` grew to **88 tests** and drives
+`add_sheet()`, `remove_sheet()` and `rename_sheet()`, as well as visibility,
+active tab and reorder, through both formats; it compares the loaded model and
+the error types (duplicate or invalid names, removing the last sheet, pivot
+tables and slicers). `tests/test_xlsx_sheets_unit.py` (14 tests),
+`tests/test_sheet_calc_chain.py` (2), `tests/test_sheet_structural_fuzz.py` (2),
+`tests/test_cell_utils_edges.py` (11) and `tests/test_hyperlink_validation.py`
+(13) cover the XML-level edge cases, `calcChain` invalidation and the value
+helpers directly.
+
+The long edit fuzz (`XLSPY_FUZZ_ITERATIONS=2000`) passes on seeds **7, 101 and
+2024** (**17 passed, 1 skipped** per seed; the skip needs Excel COM). It found
+and fixed five differences:
+
+- assigning a hyperlink to a blank cell changed its value without marking the
+  cell dirty, so a save dropped the text;
+- merging a range left the hidden cells' old values in the package;
+- neither updater allowed clearing a hidden cell of a merged range, although
+  the model clears it when the merge is made;
+- XLSX saved cell updates before new merges and XLSB before removed merges, so
+  an edit made in the same save could be judged against the old merge set;
+- the differential byte comparison depended on a process-wide XML namespace
+  registration, so the native and pure-Python subprocesses could serialize
+  relationships differently.
+
+The full native suite passed **10,376 tests, 343 skipped, 1 xfailed** in 4:59;
+the pure-Python pass took **9,270 tests, 1,450 skipped** in 3:08. Combined
+coverage is **92%** branch coverage over 27,664 statements (the floor is 90%).
+`ruff` and `mypy` (146 source files) are clean, `cargo test` passes 68, and the
+LibreOffice smoke suite passes 31.
+
 ## Compatibility refresh (2026-11-17)
 
 Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native

@@ -1214,6 +1214,11 @@ def save_loaded(workbook: Workbook, filename) -> None:
     for sheet in workbook._sheets:
         name = sheet.title
         if name not in added:
+            # Structural metadata first: a merge added or removed here decides
+            # which cells update_cells may touch.
+            if sheet._meta_signature is None or _meta_signature(sheet) != sheet._meta_signature:
+                patch_sheet_metadata(updater, sheet, name)
+                sheet._meta_signature = _meta_signature(sheet)
             updates = {}
             for row, column in sorted(sheet._dirty_cells):
                 cell = sheet._existing_cell(row, column)
@@ -1233,9 +1238,6 @@ def save_loaded(workbook: Workbook, filename) -> None:
                     handle.package.set("xl/styles.xml", workbook._styles.to_bytes())
                     workbook._styles_dirty = False
                 patch_cell_styles(updater, name, style_updates)
-            if sheet._meta_signature is None or _meta_signature(sheet) != sheet._meta_signature:
-                patch_sheet_metadata(updater, sheet, name)
-                sheet._meta_signature = _meta_signature(sheet)
             if sheet._dirty_comments:
                 comments = {}
                 for ref in _in_sheet_order(sheet._dirty_comments):
