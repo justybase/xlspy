@@ -89,7 +89,7 @@ _NS_DCTERMS = "http://purl.org/dc/terms/"
 _NS_CP = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
 
 
-def _element_xml(element) -> str:
+def _element_xml(element: ET.Element) -> str:
     """The XML of one element, without the text that follows it."""
     tail, element.tail = element.tail, None
     try:
@@ -99,14 +99,14 @@ def _element_xml(element) -> str:
 
 
 @overload
-def _bool_attr(node, name: str, default: bool) -> bool: ...
+def _bool_attr(node: ET.Element | None, name: str, default: bool) -> bool: ...
 
 
 @overload
-def _bool_attr(node, name: str, default: None = None) -> bool | None: ...
+def _bool_attr(node: ET.Element | None, name: str, default: None = None) -> bool | None: ...
 
 
-def _bool_attr(node, name: str, default: bool | None = None) -> bool | None:
+def _bool_attr(node: ET.Element | None, name: str, default: bool | None = None) -> bool | None:
     value = node.get(name) if node is not None else None
     if value is None:
         return default
@@ -143,7 +143,7 @@ def _date_kind(format_code: str | None) -> str | None:
     stripped = re.sub(r"\\.", "", stripped)
 
     # Keep elapsed-time brackets; drop colours, locales and conditions.
-    def keep(match):
+    def keep(match: Any) -> str:
         inner = match.group(0)[1:-1]
         return match.group(0) if re.fullmatch(r"[hmsHMS]+", inner) else ""
 
@@ -160,7 +160,7 @@ def _date_kind(format_code: str | None) -> str | None:
     return None
 
 
-def _number_value(number: float, date_kind: str | None, date_1904: bool):
+def _number_value(number: float, date_kind: str | None, date_1904: bool) -> Any:
     """A numeric cell value: a date/time/duration for a date format, else int or float."""
     if date_kind is not None:
         try:
@@ -182,7 +182,14 @@ def _number_value(number: float, date_kind: str | None, date_1904: bool):
     return int(number) if number.is_integer() else number
 
 
-def _read_cell_value(cell: ET.Element, style, *, date_1904: bool, shared_strings: list[str], rich_text: bool = False):
+def _read_cell_value(
+    cell: ET.Element,
+    style: Any,
+    *,
+    date_1904: bool,
+    shared_strings: list[str],
+    rich_text: bool = False,
+) -> Any:
     kind = cell.get("t", "n")
     if kind == "inlineStr":
         inline = cell.find(_Q_IS)
@@ -228,7 +235,7 @@ def _cell_data(
     shared: dict[str, tuple[str, str]],
     shared_strings: list[str],
     rich_text: bool = False,
-):
+) -> Any:
     style_id = int(cell.get("s", "0") or 0)
     style = style_table.style_at(style_id)
     formula = cell.find(_Q_F)
@@ -299,7 +306,7 @@ def _cell_data(
     return value, data_type, None, style_id
 
 
-def _read_properties(package) -> DocumentProperties:
+def _read_properties(package: Any) -> DocumentProperties:
     props = DocumentProperties()
     if not package.has("docProps/core.xml"):
         return props
@@ -346,7 +353,7 @@ def _read_properties(package) -> DocumentProperties:
 _NS_CUSTOM = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
 
 
-def _read_custom_properties(package):
+def _read_custom_properties(package: Any) -> Any:
 
     result = CustomPropertyList()
     if not package.has("docProps/custom.xml"):
@@ -379,7 +386,7 @@ def _read_custom_properties(package):
     return result
 
 
-def _read_workbook_metadata(workbook: Workbook, root, package) -> None:
+def _read_workbook_metadata(workbook: Workbook, root: ET.Element, package: Any) -> None:
     _read_workbook_security(workbook, root)
     _read_workbook_calculation(workbook, root)
     views = _read_book_views(root)
@@ -389,7 +396,7 @@ def _read_workbook_metadata(workbook: Workbook, root, package) -> None:
     workbook.external_links = read_external_links(package, binary=False)
 
 
-def _read_workbook_security(workbook: Workbook, root) -> None:
+def _read_workbook_security(workbook: Workbook, root: ET.Element) -> None:
     security = workbook.security
     protection = root.find(f"{{{MAIN}}}workbookProtection")
     if protection is None:
@@ -410,18 +417,20 @@ def _read_workbook_security(workbook: Workbook, root) -> None:
         if protection.get(name) is not None:
             setattr(security, name, protection.get(name))
     for name in ("workbookSpinCount", "revisionsSpinCount"):
-        if protection.get(name) is not None:
-            setattr(security, name, int(protection.get(name)))
+        spin_count = protection.get(name)
+        if spin_count is not None:
+            setattr(security, name, int(spin_count))
 
 
-def _read_workbook_calculation(workbook: Workbook, root) -> None:
+def _read_workbook_calculation(workbook: Workbook, root: ET.Element) -> None:
     calculation = workbook.calculation
     calc = root.find(f"{{{MAIN}}}calcPr")
     if calc is None:
         return
     for name in ("calcId", "iterateCount", "concurrentManualCount"):
-        if calc.get(name) is not None:
-            setattr(calculation, name, int(calc.get(name)))
+        raw = calc.get(name)
+        if raw is not None:
+            setattr(calculation, name, int(raw))
     for name in (
         "fullCalcOnLoad",
         "iterate",
@@ -433,19 +442,21 @@ def _read_workbook_calculation(workbook: Workbook, root) -> None:
     ):
         if calc.get(name) is not None:
             setattr(calculation, name, _bool_attr(calc, name, None))
-    if calc.get("iterateDelta") is not None:
-        calculation.iterateDelta = float(calc.get("iterateDelta"))
+    iterate_delta = calc.get("iterateDelta")
+    if iterate_delta is not None:
+        calculation.iterateDelta = float(iterate_delta)
     for name in ("calcMode", "refMode"):
         if calc.get(name) is not None:
             setattr(calculation, name, calc.get(name))
 
 
-def _read_book_views(root) -> list:
+def _read_book_views(root: ET.Element) -> list[Any]:
     views = []
     for node in root.findall(f"{{{MAIN}}}bookViews/{{{MAIN}}}workbookView"):
         view = BookView()
-        if node.get("visibility") is not None:
-            view.visibility = node.get("visibility")
+        visibility = node.get("visibility")
+        if visibility is not None:
+            view.visibility = visibility
         for name in (
             "minimized",
             "showHorizontalScroll",
@@ -470,7 +481,7 @@ def _read_book_views(root) -> list:
     return views
 
 
-def _read_sheet_relationships(package, sheet_path: str) -> dict[str, tuple[str, str | None, str]]:
+def _read_sheet_relationships(package: Any, sheet_path: str) -> dict[str, tuple[str, str | None, str]]:
     path = rels_path(sheet_path)
     if not package.has(path):
         return {}
@@ -484,15 +495,18 @@ def _read_sheet_relationships(package, sheet_path: str) -> dict[str, tuple[str, 
     return result
 
 
-def _read_page_setup(sheet: Worksheet, node) -> None:
+def _read_page_setup(sheet: Worksheet, node: ET.Element) -> None:
     """Read every ``<pageSetup>`` attribute into the model."""
     setup = sheet.page_setup
     if node.get("orientation") in ("portrait", "landscape"):
         setup.orientation = node.get("orientation")
 
-    def number(name, low, high):
+    def number(name: str, low: float, high: float) -> Any:
+        raw = node.get(name)
+        if raw is None:
+            return None
         try:
-            value = int(node.get(name))
+            value = int(raw)
         except (TypeError, ValueError):
             return None
         return value if low <= value <= high else None
@@ -520,14 +534,15 @@ _OXML_VALIDATION_TYPES = {value: key for key, value in VALIDATION_TYPES.items()}
 _OXML_OPERATORS = {value: key for key, value in OPERATORS.items()}
 
 
-def _read_data_validations(sheet: Worksheet, node) -> None:
+def _read_data_validations(sheet: Worksheet, node: ET.Element) -> None:
     for child in node.findall(qname("dataValidation")):
         formula1 = child.findtext(qname("formula1"))
         if formula1 is None:
             note_unread(sheet, "data_validations")
             continue
         kind = _OXML_VALIDATION_TYPES.get(child.get("type", "custom"), "custom")
-        operator = _OXML_OPERATORS.get(child.get("operator")) if child.get("operator") is not None else None
+        raw_operator = child.get("operator")
+        operator = _OXML_OPERATORS.get(raw_operator) if raw_operator is not None else None
         prompt = child.get("prompt")
         error = child.get("error")
         show_input = _bool_attr(child, "showInputMessage", False)
@@ -608,7 +623,7 @@ def _parse_table(xml: bytes) -> Table:
     return table
 
 
-def _read_table_parts(sheet, package, sheet_path, relationships, table_parts) -> None:
+def _read_table_parts(sheet: Worksheet, package: Any, sheet_path: str, relationships: Any, table_parts: Any) -> None:
     for rid in table_parts:
         target, _mode, _kind = relationships.get(rid, (None, None, ""))
         if not target:
@@ -622,8 +637,9 @@ def _read_table_parts(sheet, package, sheet_path, relationships, table_parts) ->
             continue
 
 
-def _cfvo(node) -> FormatObject:
-    kind, value = node.get("type", "num"), node.get("val")
+def _cfvo(node: ET.Element) -> FormatObject:
+    kind = node.get("type", "num")
+    value: Any = node.get("val")
     if value is not None and kind in ("num", "percent", "percentile"):
         # A number, as openpyxl reads it; anything else is a formula.
         try:
@@ -635,7 +651,7 @@ def _cfvo(node) -> FormatObject:
     return FormatObject(kind, value)
 
 
-def _cf_rule(sqref: str, node, style_table):
+def _cf_rule(sqref: str, node: ET.Element, style_table: Any) -> Any:
     rule_type = node.get("type")
     priority = int(node.get("priority", "1") or 1)
     stop = _bool_attr(node, "stopIfTrue", None)
@@ -676,7 +692,7 @@ def _cf_rule(sqref: str, node, style_table):
     return None
 
 
-def _read_color_scale_rule(sqref: str, node, priority: int):
+def _read_color_scale_rule(sqref: str, node: ET.Element, priority: int) -> Any:
     scale = node.find(qname("colorScale"))
     if scale is None:
         return None
@@ -690,7 +706,7 @@ def _read_color_scale_rule(sqref: str, node, priority: int):
     return ColorScaleRule(sqref, cfvos[0], cfvos[1], cfvos[2], solid, priority)
 
 
-def _read_data_bar_rule(sqref: str, node, priority: int):
+def _read_data_bar_rule(sqref: str, node: ET.Element, priority: int) -> Any:
     bar = node.find(qname("dataBar"))
     if bar is None:
         return None
@@ -698,19 +714,21 @@ def _read_data_bar_rule(sqref: str, node, priority: int):
     color = _read_color(bar.find(qname("color")))
     if len(cfvos) < 2 or color is None:
         return None
+    raw_min = bar.get("minLength")
+    raw_max = bar.get("maxLength")
     return DataBarRule(
         sqref,
         cfvos[0],
         cfvos[1],
         color,
         show_value=_bool_attr(bar, "showValue", None),
-        min_length=(int(bar.get("minLength")) if bar.get("minLength") is not None else None),
-        max_length=(int(bar.get("maxLength")) if bar.get("maxLength") is not None else None),
+        min_length=int(raw_min) if raw_min is not None else None,
+        max_length=int(raw_max) if raw_max is not None else None,
         priority=priority,
     )
 
 
-def _read_icon_set_values(cfvos) -> list[Any]:
+def _read_icon_set_values(cfvos: Any) -> list[Any]:
     values: list[Any] = []
     for item in cfvos:
         value: Any = item.value  # a number, a formula, or None
@@ -721,7 +739,7 @@ def _read_icon_set_values(cfvos) -> list[Any]:
     return values
 
 
-def _read_icon_set_rule(sqref: str, node, stop, priority: int):
+def _read_icon_set_rule(sqref: str, node: ET.Element, stop: Any, priority: int) -> Any:
     icon_set = node.find(qname("iconSet"))
     if icon_set is None:
         return None
@@ -742,7 +760,7 @@ def _read_icon_set_rule(sqref: str, node, stop, priority: int):
     )
 
 
-def _read_top10_rule(sqref: str, node, dxf, stop, priority: int):
+def _read_top10_rule(sqref: str, node: ET.Element, dxf: Any, stop: Any, priority: int) -> Any:
     return TopBottomRule(
         sqref,
         rank=int(node.get("rank", "10") or 10),
@@ -754,7 +772,7 @@ def _read_top10_rule(sqref: str, node, dxf, stop, priority: int):
     )
 
 
-def _read_above_average_rule(sqref: str, node, dxf, stop, priority: int):
+def _read_above_average_rule(sqref: str, node: ET.Element, dxf: Any, stop: Any, priority: int) -> Any:
     std_dev = node.get("stdDev")
     return AboveAverageRule(
         sqref,
@@ -767,7 +785,7 @@ def _read_above_average_rule(sqref: str, node, dxf, stop, priority: int):
     )
 
 
-def _read_conditional_formatting(sheet, node, style_table) -> None:
+def _read_conditional_formatting(sheet: Worksheet, node: ET.Element, style_table: Any) -> None:
     sqref = node.get("sqref")
     if not sqref:
         return
@@ -806,7 +824,7 @@ def _read_print_names(sheet: Worksheet, names: dict[str, str]) -> None:
             sheet.print_title_cols = part.upper()
 
 
-def _apply_row_attributes(sheet: Worksheet, row_number: int, attrs) -> None:
+def _apply_row_attributes(sheet: Worksheet, row_number: int, attrs: Any) -> None:
     """Row height, visibility, outline and style from a ``<row>`` element's attributes."""
     # A group's summary row carries collapsed="1" alone; it has to
     # be loaded too, or saving row metadata would drop the flag.
@@ -832,10 +850,10 @@ def _load_row(
     *,
     data_only: bool,
     date_1904: bool,
-    shared,
+    shared: Any,
     shared_strings: list[str],
     rich_text: bool,
-):
+) -> Any:
     """Load one ``<row>`` element into the sheet; return ``(row, max_row, max_column)``."""
     row_number = int(node.get("r", next_row) or next_row)
     max_row = 0  # A row without cells has no place in the sheet's size, as in XLSB.
@@ -1231,11 +1249,11 @@ def _read_core_sheet(
     *,
     data_only: bool,
     date_1904: bool,
-    package,
+    package: Any,
     sheet_path: str,
     shared_strings: list[str],
     rich_text: bool = False,
-):
+) -> Any:
     shared_formulas: dict[str, tuple[str, str]] = {}
     hyperlinks: list[dict] = []
     table_parts: list[str] = []
@@ -1381,14 +1399,14 @@ class ReadOnlyCell:
         """True when the value is a date, datetime, time or timedelta."""
         return isinstance(self.value, (_datetime.date, _datetime.time, _datetime.timedelta))
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         return isinstance(other, ReadOnlyCell) and (self.row, self.column, self.value) == (
             other.row,
             other.column,
             other.value,
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<ReadOnlyCell {self.coordinate}>"
 
 
@@ -1400,7 +1418,7 @@ class EmptyCell:
     data_type = "n"
     is_date = False
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<EmptyCell>"
 
 
@@ -1427,7 +1445,7 @@ class ReadOnlyWorksheet(Worksheet):
         # Unknown until the bounds are read; the class docstring says so.
         self._max_row = self._max_column = None  # type: ignore[assignment]
 
-    def _set_bounds(self, bounds):
+    def _set_bounds(self, bounds: Any) -> None:
         if bounds is not None:
             self._min_column, self._min_row, self._max_column, self._max_row = bounds
 
@@ -1474,7 +1492,7 @@ class ReadOnlyWorksheet(Worksheet):
             self._calculate_dimension()
         return f"{_coordinate(self._min_row, self._min_column)}:{_coordinate(self._max_row, self._max_column)}"
 
-    def _calculate_dimension(self):
+    def _calculate_dimension(self) -> None:
         max_row = max_column = 0
         for row_number, cells in self._indexed_rows():
             if cells:
@@ -1486,7 +1504,7 @@ class ReadOnlyWorksheet(Worksheet):
         """Ignore a wrong stored dimension, as openpyxl's reset_dimensions()."""
         self._max_row = self._max_column = None  # type: ignore[assignment]  # unknown until the bounds are read
 
-    def _indexed_rows(self):
+    def _indexed_rows(self) -> Any:
         if self._reader._is_xlsb:
             from .._xlsb_read import iter_xlsb_indexed_rows as iter_xlsb_rows
 
@@ -1518,7 +1536,14 @@ class ReadOnlyWorksheet(Worksheet):
             for _ in range(counter, max_row + 1):
                 yield empty_row
 
-    def _row(self, row_number, cells, min_col, max_col, values_only):
+    def _row(
+        self,
+        row_number: int,
+        cells: Any,
+        min_col: int,
+        max_col: int | None,
+        values_only: bool,
+    ) -> Any:
         if not cells and not max_col:
             return ()
         last = max_col or cells[-1][0] + 1
@@ -1828,7 +1853,7 @@ def _read_defined_print_names(workbook_root: ET.Element, sheet_nodes: list[ET.El
     return print_names
 
 
-def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool) -> Workbook:
+def _load_xlsx_workbook(updater: Any, path: str, *, data_only: bool, rich_text: bool) -> Workbook:
     handle = PackageHandle(updater)
     package = handle.package
     workbook = Workbook()

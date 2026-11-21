@@ -14,6 +14,7 @@ from .._package_handle import PackageHandle
 from ..exceptions import UnsupportedFeatureError
 import re
 import struct
+from typing import Any
 
 from .._metadata import password_hash, DefinedName
 from .._xlsb_metadata import (
@@ -182,7 +183,7 @@ def _parse_sync_ref(ref: str) -> tuple[int, int]:
     return row, column
 
 
-def _get(obj, path: str):
+def _get(obj: Any, path: str) -> Any:
     for name in path.split("."):
         obj = getattr(obj, name)
     return obj
@@ -191,7 +192,7 @@ def _get(obj, path: str):
 # --- what the model holds, per group -----------------------------------------
 
 
-def _columns_state(sheet):
+def _columns_state(sheet: Any) -> Any:
     return tuple(
         (letter, dim.min, dim.max, dim.width, dim.hidden, dim.outlineLevel, dim.collapsed, dim.bestFit, dim.style)
         for letter, dim in sorted(
@@ -202,7 +203,7 @@ def _columns_state(sheet):
     )
 
 
-def _rows_state(sheet):
+def _rows_state(sheet: Any) -> Any:
     return tuple(
         (row, dim.height, dim.hidden, dim.outlineLevel, dim.collapsed, dim.style)
         for row, dim in sorted(sheet.row_dimensions.items())
@@ -210,7 +211,7 @@ def _rows_state(sheet):
     )
 
 
-def _view_state(sheet):
+def _view_state(sheet: Any) -> Any:
     view = sheet.sheet_view
     return (
         _snapshot(view)[:-2],
@@ -220,7 +221,7 @@ def _view_state(sheet):
     )
 
 
-def _print_state(sheet):
+def _print_state(sheet: Any) -> Any:
     return (
         _snapshot(sheet.page_setup),
         _snapshot(sheet.print_options),
@@ -232,7 +233,7 @@ def _print_state(sheet):
     )
 
 
-def _properties_state(sheet):
+def _properties_state(sheet: Any) -> Any:
     properties = sheet.sheet_properties
     return (
         repr(properties.tabColor),
@@ -257,11 +258,11 @@ GROUPS = {
 }
 
 
-def layout_state(sheet) -> dict:
+def layout_state(sheet: Any) -> dict[str, Any]:
     return {name: state(sheet) for name, state in GROUPS.items()}
 
 
-def changed_groups(sheet) -> set[str]:
+def changed_groups(sheet: Any) -> set[str]:
     saved = getattr(sheet, "_saved_layout", None)
     if saved is None:
         return set(GROUPS)
@@ -279,7 +280,7 @@ def _find(data: bytes, record_id: int) -> bytes | None:
     return None
 
 
-def _sheet_properties_payload(sheet, original: bytes | None) -> bytes:
+def _sheet_properties_payload(sheet: Any, original: bytes | None) -> bytes:
     payload = bytearray(
         original
         if original and len(original) >= 23
@@ -306,7 +307,7 @@ def _sheet_properties_payload(sheet, original: bytes | None) -> bytes:
     return build_record(WS_PROP, head + wide_string(code_name))
 
 
-def _view_record(sheet, original: bytes | None) -> bytes:
+def _view_record(sheet: Any, original: bytes | None) -> bytes:
     view = sheet.sheet_view
     payload = bytearray(original if original and len(original) >= 30 else _DEFAULT_VIEW)
     flags = struct.unpack_from("<H", payload, 0)[0]
@@ -337,7 +338,7 @@ def _view_record(sheet, original: bytes | None) -> bytes:
     return build_record(BEGIN_VIEW, bytes(payload))
 
 
-def _pane_record(pane) -> bytes:
+def _pane_record(pane: Any) -> bytes:
     if pane is None or not (pane.xSplit or pane.ySplit):
         return b""
     top, left = _parse_sync_ref(pane.topLeftCell) if pane.topLeftCell else (0, 0)
@@ -347,7 +348,7 @@ def _pane_record(pane) -> bytes:
     )
 
 
-def _selection_records(view) -> bytes:
+def _selection_records(view: Any) -> bytes:
     selections = list(view.selection)
     if not selections:
         pane = view.pane.activePane if view.pane is not None and (view.pane.xSplit or view.pane.ySplit) else "topLeft"
@@ -366,7 +367,7 @@ def _selection_records(view) -> bytes:
     return b"".join(output)
 
 
-def _views_block(sheet, data: bytes) -> bytes:
+def _views_block(sheet: Any, data: bytes) -> bytes:
     views = [payload for record, payload in records(data) if record.record_id == BEGIN_VIEW]
     if len(views) > 1:
         raise UnsupportedFeatureError("editing a sheet with several window views is not supported")
@@ -382,7 +383,7 @@ def _views_block(sheet, data: bytes) -> bytes:
     )
 
 
-def _format_record(sheet) -> bytes:
+def _format_record(sheet: Any) -> bytes:
     fmt = sheet.sheet_format
     width = 0xFFFFFFFF if fmt.defaultColWidth is None else round(fmt.defaultColWidth * 256)
     flags = (
@@ -405,7 +406,7 @@ def _format_record(sheet) -> bytes:
     )
 
 
-def _column_records(sheet) -> bytes:
+def _column_records(sheet: Any) -> bytes:
     fmt = sheet.sheet_format
     default = round((fmt.defaultColWidth or 8.43) * 256)
     entries: list[list] = []
@@ -432,7 +433,7 @@ def _column_records(sheet) -> bytes:
     )
 
 
-def _protection_record(sheet) -> bytes:
+def _protection_record(sheet: Any) -> bytes:
     protection = sheet.protection
     if not protection.sheet:
         return b""
@@ -470,7 +471,7 @@ def _protection_record(sheet) -> bytes:
     return sheet_protection_record(value, flags)
 
 
-def _filter_block(sheet) -> bytes:
+def _filter_block(sheet: Any) -> bytes:
     auto_filter = sheet.auto_filter
     if not auto_filter.ref:
         return b""
@@ -490,7 +491,7 @@ def _filter_block(sheet) -> bytes:
     return b"".join(output)
 
 
-def _page_setup_record(sheet, original: bytes | None) -> bytes:
+def _page_setup_record(sheet: Any, original: bytes | None) -> bytes:
     setup = sheet.page_setup
     payload = bytearray(original if original and len(original) >= 34 else _DEFAULT_PAGE_SETUP)
     paper, scale, h_dpi, v_dpi, copies, first_page, fit_width, fit_height, flags = struct.unpack_from("<8IH", payload)
@@ -505,7 +506,7 @@ def _page_setup_record(sheet, original: bytes | None) -> bytes:
     if setup.firstPageNumber is not None:
         first_page = setup.firstPageNumber
 
-    def bit(mask, value):
+    def bit(mask: Any, value: Any) -> Any:
         nonlocal flags
         if value is not None:
             flags = flags | mask if value else flags & ~mask
@@ -528,7 +529,7 @@ def _page_setup_record(sheet, original: bytes | None) -> bytes:
     return build_record(BRT_PAGE_SETUP, bytes(payload))
 
 
-def _header_footer_block(sheet) -> bytes:
+def _header_footer_block(sheet: Any) -> bytes:
     footer = sheet.HeaderFooter
     codes = [
         getattr(footer, name).code()
@@ -545,13 +546,13 @@ def _header_footer_block(sheet) -> bytes:
     return header_footer_block(flags, codes)
 
 
-def _breaks_block(begin, end, container) -> bytes:
+def _breaks_block(begin: Any, end: Any, container: Any) -> bytes:
     return breaks_block(
         begin, end, [(item.id, item.min or 0, item.max or 0, bool(item.man), item.pt or 0) for item in container.brk]
     )
 
 
-def _print_block(sheet, data: bytes) -> bytes:
+def _print_block(sheet: Any, data: bytes) -> bytes:
     options = sheet.print_options
     original = _find(data, BRT_PRINT_OPTIONS)
     flags = struct.unpack_from("<H", original)[0] if original and len(original) >= 2 else 0x10
@@ -612,7 +613,7 @@ def _replace_filter(data: bytes, block: bytes) -> bytes:
 # --- rows ----------------------------------------------------------------------
 
 
-def _row_payload(row: int, original: bytes | None, dim, default_height: int) -> bytes:
+def _row_payload(row: int, original: bytes | None, dim: Any, default_height: int) -> bytes:
     if original is None:
         payload = bytearray(struct.pack("<IIH", row - 1, 0, default_height) + bytes(3) + struct.pack("<III", 1, 0, 0))
     else:
@@ -643,7 +644,7 @@ def _row_payload(row: int, original: bytes | None, dim, default_height: int) -> 
     return build_record(ROW_HEADER, bytes(payload))
 
 
-def _patch_xlsb_rows(data: bytes, sheet, saved_rows) -> bytes:
+def _patch_xlsb_rows(data: bytes, sheet: Any, saved_rows: Any) -> bytes:
     wanted = {row: values for row, *values in _rows_state(sheet)}
     touched = set(wanted) | {row for row, *_ in (saved_rows or ())}
     if not touched:
@@ -715,7 +716,7 @@ def _drop_legacy_column_wrappers(data: bytes) -> bytes:
     return b"".join(output) if changed else data
 
 
-def patch_layout(data: bytes, sheet, groups) -> bytes:
+def patch_layout(data: bytes, sheet: Any, groups: Any) -> bytes:
     """Re-encode the ``groups`` (names from ``GROUPS``) of ``sheet`` into ``data``."""
     saved = getattr(sheet, "_saved_layout", None) or {}
     if {"views", "columns", "format"} & set(groups):
@@ -772,7 +773,7 @@ _BUILTIN = 0x20
 _HIDDEN = 0x01
 
 
-def builtin_names(context) -> dict[str, dict[str, str]]:
+def builtin_names(context: Any) -> dict[str, dict[str, str]]:
     """``{sheet title: {"_xlnm.Print_Area": formula, ...}}`` from a FormulaContext."""
 
     result: dict[str, dict[str, str]] = {}
@@ -789,7 +790,7 @@ def builtin_names(context) -> dict[str, dict[str, str]]:
     return result
 
 
-def set_builtin_name(context, name: str, formula: str | None, scope: str, *, hidden=False) -> None:
+def set_builtin_name(context: Any, name: str, formula: str | None, scope: str, *, hidden: bool = False) -> None:
     """Set (or with ``formula=None`` remove) a built-in sheet name such as Print_Area."""
 
     for index, entry in enumerate(context.names):
@@ -805,7 +806,7 @@ def set_builtin_name(context, name: str, formula: str | None, scope: str, *, hid
         context.names.append(_Name(name, scope, flags, definition=DefinedName(name, formula, scope)))
 
 
-def _drop(context, index: int) -> None:
+def _drop(context: Any, index: int) -> None:
     # Formulas refer to names by position: the slot stays, renamed and hidden.
 
     entry = context.names[index]
@@ -819,7 +820,7 @@ def _drop(context, index: int) -> None:
     )
 
 
-def save_builtin_names(updater, sheet, groups) -> None:
+def save_builtin_names(updater: Any, sheet: Any, groups: Any) -> None:
     """Write the print area, print titles and filter range of ``sheet``."""
 
     if not {"print_names", "filter"} & set(groups):

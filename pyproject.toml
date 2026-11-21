@@ -208,16 +208,8 @@ no_implicit_reexport = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 
-# Not yet fully annotated: the bodies are still checked (check_untyped_defs), but
-# a def may lack parameter or return types. Every other module, and every new one,
-# must annotate each def. Remove a module from this list once it passes.
-[[tool.mypy.overrides]]
-module = [
-    "xlspy.workbook._reader",
-    "xlspy.workbook._xlsb_layout",
-]
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
+# Every module is fully annotated now (the old gradual-typing override list is
+# gone); keep it that way for new modules too.
 
 # Architectural contracts, run with `lint-imports` (see .github/workflows/ci.yml).
 # The core model and the facade are the stable inner layers; format I/O and
