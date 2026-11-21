@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import xml.sax.saxutils as saxutils
+from typing import Any
 from .styles import (
     CF_BLANK_RULES,
     CF_TEXT_RULES,
@@ -38,7 +39,7 @@ from .styles import _coerce_color
 class _XlsxStylesMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
-    def _intern_font(self, font_key) -> int:
+    def _intern_font(self, font_key: Any) -> int:
         if _font_is_empty(font_key):
             return 0
         existing = self._font_registry.get(font_key)
@@ -48,7 +49,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         self._font_registry[font_key] = font_id
         return font_id
 
-    def _intern_fill(self, fill_key) -> int:
+    def _intern_fill(self, fill_key: Any) -> int:
         if fill_key is None:
             return 0
         existing = self._fill_registry.get(fill_key)
@@ -58,7 +59,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         self._fill_registry[fill_key] = fill_id
         return fill_id
 
-    def _intern_border(self, border_key) -> int:
+    def _intern_border(self, border_key: Any) -> int:
         if border_key is None:
             return 0
         existing = self._border_registry.get(border_key)
@@ -153,20 +154,20 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         return xf_index
 
     @staticmethod
-    def _color_attrs(color_key) -> str:
+    def _color_attrs(color_key: Any) -> str:
         return color_attrs(color_key)
 
-    def _color_xml(self, color_key) -> str:
+    def _color_xml(self, color_key: Any) -> str:
         if color_key is None:
             return '<color theme="1"/>'
         return f"<color {self._color_attrs(color_key)}/>"
 
-    def _font_xml(self, font_key, *, for_dxf: bool = False) -> str:
+    def _font_xml(self, font_key: Any, *, for_dxf: bool = False) -> str:
         parts = self._font_face_parts(font_key, for_dxf=for_dxf)
         parts.extend(self._font_emphasis_parts(font_key))
         return f"<font>{''.join(parts)}</font>"
 
-    def _font_face_parts(self, font_key, *, for_dxf: bool) -> list[str]:
+    def _font_face_parts(self, font_key: Any, *, for_dxf: bool) -> list[str]:
         """Size, color, name, family and scheme; a dxf names only what it sets."""
         name = font_key.name
         parts = []
@@ -204,7 +205,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         return parts
 
     @staticmethod
-    def _font_emphasis_parts(font_key) -> list[str]:
+    def _font_emphasis_parts(font_key: Any) -> list[str]:
         """Bold, italic, underline, strike and the remaining font flags."""
         parts = []
         if font_key.bold:
@@ -230,7 +231,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             parts.append("<extend/>")
         return parts
 
-    def _fill_xml(self, fill_key, *, for_dxf: bool = False) -> str:
+    def _fill_xml(self, fill_key: Any, *, for_dxf: bool = False) -> str:
         if fill_key[0] == "gradient":
             (
                 _,
@@ -275,7 +276,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             bg_xml = f"<bgColor {self._color_attrs(bg_key)}/>" if bg_key is not None else ""
         return f'<fill><patternFill patternType="{pattern_type}">{fg_xml}{bg_xml}</patternFill></fill>'
 
-    def _border_xml(self, border_key) -> str:
+    def _border_xml(self, border_key: Any) -> str:
         return border_xml(border_key)
 
     def _create_styles_xml(self) -> str:
@@ -423,14 +424,14 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         return f'<dxfs count="{len(dxf_parts)}">{"".join(dxf_parts)}</dxfs>'
 
     @staticmethod
-    def _format_object_xml(cfvo) -> str:
+    def _format_object_xml(cfvo: Any) -> str:
         attrs = f'type="{cfvo.type}"'
         if cfvo.value is not None:
             value = saxutils.escape(str(cfvo.value), {'"': "&quot;"})
             attrs += f' val="{value}"'
         return f"<cfvo {attrs}/>"
 
-    def _extra_cf_rule_parts(self, rule) -> tuple[str, str | None]:
+    def _extra_cf_rule_parts(self, rule: Any) -> tuple[str, str | None]:
         """``(cfRule attributes, formula or None)`` for the rules beyond the original five."""
         first_col, first_row, _, _ = parse_cell_range(rule.sqref.split()[0])
         corner = f"{self._letters[first_col]}{first_row + 1}"
@@ -465,7 +466,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         kind, template = CF_BLANK_RULES[rule.kind]
         return f'type="{kind}"', template.format(c=corner)
 
-    def _cf_rule_xml(self, rule, table_ranges: set[tuple]) -> str:
+    def _cf_rule_xml(self, rule: Any, table_ranges: set[tuple[Any, ...]]) -> str:
         priority = self._claim_cf_priority(rule)
         stop = ""
         if getattr(rule, "stop_if_true", None):
@@ -537,7 +538,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         )
 
     @staticmethod
-    def _dxf_color_argb(color) -> str:
+    def _dxf_color_argb(color: Any) -> str:
         resolved = _coerce_color(color, "color")
         if resolved is None or resolved.rgb is None:
             raise ValueError("CF colorScale/dataBar colors must be RGB colors")

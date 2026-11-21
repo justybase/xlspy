@@ -24,6 +24,7 @@ def cached_cell(kind: int, payload: bytes, reader: Any) -> tuple[Any, bytes | No
         raise ValueError("truncated XLSB cell header")
     style = struct.unpack_from("<I", payload, 4)[0] & 0xFFFFFF
     formula_offset = None
+    value: Any
     if kind == 1:
         value = None
     elif kind == 2:

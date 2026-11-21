@@ -1,6 +1,7 @@
 from __future__ import annotations
 import struct
 from enum import IntEnum
+from typing import Any
 
 from .exceptions import InvalidFileError
 
@@ -48,7 +49,7 @@ class BiffReader:
     _formulaError = 0x0B
     _endSheetData = 0x92
 
-    def __init__(self, stream):
+    def __init__(self, stream: Any) -> None:
         self._stream = stream
         self._buffer = bytearray(128)
 
@@ -76,7 +77,7 @@ class BiffReader:
         # Id of the record read_worksheet read last.
         self.record_id = -1
 
-    def _try_read_variable_value(self):
+    def _try_read_variable_value(self) -> Any:
         """``(True, value)``, or ``(False, 0)`` when the data ends before its first byte."""
         value = 0
         b = self._stream.read(1)
@@ -115,7 +116,7 @@ class BiffReader:
 
         return True, value
 
-    def _read_record(self):
+    def _read_record(self) -> Any:
         """The next record as ``(True, id, body)``, or ``(False, 0, None)`` at the end.
 
         Only the end of the data between records is a clean end; a header or body
@@ -138,25 +139,25 @@ class BiffReader:
         return True, record_id, bytes(buf)
 
     @staticmethod
-    def _get_dword(buffer, offset):
+    def _get_dword(buffer: bytes, offset: int) -> int:
         return (buffer[offset + 3] << 24) + (buffer[offset + 2] << 16) + (buffer[offset + 1] << 8) + buffer[offset]
 
     @staticmethod
-    def _get_int32(buffer, offset):
+    def _get_int32(buffer: bytes, offset: int) -> int:
         result = (buffer[offset + 3] << 24) + (buffer[offset + 2] << 16) + (buffer[offset + 1] << 8) + buffer[offset]
         return result - 0x100000000 if result >= 0x80000000 else result
 
     @staticmethod
-    def _get_word(buffer, offset):
+    def _get_word(buffer: bytes, offset: int) -> int:
         return (buffer[offset + 1] << 8) + buffer[offset]
 
     @staticmethod
-    def _get_string(buffer, offset, length):
+    def _get_string(buffer: bytes, offset: int, length: int) -> str:
         end = offset + 2 * length
         return buffer[offset:end].decode("utf-16-le", errors="surrogatepass")
 
     @staticmethod
-    def _get_nullable_string(buffer, offset):
+    def _get_nullable_string(buffer: bytes, offset: int) -> tuple[str | None, int]:
         length = BiffReader._get_dword(buffer, offset)
         offset += 4
         if length == 0xFFFFFFFF:
@@ -165,7 +166,7 @@ class BiffReader:
         return buffer[offset:end].decode("utf-16-le", errors="surrogatepass"), end
 
     @staticmethod
-    def _get_rk_number(buffer, offset):
+    def _get_rk_number(buffer: bytes, offset: int) -> float:
         flags = buffer[offset]
         val = struct.unpack_from("<I", buffer, offset)[0]
         if (flags & 0x02) != 0:
@@ -176,13 +177,13 @@ class BiffReader:
             result = struct.unpack("<d", packed)[0]
         if (flags & 0x01) != 0:
             result /= 100
-        return result
+        return float(result)
 
     @staticmethod
-    def _get_double(buffer, offset):
-        return struct.unpack_from("<d", buffer, offset)[0]
+    def _get_double(buffer: bytes, offset: int) -> float:
+        return float(struct.unpack_from("<d", buffer, offset)[0])
 
-    def read_styles(self):
+    def read_styles(self) -> Any:
         ok, record_id, buffer = self._read_record()
         if not ok:
             return False
@@ -211,7 +212,7 @@ class BiffReader:
 
         return True
 
-    def read_shared_strings(self):
+    def read_shared_strings(self) -> Any:
         ok, record_id, buffer = self._read_record()
         if not ok:
             return False
@@ -230,7 +231,7 @@ class BiffReader:
 
         return True
 
-    def read_worksheet(self):
+    def read_worksheet(self) -> Any:
         ok, record_id, buffer = self._read_record()
         if not ok:
             return False
@@ -307,5 +308,5 @@ class BiffReader:
 
         return True
 
-    def close(self):
+    def close(self) -> None:
         self._stream.close()

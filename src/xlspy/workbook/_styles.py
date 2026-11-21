@@ -238,7 +238,7 @@ def _read_protection(node: ET.Element | None) -> Protection | None:
     )
 
 
-def _color_from_key(key) -> Color | None:
+def _color_from_key(key: Any) -> Color | None:
     if key is None:
         return None
     kind = key[0]
@@ -252,14 +252,14 @@ def _color_from_key(key) -> Color | None:
     return Color(theme=theme, tint=tint)
 
 
-def _side_from_key(key) -> Side | None:
+def _side_from_key(key: Any) -> Side | None:
     style, color = key
     if style is None and color is None:
         return None
     return Side(style=style, color=_color_from_key(color))
 
 
-def _border_from_key(key) -> Border | None:
+def _border_from_key(key: Any) -> Border | None:
     if key is None:
         return None
     return Border(
@@ -278,7 +278,7 @@ def _border_from_key(key) -> Border | None:
     )
 
 
-def _font_from_key(key) -> Font | None:
+def _font_from_key(key: Any) -> Font | None:
     if key is None:
         return None
     return Font(
@@ -300,7 +300,7 @@ def _font_from_key(key) -> Font | None:
     )
 
 
-def _fill_from_key(key):
+def _fill_from_key(key: Any) -> Any:
     if key is None:
         return None
     if key[0] == "gradient":
@@ -323,7 +323,7 @@ def _fill_from_key(key):
     )
 
 
-def _alignment_from_key(key) -> Alignment | None:
+def _alignment_from_key(key: Any) -> Alignment | None:
     if key is None or not any(value is not None for value in key):
         return None
     return Alignment(
@@ -339,7 +339,7 @@ def _alignment_from_key(key) -> Alignment | None:
     )
 
 
-def _protection_from_key(key) -> Protection | None:
+def _protection_from_key(key: Any) -> Protection | None:
     if key is None or (key[0] is None and key[1] is None):
         return None
     return Protection(locked=key[0], hidden=key[1])
@@ -543,8 +543,8 @@ class XlsxStyleTable:
                 self._xf_xml.append(ET.tostring(node, encoding="unicode"))
         self._rebuild_indexes()
 
-    def _read_style_xf(self, node) -> Style:
-        def component(values, index):
+    def _read_style_xf(self, node: Any) -> Style:
+        def component(values: Any, index: int | None) -> Any:
             index = index or 0
             return values[index] if 0 <= index < len(values) else None
 
@@ -558,7 +558,7 @@ class XlsxStyleTable:
             protection=_read_protection(node.find(qname("protection"))),
         )
 
-    def _container(self, root, tag: str, default: str):
+    def _container(self, root: Any, tag: str, default: str) -> Any:
         node = next((child for child in root if _local(child.tag) == tag), None)
         if node is None:
             self._replace_container(root, tag, [default])
@@ -692,7 +692,7 @@ class XlsxStyleTable:
             )
 
     # -- internals ----------------------------------------------------
-    def _intern_font(self, key) -> int:
+    def _intern_font(self, key: Any) -> int:
         if key is None:
             return 0
         if key in self._font_index:
@@ -704,7 +704,7 @@ class XlsxStyleTable:
         self._font_index[key] = index
         return index
 
-    def _intern_fill(self, key) -> int:
+    def _intern_fill(self, key: Any) -> int:
         if key is None:
             return 0
         if key in self._fill_index:
@@ -716,7 +716,7 @@ class XlsxStyleTable:
         self._fill_index[key] = index
         return index
 
-    def _intern_border(self, key) -> int:
+    def _intern_border(self, key: Any) -> int:
         if key is None:
             return 0
         if key in self._border_index:
@@ -803,15 +803,15 @@ class XlsxStyleTable:
 
     # -- XML serialisation -------------------------------------------
     @staticmethod
-    def _color_attrs(key) -> str:
+    def _color_attrs(key: Any) -> str:
         return color_attrs(key)
 
-    def _color_xml(self, key) -> str:
+    def _color_xml(self, key: Any) -> str:
         if key is None:
             return '<color theme="1"/>'
         return f"<color {self._color_attrs(key)}/>"
 
-    def _font_xml_for(self, key) -> str:
+    def _font_xml_for(self, key: Any) -> str:
         name = key.name
         size = key.size
         parts = []
@@ -853,7 +853,7 @@ class XlsxStyleTable:
             parts.append("<extend/>")
         return f"<font>{''.join(parts)}</font>"
 
-    def _fill_xml_for(self, key) -> str:
+    def _fill_xml_for(self, key: Any) -> str:
         if key[0] == "gradient":
             _, fill_type, degree, left, right, top, bottom, stops = key
             attrs = [f'type="{fill_type}"']
@@ -877,17 +877,17 @@ class XlsxStyleTable:
             bg_xml = f"<bgColor {self._color_attrs(bg_key)}/>" if bg_key is not None else ""
         return f'<fill><patternFill patternType="{pattern_type}">{fg_xml}{bg_xml}</patternFill></fill>'
 
-    def _border_xml_for(self, key) -> str:
+    def _border_xml_for(self, key: Any) -> str:
         return border_xml(key)
 
     def _xf_xml_for(
         self,
-        font_id,
-        fill_id,
-        border_id,
-        numfmt_id,
-        align_key,
-        prot_key,
+        font_id: int,
+        fill_id: int,
+        border_id: int,
+        numfmt_id: int,
+        align_key: Any,
+        prot_key: Any,
         *,
         quote_prefix: bool = False,
         pivot_button: bool = False,
