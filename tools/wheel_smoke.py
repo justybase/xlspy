@@ -15,9 +15,9 @@ from xlspy import ExcelReader, XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWriter,
 from xlspy._accel import ACCEL_BACKEND, HAVE_NATIVE
 
 
-def _read_all(path):
+def _read_all(path, name="Sheet1"):
     with ExcelReader(str(path)) as reader:
-        return [list(row) for row in reader.read_all("Sheet1")]
+        return [list(row) for row in reader.read_all(name)]
 
 
 def _roundtrip_and_update(directory, suffix, writer_cls, updater_cls):
@@ -42,14 +42,34 @@ def _roundtrip_and_update(directory, suffix, writer_cls, updater_cls):
     expected = [["name", "value"], ["beta", 7]]
     assert updated == expected, f"{suffix}: updater mismatch: {updated!r}"
 
+    # Sheet management: add, rename and remove through the updater. This runs
+    # against every wheel the release publishes, so the package-level edits are
+    # exercised on each platform and architecture, not only on the CI host.
+    updater = updater_cls(path)
+    try:
+        updater.add_sheet("Scratch", 1)
+        updater.rename_sheet("Sheet1", "Renamed")
+        updater.remove_sheet("Scratch")
+        updater.save()
+    finally:
+        updater.close()
+    check = updater_cls(path)
+    try:
+        names = check.get_sheet_names()
+        assert names == ["Renamed"], f"{suffix}: sheet edits mismatch: {names!r}"
+    finally:
+        check.close()
+    updated = _read_all(path, "Renamed")
+    assert updated == expected, f"{suffix}: renamed sheet mismatch: {updated!r}"
+
     # The workbook model: the XLSB load builds its cells natively (model.rs).
     workbook = load_workbook(path)
-    sheet = workbook["Sheet1"]
+    sheet = workbook["Renamed"]
     assert sheet["A2"].value == "beta" and sheet["B2"].value == 7, f"{suffix}: model load mismatch"
     sheet["C2"] = 3.5
     saved = directory / f"model{suffix}"
     workbook.save(saved)
-    reloaded = _read_all(saved)
+    reloaded = _read_all(saved, "Renamed")
     assert reloaded[1] == ["beta", 7, 3.5], f"{suffix}: model save mismatch: {reloaded!r}"
 
 

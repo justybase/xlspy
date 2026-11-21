@@ -6,6 +6,10 @@ on:
     - cron: "17 2 * * *"
   workflow_dispatch:
 
+# Read-only: the jobs only need the checkout and the caches.
+permissions:
+  contents: read
+
 concurrency:
   group: nightly-${{ github.ref }}
   cancel-in-progress: true
@@ -48,13 +52,15 @@ jobs:
 
       # The default run keeps each seed small. Nightly raises the budget and
       # rotates the seed, so a rare edit sequence is not hidden behind the
-      # deterministic PR run.
-      - name: Long randomized edits and native fuzz
+      # deterministic PR run. The structural fuzz and the cross-format
+      # differential ride along: both are cheap and complement the edit fuzz.
+      - name: Long randomized edits, structural fuzz and native fuzz
         env:
           XLSPY_FUZZ_ITERATIONS: "2000"
           XLSPY_FUZZ_SEED: ${{ matrix.seed }}
         run: |
-          python -m pytest tests/test_edit_sequences_fuzz.py tests/test_native_fuzz.py -q
+          python -m pytest tests/test_edit_sequences_fuzz.py tests/test_native_fuzz.py \
+            tests/test_sheet_structural_fuzz.py tests/test_updater_differential.py -q
 
   latest-deps:
     name: Latest openpyxl/pandas/polars (non-blocking)

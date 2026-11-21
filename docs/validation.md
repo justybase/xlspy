@@ -175,6 +175,24 @@ coverage is **92%** branch coverage over 27,664 statements (the floor is 90%).
 `ruff` and `mypy` (146 source files) are clean, `cargo test` passes 68, and the
 LibreOffice smoke suite passes 31.
 
+## Release and nightly hardening (2026-11-21)
+
+Windows 11, Python 3.14.2. The nightly stress job now runs
+`tests/test_sheet_structural_fuzz.py` and `tests/test_updater_differential.py`
+alongside the long edit and native fuzz for seeds 7, 101 and 2024, and the
+workflow declares read-only `contents` permissions. The release test job runs
+the suite with `XLSPY_FUZZ_ITERATIONS=250`, so a tag gets a wider fuzz sample
+than a pull request without stretching the job.
+
+`tools/wheel_smoke.py` now adds a sheet, renames another and removes a third
+through the updater in both formats, then reads the data back. The smoke test
+runs on every wheel cibuildwheel produces (Linux x86-64 and aarch64, Windows
+x64 and ARM64, macOS arm64 and x86-64) and in the sdist job. The built
+`xlspy-0.15.0-cp314-cp314-win_amd64.whl` installed into a clean Python 3.14
+environment passed it. The opt-in Excel COM check gained updater `add_sheet`,
+`rename_sheet` and `remove_sheet` cases for both formats and passes locally
+with Excel 16.0: the workbook opens with the expected tab order and values.
+
 ## Compatibility refresh (2026-11-17)
 
 Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native

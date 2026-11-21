@@ -8,6 +8,8 @@ import pytest
 
 from xlspy import XlsbUpdater, XlsbWriter, XlsxUpdater, XlsxWriter
 
+pytestmark = pytest.mark.com
+
 
 @pytest.mark.com
 def test_updated_files_open_in_excel_com(tmp_path):
@@ -50,3 +52,38 @@ def test_updated_files_open_in_excel_com(tmp_path):
         check=False,
     )
     assert completed.returncode == 0, completed.stdout + "\n" + completed.stderr
+
+
+@pytest.mark.parametrize(
+    "suffix, writer_class, updater_class",
+    [
+        ("xlsx", XlsxWriter, XlsxUpdater),
+        ("xlsb", XlsbWriter, XlsbUpdater),
+    ],
+)
+def test_sheet_structure_updates_open_in_excel_com(
+    tmp_path, open_workbook, suffix, writer_class, updater_class
+):
+    path = tmp_path / f"structure.{suffix}"
+    with writer_class(path) as writer:
+        writer.add_sheet("Data")
+        writer.write_sheet([["value", 1]])
+        writer.add_sheet("Notes")
+        writer.write_sheet([["note"]])
+        writer.add_sheet("Temp")
+        writer.write_sheet([["temp"]])
+
+    updater = updater_class(path)
+    try:
+        updater.add_sheet("Added", 1)
+        updater.rename_sheet("Notes", "Renamed")
+        updater.remove_sheet("Temp")
+        updater.save()
+    finally:
+        updater.close()
+
+    book = open_workbook(path)
+    assert [sheet.Name for sheet in book.Worksheets] == ["Data", "Added", "Renamed"]
+    assert book.Worksheets("Data").Range("A1").Value == "value"
+    assert book.Worksheets("Renamed").Range("A1").Value == "note"
+    assert book.Worksheets("Added").Range("A1").Value in (None, "")
