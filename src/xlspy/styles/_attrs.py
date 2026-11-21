@@ -130,7 +130,7 @@ def _with_aliases(cls: type) -> type:
     ``Font(size=12, bold=True)``. Passing both spellings raises TypeError, as
     a repeated argument would.
     """
-    aliases: dict[str, str] = getattr(cls, "_ALIASES")
+    aliases: dict[str, str] = cls._ALIASES  # type: ignore[attr-defined]
     original = cls.__dict__["__init__"]
 
     @wraps(original)

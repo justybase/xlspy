@@ -141,14 +141,32 @@ line-length = 120
 # Correctness checks: syntax errors, undefined names, unused imports and
 # variables, plus rules that report nothing (or were fixed to report nothing).
 # UP keeps the syntax current for Python 3.11 (builtin generics, X | None).
-# Not enabled yet: B905 (zip strict=, changes behavior for unequal lengths),
-# B007 (unused loop variables; some are read after the loop), E/S/ARG/DTZ.
+# B/SIM and C901 are the quality ratchet: new code must keep them clean. The
+# known debt is listed in per-file-ignores or ignored for an explicit reason.
 select = [
     "E9", "F63", "F7", "F82", "F401", "F811", "F841",
     "PLE", "PIE", "TRY203", "C4", "RET", "B010", "B023", "UP", "I002",
+    "B", "SIM", "C901",
 ]
 # printf-style formatting is fine where it is used.
-ignore = ["UP031"]
+ignore = [
+    "UP031",
+    # Deferred: zip(strict=) changes behavior for unequal lengths; some loop
+    # variables are read after the loop.
+    "B905", "B007",
+    # Explicit try/except/pass in cleanup code is clearer than contextlib.suppress.
+    "SIM105",
+    # if/else blocks read better than nested ternaries in this code base.
+    "SIM108", "SIM102", "SIM114",
+    # SpooledTemporaryFile and nested with blocks stay explicit for streaming.
+    "SIM115", "SIM117",
+    # `if 0 < len(...)` is used deliberately in the reference parser.
+    "SIM300",
+]
+[tool.ruff.lint.mccabe]
+# The ratchet: functions above this are listed in per-file-ignores below and
+# should lose their entry as they are split.
+max-complexity = 20
 
 [tool.ruff.lint.isort]
 # Annotations are never evaluated at runtime in the package (I002 adds the import).
@@ -158,7 +176,34 @@ required-imports = ["from __future__ import annotations"]
 "src/xlspy/__init__.py" = ["F401"]
 "{tests,tools,benchmarks,examples}/**" = ["I002"]
 # The lambdas read Excel COM properties and are called at once, inside the loop.
-"tests/test_excel_com_xlsb_parity.py" = ["B023"]
+"tests/test_excel_com_xlsb_parity.py" = ["B023", "B018"]
+# Blind exception assertions and COM attribute probes are deliberate here.
+"tests/test_dataframe.py" = ["B017"]
+"tests/test_excel_com_xlsb_loaded.py" = ["B017", "B018"]
+"tests/test_reader.py" = ["B011", "B017"]
+# Windows environment variable names are case-insensitive; the spelling is the point.
+"tests/test_libreoffice_xlsb.py" = ["SIM112"]
+# Known complexity debt: remove an entry when the listed functions are split.
+"src/xlspy/_xlsb_edit.py" = ["C901"]
+"src/xlspy/_xlsb_formulas.py" = ["C901"]
+"src/xlspy/_xlsb_read.py" = ["C901"]
+"src/xlspy/_xlsb_writer_bin.py" = ["C901"]
+"src/xlspy/_xlsx_edit.py" = ["C901"]
+"src/xlspy/_xlsx_writer_sheet.py" = ["C901"]
+"src/xlspy/_xlsx_writer_sheet_xml.py" = ["C901"]
+"src/xlspy/_xlsx_writer_styles.py" = ["C901"]
+"src/xlspy/biff_reader.py" = ["C901"]
+"src/xlspy/formula/tokenizer.py" = ["C901"]
+"src/xlspy/formulas.py" = ["C901"]
+"src/xlspy/pivots.py" = ["C901"]
+"src/xlspy/workbook/_fast_sheet.py" = ["C901"]
+"src/xlspy/workbook/_loaded.py" = ["C901"]
+"src/xlspy/workbook/_reader.py" = ["C901"]
+"src/xlspy/workbook/_styles.py" = ["C901"]
+"src/xlspy/workbook/_xlsb_reader.py" = ["C901"]
+"src/xlspy/workbook/_xlsb_tables.py" = ["C901"]
+"tests/test_edit_sequences_fuzz.py" = ["C901"]
+"tools/bench_styles.py" = ["C901"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -240,3 +285,59 @@ module = [
 ]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+# Architectural contracts, run with `lint-imports` (see .github/workflows/ci.yml).
+# The core model and the facade are the stable inner layers; format I/O and
+# updaters are allowed to depend on them, never the other way around.
+[tool.importlinter]
+root_packages = ["xlspy"]
+
+[[tool.importlinter.contracts]]
+name = "The core workbook model does not directly import the I/O facades"
+type = "forbidden"
+# The save path is reached lazily from Workbook.save(); the model itself must
+# not import a reader, writer or updater at module level.
+allow_indirect_imports = true
+source_modules = [
+    "xlspy.workbook._cell",
+    "xlspy.workbook._worksheet",
+    "xlspy.workbook._workbook",
+    "xlspy.workbook._model",
+    "xlspy.workbook._props",
+    "xlspy.workbook._properties",
+    "xlspy.workbook._tables",
+    "xlspy.workbook._chartsheets",
+    "xlspy.workbook._drawings",
+]
+forbidden_modules = [
+    "xlspy.reader",
+    "xlspy.writer",
+    "xlspy.xlsx_writer",
+    "xlspy.xlsx_updater",
+    "xlspy.xlsb_updater",
+]
+
+[[tool.importlinter.contracts]]
+name = "Internal modules do not import the public facade"
+type = "forbidden"
+source_modules = ["xlspy.*", "xlspy.workbook.*"]
+forbidden_modules = ["xlspy"]
+
+[[tool.importlinter.contracts]]
+name = "Readers, writers and updaters do not import the workbook model"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = [
+    "xlspy.reader",
+    "xlspy.writer",
+    "xlspy.xlsx_writer",
+    "xlspy.xlsx_updater",
+    "xlspy.xlsb_updater",
+    "xlspy._xlsx_edit",
+    "xlspy._xlsb_edit",
+    "xlspy._xlsx_read",
+    "xlspy._xlsb_read",
+    "xlspy._xlsx_sheets",
+    "xlspy._xlsb_sheets",
+]
+forbidden_modules = ["xlspy.workbook"]

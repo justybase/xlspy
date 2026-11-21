@@ -593,7 +593,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
         if isinstance(value, (_datetime.datetime, _datetime.date)):
             serial = self._date_to_serial(value)
             return f"{cell_prefix}><{prefix}v>{_number_text(serial)}</{prefix}v></{prefix}c>"
-        if isinstance(value, numbers.Real) or isinstance(value, Decimal):
+        if isinstance(value, (numbers.Real, Decimal)):
             numeric_value = float(value)
             if not math.isfinite(numeric_value):
                 raise ValueError("numeric cell values must be finite")

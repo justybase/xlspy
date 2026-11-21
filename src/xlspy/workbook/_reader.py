@@ -1563,10 +1563,10 @@ class ReadOnlyWorksheet(Worksheet):
         """Not available in read-only mode: raises AttributeError."""
         raise AttributeError("iter_cols is not available in read-only mode")
 
-    def cell(
+    def cell(  # type: ignore[override]  # read-only cells
         self,
         row: int,
-        column: int | str,  # type: ignore[override]  # read-only cells
+        column: int | str,
         value: Any = None,
     ) -> ReadOnlyCell | EmptyCell:
         """Return the read-only cell at ``row`` and ``column``, or an empty cell.

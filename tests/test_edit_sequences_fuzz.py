@@ -545,7 +545,7 @@ def _rels_of(data, part):
     return {r.get("Id"): r for r in ET.fromstring(data[rels])} if rels in data else {}
 
 
-SHEET_ORDER = (
+SHEET_ORDER = (  # noqa: SIM905 - a readable XML element-order table, not a list to edit
     "sheetPr dimension sheetViews sheetFormatPr cols sheetData sheetCalcPr sheetProtection protectedRanges scenarios "
     "autoFilter sortState dataConsolidate customSheetViews mergeCells phoneticPr conditionalFormatting dataValidations "
     "hyperlinks printOptions pageMargins pageSetup headerFooter rowBreaks colBreaks customProperties cellWatches "

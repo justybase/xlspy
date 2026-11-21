@@ -71,11 +71,19 @@ jobs:
       - name: Install linters
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy
+          pip install ruff mypy "import-linter>=2,<3"
+
+      - name: Ruff format
+        run: |
+          ruff format --check src tests tools benchmarks examples
 
       - name: Ruff
         run: |
           ruff check src tests tools benchmarks examples
+
+      - name: Import layers
+        run: |
+          lint-imports
 
       - name: Mypy (oldest and newest stable Python)
         run: |

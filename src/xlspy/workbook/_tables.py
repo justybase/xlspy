@@ -239,7 +239,7 @@ class TableList(list):
 
     def get(self, name: str, default: object = None) -> object:
         """The table called ``name``, or ``default`` when there is none."""
-        return self[name] if name in self else default
+        return self[name] if name in self else default  # noqa: SIM401 - this method is get()
 
     def keys(self) -> list[str]:
         """The table names, in order."""

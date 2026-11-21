@@ -99,7 +99,7 @@ def main(path: str) -> None:
                     parts.append(f"{column[0]}]:[{column[1]}")
                 if not parts:
                     texts.append("Tbl")
-                elif len(parts) == 1 and not (len(column) == 2):
+                elif len(parts) == 1 and len(column) != 2:
                     texts.append(f"Tbl[{parts[0]}]")
                 else:
                     texts.append("Tbl[" + ",".join(f"[{p}]" for p in parts) + "]")

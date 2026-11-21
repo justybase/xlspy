@@ -4,6 +4,11 @@
 repos:
   - repo: local
     hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format
+        language: system
+        types: [python]
       - id: ruff
         name: ruff check
         entry: ruff check
@@ -15,6 +20,11 @@ repos:
         language: system
         types: [python]
         files: ^src/
+        pass_filenames: false
+      - id: import-linter
+        name: import-linter
+        entry: lint-imports
+        language: system
         pass_filenames: false
       - id: cargo-fmt
         name: cargo fmt --check

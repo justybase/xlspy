@@ -63,7 +63,7 @@ def generate_large_data(rows, cols):
             elif col_type == 2:
                 row_data.append(i / (j + 1))
             elif col_type == 3:
-                row_data.append(True if (i + j) % 2 == 0 else False)
+                row_data.append((i + j) % 2 == 0)
             elif col_type == 4:
                 row_data.append(datetime.date(2023, 1, 1) + datetime.timedelta(days=i))
             elif col_type == 5:

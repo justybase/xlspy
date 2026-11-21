@@ -1,0 +1,7 @@
+# Commits that only reformat the code. `git blame` skips them when the reader
+# opts in:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Keep this file in sync when another mechanical formatting commit lands.
+7386ab1f5beace2964192ae5d7ea8599989d3d2d

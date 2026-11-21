@@ -72,11 +72,13 @@ python tools/excel_validation.py
 python tools/excel_validation.py --check
 ```
 
-Lint, types and the native module's stub:
+Lint, format, types, layers and the native module's stub:
 
 ```bash
+ruff format --check src tests tools benchmarks examples
 ruff check src tests tools benchmarks examples
 mypy
+lint-imports                                 # the contracts in pyproject.toml
 python -m mypy.stubtest xlspy._rs_core        # after changing the Rust API or _rs_core.pyi
 ```
 
@@ -126,7 +128,8 @@ zensical build --clean --strict        # or: zensical serve
 - **Errors.** A damaged file raises `InvalidFileError` on every read path, with the
   original error as its `__cause__` (`tests/test_invalid_file_errors.py`).
 - **Layers.** Writers, readers and updaters do not import `xlspy.workbook`; the object
-  model reaches the updaters only through `PackageHandle`. See
+  model reaches the updaters only through `PackageHandle`. The same boundaries are
+  checked by `lint-imports` (`[tool.importlinter]` in `pyproject.toml`). See
   [Architecture](docs/architecture.md).
 - **One meaning per name.** No two modules define the same top-level name
   (`tests/test_no_duplicate_top_level_names.py`).
@@ -150,6 +153,9 @@ python benchmarks/bench_io.py --compare before.json --max-slowdown 1.03
 - One topic per commit. The subject says what changed in a short sentence
   ("Split the Python XLSX and XLSB row readers"); the body says why, and what was
   checked.
+- A purely mechanical formatting commit should be listed in
+  `.git-blame-ignore-revs`; enable it once with
+  `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 - Add user-visible changes to `[Unreleased]` in `CHANGELOG.md`, under Breaking
   changes, Added, Changed, Removed, Fixed, Security or Internal. A breaking change gets a row in the
   migration table.
