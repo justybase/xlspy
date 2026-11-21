@@ -245,6 +245,42 @@ coverage is **92%** branch coverage over 27,873 statements. `ruff check`,
 contracts) are clean; the COM subset rerun locally after the fixture cleanup
 passed **103 tests, 6 skipped** with Excel 16.0.
 
+## Full typing ratchet, formula decomposition and a performance gate (2026-11-21)
+
+Windows 11, Python 3.14.2. The remaining quality debt was worked off in three
+tracks:
+
+- **Typing ratchet (4A).** All 57 modules that still allowed unannotated defs
+  were annotated, from the leaf helpers up through the readers, writers and
+  updaters. The `[[tool.mypy.overrides]]` block is gone; `mypy` now checks all
+  **149 source files** under `disallow_untyped_defs` and
+  `disallow_incomplete_defs`. It passes for the running interpreter and with
+  `--python-version 3.14`. Package and XML boundaries use `Any`; model and
+  helper parameters are annotated with their concrete types.
+- **Formula and parser decomposition (4B).** The XLSB formula compiler and
+  decoder became the `_Compiler` and `_Decoder` classes, the formula tokenizer's
+  `_parse` was split into scanning, bracket, operator and literal helpers, and
+  LET/LAMBDA parameter prefixing moved into `_LambdaPrefixer`. The formula suite
+  passes **265 tests, 1 skipped**. The `C901` exemptions were removed for
+  `_xlsb_formulas.py`, `formula/tokenizer.py` and `formulas.py`.
+- **Performance gate (4C).** `benchmarks/bench_gate.py` writes and reads the same
+  workbook with the native extension and with `XLSPY_ACCEL=python` in one
+  process, with a default `--max-ratio 1.10` and a `--max-seconds 60` ceiling.
+  A `benchmark` CI job runs it on Python 3.13. Locally the native/pure-Python
+  ratios were **0.39x** for `write_xlsb`, **0.03x** for `read_xlsb` and **0.19x**
+  for `read_xlsx`; the gate passed. The fast-sheet reader was also split into
+  row-number, row-attribute, cell-position and cell-value helpers, dropping its
+  `C901` exemption.
+
+Final validation: the full native suite passed **10,345 tests, 6 skipped,
+1 xfailed** in 4:44; the pure-Python pass took **9,239 tests, 1,113 skipped** in
+2:49. Combined coverage is **92%** branch coverage over 28,078 statements (the
+floor is 90%). The opt-in Excel COM suite passed **318 tests, 22 skipped**; the
+printer suite passed **9 tests, 1 skipped**; the LibreOffice smoke suite passed
+**31 tests, 1 skipped**. `ruff format --check`, `ruff check`, `mypy`,
+`mypy --python-version 3.14`, `lint-imports` (4 contracts), `pip check` and the
+strict documentation build are clean, and no Excel process was left behind.
+
 ## Compatibility refresh (2026-11-17)
 
 Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native

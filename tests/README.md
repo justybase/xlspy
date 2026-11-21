@@ -38,8 +38,7 @@ the updater's formulas have their own COM modules
 ## Lint and type checks
 
 CI runs both. mypy checks every module in `src/xlspy` with
-`disallow_untyped_defs`; the modules listed under `[[tool.mypy.overrides]]` in
-`pyproject.toml` may still have unannotated defs (their bodies are checked). A new
+`disallow_untyped_defs`; the gradual-typing override list is gone, so every
 module must be fully annotated:
 
 ```bash
