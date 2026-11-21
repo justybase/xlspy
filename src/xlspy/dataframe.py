@@ -53,6 +53,7 @@ def to_xlsx(
     auto_filter: bool | None = None,
     charts: Any = None,
     comments: Any = None,
+    threaded_comments: Any = None,
     sheet_protection: SheetProtection | None = None,
     **writer_kwargs: Any,
 ) -> _Target:
@@ -105,6 +106,7 @@ def to_xlsx(
             auto_filter=auto_filter,
             charts=charts,
             comments=comments,
+            threaded_comments=threaded_comments,
             sheet_protection=sheet_protection,
         )
     return path

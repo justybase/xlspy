@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Microsoft 365 threaded comments: `ThreadedComment` reads, writes and edits
+  Excel 365 conversations (a first message with its replies) and the classic
+  companion note Excel uses to link them to a cell. `Cell.threaded_comment`,
+  `ExcelReader.get_threaded_comments()`, `XlsxUpdater.get_threaded_comments()`
+  and `set_threaded_comments()`, and a `threaded_comments=` option on
+  `write_sheet()`, `write_dataframe()` and `to_xlsx()` create and edit them;
+  XLSB workbooks are read and preserved but not edited. Comments that link a
+  conversation are hidden from `get_comments()` and `Cell.comment`.
 - openpyxl's style keyword aliases: `Font(sz=, b=, i=, u=, strikethrough=)`,
   `PatternFill("solid", fgColor=, bgColor=)`, `GradientFill(type=)`,
   `Side(border_style=)`, `Border(diagonalUp=, diagonalDown=)`,

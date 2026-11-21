@@ -443,6 +443,7 @@ report.
 | Print settings, print area, titles, breaks, headers | Yes | Yes |
 | Row and column groups (`row_groups`, `column_groups`) | Yes | Yes |
 | Classic cell notes (`Comment`) | Yes | Yes |
+| Microsoft 365 threaded comments (`ThreadedComment`) | Yes (read/write) | Read and preserve |
 | User-defined names, sheet/workbook protection | Yes | Yes |
 | Ignored error checks (`IgnoredError`) | Yes | Yes |
 | Formula text reading (`data_only=False`) | Yes | Yes (supported BIFF12 tokens below) |
@@ -528,7 +529,8 @@ written with `write_sheet` (an empty list is enough).
 ## Comments and template metadata (XLSX/XLSM/XLSB)
 
 Classic Excel notes are available through `Comment`. These are the notes with
-a cell indicator, rather than Microsoft 365 threaded conversations.
+a cell indicator; Microsoft 365 threaded conversations use `ThreadedComment`
+instead.
 
 ```python
 from xlspy import Comment, DefinedName, SheetProtection, WorkbookProtection, XlsxWriter
@@ -544,9 +546,32 @@ with XlsxWriter("review.xlsx") as writer:
     writer.set_workbook_protection(WorkbookProtection(password="review"))
 ```
 
+A threaded conversation is a first message with one level of replies:
+
+```python
+from xlspy import ThreadedComment, XlsxWriter
+
+thread = ThreadedComment("Confirm the amount", "Jan")
+thread.reply("Confirmed", "Ola")
+with XlsxWriter("review.xlsx") as writer:
+    writer.add_sheet("Data")
+    writer.write_sheet(
+        [["Amount"], [120]],
+        threaded_comments={"A2": thread},
+    )
+```
+
+`XlsxWriter` writes the conversation and the classic note Excel uses to link
+it to the cell. Excel hides that companion note, so `Cell.comment` and
+`get_comments()` return only real classic notes. A cell holds either a note or
+a conversation, not both. Threaded comments are XLSX/XLSM only: `XlsbWriter`
+refuses the option, while XLSB readers and the XLSB updater can read and
+preserve existing conversations.
+
 For binary workbooks use `XlsbWriter("review.xlsb")`; the same metadata API
 is available. `comments` is also accepted by `write_dataframe()`, `to_xlsx()`
-and `to_xlsb()`. Addresses
+and `to_xlsb()`; `threaded_comments` by `write_sheet()`, `write_dataframe()`
+and `to_xlsx()`. Addresses
 are worksheet coordinates, including the header row. Notes may be attached to
 empty cells; a note in a merged range must use its top-left cell. Text and
 author are required strings; width and height are positive pixel dimensions.
@@ -578,8 +603,24 @@ with ExcelReader("reviewed.xlsx") as reader:
 available on both reader and updater and guarantees text and author; returned
 dimensions use the defaults (144 × 79 pixels). Untouched note XML/binary records, including
 rich formatting, and unrelated VML controls are preserved during updates.
-Existing threaded conversations are preserved; creating/editing them, or adding
-a classic note to a cell with a threaded comment, is unsupported. Ambiguous
+Classic notes and threaded conversations can sit on different cells of one
+sheet; a cell cannot hold both. Untouched conversations, including their
+companion notes, are preserved.
+
+`get_threaded_comments()` and `set_threaded_comments()` read and edit
+conversations one cell at a time; `None` removes a conversation:
+
+```python
+with XlsxUpdater("review.xlsx") as updater:
+    thread = updater.get_threaded_comments("Data")["A2"]
+    thread.text = "Confirmed"
+    updater.set_threaded_comments("Data", {"A2": thread, "C3": None})
+    updater.save()
+```
+
+Removing the last conversation on a sheet drops the threaded part, its
+people and the companion note/VML parts when no classic notes remain. A
+conversation in a merged range must use its top-left cell. Ambiguous
 or unsupported VML relationships/shapes cause an error before changes are staged.
 Deleting the last note removes unused comment parts and drawing references;
 VML parts containing controls are retained.

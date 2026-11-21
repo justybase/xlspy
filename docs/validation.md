@@ -50,6 +50,23 @@ LibreOffice can convert the output and read basic cells, but its XLSX/XLSB
 support is not Excel. A LibreOffice failure is informative, not release-blocking,
 unless it shows a package that Excel also refuses.
 
+## Threaded comment validation (2026-11-21)
+
+Windows 11, Python 3.14.2, Excel 16.0 (20527.0):
+
+- `tests/test_threaded_comments.py`: **13 passed** — writer parts and the
+  companion note, reader/loaded-model access, `XlsxUpdater` edits and removals,
+  loaded-workbook saves, row moves and sheet copies, deterministic output, and
+  the XLSB read-only rule.
+- `tests/test_excel_com_threaded_comments.py`: **3 passed** with
+  `XLSPY_RUN_EXCEL_COM=1`. Excel reads the author, reply count, reply text and
+  resolved state of a conversation xlspy wrote; xlspy reads and edits a
+  conversation Excel wrote and Excel sees the result; xlspy reads an XLSB
+  conversation Excel wrote.
+- `tests/test_comments_and_editing.py` and `tests/test_updater_format_parity.py`:
+  **85 passed** — classic notes and threaded companions coexist, and the
+  previous preservation rules still hold.
+
 ## Quality-signal refresh (2026-11-20)
 
 Windows 11, Python 3.14.2. Coverage now runs without the broad
@@ -584,10 +601,11 @@ COM tests check print areas through the sheet's `Print_Area` name instead. Cover
 were installed into an isolated, ignored `tmp/coverage-tools` directory and made
 available through `PYTHONPATH`; the library gained no runtime dependencies.
 
-Supported scope: classic XLSX/XLSB notes, XLSX/XLSM/XLSB template updates,
-scalar formula edits, user-defined names and legacy sheet/workbook protection.
-Threaded-comment editing, grouped-formula edits and reading note dimensions are
-not implemented. See the [usage guide](guide/objects.md#comments-and-template-metadata-xlsxxlsmxlsb)
+Supported scope: classic XLSX/XLSB notes, XLSX/XLSM threaded comments,
+XLSX/XLSM/XLSB template updates, scalar formula edits, user-defined names and
+legacy sheet/workbook protection. XLSB threaded comments are read and preserved,
+not edited; grouped-formula edits and reading note dimensions are not
+implemented. See the [usage guide](guide/objects.md#comments-and-template-metadata-xlsxxlsmxlsb)
 for the public APIs and limits.
 
 ## Windows validation (2026-10-19)
