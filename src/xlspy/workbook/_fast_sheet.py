@@ -186,6 +186,80 @@ def _scan_rows(
     return tail
 
 
+def _row_number(attrs: str, next_row: int) -> int:
+    match = _xlsx_read._ROW_NUM.search(attrs)
+    if match:
+        return int(match.group(1))
+    if " r=" in attrs:
+        raise _Fallback
+    return next_row
+
+
+def _row_attributes(attrs: str) -> dict[str, str] | None:
+    if attrs and any(name in attrs for name in _ROW_ATTRIBUTES):
+        found = _xlsx_read._ATTR.findall(attrs)
+        if len(found) != attrs.count("="):
+            raise _Fallback
+        return dict(found)
+    return None
+
+
+def _cell_position(
+    ref: str | None, next_col: int, row_number: int, columns: dict[str, int]
+) -> tuple[int, int]:
+    if not ref:
+        return next_col, row_number
+    letters = ref.rstrip("0123456789")
+    col = columns.get(letters)
+    if col is None:
+        if _xlsx_read._REF.fullmatch(ref) is None:
+            raise _Fallback
+        col = _xlsx_read._column_index(letters)
+        if col >= 16384:
+            raise _Fallback
+        columns[letters] = col
+    digits = ref[len(letters) :]
+    if not (digits.isascii() and digits.isdigit()):
+        raise _Fallback
+    row = int(digits)
+    if not 1 <= row <= 1048576:
+        raise _Fallback
+    return col, row
+
+
+def _cell_value(
+    kind: str,
+    v: str | None,
+    inline: str | None,
+    style_id: int,
+    *,
+    data_1904: bool,
+    shared_strings: Any,
+    strings_len: int,
+    date_kind_of: Callable[[int], str | None],
+    rich_text: bool,
+) -> tuple[str, Any]:
+    if kind not in _TYPED:
+        if not v:
+            return "n", None
+        try:
+            number = float(v)
+        except ValueError:
+            return "n", v
+        date_kind = date_kind_of(style_id)
+        if date_kind is None:
+            return "n", int(number) if number.is_integer() else number
+        return "n", _number_value(number, date_kind, data_1904)
+    if kind == "s":
+        raw = v or ""
+        try:
+            index = int(raw)
+        except ValueError:
+            return "s", raw
+        return "s", shared_strings[index] if 0 <= index < strings_len else raw
+    return _typed_value(kind, v, inline, rich_text)
+
+
 def _load_rows(
     sheet, stream, text, decoder, root_tag, head, style_table, data_only, date_1904, shared_strings, rich_text
 ):
@@ -196,8 +270,6 @@ def _load_rows(
     set_cell = sheet._set_cell_raw
     cell_pattern = _xlsx_read._CELL
     attr_pattern = _xlsx_read._ATTR
-    ref_pattern = _xlsx_read._REF
-    column_index = _xlsx_read._column_index
     prefixed = _xlsx_read._PREFIXED
     state = {"next_row": 1, "max_row": 0, "max_column": 0}
 
@@ -211,19 +283,8 @@ def _load_rows(
             return kind
 
     def fast_row(attrs, body):
-        row_match = _xlsx_read._ROW_NUM.search(attrs)
-        if row_match:
-            row_number = int(row_match.group(1))
-        elif " r=" in attrs:
-            raise _Fallback
-        else:
-            row_number = state["next_row"]
-        row_attrs = None
-        if attrs and any(name in attrs for name in _ROW_ATTRIBUTES):
-            found = attr_pattern.findall(attrs)
-            if len(found) != attrs.count("="):
-                raise _Fallback
-            row_attrs = dict(found)
+        row_number = _row_number(attrs, state["next_row"])
+        row_attrs = _row_attributes(attrs)
         cells = []
         if body is not None:
             if not data_only and "<f" in body:
@@ -237,55 +298,22 @@ def _load_rows(
                     # Entities and carriage returns in values are decoded by the XML parser only.
                     raise _Fallback
                 attributes = dict(attr_pattern.findall(attrs_text)) if attrs_text else {}
-                ref = attributes.get("r")
-                if ref:
-                    letters = ref.rstrip("0123456789")
-                    col = columns.get(letters)
-                    if col is None:
-                        if ref_pattern.fullmatch(ref) is None:
-                            raise _Fallback
-                        col = column_index(letters)
-                        if col >= 16384:
-                            raise _Fallback
-                        columns[letters] = col
-                    digits = ref[len(letters) :]
-                    if not (digits.isascii() and digits.isdigit()):
-                        raise _Fallback
-                    row = int(digits)
-                    if not 1 <= row <= 1048576:
-                        raise _Fallback
-                else:
-                    col, row = next_col, row_number
+                col, row = _cell_position(attributes.get("r"), next_col, row_number, columns)
                 next_col = col + 1
                 style_text = attributes.get("s")
                 style_id = int(style_text) if style_text else 0
                 kind = attributes.get("t", "n")
-                if kind not in _TYPED:
-                    data_type = "n"
-                    if not v:
-                        value = None
-                    else:
-                        try:
-                            number = float(v)
-                        except ValueError:
-                            value = v
-                        else:
-                            date_kind = date_kind_of(style_id)
-                            if date_kind is None:
-                                value = int(number) if number.is_integer() else number
-                            else:
-                                value = _number_value(number, date_kind, date_1904)
-                elif kind == "s":
-                    data_type = "s"
-                    raw = v or ""
-                    try:
-                        index = int(raw)
-                    except ValueError:
-                        value = raw
-                    else:
-                        value = shared_strings[index] if 0 <= index < strings_len else raw
-                else:
-                    data_type, value = _typed_value(kind, v, inline, rich_text)
+                data_type, value = _cell_value(
+                    kind,
+                    v,
+                    inline,
+                    style_id,
+                    data_1904=date_1904,
+                    shared_strings=shared_strings,
+                    strings_len=strings_len,
+                    date_kind_of=date_kind_of,
+                    rich_text=rich_text,
+                )
                 cells.append((row, col + 1, value, data_type, style_id))
             if matched != body.count("<c") or prefixed.search(body):
                 raise _Fallback

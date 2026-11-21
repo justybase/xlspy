@@ -478,3 +478,35 @@ jobs:
         with:
           name: coverage-xml
           path: coverage.xml
+
+  benchmark:
+    name: Performance gate (native vs Python fallback)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/xlspy_core
+
+      - name: Install package with test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      # The gate compares the native and pure-Python backends in the same run,
+      # so the budget is relative to the runner rather than to one machine.
+      - name: Run the streaming write/read performance gate
+        run: python benchmarks/bench_gate.py --rows 100000 --cols 5 --repeat 3
