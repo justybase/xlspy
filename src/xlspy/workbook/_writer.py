@@ -190,6 +190,7 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False) -> dict[str, Any]:
         "hidden_rows": hidden_rows or None,
         "freeze_panes": sheet.freeze_panes or "",
         "comments": comments,
+        "threaded_comments": dict(sheet._threaded_comments) or None,
         "sheet_protection": _sheet_protection(sheet),
         "show_grid_lines": sheet.sheet_view.showGridLines is not False,
         "show_row_col_headers": sheet.sheet_view.showRowColHeaders is not False,

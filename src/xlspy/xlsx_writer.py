@@ -27,6 +27,7 @@ from .comments import (
     vml_xml as vml_xml,
     COMMENTS_TYPE as COMMENTS_TYPE,
 )
+from .threaded_comments import ThreadedComment as ThreadedComment
 from ._metadata import (
     DefinedName as DefinedName,
     SheetProtection as SheetProtection,
@@ -305,6 +306,7 @@ class XlsxWriter(
         self._next_numfmt_id = 166
         self._next_xf_index = 4
         self._sheet_comments: dict[int, dict[str, Comment]] = {}
+        self._sheet_threaded_comments: dict[int, dict[str, ThreadedComment]] = {}
         self._defined_names: dict[tuple[str, str | None], DefinedName] = {}
         self._workbook_protection: WorkbookProtection | None = None
 

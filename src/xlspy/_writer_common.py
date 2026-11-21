@@ -13,6 +13,7 @@ from ._metadata import SheetProtection
 from ._sheet_options import SheetOptions
 from .charts import Chart
 from .comments import normalize_comments
+from .threaded_comments import normalize_threaded_comments
 from .data_validation import normalize_validations
 from .images import normalize_images
 from .outline import build_outline
@@ -97,6 +98,7 @@ class SheetSpec:
     header_style: Style | None
     merge_refs: list[str]
     comments: dict[str, Any]
+    threaded_comments: dict[str, Any]
     cf_rules: list[Any]
     cf_priorities: list[int]
     tables: list[Any]
@@ -206,6 +208,10 @@ class WriterFrontEnd:
         style_ranges, header_style = header_style_ranges(style_ranges, header_style, header_rows)
         merge_refs = self._normalize_merges(options.merges)
         comment_specs = normalize_comments(options.comments, merges=merge_refs)
+        threaded_specs = normalize_threaded_comments(options.threaded_comments, merges=merge_refs)
+        both = [ref for ref, thread in threaded_specs.items() if thread is not None and ref in comment_specs]
+        if both:
+            raise ValueError(f"cell {both[0]} cannot hold both a note and a threaded comment")
         if options.sheet_protection is not None and not isinstance(options.sheet_protection, SheetProtection):
             raise TypeError("sheet_protection must be SheetProtection")
         if options.auto_filter_ref is not None:
@@ -263,6 +269,7 @@ class WriterFrontEnd:
             header_style=header_style,
             merge_refs=merge_refs,
             comments=comment_specs,
+            threaded_comments=threaded_specs,
             cf_rules=cf_rules,
             cf_priorities=cf_priorities,
             tables=table_specs,

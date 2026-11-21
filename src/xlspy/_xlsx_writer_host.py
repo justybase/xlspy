@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from ._sheet_options import SheetOptions
     from ._writer_common import FilterData, SheetSpec
     from .comments import Comment
+    from .threaded_comments import ThreadedComment
     from .images import Image, MediaParts
     from .printing import PrintSettings
     from .shapes import Shape
@@ -98,6 +99,7 @@ class _XlsxWriterHost:
         _pending_pivots: dict[str, list[Any]]
         _pivot_renders: list[Any]
         _sheet_comments: dict[int, dict[str, Comment]]
+        _sheet_threaded_comments: dict[int, dict[str, ThreadedComment]]
         _sheet_print: dict[int, PrintSettings]
         _sheet_rels: dict[int, list[tuple[str, str, str, bool]]]
 

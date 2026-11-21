@@ -152,11 +152,13 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         return resolved
 
     def _workbook_rel_base(self) -> int:
-        """Relationship count before the slicer caches: sheets, styles, strings, theme."""
+        """Relationship count before the slicer caches: sheets, styles, strings, theme, people."""
         count = self._sheet_count + 1
         if self._use_shared_strings and self._shared_strings:
             count += 1
         if self._sheet_drawings:
+            count += 1
+        if self._sheet_threaded_comments:
             count += 1
         return count
 

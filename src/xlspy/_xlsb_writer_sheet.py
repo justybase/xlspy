@@ -25,6 +25,7 @@ from ._xlsb_writer_consts import _capture_cells
 from ._xlsb_writer_host import _XlsbWriterHost
 from ._writer_common import SheetSpec
 from ._metadata import SheetProtection
+from .exceptions import UnsupportedFeatureError
 from ._dataframe_rows import dataframe_to_rows
 
 if TYPE_CHECKING:
@@ -48,6 +49,8 @@ class _XlsbSheetMixin(_XlsbWriterHost):
     def _write_sheet(self, data: Iterable[list[Any]], options: SheetOptions) -> None:
         self._require_writable()
         spec = self._check_sheet_options(options, check_style=self._reject_rich_style)
+        if spec.threaded_comments:
+            raise UnsupportedFeatureError("XLSB output does not support threaded comments; write them to XLSX")
         current_sheet = self._worksheet_data[-1][0] if self._worksheet_data else "Sheet1"
         pivot_names = set(self._pivot_names)
         pivot_plans = normalize_pivots(spec.pivots, spec.tables, pivot_names, current_sheet)

@@ -53,6 +53,7 @@ from .external_links import ExternalLink
 from .formulas import ArrayFormula, DataTableFormula, Formula
 from .ignored_errors import IgnoredError
 from .comments import Comment
+from .threaded_comments import ThreadedComment
 from ._metadata import DefinedName, SheetProtection, WorkbookProtection
 from .hyperlinks import Hyperlink
 from .images import Image
@@ -168,6 +169,7 @@ __all__ = [
     "ArrayFormula",
     "DataTableFormula",
     "Comment",
+    "ThreadedComment",
     "DefinedName",
     "SheetProtection",
     "WorkbookProtection",

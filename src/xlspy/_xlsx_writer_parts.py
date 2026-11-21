@@ -10,6 +10,15 @@ from . import chart_parts
 from ._text import xml_space_attribute, xstring_escape
 from ._metadata_part import METADATA_XML
 from .comments import comments_xml, vml_xml, COMMENTS_TYPE
+from .threaded_comments import (
+    PERSONS_PART,
+    PERSONS_TYPE,
+    PERSON_REL,
+    THREADED_COMMENTS_TYPE,
+    classic_companion,
+    persons_xml,
+    threaded_comments_xml,
+)
 from ._extlst import (
     EXT_WORKBOOK_SLICER_CACHES,
     REL_SLICER_CACHE,
@@ -98,6 +107,10 @@ class _XlsxPartsMixin(_XlsxWriterHost):
                 chart_parts.drawing_rels_xml(chart_ids, image_names=media),
             )
 
+        # Threaded conversations are written first: their classic companion
+        # notes are part of the comments part written below.
+        self._write_threaded_parts()
+
         for sheet_id, comments in self._sheet_comments.items():
             self._zf.writestr(f"xl/comments/comment{sheet_id}.xml", comments_xml(comments))
             self._zf.writestr(f"xl/drawings/commentsDrawing{sheet_id}.vml", vml_xml(comments))
@@ -133,6 +146,21 @@ class _XlsxPartsMixin(_XlsxWriterHost):
 
     def _chart_xml(self, chart: Any, sheet_name: str) -> str:
         return chart_parts.chart_xml(self._letters, chart, sheet_name)
+
+    def _write_threaded_parts(self) -> None:
+        """Write the sheet conversations and the workbook people, and add the
+        classic companion note each conversation needs to be shown by Excel."""
+        people = {}
+        for sheet_id, threads in sorted(self._sheet_threaded_comments.items()):
+            data, sheet_people = threaded_comments_xml(threads, scope=f"xl/worksheets/sheet{sheet_id}.xml")
+            people.update(sheet_people)
+            self._zf.writestr(f"xl/threadedComments/threadedComment{sheet_id}.xml", data)
+            companions = self._sheet_comments.setdefault(sheet_id, {})
+            for ref, thread in threads.items():
+                if thread is not None:
+                    companions.setdefault(ref, classic_companion(thread))
+        if people:
+            self._zf.writestr(PERSONS_PART, persons_xml(people))
 
     def _create_worksheet_rels(self, sheet_id: int) -> str:
         parts = []
@@ -183,6 +211,13 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             comment_parts += (
                 '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
             )
+        threaded_parts = "".join(
+            f'<Override PartName="/xl/threadedComments/threadedComment{sheet_id}.xml" '
+            f'ContentType="{THREADED_COMMENTS_TYPE}"/>'
+            for sheet_id in sorted(self._sheet_threaded_comments)
+        )
+        if self._sheet_threaded_comments:
+            threaded_parts += f'<Override PartName="/{PERSONS_PART}" ContentType="{PERSONS_TYPE}"/>'
         if self._use_shared_strings and self._shared_strings:
             shared_strings_part = '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
         slicer_parts = "".join(
@@ -210,6 +245,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
 {theme_part}
 {shared_strings_part}
 {comment_parts}
+{threaded_parts}
 {slicer_parts}
 {pivot_parts}
 {self._doc_props_content_types()}
@@ -243,6 +279,11 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             theme_rid = len(relationships) + 1
             relationships.append(
                 f'<Relationship Id="rId{theme_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>'
+            )
+
+        if self._sheet_threaded_comments:
+            relationships.append(
+                f'<Relationship Id="rId{len(relationships) + 1}" Type="{PERSON_REL}" Target="persons/person.xml"/>'
             )
 
         # Cache i is the (i+1)th relationship after the base count; see _workbook_rel_base.

@@ -43,6 +43,7 @@ class SheetOptions:
     images: list | tuple | None = None
     print_settings: PrintSettings | None = None
     comments: Mapping[str, Any] | None = None
+    threaded_comments: Mapping[str, Any] | None = None
     sheet_protection: SheetProtection | None = None
     show_grid_lines: bool = True
     header_rows: int = 1

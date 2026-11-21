@@ -18,6 +18,7 @@ from .excel_dates import datetime_to_serial
 from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell, _unwrap_cell
 from .formulas import ArrayFormula, DataTableFormula, Formula
 from .comments import Comment
+from .threaded_comments import THREADED_REL
 from ._metadata import SheetProtection, replace_element
 from .ignored_errors import ignored_errors_xml
 from ._extlst import (
@@ -350,8 +351,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 ignored_errors_xml(spec.ignored_errors),
                 before=("drawing", "legacyDrawing", "tableParts"),
             )
-        if spec.comments:
-            self._sheet_comments[sheet_id] = spec.comments
+        if spec.comments or spec.threaded_comments:
+            self._sheet_comments[sheet_id] = dict(spec.comments)
             rid = f"rId{len(rels) + 1}"
             rels.append(
                 (rid, _REL_WORKSHEET.rsplit("/", 1)[0] + "/comments", f"../comments/comment{sheet_id}.xml", False)
@@ -366,6 +367,10 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 )
             )
             tail = replace_element(tail, "legacyDrawing", f'<legacyDrawing r:id="{vml_rid}"/>', before=("tableParts",))
+        if spec.threaded_comments:
+            self._sheet_threaded_comments[sheet_id] = spec.threaded_comments
+            rid = f"rId{len(rels) + 1}"
+            rels.append((rid, THREADED_REL, f"../threadedComments/threadedComment{sheet_id}.xml", False))
         # Sparklines and slicers live in the sheet's extLst, which must be the last child.
         sheet_exts = [sparklines_ext(spec.sparklines, sheet_name)]
         if slicer_rids:
@@ -405,6 +410,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         images: list | tuple | None = None,
         print_settings: PrintSettings | None = None,
         comments: Mapping[str, Comment] | None = None,
+        threaded_comments: Mapping[str, Any] | None = None,
         sheet_protection: SheetProtection | None = None,
         show_grid_lines: bool = True,
         tab_color: Color | str | None = None,
@@ -453,6 +459,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             images=images,
             print_settings=print_settings,
             comments=comments,
+            threaded_comments=threaded_comments,
             sheet_protection=sheet_protection,
             show_grid_lines=show_grid_lines,
             tab_color=tab_color,
