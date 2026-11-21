@@ -49,7 +49,7 @@ class InlineFont:
     condense: bool | None = None
     extend: bool | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.u is not None and self.u not in _RICH_UNDERLINES:
             raise ValueError(f"u must be one of {sorted(_RICH_UNDERLINES)}, got {self.u!r}")
         if self.vertAlign is not None and self.vertAlign not in _VERT_ALIGNS:
@@ -95,13 +95,13 @@ class TextBlock:
     font: InlineFont
     text: str
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.font, InlineFont):
             raise TypeError("TextBlock font must be an InlineFont")
         if not isinstance(self.text, str):
             raise TypeError("TextBlock text must be a str")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.text
 
 
@@ -177,7 +177,7 @@ def _quote(value: str) -> str:
     return '"' + escape(value, {'"': "&quot;"}) + '"'
 
 
-def _color_attrs(key) -> str:
+def _color_attrs(key: tuple[Any, ...]) -> str:
     kind = key[0]
     if kind == "rgb":
         return f'rgb="{key[1]}"'
@@ -189,7 +189,7 @@ def _color_attrs(key) -> str:
     return f'theme="{key[1]}"{tint}'
 
 
-def _font_from_rpr(rpr) -> InlineFont:
+def _font_from_rpr(rpr: Any) -> InlineFont:
     values: dict[str, Any] = {}
     for child in rpr:
         name = _local(child.tag)
@@ -226,7 +226,7 @@ def _font_from_rpr(rpr) -> InlineFont:
     return InlineFont(**values)
 
 
-def rich_text_from_si(element) -> str | CellRichText:
+def rich_text_from_si(element: Any) -> str | CellRichText:
     """The value of an ``<si>`` or ``<is>`` element: plain text, or a
     ``CellRichText`` when it has formatted runs. Phonetic runs are skipped."""
     runs = [child for child in element if _local(child.tag) == "r"]

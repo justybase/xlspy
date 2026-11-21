@@ -327,14 +327,14 @@ def _read_properties(package) -> DocumentProperties:
         attr = mapping.get(node.tag)
         if attr is not None and node.text is not None:
             setattr(props, attr, node.text)
-    for node, attr in (
+    for optional_node, attr in (
         (root.find(f"{{{_NS_DCTERMS}}}created"), "created"),
         (root.find(f"{{{_NS_DCTERMS}}}modified"), "modified"),
         (root.find(f"{{{_NS_CP}}}lastPrinted"), "lastPrinted"),
     ):
-        if node is not None and node.text:
+        if optional_node is not None and optional_node.text:
             try:
-                text = node.text.replace("Z", "+00:00")
+                text = optional_node.text.replace("Z", "+00:00")
                 value = _datetime.datetime.fromisoformat(text)
                 if value.tzinfo is not None:
                     value = value.replace(tzinfo=None)
@@ -583,9 +583,10 @@ def _parse_table(xml: bytes) -> Table:
     columns = root.find(qname("tableColumns"))
     if columns is not None:
         for node in columns.findall(qname("tableColumn")):
+            identifier = node.get("id")
             table.tableColumns.append(
                 TableColumn(
-                    id=int(node.get("id")) if node.get("id") is not None else None,
+                    id=int(identifier) if identifier is not None else None,
                     name=node.get("name"),
                     totalsRowFunction=node.get("totalsRowFunction"),
                     totalsRowLabel=node.get("totalsRowLabel"),
@@ -1287,9 +1288,9 @@ def _read_core_sheet(
                 node.clear()
                 stack.pop()
                 continue
-            if tag == "mergeCell" and node.get("ref"):
+            if tag == "mergeCell" and (merge_ref := node.get("ref")):
                 try:
-                    sheet._merged_cells.add(_normalize_range(node.get("ref")))
+                    sheet._merged_cells.add(_normalize_range(merge_ref))
                 except ValueError:
                     pass
             elif (
@@ -1335,9 +1336,9 @@ def _read_only_bounds(archive: zipfile.ZipFile, sheet_path: str) -> tuple[int, i
     try:
         with archive.open(sheet_path) as stream:
             for _event, node in safe_iterparse(stream, events=("start",)):
-                if _local(node.tag) == "dimension" and node.get("ref"):
+                if _local(node.tag) == "dimension" and (dimension_ref := node.get("ref")):
                     try:
-                        c1, r1, c2, r2 = parse_cell_range(node.get("ref"))
+                        c1, r1, c2, r2 = parse_cell_range(dimension_ref)
                     except (TypeError, ValueError):
                         return None
                     return c1 + 1, r1 + 1, c2 + 1, r2 + 1
@@ -1809,6 +1810,25 @@ def _load_workbook(
         raise
 
 
+def _read_defined_print_names(workbook_root: ET.Element, sheet_nodes: list[ET.Element]) -> dict[str, dict[str, str]]:
+    """Print areas and titles by sheet name (``localSheetId`` counts every sheet)."""
+    print_names: dict[str, dict[str, str]] = {}
+    for node in workbook_root.findall(f"{{{MAIN}}}definedNames/{{{MAIN}}}definedName"):
+        name = node.get("name")
+        if name not in ("_xlnm.Print_Area", "_xlnm.Print_Titles"):
+            continue
+        local_id = node.get("localSheetId")
+        if local_id is None:
+            continue
+        try:
+            owner = sheet_nodes[int(local_id)].get("name")
+        except (TypeError, ValueError, IndexError):
+            continue
+        if owner is not None:
+            print_names.setdefault(owner, {})[name] = node.text or ""
+    return print_names
+
+
 def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool) -> Workbook:
     handle = PackageHandle(updater)
     package = handle.package
@@ -1846,16 +1866,7 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
     worksheet_entries = []
     chartsheet_entries = []
     sheet_nodes = workbook_root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
-    # localSheetId counts every sheet, chartsheets included.
-    print_names: dict[str, dict[str, str]] = {}
-    for node in workbook_root.findall(f"{{{MAIN}}}definedNames/{{{MAIN}}}definedName"):
-        if node.get("name") not in ("_xlnm.Print_Area", "_xlnm.Print_Titles"):
-            continue
-        try:
-            owner = sheet_nodes[int(node.get("localSheetId"))].get("name")
-        except (TypeError, ValueError, IndexError):
-            continue
-        print_names.setdefault(owner, {})[node.get("name")] = node.text or ""
+    print_names = _read_defined_print_names(workbook_root, sheet_nodes)
     for sheet_node in sheet_nodes:
         name = sheet_node.get("name")
         rid = sheet_node.get(f"{{{REL}}}id")

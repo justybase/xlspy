@@ -75,6 +75,7 @@ class Workbook:
         self._styles = XlsxStyleTable.empty()
         self._styles_dirty = False
         self._properties = DocumentProperties()
+        self._saved_properties: tuple[str, str] | None = None
         self._defined_names = DefinedNameList(self)
         self._defined_names_dirty = False
         self.template = False

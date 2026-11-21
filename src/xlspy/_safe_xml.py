@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from typing import IO, Any
+from collections.abc import Iterable, Iterator
+from typing import IO, Any, Literal
 from xml.parsers import expat
 
 __all__ = ["check_well_formed", "fromstring", "iterparse", "harden_expat"]
@@ -38,7 +39,7 @@ _MAX_PROLOG_CHARS = 1 << 20
 _REFUSAL = "document type declarations are not supported: Excel packages do not contain them"
 
 
-def _scan(text) -> tuple[bool, bool]:
+def _scan(text: str | bytes) -> tuple[bool, bool]:
     """Return ``(has_doctype, decided)`` for a prolog that may be partly read.
 
     ``decided`` is true once the root element (or a DTD) has been seen, so no
@@ -62,19 +63,19 @@ def _scan(text) -> tuple[bool, bool]:
     return False, root.match(text, position) is not None
 
 
-def _refuse_if_doctype(text) -> None:
+def _refuse_if_doctype(text: str | bytes) -> None:
     has_doctype, _ = _scan(text)
     if has_doctype:
         raise ET.ParseError(_REFUSAL)
 
 
-def fromstring(text):
+def fromstring(text: str | bytes) -> ET.Element:
     """``ElementTree.fromstring`` that refuses a document type declaration."""
     _refuse_if_doctype(text)
     return ET.fromstring(text)
 
 
-def check_well_formed(text) -> None:
+def check_well_formed(text: str | bytes) -> None:
     """Refuse what ``fromstring`` refuses, without building a tree: a document type
     declaration or markup that is not well formed (``ET.ParseError``)."""
     _refuse_if_doctype(text)
@@ -93,7 +94,7 @@ class _PrologGuard:
     once the root element is found.
     """
 
-    def __init__(self, stream: IO[bytes]):
+    def __init__(self, stream: IO[bytes]) -> None:
         self._stream = stream
         self._head = b""
         self._decided = False
@@ -113,7 +114,10 @@ class _PrologGuard:
         return data
 
 
-def iterparse(stream: IO[bytes], events=None):
+def iterparse(
+    stream: IO[bytes],
+    events: Iterable[Literal["start", "end", "comment", "pi", "start-ns", "end-ns"]] | None = None,
+) -> Iterator[tuple[str, ET.Element]]:
     """``ElementTree.iterparse`` over a binary stream, refusing a DTD."""
     return ET.iterparse(_PrologGuard(stream), events=events)
 
@@ -122,7 +126,7 @@ def _refuse_declaration(*_args: Any) -> None:
     raise ET.ParseError(_REFUSAL)
 
 
-def harden_expat(parser):
+def harden_expat(parser: Any) -> Any:
     """Refuse DTDs and entity declarations on a raw ``pyexpat`` parser.
 
     Returns the parser so the call can wrap ``ParserCreate(...)``.

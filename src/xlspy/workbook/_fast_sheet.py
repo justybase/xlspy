@@ -21,12 +21,25 @@ from .._text import xstring_unescape
 from ._model import CELL_SLOTS, Cell
 from ._reader import _apply_row_attributes, _date_kind, _load_row, _number_value
 from .._xlsx_read import _Fallback as _Fallback
+from .._zip_package import ZipPackage
+from ._model import Worksheet
+from ._styles import XlsxStyleTable
 
 _ROW_ATTRIBUTES = (" ht=", " hidden=", " outlineLevel=", " collapsed=")
 _TYPED = frozenset({"s", "inlineStr", "b", "e", "str", "d"})
 
 
-def read_sheet_data(sheet, package, sheet_path, style_table, *, data_only, date_1904, shared_strings, rich_text):
+def read_sheet_data(
+    sheet: Worksheet,
+    package: ZipPackage,
+    sheet_path: str,
+    style_table: XlsxStyleTable,
+    *,
+    data_only: bool,
+    date_1904: bool,
+    shared_strings: list[str],
+    rich_text: bool,
+) -> tuple[int, int, bytes] | None:
     """Load the rows into ``sheet``. Return ``(max_row, max_column, remainder)``
     where ``remainder`` is the worksheet XML with an empty ``<sheetData/>``, or
     ``None`` (nothing loaded) when the part needs the element-by-element reader."""
@@ -66,7 +79,18 @@ def read_sheet_data(sheet, package, sheet_path, style_table, *, data_only, date_
 _DATE_KINDS = {None: 0, "date": 1, "time": 2, "duration": 3}
 
 
-def _load_rows_native(sheet, stream, raw, root_tag, head, style_table, data_only, date_1904, shared_strings, rich_text):
+def _load_rows_native(
+    sheet: Worksheet,
+    stream: Any,
+    raw: bytes,
+    root_tag: str,
+    head: bytes,
+    style_table: XlsxStyleTable,
+    data_only: bool,
+    date_1904: bool,
+    shared_strings: list[str],
+    rich_text: bool,
+) -> tuple[int, int, bytes]:
     """The native scanner creates the cells of plain rows; the rows it leaves (formulas,
     row attributes, unusual markup) go through ElementTree as in ``_load_rows``."""
     kinds = [_DATE_KINDS[_date_kind(style.number_format)] for style in style_table.styles]
@@ -204,9 +228,7 @@ def _row_attributes(attrs: str) -> dict[str, str] | None:
     return None
 
 
-def _cell_position(
-    ref: str | None, next_col: int, row_number: int, columns: dict[str, int]
-) -> tuple[int, int]:
+def _cell_position(ref: str | None, next_col: int, row_number: int, columns: dict[str, int]) -> tuple[int, int]:
     if not ref:
         return next_col, row_number
     letters = ref.rstrip("0123456789")
@@ -261,8 +283,18 @@ def _cell_value(
 
 
 def _load_rows(
-    sheet, stream, text, decoder, root_tag, head, style_table, data_only, date_1904, shared_strings, rich_text
-):
+    sheet: Worksheet,
+    stream: Any,
+    text: str,
+    decoder: Any,
+    root_tag: str,
+    head: bytes,
+    style_table: XlsxStyleTable,
+    data_only: bool,
+    date_1904: bool,
+    shared_strings: list[str],
+    rich_text: bool,
+) -> tuple[int, int, bytes]:
     columns: dict[str, int] = {}
     date_kinds: dict[int, str | None] = {}
     shared: dict = {}
@@ -273,7 +305,7 @@ def _load_rows(
     prefixed = _xlsx_read._PREFIXED
     state = {"next_row": 1, "max_row": 0, "max_column": 0}
 
-    def date_kind_of(style_id):
+    def date_kind_of(style_id: int) -> str | None:
         try:
             return date_kinds[style_id]
         except KeyError:
@@ -282,7 +314,7 @@ def _load_rows(
             date_kinds[style_id] = kind
             return kind
 
-    def fast_row(attrs, body):
+    def fast_row(attrs: str, body: str | None) -> None:
         row_number = _row_number(attrs, state["next_row"])
         row_attrs = _row_attributes(attrs)
         cells = []
@@ -334,7 +366,7 @@ def _load_rows(
         state["max_row"] = max_row
         state["max_column"] = max_column
 
-    def slow_row(row_text):
+    def slow_row(row_text: str) -> None:
         root = safe_fromstring((root_tag + row_text + "</worksheet>").encode("utf-8"))
         row_number, row_max, column_max = _load_row(
             sheet,

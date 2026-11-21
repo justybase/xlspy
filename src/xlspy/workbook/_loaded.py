@@ -1121,18 +1121,18 @@ def _reorder_and_state(workbook: Workbook, updater) -> None:
     )
     worksheet_nodes = []
     for sheet in workbook._sheets:
-        node = existing.get(sheet.title)
-        if node is None:
-            node = ET.Element(qname("sheet"))
-            node.set("name", sheet.title)
-            node.set("sheetId", str(getattr(sheet, "_sheet_id", next_id)))
+        sheet_node: ET.Element | None = existing.get(sheet.title)
+        if sheet_node is None:
+            sheet_node = ET.Element(qname("sheet"))
+            sheet_node.set("name", sheet.title)
+            sheet_node.set("sheetId", str(getattr(sheet, "_sheet_id", next_id)))
             rid = getattr(sheet, "_rel_id", None)
             if rid:
-                node.set(f"{{{REL}}}id", rid)
+                sheet_node.set(f"{{{REL}}}id", rid)
             next_id += 1
-        node.set("name", sheet.title)
-        node.set("state", sheet.sheet_state)
-        worksheet_nodes.append(node)
+        sheet_node.set("name", sheet.title)
+        sheet_node.set("state", sheet.sheet_state)
+        worksheet_nodes.append(sheet_node)
     # Model worksheets fill the original worksheet positions in model order;
     # chartsheets and other sheet entries keep their own positions.
     titles = {sheet.title for sheet in workbook._sheets}

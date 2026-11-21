@@ -108,7 +108,8 @@ def read_drawing(package: ZipPackage, sheet: Any, drawing_part: str) -> None:
             name = _local(node.tag)
             if name == "chart":
                 rid = node.get(f"{{{_REL}}}id")
-                part = relationships.get(rid, (None, ""))[0]
+                target = relationships.get(rid) if rid is not None else None
+                part = target[0] if target else None
                 if not part or not package.has(part):
                     continue
                 chart_xml = package.get(part)

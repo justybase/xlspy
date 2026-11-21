@@ -15,6 +15,7 @@ from ..exceptions import UnsupportedFeatureError
 import io
 import posixpath
 import re
+from typing import cast
 
 from .._untrusted import SafeZipFile
 from dataclasses import fields
@@ -381,9 +382,9 @@ def _sheet_rels(scratch: dict[str, bytes]) -> dict[str, tuple[str, str]]:
     if not data:
         return {}
     return {
-        node.get("Id"): (
-            node.get("Type").rsplit("/", 1)[-1],
-            _resolve_part_target("xl/worksheets/sheet1.xml", node.get("Target")),
+        cast(str, node.get("Id")): (
+            cast(str, node.get("Type")).rsplit("/", 1)[-1],
+            _resolve_part_target("xl/worksheets/sheet1.xml", cast(str, node.get("Target"))),
         )
         for node in safe_fromstring(data)
     }
@@ -662,8 +663,8 @@ def _add_drawing(
 
     mapping = {}
     for node in donor_drawing_rels:
-        kind = node.get("Type").rsplit("/", 1)[-1]
-        source = _resolve_part_target(drawing, node.get("Target"))
+        kind = cast(str, node.get("Type")).rsplit("/", 1)[-1]
+        source = _resolve_part_target(drawing, cast(str, node.get("Target")))
         if kind == "chart":
             target = package.free_part("xl/charts", "chart", "xml")
             package.override(target, _CONTENT["chart"])
@@ -676,9 +677,9 @@ def _add_drawing(
                 for item in donor_types
                 if (item.get("Extension") or "").lower() == extension.lower()
             )
-            package.default(extension, content_type)
+            package.default(extension, cast(str, content_type))
         package.set(target, scratch[source])
-        mapping[node.get("Id")] = package.add_rel(drawing_rels, host_drawing, kind, target)
+        mapping[cast(str, node.get("Id"))] = package.add_rel(drawing_rels, host_drawing, kind, target)
 
     # Shape ids are unique within a drawing.
     offset = max((int(value) for value in re.findall(r'<(?:[\w.-]+:)?cNvPr\b[^>]*?\bid="(\d+)"', host_xml)), default=0)

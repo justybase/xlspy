@@ -7,7 +7,8 @@ core properties and ``docProps/custom.xml`` for user-defined ones.
 from __future__ import annotations
 from .._package_handle import PackageHandle
 
-from typing import cast
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, cast
 import datetime as _datetime
 from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
@@ -43,16 +44,20 @@ _CORE = (
 )
 _DATES = (("lastPrinted", "cp:lastPrinted"), ("created", "dcterms:created"), ("modified", "dcterms:modified"))
 
+if TYPE_CHECKING:
+    from ._properties import CustomProperty, DocumentProperties
+    from ._workbook import Workbook
 
-def signature(workbook) -> tuple:
+
+def signature(workbook: Workbook) -> tuple[str, str]:
     return repr(workbook.properties), repr(list(workbook.custom_doc_props))
 
 
-def remember(workbook) -> None:
+def remember(workbook: Workbook) -> None:
     workbook._saved_properties = signature(workbook)
 
 
-def core_xml(props) -> bytes:
+def core_xml(props: DocumentProperties) -> bytes:
     body = []
     for name, tag in _CORE:
         value = getattr(props, name)
@@ -72,7 +77,7 @@ def core_xml(props) -> bytes:
     ).encode("utf-8")
 
 
-def custom_xml(items) -> bytes:
+def custom_xml(items: Iterable[CustomProperty]) -> bytes:
     body = "".join(
         f'<property fmtid="{_CUSTOM_FMTID}" pid="{pid}" name="{escape(item.name, {chr(34): "&quot;"})}">'
         f"{_custom_value(item.name, item.value)}</property>"
@@ -91,7 +96,7 @@ def _serialize(root: ET.Element) -> bytes:
     return cast(bytes, ET.tostring(root, encoding="utf-8", xml_declaration=True))
 
 
-def save_properties(updater, workbook) -> None:
+def save_properties(updater: Any, workbook: Workbook) -> None:
     """Write the properties when they changed since the workbook was loaded or saved."""
     if getattr(workbook, "_saved_properties", None) == signature(workbook):
         return
@@ -102,7 +107,7 @@ def save_properties(updater, workbook) -> None:
     parts = {_CORE_PATH: core_xml(workbook.properties)}
     removed = []
 
-    def ensure(path, content_type, rel_type):
+    def ensure(path: str, content_type: str, rel_type: str) -> None:
         if not any(node.get("PartName") == "/" + path for node in types):
             ET.SubElement(types, f"{{{CT}}}Override", {"PartName": "/" + path, "ContentType": content_type})
         if not any(node.get("Type") == rel_type for node in rels):

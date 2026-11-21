@@ -20,15 +20,15 @@ class Translator:
     COL_RANGE_RE = re.compile(r"(\$?[A-Za-z]{1,3}):(\$?[A-Za-z]{1,3})$")
     CELL_REF_RE = re.compile(r"(\$?[A-Za-z]{1,3})(\$?[1-9][0-9]{0,6})$")
 
-    def __init__(self, formula: str, origin: str):
+    def __init__(self, formula: str, origin: str) -> None:
         self.row, self.col = coordinate_to_tuple(origin)
         self.tokenizer = Tokenizer(formula)
 
-    def get_tokens(self):
+    def get_tokens(self) -> list[Token]:
         return self.tokenizer.items
 
     @staticmethod
-    def translate_row(row_str, rdelta):
+    def translate_row(row_str: str, rdelta: int) -> str:
         if row_str.startswith("$"):
             return row_str
         new_row = int(row_str) + rdelta
@@ -37,7 +37,7 @@ class Translator:
         return str(new_row)
 
     @staticmethod
-    def translate_col(col_str, cdelta):
+    def translate_col(col_str: str, cdelta: int) -> str:
         if col_str.startswith("$"):
             return col_str
         try:
@@ -46,14 +46,14 @@ class Translator:
             raise TranslatorError("Formula out of range") from exc
 
     @staticmethod
-    def strip_ws_name(range_str):
+    def strip_ws_name(range_str: str) -> tuple[str, str]:
         if "!" in range_str:
             sheet, range_str = range_str.rsplit("!", 1)
             return sheet + "!", range_str
         return "", range_str
 
     @classmethod
-    def translate_range(cls, range_str, rdelta, cdelta):
+    def translate_range(cls, range_str: str, rdelta: int, cdelta: int) -> str:
         sheet, reference = cls.strip_ws_name(range_str)
         match = cls.ROW_RANGE_RE.match(reference)
         if match is not None:
@@ -68,7 +68,7 @@ class Translator:
             return range_str
         return sheet + cls.translate_col(match.group(1), cdelta) + cls.translate_row(match.group(2), rdelta)
 
-    def translate_formula(self, dest=None, row_delta=0, col_delta=0):
+    def translate_formula(self, dest: str | None = None, row_delta: int = 0, col_delta: int = 0) -> str:
         tokens = self.get_tokens()
         if not tokens:
             return ""

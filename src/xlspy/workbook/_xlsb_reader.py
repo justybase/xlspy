@@ -75,11 +75,12 @@ def _external_links(package: ZipPackage, sheet_path: str) -> dict[str, str]:
     path = rels_path(sheet_path)
     if not package.has(path):
         return {}
-    return {
-        rel.get("Id"): rel.get("Target")
-        for rel in safe_fromstring(package.get(path))
-        if rel.get("TargetMode") == "External" and rel.get("Id") and rel.get("Target")
-    }
+    links: dict[str, str] = {}
+    for rel in safe_fromstring(package.get(path)):
+        rid, target = rel.get("Id"), rel.get("Target")
+        if rel.get("TargetMode") == "External" and rid and target:
+            links[rid] = target
+    return links
 
 
 def _load_cells(

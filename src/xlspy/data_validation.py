@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from xml.sax.saxutils import escape
 
@@ -41,7 +42,7 @@ _MAX_ERROR_TITLE = 32
 _MAX_ERROR = 255
 
 
-def _check_validation_text(value, kind: str, limit: int) -> None:
+def _check_validation_text(value: str | None, kind: str, limit: int) -> None:
     if value is None:
         return
     if not isinstance(value, str):
@@ -77,7 +78,7 @@ def _has_top_level_comma(text: str) -> bool:
     return False
 
 
-def _operand_text(value, kind: str) -> str:
+def _operand_text(value: object, kind: str) -> str:
     """Render a validation operand as formula text."""
     if isinstance(value, bool):
         raise TypeError(f"{kind} must be a number, date, time, string or formula")
@@ -95,7 +96,7 @@ def _operand_text(value, kind: str) -> str:
     raise TypeError(f"{kind} must be a number, date, time, string or formula")
 
 
-def _normalize_validation_sqref(sqref) -> str:
+def _normalize_validation_sqref(sqref: str | Sequence[str]) -> str:
     if isinstance(sqref, str):
         parts = sqref.split()
     elif isinstance(sqref, (list, tuple)) and all(isinstance(part, str) for part in sqref):
@@ -169,7 +170,7 @@ class DataValidation:
     error_style: str = "stop"
     ime_mode: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.type not in VALIDATION_TYPES:
             raise ValueError(f"invalid validation type {self.type!r}; expected one of {sorted(VALIDATION_TYPES)}")
         object.__setattr__(self, "sqref", _normalize_validation_sqref(self.sqref))
@@ -281,7 +282,7 @@ class DataValidation:
         return self.ime_mode
 
 
-def normalize_validations(validations) -> list[DataValidation]:
+def normalize_validations(validations: Iterable[DataValidation] | None) -> list[DataValidation]:
     """The ``data_validations`` option of ``write_sheet`` as a list."""
     if not validations:
         return []

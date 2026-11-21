@@ -1,7 +1,7 @@
 """Hashable style keys: the canonical form used to intern fonts, fills, borders and xfs."""
 
 from __future__ import annotations
-from typing import NamedTuple, cast
+from typing import Any, NamedTuple, cast
 from ._attrs import Alignment, Border, Color, Font, GradientFill, PatternFill, Protection, Side, Stop, _coerce_color
 from ._style import Style
 
@@ -64,7 +64,7 @@ def _underline_key(value: str | bool | None) -> str | None:
     return value
 
 
-def _color_key(color: Color | str | None):
+def _color_key(color: Color | str | None) -> tuple[Any, ...] | None:
     """Hashable registry key for a color: ``("rgb", ARGB)``/``indexed``/``theme``/``auto``."""
     color = _coerce_color(color, "color")
     if color is None:
@@ -78,7 +78,7 @@ def _color_key(color: Color | str | None):
     return ("theme", color.theme, color.tint)
 
 
-def _side_key(side: Side | None):
+def _side_key(side: Side | None) -> tuple[str | None, tuple[Any, ...] | None]:
     if side is None:
         return (None, None)
     return (side.style, _color_key(side.color))
@@ -144,7 +144,7 @@ def _border_key(border: Border) -> _BorderKey | None:
     return key
 
 
-def _pattern_fill_key(fill: PatternFill):
+def _pattern_fill_key(fill: PatternFill) -> tuple[Any, ...] | None:
     if fill.fill_type is None and fill.start_color is None and fill.end_color is None:
         return None
     return (
@@ -155,7 +155,7 @@ def _pattern_fill_key(fill: PatternFill):
     )
 
 
-def _fill_key_from(fill: PatternFill | GradientFill):
+def _fill_key_from(fill: PatternFill | GradientFill) -> tuple[Any, ...] | None:
     """Key for a pattern or gradient fill; ``None`` means “no fill override”."""
     if isinstance(fill, PatternFill):
         return _pattern_fill_key(fill)
@@ -191,7 +191,7 @@ def _protection_key_from(protection: Protection) -> _ProtectionKey:
     return _ProtectionKey(protection.locked, protection.hidden)
 
 
-def fill_key_for(fill):
+def fill_key_for(fill: PatternFill | GradientFill | str | None) -> tuple[Any, ...] | None:
     """The fill component key of a Style fill: a PatternFill, a GradientFill, or a
     colour string, which is a solid fill of that colour (``Style.fill``)."""
     if isinstance(fill, PatternFill):

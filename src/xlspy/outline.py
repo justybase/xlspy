@@ -8,7 +8,7 @@ or columns cannot be drawn by Excel, so they are rejected.
 
 from __future__ import annotations
 
-from collections.abc import Set as AbstractSet
+from collections.abc import Iterable, Iterator, Set as AbstractSet
 from bisect import bisect_right
 import heapq
 from dataclasses import dataclass
@@ -56,7 +56,7 @@ class Group:
     collapsed: bool = False
 
 
-def _bound(value, kind: str) -> int:
+def _bound(value: int | str, kind: str) -> int:
     if kind == "column" and isinstance(value, str) and value.isascii() and value.isalpha():
         index = _column_index(value)
     elif isinstance(value, int) and not isinstance(value, bool):
@@ -70,7 +70,8 @@ def _bound(value, kind: str) -> int:
     return index
 
 
-def _span(item, kind: str) -> tuple[int, int, bool]:
+def _span(item: Group | tuple[int | str, ...] | list[int | str], kind: str) -> tuple[int, int, bool]:
+    collapsed: object = False
     if isinstance(item, Group):
         first, last, collapsed = item.first, item.last, item.collapsed
     elif isinstance(item, (tuple, list)) and len(item) in (2, 3):
@@ -87,7 +88,9 @@ def _span(item, kind: str) -> tuple[int, int, bool]:
     return first_index, last_index, collapsed
 
 
-def build_outline(groups, kind: str) -> OutlineIndex | None:
+def build_outline(
+    groups: Iterable[Group | tuple[int | str, ...] | list[int | str]] | None, kind: str
+) -> OutlineIndex | None:
     """Validate ``groups`` and return their outline, or ``None`` when there are none.
 
     ``kind`` is ``"row"`` or ``"column"`` and only changes the bounds and the
@@ -147,7 +150,7 @@ class OutlineIndex:
 
     __slots__ = ("_starts", "_levels", "_hidden", "_summaries", "max_level")
 
-    def __init__(self, starts: list[int], levels: list[int], hidden: list[bool], summaries: AbstractSet[int]):
+    def __init__(self, starts: list[int], levels: list[int], hidden: list[bool], summaries: AbstractSet[int]) -> None:
         self._starts = starts
         self._levels = levels
         self._hidden = hidden
@@ -169,7 +172,7 @@ class OutlineIndex:
         """Every index with an outline level or a collapsed flag, so it needs its own column entry."""
         return self._collect([level > 0 for level in self._levels]) | self._summaries
 
-    def indices_from(self, start: int):
+    def indices_from(self, start: int) -> Iterator[int]:
         """Yield, in order, every index from ``start`` on that has an outline level
         or a collapsed flag.
 

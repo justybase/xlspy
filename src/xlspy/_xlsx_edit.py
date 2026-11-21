@@ -299,8 +299,13 @@ class XlsxEditMixin(SheetEditMixin):
         if dropped:
             still_used = set(re.findall(r"""[\w.-]+:id=["']([^"']*)["']""", sheet))
             for node in list(relationships):
-                rid = node.get("Id")
-                if rid in dropped and rid not in still_used and node.get("Type") == HYPERLINK_TYPE:
+                rel_id = node.get("Id")
+                if (
+                    rel_id is not None
+                    and rel_id in dropped
+                    and rel_id not in still_used
+                    and node.get("Type") == HYPERLINK_TYPE
+                ):
                     relationships.remove(node)
         updates: dict[str, str | bytes] = {path: sheet}
         removed: list[str] = []

@@ -164,6 +164,8 @@ def _encode_wide_text(value: str) -> bytes:
 def _cf_color_record(color) -> bytes:
     """An 8-byte XFPropColor; Excel writes index 0xFF for RGB colors."""
     key = _color_key(color)
+    if key is None:
+        return bytes(8)
     if key[0] == "rgb":
         alpha, red, green, blue = bytes.fromhex(key[1])
         return bytes((0x05, 0xFF, 0, 0, red, green, blue, alpha))
