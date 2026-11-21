@@ -23,30 +23,6 @@ def _bgr(rgb: str) -> int:
     return int(rgb[4:6] + rgb[2:4] + rgb[0:2], 16)
 
 
-@pytest.fixture(scope="module")
-def excel():
-    client = pytest.importorskip("win32com.client")
-    app = client.DispatchEx("Excel.Application")
-    app.Visible = False
-    app.DisplayAlerts = False
-    yield app
-    app.Quit()
-
-
-@pytest.fixture
-def open_workbook(excel):
-    opened = []
-
-    def _open(path):
-        workbook = excel.Workbooks.Open(str(path))
-        opened.append(workbook)
-        return workbook
-
-    yield _open
-    for workbook in opened:
-        workbook.Close(False)
-
-
 @pytest.mark.parametrize("writer_cls,ext", WRITERS)
 def test_tab_color_in_excel(tmp_path, open_workbook, writer_cls, ext):
     path = tmp_path / f"tabs.{ext}"

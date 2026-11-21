@@ -35,30 +35,6 @@ SPECIAL = [
 AT_LIMIT = ["a" * 32767, "\U0001d11e" * 16383 + "a", "ż" * 32767, "é" * 16383]
 
 
-@pytest.fixture(scope="module")
-def excel():
-    client = pytest.importorskip("win32com.client")
-    app = client.DispatchEx("Excel.Application")
-    app.Visible = False
-    app.DisplayAlerts = False
-    yield app
-    app.Quit()
-
-
-@pytest.fixture
-def open_workbook(excel):
-    opened = []
-
-    def _open(path):
-        workbook = excel.Workbooks.Open(str(path))
-        opened.append(workbook)
-        return workbook
-
-    yield _open
-    for workbook in opened:
-        workbook.Close(False)
-
-
 def _excel_len(sheet, row, col):
     """Excel's own LEN() of a cell (counts UTF-16 code units)."""
     probe = sheet.Cells(40, 40)

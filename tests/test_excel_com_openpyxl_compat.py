@@ -60,30 +60,6 @@ def _png(width, height):
     )
 
 
-@pytest.fixture(scope="module")
-def excel():
-    client = pytest.importorskip("win32com.client")
-    app = client.DispatchEx("Excel.Application")
-    app.Visible = False
-    app.DisplayAlerts = False
-    yield app
-    app.Quit()
-
-
-@pytest.fixture
-def open_workbook(excel):
-    opened = []
-
-    def _open(path):
-        workbook = excel.Workbooks.Open(str(path))
-        opened.append(workbook)
-        return workbook
-
-    yield _open
-    for workbook in opened:
-        workbook.Close(False)
-
-
 def _report():
     workbook = Workbook()
     sheet = workbook.active

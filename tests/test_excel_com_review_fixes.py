@@ -28,39 +28,6 @@ pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.p
 XL_XLSB, XL_STRICT = 50, 61
 
 
-@pytest.fixture(scope="module")
-def excel():
-    client = pytest.importorskip("win32com.client")
-    app = client.DispatchEx("Excel.Application")
-    app.Visible = False
-    app.DisplayAlerts = False
-    app.EnableEvents = False
-    yield app
-    gc.collect()
-    app.Quit()
-    del app
-    gc.collect()
-
-
-@pytest.fixture
-def open_workbook(excel):
-    opened = []
-
-    def open_file(path):
-        workbook = excel.Workbooks.Open(str(path), 0, True)
-        opened.append(workbook)
-        return workbook
-
-    yield open_file
-    while opened:
-        workbook = opened.pop()
-        try:
-            workbook.Close(False)
-        finally:
-            del workbook
-    gc.collect()
-
-
 def _png(path):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))

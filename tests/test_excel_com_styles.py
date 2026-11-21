@@ -47,30 +47,6 @@ def _bgr(rgb: str) -> int:
     return int(rgb[4:6] + rgb[2:4] + rgb[0:2], 16)
 
 
-@pytest.fixture(scope="module")
-def excel():
-    client = pytest.importorskip("win32com.client")
-    app = client.DispatchEx("Excel.Application")
-    app.Visible = False
-    app.DisplayAlerts = False
-    yield app
-    app.Quit()
-
-
-@pytest.fixture
-def open_workbook(excel):
-    opened = []
-
-    def _open(path):
-        workbook = excel.Workbooks.Open(str(path))
-        opened.append(workbook)
-        return workbook
-
-    yield _open
-    for workbook in opened:
-        workbook.Close(False)
-
-
 def _rows(n, cols=4):
     return [[f"r{r}c{c}" if c == 0 else r * 10 + c for c in range(cols)] for r in range(n)]
 

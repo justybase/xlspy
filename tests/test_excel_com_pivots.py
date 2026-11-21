@@ -6,7 +6,6 @@ Labels are not compared: Excel localises them ("Row Labels" becomes
 "Etykiety wierszy" in Polish) when it refreshes the pivot on open.
 """
 
-import gc
 import io
 import time
 
@@ -105,20 +104,6 @@ CASES = {
         "B2:H8",
     ),
 }
-
-
-@pytest.fixture(scope="module")
-def excel():
-    client = pytest.importorskip("win32com.client")
-    app = client.DispatchEx("Excel.Application")
-    app.Visible = False
-    app.DisplayAlerts = False
-    yield app
-    app.Quit()
-    # Collect the COM wrappers while Excel can still answer; left for interpreter
-    # shutdown they crash the process.
-    del app
-    gc.collect()
 
 
 def _retry(call):

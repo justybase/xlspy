@@ -3,7 +3,6 @@ the files xlspy writes (chart type, named style, autofilter criteria, column
 style, sheet protection, page breaks, default row height, tables and control
 characters)."""
 
-import gc
 import zipfile
 
 import pytest
@@ -14,34 +13,6 @@ from xlspy.workbook._model import Break, RowBreak
 pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 XL_RADAR = {-4151, 81, 82}  # xlRadar, xlRadarMarkers, xlRadarFilled
-
-
-@pytest.fixture(scope="module")
-def excel():
-    client = pytest.importorskip("win32com.client")
-    app = client.DispatchEx("Excel.Application")
-    app.Visible = False
-    app.DisplayAlerts = False
-    app.EnableEvents = False
-    yield app
-    gc.collect()
-    app.Quit()
-    del app
-    gc.collect()
-
-
-@pytest.fixture
-def open_workbook(excel):
-    opened = []
-
-    def open_file(path):
-        workbook = excel.Workbooks.Open(str(path), 0, True)
-        opened.append(workbook)
-        return workbook
-
-    yield open_file
-    while opened:
-        opened.pop().Close(False)
 
 
 def test_radar_chart_is_a_radar_chart_in_excel(open_workbook, tmp_path):
