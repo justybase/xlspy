@@ -19,7 +19,9 @@ import datetime
 import math
 import re
 import unicodedata
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 from . import _fonts
 from ._accel import WidthMeter as _NativeWidthMeter
@@ -28,7 +30,7 @@ from .formulas import ArrayFormula, DataTableFormula, Formula
 from .hyperlinks import Hyperlink
 from .formats import _is_formatted_cell
 from .rich_text import CellRichText, TextBlock
-from .styles import Alignment, merge_styles
+from .styles import Alignment, Style, merge_styles
 
 DEFAULT_WIDTH = 8.43
 MAX_WIDTH = 255.0
@@ -321,7 +323,7 @@ _NUMBER_PLACEHOLDER = re.compile(r"[0#?][0#?,.]*(?:[eE][+-][0#]+)?")
 _EXPONENT = re.compile(r"[eE][+-]([0#]+)$")
 
 
-def _format_plan(number_format: str, measure) -> tuple | None:
+def _format_plan(number_format: str, measure: Callable[[str], int | None]) -> tuple[Any, ...] | None:
     """``_formatted_number_text`` compiled for the native meter: what each
     section shows, with its literal text measured by ``measure(text)``.
 
@@ -335,7 +337,7 @@ def _format_plan(number_format: str, measure) -> tuple | None:
     chosen = [sections[0]]
     if len(sections) > 1 and sections[1]:
         chosen.append(sections[1])
-    plans = []
+    plans: list[tuple[Any, ...]] = []
     for section in chosen:
         section = _BRACKETS.sub(_currency, section)
         if section.strip().lower() in ("", "general"):
@@ -375,7 +377,7 @@ def _format_plan(number_format: str, measure) -> tuple | None:
     return len(sections) > 1, plans[0], plans[1] if len(plans) > 1 else None
 
 
-def _shown(value, number_format: str | None) -> tuple[str | None, str | None]:
+def _shown(value: Any, number_format: str | None) -> tuple[str | None, str | None]:
     """(the text a cell shows, the text AutoFit makes room for)."""
     value = plain_value(value)  # written as the Python value it holds (NaT, NA: empty)
     if isinstance(value, Hyperlink):
@@ -433,13 +435,13 @@ def _general_room(number: float) -> str | None:
     return _shown(number, None)[1]
 
 
-def cell_text(value, number_format: str | None = None) -> str | None:
+def cell_text(value: Any, number_format: str | None = None) -> str | None:
     """The text a cell shows in Excel, approximately; ``None`` for no value."""
     return _shown(value, number_format)[0]
 
 
 def cell_width(
-    value,
+    value: Any,
     number_format: str | None = None,
     *,
     bold: bool = False,
@@ -477,7 +479,7 @@ def _indent_pixels(alignment: Alignment | None) -> int:
     return sides * _INDENT_PX * alignment.indent
 
 
-def _centred_columns(row, row_styles) -> set[int]:
+def _centred_columns(row: Sequence[Any], row_styles: Mapping[int, Style] | None) -> set[int]:
     """Columns of a row whose cell is centred (``horizontal="center"``), by
     the row's style and a ``(value, Style)`` cell's own, as the cell shows it."""
     centred = set()
@@ -497,7 +499,7 @@ _PLAIN_PROPS = (None, False, None, False, 0, _DEFAULT_FAMILY, False)
 _HEADER_PROPS = (None, True, None, False, 0, _DEFAULT_FAMILY, False)
 
 
-def _style_props(style, cache: dict):
+def _style_props(style: Style | None, cache: dict[int, tuple[Any, tuple[Any, ...]]]) -> tuple[Any, ...]:
     """(number_format, bold, size, wrap, indent pixels, font family, italic) of
     a Style, cached by identity."""
     if style is None:
@@ -533,22 +535,29 @@ class ColumnWidthMeter:
     that is neither the first row nor in ``slow_rows`` (the writers' hot path).
     """
 
-    def __init__(self, styles_at=None, rows: int | None = 1000, button_rows=frozenset()):
+    def __init__(
+        self,
+        styles_at: Any = None,
+        rows: int | None = 1000,
+        button_rows: Iterable[int] = frozenset(),
+    ) -> None:
         self.limit = math.inf if rows is None else rows
         self._styles_at = styles_at
         self._button_rows = frozenset(button_rows)
         self._best: list[int] = []  # column pixels
         self._cells: dict[int, dict[int, int]] = {}  # button row -> {column: pixels}
         self._centred: dict[int, set[int]] = {}  # button row -> its centred columns
-        self._style_cache: dict = {}
-        self._fonts: dict = {}  # (family, bold, italic, size) -> (advances, pixels, margin, slant)
-        self._constant: dict[tuple, int] = {}  # (type, number format, font) -> pixels of dates and booleans
-        self._native = None
-        self.fast_add = None
+        self._style_cache: dict[int, tuple[Any, tuple[Any, ...]]] = {}
+        self._fonts: dict[
+            tuple[Any, ...], tuple[Any, ...]
+        ] = {}  # (family, bold, italic, size) -> (advances, pixels, margin, slant)
+        self._constant: dict[tuple[Any, ...], int] = {}  # (type, number format, font) -> pixels of dates and booleans
+        self._native: Any = None
+        self.fast_add: Any = None
         self.slow_rows = self._button_rows | {0}
         if _NativeWidthMeter is not None:
             # Style props -> native kind; 0 plain, 1 bold (an unstyled header cell).
-            self._kinds: dict = {_PLAIN_PROPS: 0, _HEADER_PROPS: 1}
+            self._kinds: dict[tuple[Any, ...], int] = {_PLAIN_PROPS: 0, _HEADER_PROPS: 1}
             self._native = _NativeWidthMeter(
                 self._native_fallback, self._kind_of, [bool, datetime.date, datetime.datetime], self._overlay_kind
             )
@@ -556,7 +565,7 @@ class ColumnWidthMeter:
                 self._native.add_kind(kind, self._kind_spec(props))
             self.fast_add = self._native.add
 
-    def add(self, row_idx: int, row, row_styles=None) -> None:
+    def add(self, row_idx: int, row: Sequence[Any], row_styles: Mapping[int, Style] | None = None) -> None:
         """Measure one row (the caller checks ``row_idx < meter.limit``).
         ``row_styles``: the row's ``{column: Style}``, from ``styles_at`` when None."""
         if row_styles is None:
@@ -586,7 +595,7 @@ class ColumnWidthMeter:
             if kept is not None:
                 kept[col_idx] = width
 
-    def _font(self, family: str, bold: bool, italic: bool, size) -> tuple:
+    def _font(self, family: str, bold: bool, italic: bool, size: float | None) -> tuple[Any, ...]:
         """(advances, pixels, margin, slant pixels) of a font at ``size`` points."""
         key = (family, bold, italic, size)
         font = self._fonts.get(key)
@@ -601,7 +610,7 @@ class ColumnWidthMeter:
             )
         return font
 
-    def _rich_pixels(self, rich, family: str, bold: bool, italic: bool, size, wrap: bool) -> int:
+    def _rich_pixels(self, rich: Any, family: str, bold: bool, italic: bool, size: float | None, wrap: bool) -> int:
         """Pixels of a rich text, the room for italic runs included.
 
         A plain ``str`` run is drawn in the cell's font; a ``TextBlock`` in
@@ -631,7 +640,7 @@ class ColumnWidthMeter:
         text_px = max(widest, line)
         return text_px + slant if text_px else 0
 
-    def _cell_pixels(self, row_idx: int, cell, style) -> int:
+    def _cell_pixels(self, row_idx: int, cell: Any, style: Style | None) -> int:
         """The column width in pixels one cell needs (0: none)."""
         number_format = None
         if type(cell) is tuple and _is_formatted_cell(cell):
@@ -681,15 +690,15 @@ class ColumnWidthMeter:
 
     # --- the native meter (rows past the first, see autofit.rs) ---
 
-    def _native_fallback(self, cell, style, header: bool) -> int:
+    def _native_fallback(self, cell: Any, style: Style | None, header: bool) -> int:
         """A cell the native meter does not measure itself."""
         return self._cell_pixels(0 if header else -1, cell, style)
 
-    def _kind_of(self, style):
+    def _kind_of(self, style: Style | None) -> tuple[Any, ...]:
         """(kind id, its spec if the native meter has not seen it) of a Style."""
         return self._kind_for(_style_props(style, self._style_cache))
 
-    def _overlay_kind(self, style, overlay, header: bool):
+    def _overlay_kind(self, style: Style | None, overlay: Any, header: bool) -> tuple[Any, ...]:
         """The kind of a ``(value, format)`` or ``(value, Style)`` cell under a
         column style, as ``_cell_pixels`` applies it."""
         if isinstance(overlay, str):
@@ -699,14 +708,14 @@ class ColumnWidthMeter:
             props = _style_props(merge_styles(style, overlay), self._style_cache)
         return self._kind_for(props)
 
-    def _kind_for(self, props):
+    def _kind_for(self, props: tuple[Any, ...]) -> tuple[Any, ...]:
         kind = self._kinds.get(props)
         if kind is not None:
             return kind, None
         kind = self._kinds[props] = len(self._kinds)
         return kind, self._kind_spec(props)
 
-    def _kind_spec(self, props) -> tuple:
+    def _kind_spec(self, props: tuple[Any, ...]) -> tuple[Any, ...]:
         number_format, bold, size, wrap, indent, family, italic = props
         advances, pixels, margin, slant = self._font(family, bold, italic, size)
         general = not number_format or number_format.strip().lower() == "general"
@@ -726,7 +735,12 @@ class ColumnWidthMeter:
                 plan = None
         return advances, margin, general, wrap, char_px, plan, indent + slant
 
-    def widths(self, max_cols: int, filter_cells=(), padding: float = 0.0) -> list[float]:
+    def widths(
+        self,
+        max_cols: int,
+        filter_cells: Iterable[tuple[int, int, int]] = (),
+        padding: float = 0.0,
+    ) -> list[float]:
         """Widths of the first ``max_cols`` columns in characters, never below
         Excel's default. ``filter_cells`` holds ``(row, first_col, last_col)``
         header spans whose cells carry a filter drop-down button; ``padding``
@@ -752,7 +766,13 @@ class ColumnWidthMeter:
         return [min(MAX_WIDTH, max(DEFAULT_WIDTH, px / _DIGIT_PX + padding)) if px else DEFAULT_WIDTH for px in best]
 
 
-def estimate_column_widths(rows, max_cols: int, styles_at=None, filter_cells=(), padding: float = 0.0) -> list[float]:
+def estimate_column_widths(
+    rows: Iterable[Sequence[Any]],
+    max_cols: int,
+    styles_at: Any = None,
+    filter_cells: Iterable[tuple[int, int, int]] = (),
+    padding: float = 0.0,
+) -> list[float]:
     """Column widths that show ``rows`` whole (see ``ColumnWidthMeter``)."""
     meter = ColumnWidthMeter(styles_at, None, {r for r, _c1, _c2 in filter_cells})
     for row_idx, row in enumerate(rows):

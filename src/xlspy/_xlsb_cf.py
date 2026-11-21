@@ -10,6 +10,7 @@ instead of being guessed.
 from __future__ import annotations
 
 import struct
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from ._xlsb_formulas import compile_formula, decode_formula, read_parsed
@@ -148,7 +149,7 @@ _CF_PATTERN_CODES = {
 }
 
 
-def _unsupported_cf_feature(name: str):
+def _unsupported_cf_feature(name: str) -> TypeError:
     return TypeError(f"{name} is not supported in XLSB conditional formats; use XlsxWriter for it")
 
 
@@ -161,7 +162,7 @@ def _encode_wide_text(value: str) -> bytes:
     return struct.pack("<H", len(encoded) // 2) + encoded
 
 
-def _cf_color_record(color) -> bytes:
+def _cf_color_record(color: Any) -> bytes:
     """An 8-byte XFPropColor; Excel writes index 0xFF for RGB colors."""
     key = _color_key(color)
     if key is None:
@@ -178,7 +179,7 @@ def _cf_color_record(color) -> bytes:
     return bytes(8)
 
 
-def _font_props(font) -> list:
+def _font_props(font: Any) -> list[Any]:
     for name in ("vertAlign", "charset", "family", "scheme", "outline", "shadow", "condense", "extend"):
         if getattr(font, name) is not None:
             raise _unsupported_cf_feature(f"Font.{name}")
@@ -202,7 +203,7 @@ def _font_props(font) -> list:
     return props
 
 
-def _fill_props(fill) -> list:
+def _fill_props(fill: Any) -> list[Any]:
     if isinstance(fill, GradientFill):
         raise _unsupported_cf_feature("GradientFill")
     props = []
@@ -220,7 +221,7 @@ def _fill_props(fill) -> list:
     return props
 
 
-def _border_props(border) -> list:
+def _border_props(border: Any) -> list[Any]:
     for name in ("diagonal", "vertical", "horizontal", "start", "end"):
         if getattr(border, name) is not None:
             raise _unsupported_cf_feature(f"Border.{name}")
@@ -235,7 +236,7 @@ def _border_props(border) -> list:
     return props
 
 
-def _alignment_props(alignment) -> list:
+def _alignment_props(alignment: Any) -> list[Any]:
     for name in (
         "vertical",
         "shrink_to_fit",
@@ -255,9 +256,9 @@ def _alignment_props(alignment) -> list:
     return props
 
 
-def dxf_payload(dxf: DifferentialStyle, register_numfmt) -> bytes:
+def dxf_payload(dxf: DifferentialStyle, register_numfmt: Callable[[str], int]) -> bytes:
     """The BrtDXF payload; ``register_numfmt`` returns the id of a number format."""
-    props = []
+    props: list[tuple[float, bytes]] = []
     if dxf.font is not None:
         props += _font_props(dxf.font)
     if dxf.fill is not None:
@@ -290,7 +291,7 @@ def dxfs_bin(payloads: list[bytes]) -> bytes:
     )
 
 
-def _rule_fields(rule, corner: str):
+def _rule_fields(rule: Any, corner: str) -> tuple[Any, ...]:
     """``(iType, iTemplate, iParam, flags, formulas, text)`` for a rule."""
     flags = _STOP_IF_TRUE if rule.stop_if_true else 0
     if isinstance(rule, CellIsRule):
@@ -415,7 +416,7 @@ def _read_cf_sqref(payload: bytes, offset: int) -> str:
     return format_sqref(ranges)
 
 
-def cf_rule(sqref: str, payload: bytes, context, style_table):
+def cf_rule(sqref: str, payload: bytes, context: Any, style_table: Any) -> Any:
     """A rule from a BrtBeginCFRule payload with formulas, or None for an
     unknown kind (color scales, data bars and icon sets are read by
     ``read_conditional_formats`` with their sub-records)."""
@@ -473,17 +474,24 @@ def cf_rule(sqref: str, payload: bytes, context, style_table):
     return None
 
 
-def read_conditional_formats(items, context, style_table, links=None):
+def read_conditional_formats(
+    items: Iterable[tuple[int, bytes]],
+    context: Any,
+    style_table: Any,
+    links: dict[int, bytes] | None = None,
+) -> list[tuple[str, Any]]:
     """``(sqref, rule)`` pairs from the BrtBeginConditionalFormatting,
     BrtBeginCFRule and color scale / data bar / icon set records of a sheet,
     in file order. A ``BrtCFRuleExt`` ties the rule before it to its Excel 2010
     extension; with ``links`` (a dict) ``id(rule)`` is mapped to its payload."""
-    found: list[Any] = []
-    sqref = None
+    found: list[tuple[str, Any]] = []
+    sqref: str | None = None
     open_rule = False  # the last rule record was read into ``found``
-    pending = None  # (sqref, rule payload, sub-records) of a scale rule
+    pending: tuple[str, bytes, list[tuple[int, bytes]]] | None = (
+        None  # (sqref, rule payload, sub-records) of a scale rule
+    )
 
-    def flush():
+    def flush() -> None:
         if pending is None:
             return
         rule_sqref, payload, parts = pending
@@ -527,7 +535,7 @@ def read_conditional_formats(items, context, style_table, links=None):
     return found
 
 
-def rule_bin(rule, priority: int, dxf_id: int, context, letters) -> bytes:
+def rule_bin(rule: Any, priority: int, dxf_id: int, context: Any, letters: Any) -> bytes:
     """BrtBeginCFRule with the rule's formulas (or its color scale, data bar
     or icon set records), and BrtEndCFRule."""
 
@@ -621,7 +629,7 @@ _ICON_ONLY, _ICON_REVERSE = 0x02, 0x04
 _BAR_SHOW_VALUE = 0x01
 
 
-def _scale_color(color) -> bytes:
+def _scale_color(color: Any) -> bytes:
     """A BrtColor payload; Excel writes RGB colors opaque."""
     data = _cf_color_record(color)
     if data[0] == 0x05:
@@ -629,7 +637,7 @@ def _scale_color(color) -> bytes:
     return data
 
 
-def cfvo_bin(kind: str, value, context, origin, gte: bool = False) -> bytes:
+def cfvo_bin(kind: str, value: Any, context: Any, origin: tuple[int, int], gte: bool = False) -> bytes:
     """A BrtCFVO payload; a ``formula`` threshold is compiled like a rule
     formula, relative to the range's top-left cell."""
     code = _CFVO_CODES[kind]
@@ -658,9 +666,9 @@ def cfvo_bin(kind: str, value, context, origin, gte: bool = False) -> bytes:
     return struct.pack("<Id3I", code, number, flag, flag, size) + formula
 
 
-def _scale_records(rule, context, origin) -> bytes:
+def _scale_records(rule: Any, context: Any, origin: tuple[int, int]) -> bytes:
 
-    def threshold(item, default, gte=False):
+    def threshold(item: Any, default: tuple[Any, ...], gte: bool = False) -> bytes:
         if item is None:
             return build_record(BRT_CFVO, cfvo_bin(default[0], default[1], context, origin, gte))
         return build_record(BRT_CFVO, cfvo_bin(item.type, item.value, context, origin, gte))
@@ -696,7 +704,7 @@ def _scale_records(rule, context, origin) -> bytes:
     return out + build_record(BRT_END_ICON_SET)
 
 
-def _read_cfvo(payload: bytes, context, origin):
+def _read_cfvo(payload: bytes, context: Any, origin: tuple[int, int]) -> FormatObject:
 
     code, number, _save_gte, _gte, size = struct.unpack_from("<Id3I", payload, 0)
     kind = _CFVO_NAMES[code]
@@ -708,11 +716,18 @@ def _read_cfvo(payload: bytes, context, origin):
     return FormatObject(kind, int(number) if number.is_integer() else number)
 
 
-def _scale_rule(sqref, kind, priority, stop, parts, context):
+def _scale_rule(
+    sqref: str,
+    kind: int,
+    priority: int,
+    stop: bool | None,
+    parts: list[tuple[int, bytes]],
+    context: Any,
+) -> Any:
     """A color scale, data bar or icon set from its sub-records."""
     first_col, first_row, _, _ = parse_cell_range(sqref.split()[0])
     origin = (first_col, first_row)
-    head = None
+    head: tuple[int, bytes] | None = None
     cfvos: list[Any] = []
     colors: list[Any] = []
     for record_id, payload in parts:
@@ -775,7 +790,12 @@ class _Letters:
     __getitem__ = staticmethod(_letter)
 
 
-def conditional_formats_bin(formats, context, dxf_id, links=None) -> bytes:
+def conditional_formats_bin(
+    formats: Iterable[tuple[str, bool | None, list[Any]]],
+    context: Any,
+    dxf_id: Callable[[Any], int],
+    links: Mapping[int, bytes] | None = None,
+) -> bytes:
     """The BrtBeginConditionalFormatting blocks for ``formats``, an iterable
     of ``(sqref, pivot, rules)``; ``dxf_id`` gives a rule's style index.
     Rules without a priority come after the others, in order. ``links`` maps
@@ -819,7 +839,7 @@ def conditional_formats_bin(formats, context, dxf_id, links=None) -> bytes:
     return b"".join(out)
 
 
-def without_conditional_formats(data: bytes, keep=frozenset()):
+def without_conditional_formats(data: bytes, keep: frozenset[bytes] = frozenset()) -> tuple[bytes, list[bytes]]:
     """``(worksheet part without its conditional formats, kept extension)``.
 
     The Excel 2010 extension is a list of groups (BrtBeginConditionalFormatting14
@@ -829,7 +849,9 @@ def without_conditional_formats(data: bytes, keep=frozenset()):
     describe something else."""
 
     records = list(iter_records(data))
-    kept, linked, groups = [], {}, []
+    kept: list[bytes] = []
+    linked: dict[bytes, bytes] = {}
+    groups: list[bytes] = []
     depth = 0
     index = 0
     while index < len(records):
@@ -847,7 +869,7 @@ def without_conditional_formats(data: bytes, keep=frozenset()):
             continue
         if kind == _FRT_BEGIN and index + 1 < len(records) and records[index + 1].record_id == _BEGIN_CF14_LIST:
             end = index + 2
-            start = None
+            start: int | None = None
             while end < len(records) and records[end].record_id != _FRT_END:
                 if records[end].record_id == _BEGIN_CF14:
                     start = records[end].header_start
@@ -863,7 +885,7 @@ def without_conditional_formats(data: bytes, keep=frozenset()):
     return b"".join(kept), extension
 
 
-def insert_extension(data: bytes, groups) -> bytes:
+def insert_extension(data: bytes, groups: list[bytes]) -> bytes:
     """``data`` with the extension ``groups`` before the trailing alternate
     content block and BrtEndSheet (rows carry the same block, so only the tail counts)."""
 
@@ -878,7 +900,7 @@ def insert_extension(data: bytes, groups) -> bytes:
     return data[:at] + block + data[at:]
 
 
-def extension_block(groups) -> bytes:
+def extension_block(groups: list[bytes]) -> bytes:
     """The worksheet FRT block (BrtFRTBegin ... BrtFRTEnd) holding ``groups``."""
     if not groups:
         return b""
