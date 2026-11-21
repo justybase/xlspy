@@ -355,6 +355,13 @@ class Workbook:
                 new_cell._named_style = cell._named_style
         target._merged_cells = MultiCellRange(from_worksheet._merged_cells.ranges)
         target._threaded_comments = copy.deepcopy(from_worksheet._threaded_comments)
+        # A copy is a separate conversation: give its messages new ids when saved.
+        for ref, thread in target._threaded_comments.items():
+            thread.id = None
+            for reply in thread.replies:
+                reply.id = None
+                reply._parent_id = None
+            target._dirty_threaded_comments.add(ref)
         for name in ("_column_dimensions", "_row_dimensions"):
             getattr(target, name).update(copy.deepcopy(dict(getattr(from_worksheet, name))))
         target._row_heights = dict(from_worksheet._row_heights)

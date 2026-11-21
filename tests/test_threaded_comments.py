@@ -219,6 +219,16 @@ def test_threaded_comments_move_with_cells_and_copy(tmp_path):
     copy["A3"].threaded_comment.text = "Copy"
     assert sheet["A3"].threaded_comment.text == "Root"
 
+    copied_path = tmp_path / "copied.xlsx"
+    workbook.save(copied_path)
+    reloaded = load_workbook(copied_path)
+    original = reloaded["Data"]["A3"].threaded_comment
+    duplicate = reloaded["Data Copy"]["A3"].threaded_comment
+    assert original.text == "Root"
+    assert duplicate.text == "Copy"
+    assert original.id != duplicate.id
+    assert original.replies[0].id != duplicate.replies[0].id
+
 
 def test_two_saves_are_identical_with_threaded_comments(tmp_path):
     first = tmp_path / "first.xlsx"
