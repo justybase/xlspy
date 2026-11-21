@@ -194,6 +194,41 @@ def test_updater_rejects_a_duplicate_thread_id(tmp_path):
             updater.set_threaded_comments("Data", {"B1": duplicate})
 
 
+def test_updater_adds_a_thread_to_a_classic_note_workbook(tmp_path):
+    path = tmp_path / "add.xlsx"
+    write_book(path, comments={"B1": Comment("classic", "Ann")})
+    with XlsxUpdater(path) as updater:
+        updater.set_threaded_comments("Data", {"A1": conversation()})
+        updater.save()
+
+    archive = parts(path)
+    assert "xl/threadedComments/threadedComment1.xml" in archive
+    assert "xl/persons/person.xml" in archive
+    loaded = load_workbook(path)
+    assert loaded["Data"]["A1"].threaded_comment.text == "Root"
+    assert loaded["Data"]["B1"].comment.text == "classic"
+
+
+def test_removing_one_sheet_threads_keeps_people_for_others(tmp_path):
+    path = tmp_path / "two-sheets.xlsx"
+    with XlsxWriter(path) as writer:
+        writer.add_sheet("One")
+        writer.write_sheet([["x"]], threaded_comments={"A1": conversation("One", "Jan")})
+        writer.add_sheet("Two")
+        writer.write_sheet([["y"]], threaded_comments={"A1": conversation("Two", "Ola")})
+
+    with XlsxUpdater(path) as updater:
+        updater.set_threaded_comments("One", {"A1": None})
+        updater.save()
+
+    archive = parts(path)
+    assert "xl/persons/person.xml" in archive
+    loaded = load_workbook(path)
+    assert loaded["One"]["A1"].threaded_comment is None
+    assert loaded["Two"]["A1"].threaded_comment.text == "Two"
+    assert loaded["Two"]["A1"].threaded_comment.author == "Ola"
+
+
 def test_editing_classic_notes_keeps_threaded_companions(tmp_path):
     path = tmp_path / "mix.xlsx"
     write_book(path, comments={"B1": Comment("classic", "Ann")}, threaded_comments={"A1": conversation()})
