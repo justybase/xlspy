@@ -59,7 +59,7 @@ _NATIVE_NAMES = (
 )
 
 
-def _load_native():
+def _load_native() -> Any:
     if ACCEL_MODE == "python":
         return None
     try:
@@ -81,7 +81,7 @@ if _native is not None:
             ACCEL_BACKEND[_name] = "rust"
 
 
-def _register_types(module) -> None:
+def _register_types(module: Any) -> None:
     """Hand the native module the xlspy classes it checks and builds."""
     if hasattr(module, "set_error_type"):
         module.set_error_type(_CellError)
@@ -137,7 +137,14 @@ WidthMeter: Any = _impl.get("WidthMeter")
 general_number_text: Any = _impl.get("general_number_text")
 
 
-def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header=None, cell_hook=None):
+def encode_xlsb_row_inline(
+    row: Any,
+    row_idx: int,
+    style_ids: Any = None,
+    fmt_xf: Any = None,
+    row_header: Any = None,
+    cell_hook: Any = None,
+) -> Any:
     """Row bytes with inline text cells natively, or None to use the Python
     writer (over-long or unpaired-surrogate text, tuple-formatted cells whose
     xf is not in ``fmt_xf`` yet). ``row_header`` replaces the default
@@ -156,17 +163,17 @@ def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header
 
 
 def encode_xlsb_row(
-    row,
-    ss_dict,
-    ss_list,
-    sst_unique_count,
-    sst_all_count,
-    row_idx,
-    style_ids=None,
-    fmt_xf=None,
-    row_header=None,
-    cell_hook=None,
-):
+    row: Any,
+    ss_dict: Any,
+    ss_list: Any,
+    sst_unique_count: int,
+    sst_all_count: int,
+    row_idx: int,
+    style_ids: Any = None,
+    fmt_xf: Any = None,
+    row_header: Any = None,
+    cell_hook: Any = None,
+) -> Any:
     if not HAVE_NATIVE:
         return None
     if cell_hook is not None:
@@ -199,13 +206,25 @@ def encode_xlsb_row(
     return _native_encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx)
 
 
-def read_xlsb_worksheet(data, shared_strings, styles_list, date_num_fmts, date_1904=False):
+def read_xlsb_worksheet(
+    data: bytes,
+    shared_strings: Any,
+    styles_list: Any,
+    date_num_fmts: Any,
+    date_1904: bool = False,
+) -> Any:
     if HAVE_NATIVE:
         return _native_read_xlsb_worksheet(data, shared_strings, styles_list, date_num_fmts, date_1904)
     return None
 
 
-def read_xlsx_worksheet(stream, head, shared_strings, is_date_style, date_1904=False):
+def read_xlsx_worksheet(
+    stream: Any,
+    head: bytes,
+    shared_strings: Any,
+    is_date_style: Any,
+    date_1904: bool = False,
+) -> Any:
     """Row iterator over an XLSX worksheet stream, or None to use the Python
     fast path.  Items are ``(row_number, cells)``; a ``bytes`` item is a row
     the caller must parse with ElementTree (then call ``rows.resume(n)``)."""
@@ -214,7 +233,7 @@ def read_xlsx_worksheet(stream, head, shared_strings, is_date_style, date_1904=F
     return _native_read_xlsx_worksheet(stream, head, shared_strings, is_date_style, date_1904)
 
 
-def xlsb_row_has_formatted(row):
+def xlsb_row_has_formatted(row: Any) -> bool | None:
     """True/False natively pre-scan, or None to use the Python check."""
     if _native_row_has_formatted is None:
         return None
@@ -222,14 +241,14 @@ def xlsb_row_has_formatted(row):
     return None if result is None else bool(result)
 
 
-def encode_xlsb_sst(ss_list, sst_all_count, sst_unique_count):
+def encode_xlsb_sst(ss_list: Any, sst_all_count: int, sst_unique_count: int) -> Any:
     """Complete sharedStrings.bin payload, or None to use the Python writer."""
     if _native_encode_xlsb_sst is None:
         return None
     return _native_encode_xlsb_sst(ss_list, sst_all_count, sst_unique_count)
 
 
-def read_xlsb_shared_strings(data):
+def read_xlsb_shared_strings(data: bytes) -> Any:
     """Shared-strings list from a sharedStrings.bin part, or None to use
     the Python reader."""
     if _native_read_xlsb_sst is None:
@@ -237,7 +256,7 @@ def read_xlsb_shared_strings(data):
     return _native_read_xlsb_sst(data)
 
 
-def read_xlsx_shared_strings(data):
+def read_xlsx_shared_strings(data: bytes) -> Any:
     """Shared strings from an XLSX sharedStrings part (bytes), or None when the
     native parser does not take the part; the regex and expat parsers then read it."""
     if _native_read_xlsx_sst is None:
@@ -246,20 +265,20 @@ def read_xlsx_shared_strings(data):
 
 
 def encode_xlsx_row(
-    row,
-    ss_dict,
-    ss_list,
-    sst_uniq,
-    sst_all,
-    row_idx,
-    use_shared_strings,
-    style_ids=None,
-    fmt_xf=None,
-    row_attrs=None,
-    link_xf=None,
-    write_r=True,
-    cell_hook=None,
-):
+    row: Any,
+    ss_dict: Any,
+    ss_list: Any,
+    sst_uniq: int,
+    sst_all: int,
+    row_idx: int,
+    use_shared_strings: bool,
+    style_ids: Any = None,
+    fmt_xf: Any = None,
+    row_attrs: Any = None,
+    link_xf: Any = None,
+    write_r: bool = True,
+    cell_hook: Any = None,
+) -> Any:
     """(row_xml as UTF-8 bytes, uniq, all, hyperlinks) natively, or None to use the
     Python row writer (unencodable rows, and tuple-formatted cells whose xf is not
     in ``fmt_xf`` yet).  ``row_attrs`` are extra ``<row>`` attributes.  ``link_xf``

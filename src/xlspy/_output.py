@@ -24,7 +24,7 @@ import shutil
 import tempfile
 import zipfile
 from types import TracebackType
-from typing import IO, TYPE_CHECKING, Any, Literal, Self, TypeAlias
+from typing import IO, TYPE_CHECKING, Any, Literal, Self, TypeAlias, cast
 
 from . import _zip_threads
 from ._metadata import WorkbookProtection
@@ -43,7 +43,7 @@ class PackageZip(zipfile.ZipFile):
     current time makes the same workbook give the same bytes on every save.
     """
 
-    def _member(self, name):
+    def _member(self, name: str) -> zipfile.ZipInfo:
         info = zipfile.ZipInfo(name)
         info.compress_type = self.compression
         if hasattr(info, "compress_level"):  # Python 3.13+
@@ -52,20 +52,20 @@ class PackageZip(zipfile.ZipFile):
             info._compresslevel = self.compresslevel  # type: ignore[attr-defined]  # ZipInfo private field before 3.13
         return info
 
-    def writestr(self, zinfo_or_arcname, data, *args, **kwargs):
+    def writestr(self, zinfo_or_arcname: str | zipfile.ZipInfo, data: Any, *args: Any, **kwargs: Any) -> None:
         if isinstance(zinfo_or_arcname, str):
             zinfo_or_arcname = self._member(zinfo_or_arcname)
             zinfo_or_arcname.external_attr = 0o600 << 16
         super().writestr(zinfo_or_arcname, data, *args, **kwargs)
 
-    def open(self, name, mode="r", *args, **kwargs):
+    def open(self, name: str | zipfile.ZipInfo, mode: Literal["r", "w"] = "r", *args: Any, **kwargs: Any) -> IO[Any]:
         if mode == "w" and isinstance(name, str):
             name = self._member(name)
         return super().open(name, mode, *args, **kwargs)
 
     _deflate_pool = None
 
-    def deflate_pool(self):
+    def deflate_pool(self) -> Any:
         """The worker thread that compresses this archive's large members."""
         if self._deflate_pool is None:
             from concurrent.futures import ThreadPoolExecutor
@@ -76,17 +76,18 @@ class PackageZip(zipfile.ZipFile):
     def threaded_deflate(self) -> bool:
         return _zip_threads.AVAILABLE and self.compression == zipfile.ZIP_DEFLATED
 
-    def open_threaded(self, name):
+    def open_threaded(self, name: str) -> Any:
         """``open(name, "w")``, compressing on the worker thread.
 
         The member's bytes are the same as with ``open()``.
         """
         member = self.open(name, "w")
-        if self.threaded_deflate() and member._compressor is not None:
-            member._compressor = _zip_threads.ThreadedDeflate(self.deflate_pool(), self.compresslevel)
+        compressor = getattr(member, "_compressor", None)
+        if self.threaded_deflate() and compressor is not None:
+            cast(Any, member)._compressor = _zip_threads.ThreadedDeflate(self.deflate_pool(), self.compresslevel)
         return member
 
-    def close(self):
+    def close(self) -> None:
         try:
             super().close()
         finally:
@@ -98,7 +99,7 @@ class PackageZip(zipfile.ZipFile):
 class StagedOutput:
     """The staging file for one workbook and its eventual publication."""
 
-    def __init__(self, target, spool_max_bytes: int | None = None):
+    def __init__(self, target: WriteTarget, spool_max_bytes: int | None = None) -> None:
         if spool_max_bytes is None:
             spool_max_bytes = DEFAULT_STAGING_BYTES
         self._target = target
@@ -130,7 +131,7 @@ class StagedOutput:
                 self._temp_path = None
             else:
                 self.stream.seek(0)
-                shutil.copyfileobj(self.stream, self._target, _COPY_CHUNK)
+                shutil.copyfileobj(self.stream, cast(IO[bytes], self._target), _COPY_CHUNK)
                 flush = getattr(self._target, "flush", None)
                 if flush is not None:
                     flush()
@@ -187,7 +188,7 @@ class StagedWriter:
             raise TypeError("protection must be WorkbookProtection")
         self._workbook_protection = protection
 
-    def _staging_bytes(self):
+    def _staging_bytes(self) -> int | None:
         """In-memory size of the staging spool for file-object targets."""
 
     def __enter__(self) -> Self:
@@ -215,7 +216,7 @@ class StagedWriter:
             self._finish(publish)
         return False
 
-    def _require_writable(self):
+    def _require_writable(self) -> None:
         if self._zf is None:
             raise RuntimeError("the writer is not open; use it as a context manager")
         if self._aborted:
@@ -237,7 +238,7 @@ class StagedWriter:
         """Close the writer, publishing the workbook if ``save()`` succeeded."""
         self._finish(publish=True)
 
-    def __del__(self):
+    def __del__(self) -> None:
         # A writer abandoned without close() publishes nothing and leaves no
         # staging file. The archive is closed before its staging file goes.
         try:
@@ -246,7 +247,7 @@ class StagedWriter:
         except Exception:
             pass  # interpreter shutdown: module globals may already be gone
 
-    def _finish(self, publish: bool):
+    def _finish(self, publish: bool) -> None:
         zf, output = self._zf, self._output
         self._zf = self._output = None
         if zf is None or output is None:  # both are set together in __enter__
@@ -266,7 +267,7 @@ class StagedWriter:
             output.discard()
 
 
-def _final_path(target) -> str:
+def _final_path(target: str | bytes | os.PathLike[str]) -> str:
     path = os.fsdecode(os.fspath(target))
     # Replace the file a symlink points to, not the link itself.
     if os.path.islink(path):
@@ -279,7 +280,7 @@ def _final_path(target) -> str:
     return path
 
 
-def _create_sibling(path: str):
+def _create_sibling(path: str) -> tuple[str, IO[bytes]]:
     """Create a new temporary file next to ``path``; return its name and handle."""
     directory, name = os.path.split(os.path.abspath(path))
     for _ in range(100):
