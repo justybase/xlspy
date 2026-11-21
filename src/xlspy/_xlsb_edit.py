@@ -704,7 +704,7 @@ class XlsbEditMixin(SheetEditMixin):
     ) -> tuple[dict[str, Any], list[str]]:
         updates: dict[str, Any] = {path: patched}
         removed: list[str] = []
-        if context is not None:
+        if context is not None and original_workbook is not None:
             updates["xl/workbook.bin"] = context.write_workbook(original_workbook)
         if removed_shared_refs and self._package.has("xl/sharedStrings.bin"):
             sst = self._package.get("xl/sharedStrings.bin")

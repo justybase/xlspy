@@ -132,7 +132,6 @@ _Q_C = f"{{{MAIN}}}c"
 _Q_F = f"{{{MAIN}}}f"
 _Q_V = f"{{{MAIN}}}v"
 _Q_IS = f"{{{MAIN}}}is"
-_cell_position = cell_position
 
 
 @functools.lru_cache(maxsize=1024)
@@ -848,7 +847,7 @@ def _load_row(
             continue
         ref = cell.get("r")
         if ref:
-            col, row = _cell_position(ref)
+            col, row = cell_position(ref)
         else:
             col, row = next_column, row_number - 1
         next_column = col + 1

@@ -7,6 +7,7 @@ module. No Excel installation or third-party parser is needed at runtime.
 from __future__ import annotations
 
 from .exceptions import UnsupportedFeatureError
+from collections.abc import Iterable
 from dataclasses import dataclass
 import datetime
 from decimal import Decimal
@@ -82,13 +83,13 @@ _LEX = re.compile(
 )
 
 
-def parsed_formula(tokens, extra=b""):
+def parsed_formula(tokens: bytes, extra: bytes = b"") -> bytes:
     if not 0 < len(tokens) <= 16384:
         raise ValueError("XLSB formula token length exceeds the BIFF12 limit")
     return struct.pack("<I", len(tokens)) + tokens + struct.pack("<I", len(extra)) + extra
 
 
-def read_parsed(data, offset=0):
+def read_parsed(data: bytes, offset: int = 0) -> tuple[bytes, bytes, int]:
     if offset + 4 > len(data):
         raise ValueError("Truncated XLSB formula length")
     length = struct.unpack_from("<I", data, offset)[0]
@@ -101,7 +102,7 @@ def read_parsed(data, offset=0):
     return data[offset + 4 : end], data[end + 4 : end + 4 + extra_length], end + 4 + extra_length
 
 
-def _syntax_error(text, end):
+def _syntax_error(text: str, end: int) -> UnsupportedFeatureError:
     message = f"unsupported XLSB formula syntax near {text[end : end + 24]!r}"
     if "[" in text[max(end - 1, 0) : end + 24]:
         message += (
@@ -121,15 +122,15 @@ _KEYWORD_BITS = {"#ALL": 0x04, "#HEADERS": 0x08, "#DATA": 0x10, "#TOTALS": 0x20,
 class _Structured:
     """A token ``Table[spec]``; ``spec`` is the text between the outer brackets."""
 
-    def __init__(self, name, spec):
+    def __init__(self, name: str, spec: str) -> None:
         self.name = name
         self.spec = spec
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.name}[{self.spec}]"
 
 
-def _scan_group(text, start):
+def _scan_group(text: str, start: int) -> tuple[str, int]:
     """The text inside the brackets that open at ``start``, and the index after them.
 
     An escaped character (``'[``, ``''``) does not count as a bracket.
@@ -152,7 +153,7 @@ def _scan_group(text, start):
 
 
 class _Parser:
-    def __init__(self, text):
+    def __init__(self, text: str) -> None:
         self.tokens: list[Any] = []
         position = 0
         while position < len(text):
@@ -170,17 +171,17 @@ class _Parser:
         self.tokens.append(None)
         self.index = 0
 
-    def peek(self):
+    def peek(self) -> Any:
         return self.tokens[self.index]
 
-    def pop(self):
+    def pop(self) -> Any:
         token = self.peek()
         if token is None:
             raise ValueError("unexpected end of XLSB formula")
         self.index += 1
         return token
 
-    def expression(self, minimum=0):
+    def expression(self, minimum: int = 0) -> Any:
         left = self._primary()
         while self.peek() == "(":
             self.pop()
@@ -199,7 +200,7 @@ class _Parser:
             left = ("binary", operator, left, right)
         return left
 
-    def _primary(self):
+    def _primary(self) -> Any:
         token = self.pop()
         if isinstance(token, _Structured):
             return ("table", token.name, token.spec)
@@ -216,7 +217,7 @@ class _Parser:
             return ("error", token.upper())
         return self._name_or_value(token)
 
-    def _name_or_value(self, token):
+    def _name_or_value(self, token: str) -> Any:
         sheet = None
         if self.peek() == "!":
             self.pop()
@@ -233,7 +234,7 @@ class _Parser:
             return ("bool", token.upper() == "TRUE")
         return ("name", token, sheet)
 
-    def _argument_list(self):
+    def _argument_list(self) -> list[Any]:
         args = []
         if self.peek() != ")":
             while True:
@@ -246,7 +247,7 @@ class _Parser:
         return args
 
 
-def parse_expression(text):
+def parse_expression(text: str) -> Any:
     parser = _Parser(text.removeprefix("="))
     tree = parser.expression()
     if parser.peek() is not None:
@@ -254,7 +255,7 @@ def parse_expression(text):
     return tree
 
 
-def _location(ref, *, relative_offsets=False, origin=(0, 0)):
+def _location(ref: str, *, relative_offsets: bool = False, origin: tuple[int, int] = (0, 0)) -> tuple[int, int]:
     match = re.fullmatch(r"(\$?)([A-Za-z]+)(\$?)(\d+)", ref)
     if match is None:
         raise ValueError(f"invalid cell reference {ref!r}")
@@ -274,7 +275,7 @@ def _location(ref, *, relative_offsets=False, origin=(0, 0)):
 _VOLATILE_FUNCTIONS = frozenset({"NOW", "TODAY", "RAND", "RANDBETWEEN", "OFFSET", "INDIRECT", "CELL", "INFO"})
 
 
-def _is_relative(ref):
+def _is_relative(ref: str) -> bool:
     """True when a column or row of an A1 reference lacks its ``$``."""
     for part in ref.split(":"):
         match = re.fullmatch(r"(\$?)([A-Za-z]*)(\$?)(\d*)", part)
@@ -285,7 +286,15 @@ def _is_relative(ref):
     return False
 
 
-def encode_reference(ref, sheet, context, operand, origin, name_formula, cell_relative=False) -> bytes:
+def encode_reference(
+    ref: str,
+    sheet: str | None,
+    context: Any,
+    operand: str,
+    origin: tuple[int, int],
+    name_formula: bool,
+    cell_relative: bool = False,
+) -> bytes:
     kind = 0x20 if operand == "R" else 0x60 if operand == "A" else 0x40
     # Validation and conditional-format formulas store same-sheet references
     # with a relative part as offsets from the range's top-left cell
@@ -559,7 +568,7 @@ def compile_formula(
     return compiler.compile(text, operand, stats)
 
 
-def _decode_ref(row, column, origin, relative_offsets):
+def _decode_ref(row: int, column: int, origin: tuple[int, int], relative_offsets: bool) -> str:
     col = column & 0x3FFF
     col_relative, row_relative = bool(column & 0x4000), bool(column & 0x8000)
     if relative_offsets:
@@ -755,7 +764,7 @@ _LIST_ROWS = ((0x08, "#Headers"), (0x10, "#Data"), (0x20, "#Totals"), (0x04, "#A
 _LIST_ESCAPE = re.compile(r"(['#\[\]@])")
 
 
-def structured_reference(table, columns, flags, first, last):
+def structured_reference(table: str, columns: list[str], flags: int, first: int, last: int) -> str:
     """``Table[[#Data],[Col]]`` as Excel writes it to a file (``[@Col]`` is ``[[#This Row],[Col]]``).
 
     ``first`` and ``last`` are the 0-based positions of the columns in the table.
@@ -782,7 +791,7 @@ def structured_reference(table, columns, flags, first, last):
     return table + "[" + ",".join(parts) + "]"
 
 
-def _unescape_column(raw):
+def _unescape_column(raw: str) -> str:
     """A column name as a structured reference writes it: ``'`` escapes the next character."""
     chars = []
     index = 0
@@ -803,7 +812,7 @@ def _unescape_column(raw):
     return "".join(chars)
 
 
-def _bracket_groups(text):
+def _bracket_groups(text: str) -> list[list[str]]:
     """The groups of a bracketed spec: ``[a]`` or ``[a]:[b]`` (a range), separated by commas."""
     groups = []
     position = 0
@@ -825,7 +834,7 @@ def _bracket_groups(text):
         position += 1
 
 
-def _parse_spec(spec):
+def _parse_spec(spec: str) -> tuple[list[str], list[str] | None]:
     """``(row keywords, column names or None)`` of the text inside a structured reference's brackets.
 
     Takes ``#Data``, ``Col``, ``[Col1]:[Col2]``, ``[#Headers],[Col]`` and ``@Col`` as Excel writes
@@ -858,7 +867,7 @@ def _parse_spec(spec):
     return keywords, columns
 
 
-def _check_row_keywords(keywords, spec):
+def _check_row_keywords(keywords: list[str], spec: str) -> None:
     """Refuse the combinations of row keywords that Excel refuses.
 
     ``#All`` and ``#This Row`` stand alone; ``#Headers`` and ``#Totals`` meet
@@ -874,7 +883,7 @@ def _check_row_keywords(keywords, spec):
         raise ValueError(f"#Headers and #Totals need #Data between them: [{spec}]")
 
 
-def encode_table(name, spec, context, operand):
+def encode_table(name: str, spec: str | None, context: Any, operand: str) -> bytes:
     """The PtgExtend/PtgList token of ``name[spec]`` ([MS-XLSB] 2.5.97.52).
 
     The token names the table by its id, its sheet by an XTI index and its columns by
@@ -946,7 +955,16 @@ def external_sheet_names(part: bytes | None) -> list[str]:
 class FormulaContext:
     """``parts`` (path -> bytes or None) lets references to other workbooks show their sheet names."""
 
-    def __init__(self, sheets, workbook=None, parts=None, *, tables=None, cache_tables=True, removed_tables=()):
+    def __init__(
+        self,
+        sheets: Any,
+        workbook: bytes | None = None,
+        parts: Any = None,
+        *,
+        tables: Any = None,
+        cache_tables: bool = True,
+        removed_tables: Iterable[str] = (),
+    ) -> None:
         self._sheets = sheets
         # ``tables()`` gives {table id: (name, column names, sheet title or None)}, for structured
         # references. A writer adds tables while it streams, so it asks for a fresh catalog each time.
@@ -955,12 +973,12 @@ class FormulaContext:
         self._table_catalog: dict[int, tuple[str, list[str], str | None]] | None = None
         # Tables a save removes are not in the catalog, and a new formula cannot name them.
         self._removed_tables = frozenset(name.casefold() for name in removed_tables)
-        self.names = []
-        self.links = []
-        self.xti = []
-        self._external_block = None
-        self.external_rids = []
-        self.external_names = []
+        self.names: list[_Name] = []
+        self.links: list[int] = []
+        self.xti: list[Any] = []
+        self._external_block: bytes | None = None
+        self.external_rids: list[str] = []
+        self.external_names: list[list[str]] = []
         if workbook is not None:
             external_start = None
             for record, payload in records(workbook):
@@ -985,7 +1003,7 @@ class FormulaContext:
         if parts is not None and self.external_rids:
             self._load_external_names(parts)
 
-    def _load_external_names(self, parts):
+    def _load_external_names(self, parts: Any) -> None:
         rels = parts("xl/_rels/workbook.bin.rels")
         targets = {}
         if rels:
@@ -996,10 +1014,10 @@ class FormulaContext:
             self.external_names.append(external_sheet_names(parts(posixpath.normpath(path)) if path else None))
 
     @property
-    def sheets(self):
+    def sheets(self) -> list[str]:
         return list(self._sheets() if callable(self._sheets) else self._sheets)
 
-    def sheet_reference(self, title):
+    def sheet_reference(self, title: str) -> int:
         title = next((s for s in self.sheets if s.casefold() == title.casefold()), title)
         # Sheet titles may be declared after the formula is streamed.
         for index, entry in enumerate(self.xti):
@@ -1017,7 +1035,7 @@ class FormulaContext:
         self.xti.append(title)
         return len(self.xti) - 1
 
-    def sheet_label(self, index):
+    def sheet_label(self, index: int) -> str:
         if not 0 <= index < len(self.xti):
             raise ValueError("invalid XLSB sheet reference index")
         entry = self.xti[index]
@@ -1033,12 +1051,12 @@ class FormulaContext:
         title = self.sheets[first] if first == last else self.sheets[first] + ":" + self.sheets[last]
         return quote_sheet_name(title) + "!"
 
-    def _external_label(self, link, first, last):
+    def _external_label(self, link: int, first: int, last: int) -> str:
         """``'[1]Sheet'!`` for a sheet of the n-th external workbook."""
         number = sum(kind == SUP_BOOK_SRC for kind in self.links[: link + 1])
         names = self.external_names[number - 1] if number <= len(self.external_names) else []
 
-        def name(index):
+        def name(index: int) -> str:
             return names[index] if 0 <= index < len(names) else f"Sheet{index + 1}"
 
         if first < 0 or last < 0:
@@ -1046,10 +1064,10 @@ class FormulaContext:
         title = name(first) if first == last else name(first) + ":" + name(last)
         return quote_sheet_name(f"[{number}]{title}") + "!"
 
-    def _scope(self, entry):
+    def _scope(self, entry: _Name) -> str | None:
         return self.sheets[entry.scope] if isinstance(entry.scope, int) else entry.scope
 
-    def _catalog(self):
+    def _catalog(self) -> Any:
         if self._tables is None:
             return {}
         if not self._cache_tables:
@@ -1058,7 +1076,7 @@ class FormulaContext:
             self._table_catalog = self._tables()
         return self._table_catalog
 
-    def table_reference(self, ident, flags, first, last):
+    def table_reference(self, ident: int, flags: int, first: int, last: int) -> str:
         """The text of a structured reference (PtgList) to the table with id ``ident``."""
         catalog = self._catalog()
         if ident not in catalog:
@@ -1066,14 +1084,14 @@ class FormulaContext:
         name, columns = catalog[ident][:2]
         return structured_reference(name, columns, flags, first, last)
 
-    def has_table(self, name):
+    def has_table(self, name: str) -> bool:
         """True when a table of the workbook has this name (or the save removes it)."""
         folded = name.casefold()
         return folded in self._removed_tables or any(
             entry[0].casefold() == folded for entry in self._catalog().values()
         )
 
-    def table_for_formula(self, name):
+    def table_for_formula(self, name: str) -> tuple[int, list[str], str]:
         """``(id, column names, sheet title)`` of the table ``name``, for a formula that refers to it."""
         folded = name.casefold()
         if folded in self._removed_tables:
@@ -1085,7 +1103,7 @@ class FormulaContext:
                 return ident, list(entry[1]), entry[2]
         raise UnsupportedFeatureError(f"table {name!r} is not in the workbook, or its header row is not written yet")
 
-    def name_reference(self, title, scope=None, *, qualified=False):
+    def name_reference(self, title: str, scope: str | None = None, *, qualified: bool = False) -> int:
         if scope is not None:
             scope = next((s for s in self.sheets if s.casefold() == scope.casefold()), scope)
         for candidate_scope in (scope, None) if scope is not None else (None,):
@@ -1097,14 +1115,14 @@ class FormulaContext:
         self.names.append(_Name(title, scope if qualified else None))
         return len(self.names) - 1
 
-    def name_label(self, index, sheet=None):
+    def name_label(self, index: int, sheet: str | None = None) -> str:
         if not 0 <= index < len(self.names):
             raise ValueError("invalid XLSB name reference index")
         entry = self.names[index]
         scope = self._scope(entry)
         return (quote_sheet_name(scope) + "!" if scope is not None and scope != sheet else "") + entry.name
 
-    def future_function(self, title):
+    def future_function(self, title: str) -> int:
         title = future_function_name(title)
         index = self.name_reference(title)
         entry = self.names[index]
@@ -1118,7 +1136,7 @@ class FormulaContext:
             )
         return index
 
-    def lambda_name(self, title):
+    def lambda_name(self, title: str) -> int:
         """A LET/LAMBDA parameter: the hidden ``_xlpm.`` name Excel writes."""
         index = self.name_reference(title)
         entry = self.names[index]
@@ -1132,7 +1150,7 @@ class FormulaContext:
             )
         return index
 
-    def set_name(self, definition):
+    def set_name(self, definition: DefinedName) -> None:
         if not isinstance(definition, DefinedName):
             raise TypeError("definition must be DefinedName")
         scope = definition.scope
@@ -1152,7 +1170,7 @@ class FormulaContext:
         else:
             self.names[match] = entry
 
-    def remove_name(self, title, scope) -> bool:
+    def remove_name(self, title: str, scope: str | None) -> bool:
         """Remove a name; False when there was no such name."""
         DefinedName(title, "0", scope)
         for index, entry in enumerate(self.names):
@@ -1168,7 +1186,8 @@ class FormulaContext:
                 return True
         return False
 
-    def name_payloads(self):
+    def name_payloads(self) -> list[bytes]:
+        payloads: list[bytes] = []
         index = 0
         while index < len(self.names):
             entry = self.names[index]
@@ -1183,8 +1202,9 @@ class FormulaContext:
                 )
             if entry.raw is None:
                 raise ValueError(f"formula references undefined name {entry.name!r}")
+            payloads.append(entry.raw)
             index += 1
-        return [entry.raw for entry in self.names]
+        return payloads
 
     def defined_names(self) -> list[DefinedName]:
         result: list[DefinedName] = []
@@ -1208,7 +1228,7 @@ class FormulaContext:
                 )
         return result
 
-    def external_records(self):
+    def external_records(self) -> bytes:
         if not self.xti and self._external_block is None:
             return b""
         links = list(self.links)
@@ -1236,7 +1256,7 @@ class FormulaContext:
             block = replace_records(block, set(), build_record(SUP_SELF), before=(EXTERN_SHEET, END_EXTERNALS))
         return replace_records(block, {EXTERN_SHEET}, table, before=(END_EXTERNALS,))
 
-    def write_workbook(self, original):
+    def write_workbook(self, original: bytes) -> bytes:
         payloads = self.name_payloads()
         externals = self.external_records()
         output = []
@@ -1277,7 +1297,7 @@ class ArrayValue:
     value: object = None
 
 
-def formula_record(formula, column, style, parsed, value=None) -> bytes:
+def formula_record(formula: Any, column: int, style: int, parsed: bytes, value: Any = None) -> bytes:
     """A ``BrtFmla*`` record for a formula already compiled to ``parsed``."""
     header = struct.pack("<II", column, style)
     if value is None:
@@ -1298,7 +1318,9 @@ def formula_record(formula, column, style, parsed, value=None) -> bytes:
     return build_record(kind, header + cache + b"\x01\0" + parsed)
 
 
-def formula_cell(formula, column, style, context, *, sheet=None, row=0) -> bytes:
+def formula_cell(
+    formula: Any, column: int, style: int, context: Any, *, sheet: str | None = None, row: int = 0
+) -> bytes:
     """Encode a scalar formula; cached zero is used if no cache was supplied."""
     if getattr(formula, "spill_ref", None) is not None:
         raise UnsupportedFeatureError("a dynamic-array formula needs the workbook writer's spill metadata")
