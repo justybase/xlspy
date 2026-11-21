@@ -193,6 +193,34 @@ environment passed it. The opt-in Excel COM check gained updater `add_sheet`,
 `rename_sheet` and `remove_sheet` cases for both formats and passes locally
 with Excel 16.0: the workbook opens with the expected tab order and values.
 
+## Quality baseline and module boundaries (2026-11-21)
+
+Windows 11, Python 3.14.2. The first refactoring pass (quality gates and
+low-risk deduplication) is in. `ruff format` now owns formatting: 354 Python
+files were reformatted in a mechanical commit listed in
+`.git-blame-ignore-revs`, and both the lint job and pre-commit check
+`ruff format --check`. Ruff also selects `B`, `SIM` and `C901`; the complexity
+threshold is 20, with the known functions listed in per-file ignores until they
+are split. Four import-linter contracts guard the layers: the core model does
+not directly import the public I/O facades, internal modules do not import the
+`xlspy` facade, readers/writers/updaters do not import `xlspy.workbook`, and
+XLSB modules do not import XLSX modules.
+
+The low-risk deduplication removed three copies of the tab-bar remap, moved the
+shared sheet states and next-part logic to `_sheet_common.py`, moved the shared
+edit transaction and defined-name resolution to `_edit_base.py`, moved row
+layout to `_rows.py`, and moved XML serialization and regex helpers to
+`_metadata.py`. `XlsbEditMixin` no longer inherits `XlsxEditMixin`; the nine
+XML-only methods it never used are gone from its MRO. The duplicated COM
+fixtures in eight test modules were replaced by the `conftest.py` fixtures.
+
+The full native suite passed **10,376 tests, 345 skipped, 1 xfailed** in 4:58;
+the pure-Python pass took **9,270 tests, 1,452 skipped** in 2:51. Combined
+coverage is **92%** branch coverage over 27,651 statements. `ruff check`,
+`ruff format --check`, `mypy` (149 source files) and `lint-imports` (4
+contracts) are clean; the COM subset rerun locally after the fixture cleanup
+passed **103 tests, 6 skipped** with Excel 16.0.
+
 ## Compatibility refresh (2026-11-17)
 
 Windows 11, Python 3.14.2, openpyxl 3.1.5. The full suite passes with the native
