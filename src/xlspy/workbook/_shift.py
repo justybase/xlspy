@@ -194,6 +194,8 @@ def _relocate(sheet: Worksheet, target: Callable[[int, int], tuple[int, int] | N
     staying: dict[int, dict[int, Any]] = {}
     moving: list[Any] = []
     vacated: list[Any] = []
+    thread_moves: list[tuple[str, str | None]] = []
+    threads = sheet._threaded_comments
     for row, cells in sheet._cells.items():
         for col, cell in cells.items():
             destination = target(row, col)
@@ -201,14 +203,30 @@ def _relocate(sheet: Worksheet, target: Callable[[int, int], tuple[int, int] | N
                 staying.setdefault(row, {})[col] = cell
                 continue
             vacated.append((row, col, cell))
+            old_ref = f"{column_label(col - 1)}{row}"
+            new_ref = None
             if destination is not None:
                 new_row, new_col = destination
                 if not (1 <= new_row <= _MAX_ROW and 1 <= new_col <= _MAX_COL):
                     raise ValueError("the move pushes cells past the edge of the sheet")
                 moving.append((destination, cell))
+                new_ref = f"{column_label(new_col - 1)}{new_row}"
+            if old_ref in threads or (new_ref is not None and new_ref in threads):
+                thread_moves.append((old_ref, new_ref))
     for (row, col), cell in moving:
         cell._row, cell._column = row, col
         staying.setdefault(row, {})[col] = cell
+    if thread_moves:
+        for old_ref, new_ref in thread_moves:
+            thread = threads.pop(old_ref, None)
+            if thread is not None:
+                sheet._dirty_threaded_comments.add(old_ref)
+            if new_ref is not None:
+                threads.pop(new_ref, None)
+                if thread is not None:
+                    threads[new_ref] = thread
+                sheet._dirty_threaded_comments.add(new_ref)
+        sheet._mark_dirty("comments")
     moved = [cell for _, cell in moving]
     _install(sheet, staying, vacated if sheet._loaded else (), moved, recompute=True)
     return moved

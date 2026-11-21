@@ -8,6 +8,7 @@ import datetime as _datetime
 from typing import TYPE_CHECKING, Any, Literal, overload
 from ..charts import Chart
 from ..comments import Comment
+from ..threaded_comments import ThreadedComment
 from ..data_validation import DataValidation
 from ..formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT
 from ..formulas import ArrayFormula, Formula
@@ -109,6 +110,7 @@ class Worksheet:
         self._dirty_cells: set[tuple[int, int]] = set()
         self._dirty_styles: set[str] = set()
         self._dirty_comments: set[str] = set()
+        self._dirty_threaded_comments: set[str] = set()
         self._dirty_hyperlinks: set[str] = set()
         self._dirty_meta: set[str] = set()
         self._loaded = False
@@ -151,6 +153,7 @@ class Worksheet:
         self._print_title_rows: str | None = None
         self._print_title_cols: str | None = None
         self._comments: dict[str, Comment] = {}
+        self._threaded_comments: dict[str, ThreadedComment] = {}
 
     def __repr__(self) -> str:
         return f"<Worksheet {self._title!r}>"
@@ -1027,6 +1030,8 @@ class Worksheet:
                 hidden._hyperlink = None
                 self._dirty_cells.add((row, column))
                 self._dirty_comments.add(hidden.coordinate)
+                if self._threaded_comments.pop(hidden.coordinate, None) is not None:
+                    self._dirty_threaded_comments.add(hidden.coordinate)
                 self._dirty_hyperlinks.add(hidden.coordinate)
         self._mark_dirty("merges")
 
@@ -1069,6 +1074,7 @@ class Worksheet:
         self._dirty_cells.clear()
         self._dirty_styles.clear()
         self._dirty_comments.clear()
+        self._dirty_threaded_comments.clear()
         self._dirty_hyperlinks.clear()
         self._dirty_meta.clear()
 

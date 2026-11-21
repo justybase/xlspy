@@ -8,6 +8,7 @@ from decimal import Decimal
 import re
 from typing import TYPE_CHECKING, Any
 from ..comments import Comment
+from ..threaded_comments import ThreadedComment
 from ..formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT
 from ..formulas import ArrayFormula, DataTableFormula, Formula
 from ..hyperlinks import Hyperlink
@@ -263,6 +264,26 @@ class Cell:
             raise TypeError("comment must be a xlspy Comment or None")
         self._comment = value
         self._sheet._dirty_comments.add(self.coordinate)
+        self._sheet._mark_dirty("comments")
+
+    @property
+    def threaded_comment(self) -> ThreadedComment | None:
+        """The cell's Excel 365 conversation, or None.
+
+        Assigning a `ThreadedComment` starts a conversation; assigning None
+        removes the whole conversation, replies included.
+        """
+        return self._sheet._threaded_comments.get(self.coordinate)
+
+    @threaded_comment.setter
+    def threaded_comment(self, value: ThreadedComment | None) -> None:
+        if value is not None and not isinstance(value, ThreadedComment):
+            raise TypeError("threaded_comment must be a xlspy ThreadedComment or None")
+        if value is None:
+            self._sheet._threaded_comments.pop(self.coordinate, None)
+        else:
+            self._sheet._threaded_comments[self.coordinate] = value
+        self._sheet._dirty_threaded_comments.add(self.coordinate)
         self._sheet._mark_dirty("comments")
 
     @staticmethod

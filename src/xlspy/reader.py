@@ -26,11 +26,19 @@ from ._xlsb_table_part import table_catalog
 from ._xlsb_read import _date_or_number
 from ._xlsb_metadata import parse_comments
 from .comments import find_comment_parts, read_comments
+from .threaded_comments import (
+    classic_comments_only,
+    find_person_part,
+    find_threaded_part,
+    read_persons,
+    read_threaded_comments,
+)
 from ._metadata import read_defined_names, MAIN, namespace_of, relationship_namespace, relationship_kind
 
 if TYPE_CHECKING:
     from ._metadata import DefinedName
     from .comments import Comment
+    from .threaded_comments import ThreadedComment
 
 _SST_ITEM = re.compile(r"<si>(.*?)</si>", re.DOTALL)
 _SST_TEXT = re.compile(r"<t(?:\s[^>]*)?>(.*?)</t>", re.DOTALL)
@@ -397,15 +405,43 @@ class ExcelReader:
         return list(self.get_rows(sheet_name, data_only=data_only, streaming=streaming))
 
     def get_comments(self, sheet_name: str) -> dict[str, Comment]:
-        """Return classic note text and authors, without reading worksheet rows."""
+        """Return classic note text and authors, without reading worksheet rows.
+
+        The compatibility notes that link Excel to a threaded conversation are
+        not included; use `get_threaded_comments` for those conversations.
+        """
         path = self._sheet_part(sheet_name)
         if path is None:
             return {}
         if self._is_xlsb:
             _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
-            return parse_comments(self._zip().read(parts["comments"][0]))[0] if "comments" in parts else {}
+            return (
+                classic_comments_only(parse_comments(self._zip().read(parts["comments"][0]))[0])
+                if "comments" in parts
+                else {}
+            )
         _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
         return read_comments(self._zip().read(parts["comments"][0])) if "comments" in parts else {}
+
+    def get_threaded_comments(self, sheet_name: str) -> dict[str, ThreadedComment]:
+        """Return the sheet's Excel 365 conversations, keyed by cell reference.
+
+        Classic notes are read by `get_comments`; this method reads only the
+        modern threaded part, so both kinds can be inspected separately.
+        """
+        path = self._sheet_part(sheet_name)
+        if path is None:
+            return {}
+        names = self._zip().namelist()
+        workbook_part = "xl/workbook.bin" if self._is_xlsb else "xl/workbook.xml"
+        persons = {}
+        person_part = find_person_part(self._zip().read, names, workbook_part)
+        if person_part is not None:
+            persons = read_persons(self._zip().read(person_part[0]))
+        threaded_part = find_threaded_part(self._zip().read, names, path)
+        if threaded_part is None:
+            return {}
+        return read_threaded_comments(self._zip().read(threaded_part[0]), persons)
 
     def get_defined_names(self) -> list[DefinedName]:
         """Return global and worksheet-local user names (not built-in names)."""

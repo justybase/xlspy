@@ -25,6 +25,7 @@ from .._safe_xml import fromstring as safe_fromstring, iterparse as safe_iterpar
 from .._metadata import MAIN, REL, local_name as _local, qname, read_defined_names
 from .._text import xstring_unescape
 from ..comments import find_comment_parts, read_comments, rels_path
+from ..threaded_comments import find_person_part, find_threaded_part, read_persons, read_threaded_comments
 from ..data_validation import DataValidation, OPERATORS, VALIDATION_TYPES
 from ..excel_dates import serial_to_datetime
 from ..external_links import read_external_links
@@ -1222,6 +1223,21 @@ def _attach_comments(sheet: Worksheet, package: Any, sheet_path: str) -> None:
         pass
 
 
+def _attach_threaded_comments(sheet: Worksheet, package: Any, sheet_path: str) -> None:
+    """Read the sheet's Excel 365 conversations and the workbook's people."""
+    try:
+        names = package.names()
+        part = find_threaded_part(package.get, names, sheet_path)
+        if part is None:
+            return
+        workbook_part = "xl/workbook.xml" if "xl/workbook.xml" in names else "xl/workbook.bin"
+        people_part = find_person_part(package.get, names, workbook_part)
+        people = read_persons(package.get(people_part[0])) if people_part is not None else {}
+        sheet._threaded_comments = read_threaded_comments(package.get(part[0]), people)
+    except (KeyError, ValueError, ET.ParseError):
+        pass
+
+
 # The readers of the worksheet elements that need nothing but the sheet, by local tag.
 _ELEMENT_READERS: dict[str, Callable[[Worksheet, ET.Element], None]] = {
     "autoFilter": _read_auto_filter,
@@ -1343,6 +1359,7 @@ def _read_core_sheet(
             read_drawing(package, sheet, drawing_part)
     _attach_hyperlinks(sheet, hyperlinks, rels)
     _attach_comments(sheet, package, sheet_path)
+    _attach_threaded_comments(sheet, package, sheet_path)
 
 
 def _read_only_bounds(archive: zipfile.ZipFile, sheet_path: str) -> tuple[int, int, int, int] | None:

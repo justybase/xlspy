@@ -354,6 +354,7 @@ class Workbook:
                 new_cell._hyperlink = copy.copy(cell.hyperlink)
                 new_cell._named_style = cell._named_style
         target._merged_cells = MultiCellRange(from_worksheet._merged_cells.ranges)
+        target._threaded_comments = copy.deepcopy(from_worksheet._threaded_comments)
         for name in ("_column_dimensions", "_row_dimensions"):
             getattr(target, name).update(copy.deepcopy(dict(getattr(from_worksheet, name))))
         target._row_heights = dict(from_worksheet._row_heights)

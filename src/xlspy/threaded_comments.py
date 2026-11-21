@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, field
 import datetime as _datetime
+import re
 from typing import Any
 import uuid
 from xml.etree import ElementTree as ET
@@ -235,10 +236,10 @@ def collect_persons(
         by_name.setdefault(person.display_name, person)
     for thread in threads.values():
         for message in thread.messages:
-            person = message._person
-            if person is not None and person.display_name == message.author:
-                persons.setdefault(person.id, person)
-                by_name.setdefault(person.display_name, person)
+            existing_person: Person | None = message._person
+            if existing_person is not None and existing_person.display_name == message.author:
+                persons.setdefault(existing_person.id, existing_person)
+                by_name.setdefault(existing_person.display_name, existing_person)
                 continue
             person = _person_for(message.author, persons, by_name)
             message._person = person
@@ -331,7 +332,7 @@ def threaded_comments_xml(
     replacement_refs = {cell_ref(ref) for ref in (changed if changed is not None else threads)}
     seen_refs = set()
 
-    def keep(match: Any) -> str:
+    def keep(match: re.Match[str]) -> str:
         node = _fragment_node(xml, match.group(0))
         ref = cell_ref(node.attrib["ref"]) if "ref" in node.attrib else ""
         if ref in replacement_refs:
