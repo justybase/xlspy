@@ -14,7 +14,16 @@ import struct
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
 
-from ._metadata import CT, REL, PKG_REL, DefinedName, SheetProtection, WorkbookProtection, cell_ref
+from ._metadata import (
+    CT,
+    REL,
+    PKG_REL,
+    HYPERLINK_TYPE,
+    DefinedName,
+    SheetProtection,
+    WorkbookProtection,
+    cell_ref,
+)
 from ._metadata_part import METADATA_BIN
 from ._text import check_cell_text
 from ._xlsb_metadata import (
@@ -37,7 +46,7 @@ from ._xlsb_metadata import (
 )
 from ._xlsb_formulas import FormulaContext, formula_cell
 from ._xlsb_table_part import table_catalog
-from ._xlsx_edit import XlsxEditMixin, _HYPERLINK_TYPE as _HYPERLINK_TYPE
+from ._edit_base import SheetEditMixin
 from . import _accel
 from .biff_utils import build_record, iter_records
 from .comments import (
@@ -143,7 +152,7 @@ _BRT_AFTER_HYPERLINKS = (0x1DD, 0x1DC, 0x1DE, 0x1DF, 0x188, 0x18A, 0x226, 0x227,
 _AFTER_MERGES = (0x1CD, 0x23D, 0x1EE) + _BRT_AFTER_HYPERLINKS
 
 
-class XlsbEditMixin(XlsxEditMixin):
+class XlsbEditMixin(SheetEditMixin):
     # Tables the save in progress adds or changes, planned before any formula is written
     # (see _xlsb_tables).
     _pending_tables: tuple = ()
@@ -171,10 +180,14 @@ class XlsbEditMixin(XlsxEditMixin):
     if TYPE_CHECKING:
         from .data_validation import DataValidation
         from .hyperlinks import Hyperlink
+        from .updater_utils import DiskStringIndex
 
-        # Provided by XlsbUpdater; the attributes it shares with XlsxEditMixin are
-        # declared there.
+        # Provided by XlsbUpdater.
+        _sheets: dict[str, str]
+        _date_1904: bool
         _shared_strings_loaded: bool
+        _shared_strings_total: int
+        _stream_shared_strings: DiskStringIndex | None
 
         def _part_or_none(self, path: str) -> bytes | None: ...
 
@@ -410,7 +423,7 @@ class XlsbEditMixin(XlsxEditMixin):
         by_target = {
             rel.get("Target"): rel.get("Id")
             for rel in root
-            if rel.get("Type") == _HYPERLINK_TYPE and rel.get("TargetMode") == "External"
+            if rel.get("Type") == HYPERLINK_TYPE and rel.get("TargetMode") == "External"
         }
         taken = {rel.get("Id") for rel in root}
         rels_changed = False
@@ -430,7 +443,7 @@ class XlsbEditMixin(XlsxEditMixin):
                         f"{{{PKG_REL}}}Relationship",
                         {
                             "Id": rid,
-                            "Type": _HYPERLINK_TYPE,
+                            "Type": HYPERLINK_TYPE,
                             "Target": link.target,
                             "TargetMode": "External",
                         },
@@ -440,7 +453,7 @@ class XlsbEditMixin(XlsxEditMixin):
                 used.add(rid)
             block.append((row, col, _hlink_payload(row, col, link, rid)))
         for rel in list(root):
-            if rel.get("Type") == _HYPERLINK_TYPE and rel.get("Id") in dropped and rel.get("Id") not in used:
+            if rel.get("Type") == HYPERLINK_TYPE and rel.get("Id") in dropped and rel.get("Id") not in used:
                 root.remove(rel)
                 rels_changed = True
         block.sort(key=lambda item: item[:2])

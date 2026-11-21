@@ -709,7 +709,7 @@ class ExcelReader:
         (tests/test_native_fuzz_differential.py checks it):
 
         - Each cell is at its own column and each row at its own place, as
-          ``_xlsx_read.rows_in_place`` has it for XLSX: the rows before the first
+          ``_rows.rows_in_place`` has it for XLSX: the rows before the first
           row record are empty lists, the first row's width is the least any
           later row has, and a row is as long as its last cell needs.
         - A cell goes to its column's index in the row, wherever its record is;

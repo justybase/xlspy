@@ -22,7 +22,7 @@ from ..biff_utils import build_record, iter_record_payloads
 from ..exceptions import UnsupportedFeatureError
 from ..styles.core import table_column_names
 from ..writer import XlsbWriter
-from .._xlsx_edit import _bytes
+from .._metadata import element_bytes as _bytes
 from ._objects import (
     _Package,
     _as_excel_table,

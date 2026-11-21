@@ -16,7 +16,7 @@ from ..refs import column_label
 from ._objects import _Package, _rels_path
 from ..external_links import _MAIN as _MAIN
 from xml.etree import ElementTree as ET
-from .._xlsx_edit import _bytes
+from .._metadata import element_bytes as _bytes
 
 if TYPE_CHECKING:
     from ._workbook import Workbook

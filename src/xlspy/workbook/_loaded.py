@@ -23,10 +23,22 @@ from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
 from ..utils.datetime import time_to_days, timedelta_to_days
-from .._metadata import tag_attributes, MAIN, REL, PKG_REL, CT, qname, element_pattern, replace_element, serialize_like
+from .._metadata import (
+    tag_attributes,
+    MAIN,
+    REL,
+    PKG_REL,
+    CT,
+    qname,
+    element_bytes as _bytes,
+    element_pattern,
+    replace_element,
+    required_match as _required_match,
+    serialize_like,
+)
 from .._sheet_common import next_sheet_part
 from .._sheet_data import insert_rows, patch_cells, patch_rows, set_dimension_ref, sheet_data_match, tag_prefix
-from .._xlsx_edit import _bytes, _cell_xml_value, _required_match
+from .._xlsx_edit import _cell_xml_value
 from ..formula.sheets import rename_sheet_references
 from ..formulas import ArrayFormula, DataTableFormula, Formula
 from ..ignored_errors import ignored_errors_xml, snapshot as ignored_errors_snapshot

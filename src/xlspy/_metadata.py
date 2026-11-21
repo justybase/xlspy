@@ -19,6 +19,20 @@ CT = "http://schemas.openxmlformats.org/package/2006/content-types"
 # ISO/IEC 29500 Strict ("Strict Open XML Spreadsheet") namespaces.
 STRICT_MAIN = "http://purl.oclc.org/ooxml/spreadsheetml/main"
 STRICT_REL = "http://purl.oclc.org/ooxml/officeDocument/relationships"
+HYPERLINK_TYPE = REL + "/hyperlink"
+
+
+def element_bytes(root: ET.Element) -> bytes:
+    """Serialize an ElementTree element as a standalone UTF-8 XML part."""
+    data: bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    return data
+
+
+def required_match(match: re.Match[str] | None, what: str) -> re.Match[str]:
+    """A regex match the file structure guarantees; a corrupt part fails clearly."""
+    if match is None:
+        raise ValueError(f"{what} was not found")
+    return match
 
 
 def namespace_of(tag: str) -> str:

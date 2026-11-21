@@ -22,8 +22,18 @@ from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import quoteattr
 
-from .._metadata import tag_attributes, CT, MAIN, PKG_REL, REL, append_child, element_pattern, replace_element
-from .._xlsx_edit import _bytes, _required_match
+from .._metadata import (
+    tag_attributes,
+    CT,
+    MAIN,
+    PKG_REL,
+    REL,
+    append_child,
+    element_bytes as _bytes,
+    element_pattern,
+    replace_element,
+    required_match as _required_match,
+)
 from ..refs import parse_cell_range
 from ._print import WorksheetPageMargins, print_settings_for
 from ..chart_reader import _A as _A, _C as _C, _XDR as _XDR

@@ -341,3 +341,56 @@ source_modules = [
     "xlspy._xlsb_sheets",
 ]
 forbidden_modules = ["xlspy.workbook"]
+
+[[tool.importlinter.contracts]]
+name = "XLSB modules do not depend on XLSX modules"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = [
+    "xlspy._xlsb_cf",
+    "xlspy._xlsb_edit",
+    "xlspy._xlsb_formulas",
+    "xlspy._xlsb_functions",
+    "xlspy._xlsb_ignored_errors",
+    "xlspy._xlsb_metadata",
+    "xlspy._xlsb_pivots",
+    "xlspy._xlsb_print",
+    "xlspy._xlsb_read",
+    "xlspy._xlsb_sheets",
+    "xlspy._xlsb_slicers",
+    "xlspy._xlsb_sort",
+    "xlspy._xlsb_sparklines",
+    "xlspy._xlsb_style_records",
+    "xlspy._xlsb_table_part",
+    "xlspy._xlsb_validation",
+    "xlspy._xlsb_writer",
+    "xlspy._xlsb_writer_bin",
+    "xlspy._xlsb_writer_consts",
+    "xlspy._xlsb_writer_host",
+    "xlspy._xlsb_writer_parts",
+    "xlspy._xlsb_writer_sheet",
+    "xlspy._xlsb_writer_strings",
+    "xlspy._xlsb_writer_styles",
+    "xlspy._xlsb_writer_views",
+    "xlspy.workbook._xlsb_chartsheets",
+    "xlspy.workbook._xlsb_drawings",
+    "xlspy.workbook._xlsb_layout",
+    "xlspy.workbook._xlsb_loaded",
+    "xlspy.workbook._xlsb_reader",
+    "xlspy.workbook._xlsb_sheet_meta",
+    "xlspy.workbook._xlsb_styles",
+    "xlspy.workbook._xlsb_tables",
+]
+forbidden_modules = [
+    "xlspy._xlsx_edit",
+    "xlspy._xlsx_read",
+    "xlspy._xlsx_sheets",
+    "xlspy._xlsx_writer_host",
+    "xlspy._xlsx_writer_parts",
+    "xlspy._xlsx_writer_sheet",
+    "xlspy._xlsx_writer_sheet_xml",
+    "xlspy._xlsx_writer_styles",
+    "xlspy._xlsx_writer_xml",
+    "xlspy.xlsx_writer",
+    "xlspy.xlsx_updater",
+]

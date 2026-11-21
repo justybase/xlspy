@@ -17,7 +17,7 @@ from xml.etree import ElementTree as ET
 from .._safe_xml import fromstring as safe_fromstring
 
 from .._metadata import CT, PKG_REL
-from .._xlsx_edit import _bytes
+from .._metadata import element_bytes as _bytes
 from ._objects import _Package, _rels_path, _resolve_part_target
 
 _ANCHORS = frozenset(("twoCellAnchor", "oneCellAnchor", "absoluteAnchor"))

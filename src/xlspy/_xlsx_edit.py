@@ -17,6 +17,7 @@ from ._safe_xml import check_well_formed, fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr
 
 from ._sheet_data import insert_rows, patch_rows, set_dimension_ref, sheet_data_match
+from ._edit_base import SheetEditMixin
 from ._metadata import (
     tag_attributes,
     MAIN,
@@ -27,11 +28,13 @@ from ._metadata import (
     SheetProtection,
     WorkbookProtection,
     cell_ref,
+    element_bytes,
     element_pattern,
     replace_element,
     append_child,
     read_defined_names,
     xml_text,
+    HYPERLINK_TYPE,
 )
 from ._metadata_part import METADATA_XML
 from ._text import check_cell_text, xstring_escape
@@ -63,19 +66,6 @@ if TYPE_CHECKING:
     from .updater_utils import DiskStringIndex, ZipPackage
 
 
-def _bytes(root: ET.Element) -> bytes:
-    data: bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-    return data
-
-
-def _required_match(match: re.Match[str] | None, what: str) -> re.Match[str]:
-    """A regex match the file structure guarantees; a corrupt part fails clearly."""
-    if match is None:
-        raise ValueError(f"{what} was not found")
-    return match
-
-
-_HYPERLINK_TYPE = REL + "/hyperlink"
 # A cell addressed only by ``update_cells(styles=...)``: keep its value.
 _KEEP = object()
 # The <worksheet> children that follow <hyperlinks> (CT_Worksheet).
@@ -103,7 +93,7 @@ _AFTER_HYPERLINKS = (
 )
 
 
-class XlsxEditMixin:
+class XlsxEditMixin(SheetEditMixin):
     if TYPE_CHECKING:
         # Provided by the host updater (XlsxUpdater or XlsbUpdater). Annotations
         # only, plus stubs that the host's own methods replace at runtime.
@@ -116,19 +106,6 @@ class XlsxEditMixin:
 
         @staticmethod
         def _tag_prefix(xml_data: str, tag_name: str) -> str: ...
-
-    def _apply_parts(self, parts: Mapping[str, Any], removed: Iterable[str] = ()) -> None:
-        # A streaming replacement already holds the package transaction; nesting
-        # another one would fail, so its parts are written directly into that
-        # transaction (a failure rolls the whole replacement back).
-        if self._package.in_transaction:
-            for path, data in parts.items():
-                self._package.set(path, data.encode("utf-8") if isinstance(data, str) else data)
-            for path in removed:
-                self._package.remove(path)
-            return
-        # The package owns the write-back transaction (ZipPackage.apply_parts).
-        self._package.apply_parts(parts, removed)
 
     def _sheet_text(self, sheet_name: str) -> tuple[str, str]:
         """The part path and XML of a sheet, unchecked and unparsed."""
@@ -242,10 +219,10 @@ class XlsxEditMixin:
                 )
         updates[path] = sheet
         if len(relationships):
-            updates[rp] = _bytes(relationships)
+            updates[rp] = element_bytes(relationships)
         elif rp in names:
             removed.append(rp)
-        updates["[Content_Types].xml"] = _bytes(types)
+        updates["[Content_Types].xml"] = element_bytes(types)
         self._apply_parts(updates, removed)
 
     def set_hyperlinks(self, sheet_name: str, links: Mapping[str, Hyperlink | None]) -> None:
@@ -303,7 +280,7 @@ class XlsxEditMixin:
                     f"{{{PKG_REL}}}Relationship",
                     {
                         "Id": rid,
-                        "Type": _HYPERLINK_TYPE,
+                        "Type": HYPERLINK_TYPE,
                         "Target": xml_text(link.target),
                         "TargetMode": "External",
                     },
@@ -323,13 +300,13 @@ class XlsxEditMixin:
             still_used = set(re.findall(r"""[\w.-]+:id=["']([^"']*)["']""", sheet))
             for node in list(relationships):
                 rid = node.get("Id")
-                if rid in dropped and rid not in still_used and node.get("Type") == _HYPERLINK_TYPE:
+                if rid in dropped and rid not in still_used and node.get("Type") == HYPERLINK_TYPE:
                     relationships.remove(node)
         updates: dict[str, str | bytes] = {path: sheet}
         removed: list[str] = []
         ET.register_namespace("", PKG_REL)
         if len(relationships):
-            updates[rp] = _bytes(relationships)
+            updates[rp] = element_bytes(relationships)
         elif rp in names:
             removed.append(rp)
         self._apply_parts(updates, removed)
@@ -338,11 +315,6 @@ class XlsxEditMixin:
         """Sheet names in the order workbook.xml lists them (chartsheets included)."""
         root = safe_fromstring(self._package.get("xl/workbook.xml"))
         return [node.get("name", "") for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")]
-
-    @staticmethod
-    def _resolve_defined_name(definition: DefinedName, sheets: list[str]) -> DefinedName:
-        """Resolve a scope title to the index of that sheet in ``sheets``."""
-        return definition.resolved(sheets)
 
     def get_defined_names(self) -> list[DefinedName]:
         """Return user-defined global and worksheet-local names."""
@@ -695,8 +667,8 @@ class XlsxEditMixin:
                 for ct in list(types):
                     if ct.get("PartName") == "/" + part:
                         types.remove(ct)
-        updates[rp] = _bytes(rels)
-        updates["[Content_Types].xml"] = _bytes(types)
+        updates[rp] = element_bytes(rels)
+        updates["[Content_Types].xml"] = element_bytes(types)
 
     def _ensure_dynamic_metadata(self) -> None:
         """Ensure xl/metadata.xml and its content-type and relationship exist.
@@ -713,7 +685,7 @@ class XlsxEditMixin:
             override = ET.SubElement(types, f"{{{CT}}}Override")
             override.set("PartName", "/xl/metadata.xml")
             override.set("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml")
-            updates["[Content_Types].xml"] = _bytes(types)
+            updates["[Content_Types].xml"] = element_bytes(types)
         rp = "xl/_rels/workbook.xml.rels"
         rels_xml = self._package.get(rp).decode("utf-8")
         if "sheetMetadata" not in rels_xml:
@@ -727,7 +699,7 @@ class XlsxEditMixin:
             node.set("Id", f"rId{number}")
             node.set("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata")
             node.set("Target", "metadata.xml")
-            updates[rp] = _bytes(rels)
+            updates[rp] = element_bytes(rels)
         if updates:
             self._apply_parts(updates, removed)
 

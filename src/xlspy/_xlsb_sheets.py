@@ -21,9 +21,8 @@ import struct
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
 
-from ._metadata import CT, PKG_REL, REL
+from ._metadata import CT, PKG_REL, REL, element_bytes as _xml
 from ._sheet_common import STATE_CODES, STATE_NAMES, check_sheet_state, next_sheet_part
-from ._xlsx_edit import _bytes as _xml
 from ._xlsb_formulas import SUP_SELF, FormulaContext, parsed_formula
 from ._xlsb_metadata import read_wide, records, wide_string
 from .biff_utils import build_record

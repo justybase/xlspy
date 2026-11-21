@@ -15,10 +15,9 @@ from typing import TYPE_CHECKING, Any
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape as _xml_escape, quoteattr
 
-from ._metadata import CT, MAIN, PKG_REL, REL, element_pattern, replace_element, tag_attributes
+from ._metadata import CT, MAIN, PKG_REL, REL, element_bytes as _xml, element_pattern, replace_element, tag_attributes
 from ._safe_xml import fromstring as safe_fromstring
 from ._sheet_common import SHEET_STATES, check_sheet_state, next_sheet_part
-from ._xlsx_edit import _bytes as _xml
 from ._xml_text import replace_or_add_xml_attribute, unescape_xml_text
 from .comments import rels_path as _part_rels_path
 from .exceptions import UnsupportedFeatureError
