@@ -497,31 +497,39 @@ class XlsxEditMixin(SheetEditMixin):
         ``styles`` maps addresses to cell XF indexes. An address only in
         ``styles`` keeps its value (or becomes a styled blank).
         """
-        if not isinstance(cells, Mapping):
-            raise TypeError("cells must map cell references to values")
-        if styles is not None and not isinstance(styles, Mapping):
-            raise TypeError("styles must map cell references to XF indexes")
         path, xml, root, fast = self._sheet_scan_source(sheet_name)
-        values = {}
-        for ref, value in cells.items():
-            ref = cell_ref(ref)
-            if ref in values:
-                raise ValueError(f"duplicate cell reference: {ref}")
-            values[ref] = unwrap_cell(value)
-        style_ids = {}
-        for ref, xf in (styles or {}).items():
-            ref = cell_ref(ref)
-            if not isinstance(xf, int) or isinstance(xf, bool) or not 0 <= xf < 0xFFFFFF:
-                raise ValueError(f"invalid cell style index {xf!r} for {ref}")
-            style_ids[ref] = xf
-        targets = dict(values)
-        for ref in style_ids:
-            targets.setdefault(ref, _KEEP)
+        values, style_ids, targets = self._normalize_cell_edits(
+            cells,
+            styles,
+            cells_error="cells must map cell references to values",
+            styles_error="styles must map cell references to XF indexes",
+            duplicate_error="duplicate cell reference: {ref}",
+            keep=_KEEP,
+        )
         if not targets:
             return
+        scan = self._scan_cell_targets(xml, root, fast, values)
+        self._check_cell_targets(scan, values)
+        sheet_data = fast.sheet_data if fast is not None else sheet_data_match(xml)
+        if sheet_data is None:
+            raise ValueError("Worksheet sheetData element was not found")
+        xml = self._patch_sheet_cell_targets(xml, sheet_data, scan, values, style_ids, targets)
+        updates = {path: xml}
+        removed: list[str] = []
+        removed_shared_refs = self._update_shared_strings_count(updates, scan)
+        self._recalculate_if_needed(updates, removed, scan, values)
+        self._apply_parts(updates, removed)
+        self._account_removed_shared_strings(removed_shared_refs)
+
+    @staticmethod
+    def _scan_cell_targets(xml: str, root: Any, fast: Any, values: dict[str, Any]) -> Any:
         scan = None if fast is None else _fast_scan(xml, fast, list(values))
         if scan is None:
             scan = _tree_scan(root if root is not None else safe_fromstring(xml), values)
+        return scan
+
+    @staticmethod
+    def _check_cell_targets(scan: Any, values: dict[str, Any]) -> None:
         if scan.merges:
             merged = RangeIndex()
             for merge in scan.merges:
@@ -539,9 +547,16 @@ class XlsxEditMixin(SheetEditMixin):
                 raise ValueError("update_cells supports scalar formulas only")
             if isinstance(value, Formula) and value.spill_ref is not None:
                 raise UnsupportedFeatureError("update_cells cannot write dynamic-array formulas")
-        sheet_data = fast.sheet_data if fast is not None else sheet_data_match(xml)
-        if sheet_data is None:
-            raise ValueError("Worksheet sheetData element was not found")
+
+    def _patch_sheet_cell_targets(
+        self,
+        xml: str,
+        sheet_data: Any,
+        scan: Any,
+        values: dict[str, Any],
+        style_ids: dict[str, int],
+        targets: dict[str, Any],
+    ) -> str:
         prefix = sheet_data["prefix"] or ""
         # Validate and encode all input before staging any mutation.
         encoded = {ref: _cell_xml_value(value, self._date_1904, prefix) for ref, value in values.items()}
@@ -579,37 +594,40 @@ class XlsxEditMixin(SheetEditMixin):
             spans.append(scan.bounds)
         first = f"{column_label(min(b[0] for b in spans))}{min(b[1] for b in spans) + 1}"
         last = f"{column_label(max(b[2] for b in spans))}{max(b[3] for b in spans) + 1}"
-        xml = set_dimension_ref(xml, f"{first}:{last}")
-        updates = {path: xml}
-        removed: list[str] = []
-        removed_shared_refs = sum(kind == "s" for _, kind, _ in scan.edited)
-        if removed_shared_refs:
-            rels = safe_fromstring(self._package.get("xl/_rels/workbook.xml.rels"))
-            for relationship in rels:
-                if relationship.get("Type") == REL + "/sharedStrings":
-                    part = resolve_part("xl/workbook.xml", relationship.attrib["Target"])
-                    strings = self._package.get(part).decode("utf-8")
-                    opening = re.search(r"<(?:[\w.-]+:)?sst\b[^>]*>", strings)
-                    if opening is None:
-                        raise ValueError("sharedStrings element was not found")
-                    attrs = tag_attributes(opening[0])
-                    if "count" in attrs:
-                        updated_tag = replace_or_add_xml_attribute(
-                            opening[0], "count", max(0, int(attrs["count"]) - removed_shared_refs)
-                        )
-                        updates[part] = strings[: opening.start()] + updated_tag + strings[opening.end() :]
+        return set_dimension_ref(xml, f"{first}:{last}")
+
+    def _update_shared_strings_count(self, updates: dict[str, Any], scan: Any) -> int:
+        removed_shared_refs = int(sum(kind == "s" for _, kind, _ in scan.edited))
+        if not removed_shared_refs:
+            return 0
+        rels = safe_fromstring(self._package.get("xl/_rels/workbook.xml.rels"))
+        for relationship in rels:
+            if relationship.get("Type") == REL + "/sharedStrings":
+                part = resolve_part("xl/workbook.xml", relationship.attrib["Target"])
+                strings = self._package.get(part).decode("utf-8")
+                opening = re.search(r"<(?:[\w.-]+:)?sst\b[^>]*>", strings)
+                if opening is None:
+                    raise ValueError("sharedStrings element was not found")
+                attrs = tag_attributes(opening[0])
+                if "count" in attrs:
+                    updated_tag = replace_or_add_xml_attribute(
+                        opening[0], "count", max(0, int(attrs["count"]) - removed_shared_refs)
+                    )
+                    updates[part] = strings[: opening.start()] + updated_tag + strings[opening.end() :]
+        return removed_shared_refs
+
+    def _recalculate_if_needed(
+        self,
+        updates: dict[str, Any],
+        removed: list[str],
+        scan: Any,
+        values: dict[str, Any],
+    ) -> None:
         old_formula = any(has_formula for _, _, has_formula in scan.edited)
         if old_formula or any(
             isinstance(value, (Formula, ArrayFormula, DataTableFormula)) for value in values.values()
         ):
             self._recalculate(updates, removed)
-        self._apply_parts(updates, removed)
-        if self._shared_strings_loaded:
-            self._shared_strings_total = max(0, self._shared_strings_total - removed_shared_refs)
-        if self._stream_shared_strings is not None:
-            self._stream_shared_strings.total_count = max(
-                0, self._stream_shared_strings.total_count - removed_shared_refs
-            )
 
     def _drop_stale_calc_chain(self, *, had_formulas: bool, has_formulas: bool) -> None:
         """Drop calcChain when a sheet's formula cells are being replaced.

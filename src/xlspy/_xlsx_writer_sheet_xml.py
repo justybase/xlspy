@@ -321,74 +321,17 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         drawing_rid,
     ):
         """Everything after the row data, in schema order."""
-        merge_refs = spec.merge_refs
-        cf_rules = spec.cf_rules
-        table_specs = spec.tables
-        validations = spec.validations
-        print_spec = spec.print_settings
-        auto_filter = spec.auto_filter
-        auto_filter_ref = spec.auto_filter_ref
-        header_rows = spec.header_rows
-        sort_state = spec.sort_state
         parts = ["</sheetData>"]
-        data_filter = None
-        if body.num_rows > header_rows and body.value_cols > 0:
-            # The filter buttons sit on the last header row; the range spans the
-            # columns that hold a value and the rows of array formulas past the
-            # data (the same rule as the XLSB writer).
-            data_filter = (
-                f"{self._letters[0]}{header_rows}:"
-                f"{self._letters[body.value_cols - 1]}{max(body.num_rows, body.array_rows)}"
-            )
-        if auto_filter_ref is not None:
-            data_filter = auto_filter_ref
-        if auto_filter is False:
+        data_filter = self._implicit_filter_range(body, spec.header_rows)
+        if spec.auto_filter_ref is not None:
+            data_filter = spec.auto_filter_ref
+        if spec.auto_filter is False:
             data_filter = None
-        # A table brings its own filter: none for the sheet over the same range.
-        if sort_state is not None and (
-            data_filter is None or parse_cell_range(data_filter) in {parse_cell_range(ref) for ref in body.table_refs}
-        ):
+        table_ranges = {parse_cell_range(ref) for ref in body.table_refs}
+        if spec.sort_state is not None and (data_filter is None or parse_cell_range(data_filter) in table_ranges):
             raise ValueError("sort_state needs an auto filter (auto_filter_ref or data with header)")
-        if data_filter is not None and parse_cell_range(data_filter) not in {
-            parse_cell_range(ref) for ref in body.table_refs
-        }:
-            sort_xml = ""
-            if sort_state is not None:
-                conditions = check_sort_state(sort_state, data_filter)
-                sort_ref = sort_state_ref(data_filter, getattr(sort_state, "ref", None))
-                sort_attrs = []
-                if sort_ref:
-                    sort_attrs.append(f"ref={saxutils.quoteattr(sort_ref)}")
-                if getattr(sort_state, "columnSort", None) is not None:
-                    sort_attrs.append(f'columnSort="{int(bool(sort_state.columnSort))}"')
-                if getattr(sort_state, "caseSensitive", None) is not None:
-                    sort_attrs.append(f'caseSensitive="{int(bool(sort_state.caseSensitive))}"')
-                if getattr(sort_state, "sortMethod", None) is not None:
-                    sort_attrs.append(f"sortMethod={saxutils.quoteattr(sort_state.sortMethod)}")
-                conds = []
-                for item in conditions:
-                    c = f"<sortCondition ref={saxutils.quoteattr(item.ref)}"
-                    if item.descending is not None:
-                        c += f' descending="{int(bool(item.descending))}"'
-                    if item.sortBy is not None:
-                        c += f" sortBy={saxutils.quoteattr(item.sortBy)}"
-                    if getattr(item, "dxfId", None) is not None:
-                        c += f' dxfId="{item.dxfId}"'
-                    if getattr(item, "customList", None) is not None:
-                        c += f" customList={saxutils.quoteattr(item.customList)}"
-                    if getattr(item, "iconSet", None) is not None:
-                        c += f" iconSet={saxutils.quoteattr(item.iconSet)}"
-                    if getattr(item, "iconId", None) is not None:
-                        c += f' iconId="{item.iconId}"'
-                    c += "/>"
-                    conds.append(c)
-                sort_xml = (
-                    f"<sortState {' '.join(sort_attrs)}>{''.join(conds)}</sortState>" if sort_attrs or conds else ""
-                )
-            if sort_xml:
-                parts.append(f'<autoFilter ref="{data_filter}">{sort_xml}</autoFilter>')
-            else:
-                parts.append(f'<autoFilter ref="{data_filter}"/>')
+        if data_filter is not None and parse_cell_range(data_filter) not in table_ranges:
+            parts.append(self._auto_filter_xml(data_filter, spec.sort_state))
             first_col, first_row, last_col, last_row = parse_cell_range(data_filter)
             self._filtered_data_list.append(
                 FilterData(
@@ -399,33 +342,117 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
                     end_row=last_row,
                 )
             )
-        if merge_refs:
-            parts.append(f'<mergeCells count="{len(merge_refs)}">')
-            for ref in merge_refs:
-                parts.append(f'<mergeCell ref="{ref}"/>')
-            parts.append("</mergeCells>")
-        if cf_rules:
-            by_range: dict[str, list] = {}
-            for rule in cf_rules:
-                by_range.setdefault(rule.sqref, []).append(rule)
-            for sqref, rules in by_range.items():
-                parts.append(f'<conditionalFormatting sqref="{sqref}">')
-                for rule in rules:
-                    parts.append(self._cf_rule_xml(rule, set(table_bounds)))
-                parts.append("</conditionalFormatting>")
-        if validations:
-            parts.append(f'<dataValidations count="{len(validations)}">')
-            parts.extend(data_validation_xml(rule) for rule in validations)
-            parts.append("</dataValidations>")
+        parts.extend(self._merge_cells_xml(spec.merge_refs))
+        parts.extend(self._conditional_formatting_xml(spec.cf_rules, table_bounds))
+        parts.extend(self._data_validations_xml(spec.validations))
         if body.hyperlinks:
             parts.append(self._hyperlinks_xml(body.hyperlinks, link_rels))
+        parts.extend(self._print_settings_xml(spec.print_settings))
+        if drawing_rid is not None:
+            parts.append(f'<drawing r:id="{drawing_rid}"/>')
+        if spec.tables:
+            table_rels = body.tables
+            parts.append(f'<tableParts count="{len(table_rels)}">')
+            for rid, _table_id in table_rels:
+                parts.append(f'<tablePart r:id="{rid}"/>')
+            parts.append("</tableParts>")
+        parts.append("</worksheet>")
+        return "".join(parts)
+
+    def _implicit_filter_range(self, body, header_rows: int) -> str | None:
+        """The filter range of data with a header, or None for an empty sheet."""
+        if body.num_rows > header_rows and body.value_cols > 0:
+            # The filter buttons sit on the last header row; the range spans the
+            # columns that hold a value and the rows of array formulas past the
+            # data (the same rule as the XLSB writer).
+            return (
+                f"{self._letters[0]}{header_rows}:"
+                f"{self._letters[body.value_cols - 1]}{max(body.num_rows, body.array_rows)}"
+            )
+        return None
+
+    def _auto_filter_xml(self, data_filter: str, sort_state) -> str:
+        sort_xml = self._sort_state_xml(data_filter, sort_state)
+        if sort_xml:
+            return f'<autoFilter ref="{data_filter}">{sort_xml}</autoFilter>'
+        return f'<autoFilter ref="{data_filter}"/>'
+
+    def _sort_state_xml(self, data_filter: str, sort_state) -> str:
+        if sort_state is None:
+            return ""
+        conditions = check_sort_state(sort_state, data_filter)
+        sort_ref = sort_state_ref(data_filter, getattr(sort_state, "ref", None))
+        sort_attrs = []
+        if sort_ref:
+            sort_attrs.append(f"ref={saxutils.quoteattr(sort_ref)}")
+        if getattr(sort_state, "columnSort", None) is not None:
+            sort_attrs.append(f'columnSort="{int(bool(sort_state.columnSort))}"')
+        if getattr(sort_state, "caseSensitive", None) is not None:
+            sort_attrs.append(f'caseSensitive="{int(bool(sort_state.caseSensitive))}"')
+        if getattr(sort_state, "sortMethod", None) is not None:
+            sort_attrs.append(f"sortMethod={saxutils.quoteattr(sort_state.sortMethod)}")
+        conds = []
+        for item in conditions:
+            c = f"<sortCondition ref={saxutils.quoteattr(item.ref)}"
+            if item.descending is not None:
+                c += f' descending="{int(bool(item.descending))}"'
+            if item.sortBy is not None:
+                c += f" sortBy={saxutils.quoteattr(item.sortBy)}"
+            if getattr(item, "dxfId", None) is not None:
+                c += f' dxfId="{item.dxfId}"'
+            if getattr(item, "customList", None) is not None:
+                c += f" customList={saxutils.quoteattr(item.customList)}"
+            if getattr(item, "iconSet", None) is not None:
+                c += f" iconSet={saxutils.quoteattr(item.iconSet)}"
+            if getattr(item, "iconId", None) is not None:
+                c += f' iconId="{item.iconId}"'
+            c += "/>"
+            conds.append(c)
+        if not sort_attrs and not conds:
+            return ""
+        return f"<sortState {' '.join(sort_attrs)}>{''.join(conds)}</sortState>"
+
+    @staticmethod
+    def _merge_cells_xml(merge_refs) -> list[str]:
+        if not merge_refs:
+            return []
+        parts = [f'<mergeCells count="{len(merge_refs)}">']
+        parts.extend(f'<mergeCell ref="{ref}"/>' for ref in merge_refs)
+        parts.append("</mergeCells>")
+        return parts
+
+    def _conditional_formatting_xml(self, cf_rules, table_bounds) -> list[str]:
+        if not cf_rules:
+            return []
+        parts = []
+        by_range: dict[str, list] = {}
+        for rule in cf_rules:
+            by_range.setdefault(rule.sqref, []).append(rule)
+        for sqref, rules in by_range.items():
+            parts.append(f'<conditionalFormatting sqref="{sqref}">')
+            for rule in rules:
+                parts.append(self._cf_rule_xml(rule, set(table_bounds)))
+            parts.append("</conditionalFormatting>")
+        return parts
+
+    @staticmethod
+    def _data_validations_xml(validations) -> list[str]:
+        if not validations:
+            return []
+        parts = [f'<dataValidations count="{len(validations)}">']
+        parts.extend(data_validation_xml(rule) for rule in validations)
+        parts.append("</dataValidations>")
+        return parts
+
+    def _print_settings_xml(self, print_spec) -> list[str]:
+        parts = []
         if print_spec is not None:
-            if print_spec.center_horizontally or print_spec.center_vertically:
-                attrs = ""
-                if print_spec.center_horizontally:
-                    attrs += ' horizontalCentered="1"'
-                if print_spec.center_vertically:
-                    attrs += ' verticalCentered="1"'
+            attrs = ""
+            if print_spec.center_horizontally:
+                attrs += ' horizontalCentered="1"'
+            if print_spec.center_vertically:
+                attrs += ' verticalCentered="1"'
+            if attrs:
                 parts.append(f"<printOptions{attrs}/>")
         parts.append(self._page_margins_xml(print_spec))
         if print_spec is not None:
@@ -439,16 +466,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
                 parts.append(self._breaks_xml("rowBreaks", print_spec.row_breaks, 16383))
             if print_spec.col_breaks:
                 parts.append(self._breaks_xml("colBreaks", print_spec.col_breaks, 1048575))
-        if drawing_rid is not None:
-            parts.append(f'<drawing r:id="{drawing_rid}"/>')
-        if table_specs:
-            table_rels = body.tables
-            parts.append(f'<tableParts count="{len(table_rels)}">')
-            for rid, _table_id in table_rels:
-                parts.append(f'<tablePart r:id="{rid}"/>')
-            parts.append("</tableParts>")
-        parts.append("</worksheet>")
-        return "".join(parts)
+        return parts
 
     def _hyperlinks_xml(self, hyperlinks, link_rels) -> str:
         rid_by_target = {target: rid for rid, _type, target, _ext in link_rels}

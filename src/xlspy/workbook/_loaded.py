@@ -1358,10 +1358,7 @@ def save_loaded(workbook: Workbook, filename) -> None:
         check_removals(sheet)
         check_object_rewrites(sheet)
     handle = PackageHandle(updater)
-    if workbook._styles_dirty:
-        handle.package.set("xl/styles.xml", workbook._styles.to_bytes())
-        workbook._styles_dirty = False
-
+    _flush_styles(workbook, handle)
     if getattr(workbook, "_loaded_workbook_meta", None) != _workbook_meta_signature(workbook):
         patch_workbook_metadata(updater, workbook)
         workbook._loaded_workbook_meta = _workbook_meta_signature(workbook)
@@ -1373,6 +1370,42 @@ def save_loaded(workbook: Workbook, filename) -> None:
     renamed = {sheet._original_title: sheet.title for sheet in workbook._sheets}
     current_titles = {sheet.title for sheet in workbook._sheets}
     keep = current_titles | {sheet._original_title for sheet in workbook._sheets}
+    removed_any = _remove_loaded_sheets(workbook, updater, handle, keep)
+    added = _add_loaded_sheets(workbook, updater, handle)
+    _save_loaded_sheets(workbook, updater, handle, added)
+
+    desired_order = [sheet._original_title for sheet in workbook._sheets]
+    state_changed = any(
+        sheet.sheet_state != original_states.get(sheet._original_title, "visible") for sheet in workbook._sheets
+    )
+    renamed_any = any(sheet.title != sheet._original_title for sheet in workbook._sheets)
+    active_changed = workbook._active_index != getattr(workbook, "_loaded_active_index", original_active)
+    order_changed = desired_order != original_loaded_order
+    changed_sheets = added or removed_any or renamed_any or order_changed
+    if changed_sheets or state_changed or active_changed:
+        _reorder_and_state(workbook, updater)
+    if removed_any or renamed_any or order_changed:
+        _remap_local_names(updater, sheet_order, renamed)
+    # After the sheets have their final order: print names count it.
+    final_order = _sheet_order(updater)
+    _save_loaded_objects(workbook, updater, handle, final_order)
+
+    add_chartsheets(updater, workbook)
+    for chartsheet in workbook._chartsheets:
+        save_chart_edits(updater, chartsheet)
+    save_properties(updater, workbook)
+    _save_loaded_defined_names(workbook, updater)
+    _finish_loaded_save(workbook, updater, filename)
+
+
+def _flush_styles(workbook: Workbook, handle: PackageHandle) -> None:
+    if workbook._styles_dirty:
+        handle.package.set("xl/styles.xml", workbook._styles.to_bytes())
+        workbook._styles_dirty = False
+
+
+def _remove_loaded_sheets(workbook: Workbook, updater, handle: PackageHandle, keep: set[str]) -> bool:
+    """Remove the worksheets deleted from the model; returns whether any went."""
     removed_any = False
     for name in list(workbook._loaded_worksheet_names):
         if name not in keep:
@@ -1385,7 +1418,11 @@ def save_loaded(workbook: Workbook, filename) -> None:
         handle.recalculate(updates, removed_parts)
         handle.apply_parts(updates, removed_parts)
     workbook._loaded_worksheet_names -= {name for name in workbook._loaded_worksheet_names if name not in keep}
+    return removed_any
 
+
+def _add_loaded_sheets(workbook: Workbook, updater, handle: PackageHandle) -> set[str]:
+    """Add and rename the model's new sheets; returns the names that were added."""
     added = set()
     for index, sheet in enumerate(workbook._sheets):
         if sheet._original_title not in handle.sheets and sheet.title not in handle.sheets:
@@ -1393,7 +1430,19 @@ def save_loaded(workbook: Workbook, filename) -> None:
             added.add(sheet.title)
         elif sheet.title != sheet._original_title and sheet._original_title in handle.sheets:
             rename_sheet(updater, sheet._original_title, sheet.title)
+    return added
 
+
+def _dirty_comment_updates(sheet) -> dict:
+    comments = {}
+    for ref in _in_sheet_order(sheet._dirty_comments):
+        col, row, _, _ = parse_cell_range(ref)
+        cell = sheet._existing_cell(row + 1, col + 1)
+        comments[ref] = cell.comment if cell is not None else None
+    return comments
+
+
+def _save_loaded_sheets(workbook: Workbook, updater, handle: PackageHandle, added: set[str]) -> None:
     for sheet in workbook._sheets:
         name = sheet.title
         if name not in added:
@@ -1417,26 +1466,14 @@ def save_loaded(workbook: Workbook, filename) -> None:
                 if cell is not None:
                     style_updates[ref] = cell._style_id
             if style_updates:
-                if workbook._styles_dirty:
-                    handle.package.set("xl/styles.xml", workbook._styles.to_bytes())
-                    workbook._styles_dirty = False
+                _flush_styles(workbook, handle)
                 patch_cell_styles(updater, name, style_updates)
             if sheet._dirty_comments:
-                comments = {}
-                for ref in _in_sheet_order(sheet._dirty_comments):
-                    col, row, _, _ = parse_cell_range(ref)
-                    cell = sheet._existing_cell(row + 1, col + 1)
-                    comments[ref] = cell.comment if cell is not None else None
-                updater.set_comments(name, comments)
+                updater.set_comments(name, _dirty_comment_updates(sheet))
             _save_hyperlinks(updater, sheet, name)
         else:
             if sheet._dirty_comments:
-                comments = {}
-                for ref in _in_sheet_order(sheet._dirty_comments):
-                    col, row, _, _ = parse_cell_range(ref)
-                    cell = sheet._existing_cell(row + 1, col + 1)
-                    comments[ref] = cell.comment if cell is not None else None
-                updater.set_comments(name, comments)
+                updater.set_comments(name, _dirty_comment_updates(sheet))
             # A new sheet's part has no links yet: write all of them.
             sheet._dirty_hyperlinks.update(
                 cell.coordinate
@@ -1446,69 +1483,57 @@ def save_loaded(workbook: Workbook, filename) -> None:
             )
             _save_hyperlinks(updater, sheet, name)
 
-    desired_order = [sheet._original_title for sheet in workbook._sheets]
-    state_changed = any(
-        sheet.sheet_state != original_states.get(sheet._original_title, "visible") for sheet in workbook._sheets
-    )
-    renamed_any = any(sheet.title != sheet._original_title for sheet in workbook._sheets)
-    active_changed = workbook._active_index != getattr(workbook, "_loaded_active_index", original_active)
-    order_changed = desired_order != original_loaded_order
-    changed_sheets = added or removed_any or renamed_any or order_changed
-    if changed_sheets or state_changed or active_changed:
-        _reorder_and_state(workbook, updater)
-    if removed_any or renamed_any or order_changed:
-        _remap_local_names(updater, sheet_order, renamed)
-    # After the sheets have their final order: print names count it.
-    final_order = _sheet_order(updater)
+
+def _save_loaded_objects(workbook: Workbook, updater, handle: PackageHandle, final_order: list[str]) -> None:
     for sheet in workbook._sheets:
         remove_drawing_objects(updater, sheet)
         save_chart_edits(updater, sheet)
         sync_objects(updater, workbook, sheet)
         if has_pending_objects(sheet):
-            if workbook._styles_dirty:
-                handle.package.set("xl/styles.xml", workbook._styles.to_bytes())
-                workbook._styles_dirty = False
+            _flush_styles(workbook, handle)
             add_objects(updater, workbook, sheet, final_order)
 
-    add_chartsheets(updater, workbook)
-    for chartsheet in workbook._chartsheets:
-        save_chart_edits(updater, chartsheet)
-    save_properties(updater, workbook)
+
+def _save_loaded_defined_names(workbook: Workbook, updater) -> None:
     # Defined names staged via DefinedNameList.add/remove: single rewrite.
-    if getattr(workbook, "_defined_names_dirty", False):
-        current = list(workbook.defined_names)
-        previous: set[tuple] = getattr(workbook, "_loaded_defined_names", set())
-        sheets_now = _sheet_order(updater)
-        valid_scopes = set(sheets_now)
-        renamed_sheets = {s._original_title: s.title for s in workbook._sheets}
-        previous_pairs = {(name.casefold(), scope) for name, _f, scope, _h, _c in previous}
-        kept = []
-        for definition in current:
-            if definition.scope is None:
-                kept.append(definition)
-            elif definition.scope in valid_scopes:
-                # The sheet may have moved since the name was read; the title is
-                # current, the stored localSheetId is not.
-                kept.append(replace(definition, localSheetId=None))
-            elif (definition.name.casefold(), definition.scope) not in previous_pairs:
-                # A name added for a sheet that does not exist is a mistake; one
-                # loaded from a sheet that has since been removed is dropped, as
-                # Excel drops it with the sheet.
-                raise KeyError(f"Worksheet not found: {definition.scope}")
-        current_set = {(d.name, d.formula, d.scope, d.hidden, d.comment) for d in kept}
-        if current_set != previous:
-            current_pairs = {(d.name.casefold(), d.scope) for d in kept}
-            to_remove = []
-            for name, _formula, scope, _hidden, _comment in previous:
-                mapped = renamed_sheets.get(scope, scope) if scope is not None else None
-                if (name.casefold(), mapped) not in current_pairs and (mapped is None or mapped in valid_scopes):
-                    to_remove.append((name, mapped))
-            if to_remove:
-                updater.remove_defined_names(to_remove)
-            if kept:
-                updater.set_defined_names(kept)
-        workbook._loaded_defined_names = current_set
-        workbook._defined_names_dirty = False
+    if not getattr(workbook, "_defined_names_dirty", False):
+        return
+    current = list(workbook.defined_names)
+    previous: set[tuple] = getattr(workbook, "_loaded_defined_names", set())
+    sheets_now = _sheet_order(updater)
+    valid_scopes = set(sheets_now)
+    renamed_sheets = {s._original_title: s.title for s in workbook._sheets}
+    previous_pairs = {(name.casefold(), scope) for name, _f, scope, _h, _c in previous}
+    kept = []
+    for definition in current:
+        if definition.scope is None:
+            kept.append(definition)
+        elif definition.scope in valid_scopes:
+            # The sheet may have moved since the name was read; the title is
+            # current, the stored localSheetId is not.
+            kept.append(replace(definition, localSheetId=None))
+        elif (definition.name.casefold(), definition.scope) not in previous_pairs:
+            # A name added for a sheet that does not exist is a mistake; one
+            # loaded from a sheet that has since been removed is dropped, as
+            # Excel drops it with the sheet.
+            raise KeyError(f"Worksheet not found: {definition.scope}")
+    current_set = {(d.name, d.formula, d.scope, d.hidden, d.comment) for d in kept}
+    if current_set != previous:
+        current_pairs = {(d.name.casefold(), d.scope) for d in kept}
+        to_remove = []
+        for name, _formula, scope, _hidden, _comment in previous:
+            mapped = renamed_sheets.get(scope, scope) if scope is not None else None
+            if (name.casefold(), mapped) not in current_pairs and (mapped is None or mapped in valid_scopes):
+                to_remove.append((name, mapped))
+        if to_remove:
+            updater.remove_defined_names(to_remove)
+        if kept:
+            updater.set_defined_names(kept)
+    workbook._loaded_defined_names = current_set
+    workbook._defined_names_dirty = False
+
+
+def _finish_loaded_save(workbook: Workbook, updater, filename) -> None:
     updater.save(filename)
     for sheet in workbook._sheets:
         sheet._original_title = sheet.title

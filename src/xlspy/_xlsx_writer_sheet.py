@@ -499,8 +499,6 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         buf = io.BytesIO()  # encoded rows waiting for the spool
         text = io.StringIO()  # one Python-written row at a time, encoded once
         row_style_ids_cache: dict[Any, Any] = {}
-        ss_dict, ss_list = self._shared_strings_dict, self._shared_strings
-        use_sst, fmt_xf = self._use_shared_strings, self._fmt_xf
         # Style id of the built-in link style, 0 until a link registers it. Only the
         # Python row path registers styles, so the lookup is repeated after those rows.
         link_xf = self._style_xf_map.get(HYPERLINK_STYLE, 0)
@@ -509,18 +507,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         # writer would write. A link in a styled cell is kept in pending_links
         # until its row has been written natively.
         pending_links: list = []
-
-        def cell_hook(cell, col, style, row):
-            if isinstance(cell, Hyperlink):
-                # The link's xf, once the Python writer has written a link in
-                # this range style (see _write_row_cells).
-                xf = fmt_xf.get(("link", style))
-                text = cell.display_text
-                if xf is None or type(text) is not str:
-                    return NotImplemented
-                pending_links.append((row, col, cell))
-                return text, xf
-            return native_cell_value(cell, _XLSX_PYTHON_CELLS)
+        cell_hook = self._body_cell_hook(pending_links)
 
         if table_headers:
             data = capture_table_headers(data, table_headers, header_rows)
@@ -557,77 +544,31 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             # data therefore has no r attribute, and only a row after a gap carries it.
             write_r = row_idx != last_written + 1
             last_written = row_idx
-            # The native encoder handles common scalar rows with optional style ids
-            # and <row> attributes; it hands back rows it cannot write as None
-            # for the Python path.
-            style_ids = (
-                _style_ids_for_row(
-                    row_styles,
-                    len(row),
-                    self._register_style,
-                    row_style_ids_cache,
-                )
-                if row_styles
-                else None
-            )
-            # Link cells need the built-in link style registered first: the Python
-            # path registers it on the first link, so the xf order is unchanged.
-            if pending_links:
-                pending_links.clear()  # from a row that went to Python
-            c_row = accel_encode_xlsx_row(
+            link_xf = self._encode_body_row(
+                buf,
+                text,
                 row,
-                ss_dict,
-                ss_list,
-                self._sst_unique_count,
-                self._sst_all_count,
                 row_idx,
-                use_sst,
-                style_ids,
-                fmt_xf or None,
-                row_attrs or None,
-                link_xf,
+                row_styles,
+                row_attrs,
                 write_r,
+                row_style_ids_cache,
+                pending_links,
+                hyperlinks,
+                arrays,
+                link_xf,
                 cell_hook,
             )
-            if c_row is not None:
-                row_xml, self._sst_unique_count, self._sst_all_count, links = c_row
-                buf.write(row_xml)
-                if pending_links:
-                    # In column order, as the Python writer lists them.
-                    links = sorted([*links, *pending_links], key=lambda link: link[1])
-                hyperlinks.extend(links)
-            else:
-                row_number = f' r="{row_idx + 1}"' if write_r else ""
-                text.write(f"<row{row_number}{row_attrs}>")
-                self._write_row_cells(text, row, row_idx, row_styles, hyperlinks, arrays)
-                text.write("</row>")
-                buf.write(text.getvalue().encode("utf-8"))
-                text.seek(0)
-                text.truncate()
-                if not link_xf:
-                    link_xf = self._style_xf_map.get(HYPERLINK_STYLE, 0)
             if buf.tell() >= _FLUSH_BYTES:
                 spool.write(buf.getvalue())
                 buf = io.BytesIO()
         # Empty rows at the end of the data were skipped above; they are written now so
         # the sheet keeps its shape (an empty frame is still one row). They follow the
         # last written row directly, so none of them needs r.
-        trailing = num_rows - last_written - 1
-        while trailing > 0:
-            chunk = min(trailing, 4096)
-            buf.write(b"<row></row>" * chunk)
-            trailing -= chunk
-            if buf.tell() >= _FLUSH_BYTES:
-                spool.write(buf.getvalue())
-                buf = io.BytesIO()
+        self._write_trailing_rows(buf, spool, num_rows, last_written)
         if row_outline is not None:
             # Grouped rows and summary rows past the data are written empty.
-            for row_idx in row_outline.indices_from(num_rows):
-                row_attrs = self._row_attrs(row_idx, heights, hidden_row_set, row_outline)
-                buf.write(f'<row r="{row_idx + 1}"{row_attrs}/>'.encode())
-                if buf.tell() >= _FLUSH_BYTES:
-                    spool.write(buf.getvalue())
-                    buf = io.BytesIO()
+            self._write_outline_tail(buf, spool, row_outline, num_rows, heights, hidden_row_set)
         spool.write(buf.getvalue())
         if num_rows == 0:
             max_cols = 1
@@ -640,6 +581,115 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             value_cols=value_cols,
             array_rows=max((r2 + 1 for _c1, _r1, _c2, r2 in arrays), default=0),
         )
+
+    def _body_cell_hook(self, pending_links):
+        """The native encoder's hook for cells only the Python row writer handles."""
+        fmt_xf = self._fmt_xf
+
+        def cell_hook(cell, col, style, row):
+            if isinstance(cell, Hyperlink):
+                # The link's xf, once the Python writer has written a link in
+                # this range style (see _write_row_cells).
+                xf = fmt_xf.get(("link", style))
+                text = cell.display_text
+                if xf is None or type(text) is not str:
+                    return NotImplemented
+                pending_links.append((row, col, cell))
+                return text, xf
+            return native_cell_value(cell, _XLSX_PYTHON_CELLS)
+
+        return cell_hook
+
+    def _encode_body_row(
+        self,
+        buf,
+        text,
+        row,
+        row_idx,
+        row_styles,
+        row_attrs,
+        write_r,
+        row_style_ids_cache,
+        pending_links,
+        hyperlinks,
+        arrays,
+        link_xf,
+        cell_hook,
+    ):
+        """Write one row natively, or through the Python row writer; return link_xf."""
+        # The native encoder handles common scalar rows with optional style ids
+        # and <row> attributes; it hands back rows it cannot write as None
+        # for the Python path.
+        style_ids = (
+            _style_ids_for_row(
+                row_styles,
+                len(row),
+                self._register_style,
+                row_style_ids_cache,
+            )
+            if row_styles
+            else None
+        )
+        # Link cells need the built-in link style registered first: the Python
+        # path registers it on the first link, so the xf order is unchanged.
+        if pending_links:
+            pending_links.clear()  # from a row that went to Python
+        c_row = accel_encode_xlsx_row(
+            row,
+            self._shared_strings_dict,
+            self._shared_strings,
+            self._sst_unique_count,
+            self._sst_all_count,
+            row_idx,
+            self._use_shared_strings,
+            style_ids,
+            self._fmt_xf or None,
+            row_attrs or None,
+            link_xf,
+            write_r,
+            cell_hook,
+        )
+        if c_row is not None:
+            row_xml, self._sst_unique_count, self._sst_all_count, links = c_row
+            buf.write(row_xml)
+            if pending_links:
+                # In column order, as the Python writer lists them.
+                links = sorted([*links, *pending_links], key=lambda link: link[1])
+            hyperlinks.extend(links)
+            return link_xf
+        row_number = f' r="{row_idx + 1}"' if write_r else ""
+        text.write(f"<row{row_number}{row_attrs}>")
+        self._write_row_cells(text, row, row_idx, row_styles, hyperlinks, arrays)
+        text.write("</row>")
+        buf.write(text.getvalue().encode("utf-8"))
+        text.seek(0)
+        text.truncate()
+        if not link_xf:
+            link_xf = self._style_xf_map.get(HYPERLINK_STYLE, 0)
+        return link_xf
+
+    @staticmethod
+    def _write_trailing_rows(buf, spool, num_rows, last_written) -> None:
+        trailing = num_rows - last_written - 1
+        while trailing > 0:
+            chunk = min(trailing, 4096)
+            buf.write(b"<row></row>" * chunk)
+            trailing -= chunk
+            if buf.tell() >= _FLUSH_BYTES:
+                spool.write(buf.getvalue())
+                buf = io.BytesIO()
+        if buf.getvalue():
+            spool.write(buf.getvalue())
+            buf.seek(0)
+            buf.truncate()
+
+    def _write_outline_tail(self, buf, spool, row_outline, num_rows, heights, hidden_row_set) -> None:
+        for row_idx in row_outline.indices_from(num_rows):
+            row_attrs = self._row_attrs(row_idx, heights, hidden_row_set, row_outline)
+            buf.write(f'<row r="{row_idx + 1}"{row_attrs}/>'.encode())
+            if buf.tell() >= _FLUSH_BYTES:
+                spool.write(buf.getvalue())
+                buf = io.BytesIO()
 
     @staticmethod
     def _row_attrs(row_idx, heights, hidden_row_set, row_outline) -> str:
@@ -660,74 +710,18 @@ class _XlsxSheetMixin(_XlsxWriterHost):
 
     def _write_row_cells(self, buf, row, row_idx, row_styles, hyperlinks, arrays=None):
         """Write one row's cells; array formulas are added to ``arrays`` when given."""
-        uniform_style = None
-        uniform_xf = None
-        if row_styles and len(row_styles) == len(row):
-            first_style = next(iter(row_styles.values()))
-            if all(style is first_style for style in row_styles.values()):
-                uniform_style = first_style
-                uniform_xf = self._register_style(first_style)
-
+        uniform_style, uniform_xf = self._uniform_row_style(row, row_styles)
         for col_idx, cell in enumerate(row):
             cell_style = uniform_style if uniform_style is not None else row_styles.get(col_idx)
             if cell is not None and type(cell).__module__.startswith("pandas") and is_pandas_missing(cell):
                 cell = None  # NaT, NA: an empty cell
             if cell is None:
-                # Every cell of the row is written, so none needs its r (as the
-                # native encoder writes them).
-                if cell_style is None:
-                    buf.write("<c/>")
-                else:
-                    xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
-                    buf.write(f'<c s="{xf_index}"/>')
+                self._write_blank_cell(buf, cell_style, uniform_style, uniform_xf)
                 continue
-
-            # (value, format) and (value, Style) cells: the overlay goes on
-            # top of the range style.
-            overlay = None
-            link_base = None
-            if _is_formatted_cell(cell):
-                cell, overlay = cell
-                if isinstance(cell, Hyperlink):
-                    if isinstance(overlay, str):
-                        raise TypeError("a hyperlink cell cannot carry a number format; style the cell instead")
-                    cell_style = merge_styles(cell_style, overlay)
-                    overlay = None
-            elif isinstance(cell, Hyperlink) and cell_style is not None:
-                # The native encoder's hook writes the next links in this range
-                # style with the xf found under ("link", its xf).
-                link_base = self._style_xf_map.get(cell_style)
-            cell = plain_value(cell)
-            if overlay is None and isinstance(cell, Hyperlink):
-                hyperlinks.append((row_idx, col_idx, cell))
-                cell = cell.display_text
-                cell_style = HYPERLINK_STYLE if cell_style is None else merge_styles(HYPERLINK_STYLE, cell_style)
-
-            if overlay is not None:
-                if cell_style is not None:
-                    xf_index = _xf_for_style_format(
-                        cell_style,
-                        overlay,
-                        self._register_style,
-                        self._style_format_xf,
-                    )
-                    # Only a registered style has the id the native encoder sees.
-                    base_xf = self._style_xf_map.get(cell_style)
-                    if base_xf is not None:
-                        _record_cell_xf(self._fmt_xf, self._fmt_xf_styles, base_xf, overlay, xf_index)
-                else:
-                    if isinstance(overlay, str):
-                        xf_index = self._register_format(overlay)
-                    else:
-                        xf_index = self._register_style(overlay)
-                    _record_cell_xf(self._fmt_xf, self._fmt_xf_styles, None, overlay, xf_index)
-            elif cell_style is not None:
-                xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
-            else:
-                xf_index = None
-            if link_base is not None and xf_index is not None:
-                self._fmt_xf.setdefault(("link", link_base), xf_index)
-
+            cell, cell_style, overlay, link_base = self._cell_value_and_style(
+                cell, cell_style, row_idx, col_idx, hyperlinks
+            )
+            xf_index = self._cell_xf_index(overlay, cell_style, uniform_style, uniform_xf, link_base)
             if cell is None:
                 # (None, format) or (None, Style): a formatted cell without a
                 # value, written like a blank with a range style.
@@ -744,66 +738,153 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                     )
                     if ref is not None:
                         arrays.append(parse_cell_range(ref))
-            elif isinstance(cell, str):
-                self._write_string_cell(buf, cell, row_idx == 0, xf_index)
-            elif isinstance(cell, bool):
-                s_attr = f' s="{xf_index}"' if xf_index is not None else ""
-                buf.write(f'<c t="b"{s_attr}><v>{"1" if cell else "0"}</v></c>')
-            elif isinstance(cell, (int, float, Decimal)):
-                if isinstance(cell, (float, Decimal)) and not math.isfinite(float(cell)):
-                    raise ValueError("numeric cell values must be finite")
-                try:
-                    number = float(cell)
-                except OverflowError:
-                    if not isinstance(cell, int):
-                        raise
-                    # An int past the float range: the digits, as text (as XlsbWriter writes it).
-                    self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
-                else:
-                    s_attr = f' s="{xf_index}"' if xf_index is not None else ""
-                    buf.write(f"<c{s_attr}><v>{number}</v></c>")
-            elif isinstance(cell, datetime.datetime):
-                if cell.year < 1900 or cell.year > 9999:
-                    self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
-                else:
-                    if cell.tzinfo is not None:
-                        cell = cell.replace(tzinfo=None)
-                    excel_date = datetime_to_serial(cell)
-                    style_ref = (
-                        2
-                        if xf_index is None
-                        else _date_cell_xf(
-                            self._fmt_xf,
-                            self._xf_styles,
-                            self._register_style,
-                            xf_index,
-                            DEFAULT_DATETIME_FORMAT,
-                            True,
-                        )
-                    )
-                    buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
-            elif isinstance(cell, datetime.date):
-                if cell.year < 1900 or cell.year > 9999:
-                    self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
-                else:
-                    excel_date = datetime_to_serial(cell)
-                    style_ref = (
-                        1
-                        if xf_index is None
-                        else _date_cell_xf(
-                            self._fmt_xf,
-                            self._xf_styles,
-                            self._register_style,
-                            xf_index,
-                            DEFAULT_DATE_FORMAT,
-                            False,
-                        )
-                    )
-                    buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
-            elif isinstance(cell, CellRichText):
-                self._write_rich_cell(buf, cell, row_idx == 0, xf_index)
             else:
-                self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
+                self._write_scalar_cell(buf, cell, row_idx, xf_index)
+
+    def _uniform_row_style(self, row, row_styles):
+        """A style shared by every cell of the row, registered once."""
+        if row_styles and len(row_styles) == len(row):
+            first_style = next(iter(row_styles.values()))
+            if all(style is first_style for style in row_styles.values()):
+                return first_style, self._register_style(first_style)
+        return None, None
+
+    def _write_blank_cell(self, buf, cell_style, uniform_style, uniform_xf) -> None:
+        # Every cell of the row is written, so none needs its r (as the
+        # native encoder writes them).
+        if cell_style is None:
+            buf.write("<c/>")
+        else:
+            xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
+            buf.write(f'<c s="{xf_index}"/>')
+
+    def _cell_value_and_style(self, cell, cell_style, row_idx, col_idx, hyperlinks):
+        """Unwrap the cell overlay, record a hyperlink, and return the resolved value."""
+        overlay = None
+        link_base = None
+        # (value, format) and (value, Style) cells: the overlay goes on
+        # top of the range style.
+        if _is_formatted_cell(cell):
+            cell, overlay = cell
+            if isinstance(cell, Hyperlink):
+                if isinstance(overlay, str):
+                    raise TypeError("a hyperlink cell cannot carry a number format; style the cell instead")
+                cell_style = merge_styles(cell_style, overlay)
+                overlay = None
+        elif isinstance(cell, Hyperlink) and cell_style is not None:
+            # The native encoder's hook writes the next links in this range
+            # style with the xf found under ("link", its xf).
+            link_base = self._style_xf_map.get(cell_style)
+        cell = plain_value(cell)
+        if overlay is None and isinstance(cell, Hyperlink):
+            hyperlinks.append((row_idx, col_idx, cell))
+            cell = cell.display_text
+            cell_style = HYPERLINK_STYLE if cell_style is None else merge_styles(HYPERLINK_STYLE, cell_style)
+        return cell, cell_style, overlay, link_base
+
+    def _cell_xf_index(self, overlay, cell_style, uniform_style, uniform_xf, link_base):
+        """The cell's XF index, registering the overlay or style as needed."""
+        if overlay is not None:
+            xf_index = self._overlay_xf_index(overlay, cell_style)
+        elif cell_style is not None:
+            xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
+        else:
+            xf_index = None
+        if link_base is not None and xf_index is not None:
+            self._fmt_xf.setdefault(("link", link_base), xf_index)
+        return xf_index
+
+    def _overlay_xf_index(self, overlay, cell_style):
+        if cell_style is not None:
+            xf_index = _xf_for_style_format(
+                cell_style,
+                overlay,
+                self._register_style,
+                self._style_format_xf,
+            )
+            # Only a registered style has the id the native encoder sees.
+            base_xf = self._style_xf_map.get(cell_style)
+            if base_xf is not None:
+                _record_cell_xf(self._fmt_xf, self._fmt_xf_styles, base_xf, overlay, xf_index)
+            return xf_index
+        if isinstance(overlay, str):
+            xf_index = self._register_format(overlay)
+        else:
+            xf_index = self._register_style(overlay)
+        _record_cell_xf(self._fmt_xf, self._fmt_xf_styles, None, overlay, xf_index)
+        return xf_index
+
+    def _write_scalar_cell(self, buf, cell, row_idx, xf_index) -> None:
+        """Write a non-formula cell (the types the native encoder may hand back)."""
+        if isinstance(cell, str):
+            self._write_string_cell(buf, cell, row_idx == 0, xf_index)
+        elif isinstance(cell, bool):
+            s_attr = f' s="{xf_index}"' if xf_index is not None else ""
+            buf.write(f'<c t="b"{s_attr}><v>{"1" if cell else "0"}</v></c>')
+        elif isinstance(cell, (int, float, Decimal)):
+            self._write_number_cell(buf, cell, row_idx, xf_index)
+        elif isinstance(cell, datetime.datetime):
+            self._write_datetime_cell(buf, cell, row_idx, xf_index)
+        elif isinstance(cell, datetime.date):
+            self._write_date_cell(buf, cell, row_idx, xf_index)
+        elif isinstance(cell, CellRichText):
+            self._write_rich_cell(buf, cell, row_idx == 0, xf_index)
+        else:
+            self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
+
+    def _write_number_cell(self, buf, cell, row_idx, xf_index) -> None:
+        if isinstance(cell, (float, Decimal)) and not math.isfinite(float(cell)):
+            raise ValueError("numeric cell values must be finite")
+        try:
+            number = float(cell)
+        except OverflowError:
+            if not isinstance(cell, int):
+                raise
+            # An int past the float range: the digits, as text (as XlsbWriter writes it).
+            self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
+        else:
+            s_attr = f' s="{xf_index}"' if xf_index is not None else ""
+            buf.write(f"<c{s_attr}><v>{number}</v></c>")
+
+    def _write_datetime_cell(self, buf, cell, row_idx, xf_index) -> None:
+        if cell.year < 1900 or cell.year > 9999:
+            self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
+            return
+        if cell.tzinfo is not None:
+            cell = cell.replace(tzinfo=None)
+        excel_date = datetime_to_serial(cell)
+        style_ref = (
+            2
+            if xf_index is None
+            else _date_cell_xf(
+                self._fmt_xf,
+                self._xf_styles,
+                self._register_style,
+                xf_index,
+                DEFAULT_DATETIME_FORMAT,
+                True,
+            )
+        )
+        buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
+
+    def _write_date_cell(self, buf, cell, row_idx, xf_index) -> None:
+        if cell.year < 1900 or cell.year > 9999:
+            self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
+            return
+        excel_date = datetime_to_serial(cell)
+        style_ref = (
+            1
+            if xf_index is None
+            else _date_cell_xf(
+                self._fmt_xf,
+                self._xf_styles,
+                self._register_style,
+                xf_index,
+                DEFAULT_DATE_FORMAT,
+                False,
+            )
+        )
+        buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
 
     def _write_formula_cell(self, buf, formula: Formula | ArrayFormula | DataTableFormula, xf_index):
         s_attr = f' s="{xf_index}"' if xf_index is not None else ""

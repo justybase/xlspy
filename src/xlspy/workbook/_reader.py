@@ -381,51 +381,67 @@ def _read_custom_properties(package):
 
 
 def _read_workbook_metadata(workbook: Workbook, root, package) -> None:
+    _read_workbook_security(workbook, root)
+    _read_workbook_calculation(workbook, root)
+    views = _read_book_views(root)
+    if views:
+        workbook.views = views
+    workbook.custom_doc_props = _read_custom_properties(package)
+    workbook.external_links = read_external_links(package, binary=False)
+
+
+def _read_workbook_security(workbook: Workbook, root) -> None:
     security = workbook.security
     protection = root.find(f"{{{MAIN}}}workbookProtection")
-    if protection is not None:
-        for name in ("lockStructure", "lockWindows", "lockRevision"):
-            if protection.get(name) is not None:
-                setattr(security, name, _bool_attr(protection, name, None))
-        for name in (
-            "workbookPassword",
-            "revisionsPassword",
-            "workbookAlgorithmName",
-            "workbookHashValue",
-            "workbookSaltValue",
-            "revisionsAlgorithmName",
-            "revisionsHashValue",
-            "revisionsSaltValue",
-        ):
-            if protection.get(name) is not None:
-                setattr(security, name, protection.get(name))
-        for name in ("workbookSpinCount", "revisionsSpinCount"):
-            if protection.get(name) is not None:
-                setattr(security, name, int(protection.get(name)))
+    if protection is None:
+        return
+    for name in ("lockStructure", "lockWindows", "lockRevision"):
+        if protection.get(name) is not None:
+            setattr(security, name, _bool_attr(protection, name, None))
+    for name in (
+        "workbookPassword",
+        "revisionsPassword",
+        "workbookAlgorithmName",
+        "workbookHashValue",
+        "workbookSaltValue",
+        "revisionsAlgorithmName",
+        "revisionsHashValue",
+        "revisionsSaltValue",
+    ):
+        if protection.get(name) is not None:
+            setattr(security, name, protection.get(name))
+    for name in ("workbookSpinCount", "revisionsSpinCount"):
+        if protection.get(name) is not None:
+            setattr(security, name, int(protection.get(name)))
 
+
+def _read_workbook_calculation(workbook: Workbook, root) -> None:
     calculation = workbook.calculation
     calc = root.find(f"{{{MAIN}}}calcPr")
-    if calc is not None:
-        for name in ("calcId", "iterateCount", "concurrentManualCount"):
-            if calc.get(name) is not None:
-                setattr(calculation, name, int(calc.get(name)))
-        for name in (
-            "fullCalcOnLoad",
-            "iterate",
-            "fullPrecision",
-            "calcCompleted",
-            "calcOnSave",
-            "concurrentCalc",
-            "forceFullCalc",
-        ):
-            if calc.get(name) is not None:
-                setattr(calculation, name, _bool_attr(calc, name, None))
-        if calc.get("iterateDelta") is not None:
-            calculation.iterateDelta = float(calc.get("iterateDelta"))
-        for name in ("calcMode", "refMode"):
-            if calc.get(name) is not None:
-                setattr(calculation, name, calc.get(name))
+    if calc is None:
+        return
+    for name in ("calcId", "iterateCount", "concurrentManualCount"):
+        if calc.get(name) is not None:
+            setattr(calculation, name, int(calc.get(name)))
+    for name in (
+        "fullCalcOnLoad",
+        "iterate",
+        "fullPrecision",
+        "calcCompleted",
+        "calcOnSave",
+        "concurrentCalc",
+        "forceFullCalc",
+    ):
+        if calc.get(name) is not None:
+            setattr(calculation, name, _bool_attr(calc, name, None))
+    if calc.get("iterateDelta") is not None:
+        calculation.iterateDelta = float(calc.get("iterateDelta"))
+    for name in ("calcMode", "refMode"):
+        if calc.get(name) is not None:
+            setattr(calculation, name, calc.get(name))
 
+
+def _read_book_views(root) -> list:
     views = []
     for node in root.findall(f"{{{MAIN}}}bookViews/{{{MAIN}}}workbookView"):
         view = BookView()
@@ -452,10 +468,7 @@ def _read_workbook_metadata(workbook: Workbook, root, package) -> None:
             if (value := node.get(name)) is not None:
                 setattr(view, name, int(value))
         views.append(view)
-    if views:
-        workbook.views = views
-    workbook.custom_doc_props = _read_custom_properties(package)
-    workbook.external_links = read_external_links(package, binary=False)
+    return views
 
 
 def _read_sheet_relationships(package, sheet_path: str) -> dict[str, tuple[str, str | None, str]]:
@@ -636,107 +649,22 @@ def _cf_rule(sqref: str, node, style_table):
     if rule_type == "expression":
         return FormulaRule(sqref, formulas, dxf, stop, priority)
     if rule_type == "colorScale":
-        scale = node.find(qname("colorScale"))
-        if scale is None:
-            return None
-        cfvos = [_cfvo(item) for item in scale.findall(qname("cfvo"))]
-        colors = [_read_color(item) for item in scale.findall(qname("color"))]
-        solid: list[Any] = [color for color in colors if color is not None]
-        if len(cfvos) < 2 or len(solid) != len(colors):
-            return None
-        if len(cfvos) == 2:
-            return ColorScaleRule(sqref, cfvos[0], None, cfvos[1], solid, priority)
-        return ColorScaleRule(sqref, cfvos[0], cfvos[1], cfvos[2], solid, priority)
+        return _read_color_scale_rule(sqref, node, priority)
     if rule_type == "dataBar":
-        bar = node.find(qname("dataBar"))
-        if bar is None:
-            return None
-        cfvos = [_cfvo(item) for item in bar.findall(qname("cfvo"))]
-        color = _read_color(bar.find(qname("color")))
-        if len(cfvos) < 2 or color is None:
-            return None
-        return DataBarRule(
-            sqref,
-            cfvos[0],
-            cfvos[1],
-            color,
-            show_value=_bool_attr(bar, "showValue", None),
-            min_length=(int(bar.get("minLength")) if bar.get("minLength") is not None else None),
-            max_length=(int(bar.get("maxLength")) if bar.get("maxLength") is not None else None),
-            priority=priority,
-        )
+        return _read_data_bar_rule(sqref, node, priority)
     if rule_type == "iconSet":
-        icon_set = node.find(qname("iconSet"))
-        if icon_set is None:
-            return None
-        cfvos = [_cfvo(item) for item in icon_set.findall(qname("cfvo"))]
-        values: list[Any] = []
-        for item in cfvos:
-            value: Any = item.value  # a number, a formula, or None
-            try:
-                values.append(float(value))
-            except (TypeError, ValueError):
-                values.append(value)
-        if not values:
-            return None
-        return IconSetRule(
-            sqref,
-            icon_set.get("iconSet", "3TrafficLights1"),
-            values,
-            cfvo_type=cfvos[0].type if cfvos else "percent",
-            show_value=_bool_attr(icon_set, "showValue", None),
-            percent=_bool_attr(icon_set, "percent", None),
-            reverse=_bool_attr(icon_set, "reverse", None),
-            stop_if_true=stop,
-            priority=priority,
-        )
+        return _read_icon_set_rule(sqref, node, stop, priority)
     if rule_type == "top10":
-        return TopBottomRule(
-            sqref,
-            rank=int(node.get("rank", "10") or 10),
-            percent=bool(_bool_attr(node, "percent", False)),
-            bottom=bool(_bool_attr(node, "bottom", False)),
-            dxf=dxf,
-            stop_if_true=stop,
-            priority=priority,
-        )
+        return _read_top10_rule(sqref, node, dxf, stop, priority)
     if rule_type == "aboveAverage":
-        std_dev = node.get("stdDev")
-        return AboveAverageRule(
-            sqref,
-            below=bool(_bool_attr(node, "below", False)),
-            equal_average=bool(_bool_attr(node, "equalAverage", False)),
-            std_dev=int(std_dev) if std_dev is not None else None,
-            dxf=dxf,
-            stop_if_true=stop,
-            priority=priority,
-        )
+        return _read_above_average_rule(sqref, node, dxf, stop, priority)
     if rule_type in {"containsText", "notContains", "beginsWith", "endsWith"}:
         operator = "contains" if rule_type == "containsText" else rule_type
-        return TextRule(
-            sqref,
-            operator,
-            node.get("text", ""),
-            dxf,
-            stop,
-            priority,
-        )
+        return TextRule(sqref, operator, node.get("text", ""), dxf, stop, priority)
     if rule_type in {"duplicateValues", "uniqueValues"}:
-        return DuplicateRule(
-            sqref,
-            unique=rule_type == "uniqueValues",
-            dxf=dxf,
-            stop_if_true=stop,
-            priority=priority,
-        )
+        return DuplicateRule(sqref, unique=rule_type == "uniqueValues", dxf=dxf, stop_if_true=stop, priority=priority)
     if rule_type == "timePeriod":
-        return TimePeriodRule(
-            sqref,
-            node.get("timePeriod", "today"),
-            dxf,
-            stop,
-            priority,
-        )
+        return TimePeriodRule(sqref, node.get("timePeriod", "today"), dxf, stop, priority)
     if rule_type in {"containsBlanks", "notContainsBlanks", "containsErrors", "notContainsErrors"}:
         kind = {
             "containsBlanks": "blanks",
@@ -746,6 +674,97 @@ def _cf_rule(sqref: str, node, style_table):
         }[rule_type]
         return BlanksRule(sqref, kind, dxf, stop, priority)
     return None
+
+
+def _read_color_scale_rule(sqref: str, node, priority: int):
+    scale = node.find(qname("colorScale"))
+    if scale is None:
+        return None
+    cfvos = [_cfvo(item) for item in scale.findall(qname("cfvo"))]
+    colors = [_read_color(item) for item in scale.findall(qname("color"))]
+    solid: list[Any] = [color for color in colors if color is not None]
+    if len(cfvos) < 2 or len(solid) != len(colors):
+        return None
+    if len(cfvos) == 2:
+        return ColorScaleRule(sqref, cfvos[0], None, cfvos[1], solid, priority)
+    return ColorScaleRule(sqref, cfvos[0], cfvos[1], cfvos[2], solid, priority)
+
+
+def _read_data_bar_rule(sqref: str, node, priority: int):
+    bar = node.find(qname("dataBar"))
+    if bar is None:
+        return None
+    cfvos = [_cfvo(item) for item in bar.findall(qname("cfvo"))]
+    color = _read_color(bar.find(qname("color")))
+    if len(cfvos) < 2 or color is None:
+        return None
+    return DataBarRule(
+        sqref,
+        cfvos[0],
+        cfvos[1],
+        color,
+        show_value=_bool_attr(bar, "showValue", None),
+        min_length=(int(bar.get("minLength")) if bar.get("minLength") is not None else None),
+        max_length=(int(bar.get("maxLength")) if bar.get("maxLength") is not None else None),
+        priority=priority,
+    )
+
+
+def _read_icon_set_values(cfvos) -> list[Any]:
+    values: list[Any] = []
+    for item in cfvos:
+        value: Any = item.value  # a number, a formula, or None
+        try:
+            values.append(float(value))
+        except (TypeError, ValueError):
+            values.append(value)
+    return values
+
+
+def _read_icon_set_rule(sqref: str, node, stop, priority: int):
+    icon_set = node.find(qname("iconSet"))
+    if icon_set is None:
+        return None
+    cfvos = [_cfvo(item) for item in icon_set.findall(qname("cfvo"))]
+    values = _read_icon_set_values(cfvos)
+    if not values:
+        return None
+    return IconSetRule(
+        sqref,
+        icon_set.get("iconSet", "3TrafficLights1"),
+        values,
+        cfvo_type=cfvos[0].type if cfvos else "percent",
+        show_value=_bool_attr(icon_set, "showValue", None),
+        percent=_bool_attr(icon_set, "percent", None),
+        reverse=_bool_attr(icon_set, "reverse", None),
+        stop_if_true=stop,
+        priority=priority,
+    )
+
+
+def _read_top10_rule(sqref: str, node, dxf, stop, priority: int):
+    return TopBottomRule(
+        sqref,
+        rank=int(node.get("rank", "10") or 10),
+        percent=bool(_bool_attr(node, "percent", False)),
+        bottom=bool(_bool_attr(node, "bottom", False)),
+        dxf=dxf,
+        stop_if_true=stop,
+        priority=priority,
+    )
+
+
+def _read_above_average_rule(sqref: str, node, dxf, stop, priority: int):
+    std_dev = node.get("stdDev")
+    return AboveAverageRule(
+        sqref,
+        below=bool(_bool_attr(node, "below", False)),
+        equal_average=bool(_bool_attr(node, "equalAverage", False)),
+        std_dev=int(std_dev) if std_dev is not None else None,
+        dxf=dxf,
+        stop_if_true=stop,
+        priority=priority,
+    )
 
 
 def _read_conditional_formatting(sheet, node, style_table) -> None:

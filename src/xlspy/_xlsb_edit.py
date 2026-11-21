@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .exceptions import InvalidFileError, UnsupportedFeatureError
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -64,7 +64,7 @@ from .comments import (
 from .excel_dates import datetime_to_serial
 from .formulas import ArrayFormula, DataTableFormula, Formula
 from .refs import column_label, parse_cell_range
-from .updater_utils import normalize_merges, unwrap_cell
+from .updater_utils import normalize_merges
 from .writer import _hlink_payload
 from .hyperlinks import Hyperlink
 from ._xlsb_validation import BRT_BEGIN_DVALS, BRT_DVAL, BRT_END_DVALS, validations_bin
@@ -580,25 +580,15 @@ class XlsbEditMixin(SheetEditMixin):
 
         An address only in ``styles`` keeps its value (or becomes a styled blank).
         """
-        if not isinstance(cells, Mapping):
-            raise TypeError("cells must map single-cell addresses to values")
-        if styles is not None and not isinstance(styles, Mapping):
-            raise TypeError("styles must map single-cell addresses to XF indexes")
         path, data = self._sheet_bin(sheet_name)
-        values = {}
-        for ref, value in cells.items():
-            ref = cell_ref(ref)
-            if ref in values:
-                raise ValueError(f"duplicate cell address {ref}")
-            values[ref] = unwrap_cell(value)
-        targets = dict(values)
-        style_ids = {}
-        for ref, xf in (styles or {}).items():
-            ref = cell_ref(ref)
-            if not isinstance(xf, int) or isinstance(xf, bool) or not 0 <= xf < 0xFFFFFF:
-                raise ValueError(f"invalid cell style index {xf!r} for {ref}")
-            style_ids[ref] = xf
-            targets.setdefault(ref, KEEP)
+        values, style_ids, targets = self._normalize_cell_edits(
+            cells,
+            styles,
+            cells_error="cells must map single-cell addresses to values",
+            styles_error="styles must map single-cell addresses to XF indexes",
+            duplicate_error="duplicate cell address {ref}",
+            keep=KEEP,
+        )
         if not targets:
             return
         begin_start, begin_end, end_start, row_starts, merges, groups, dimension, cell_bounds = _scan_sheet(data)
@@ -613,6 +603,35 @@ class XlsbEditMixin(SheetEditMixin):
         for ref, value in values.items():
             col, row, _, _ = parse_cell_range(ref)
             encode_cell(value, col, 0, context, sheet_name, row, self._date_1904)
+        patched, removed_shared_refs = self._rebuild_bin_rows(
+            data,
+            begin_end,
+            end_start,
+            row_starts,
+            targets,
+            style_ids,
+            context,
+            sheet_name,
+        )
+        patched = self._patch_bin_dimension(patched, dimension, begin_start, targets, cell_bounds)
+        updates, removed = self._bin_update_parts(path, patched, context, original_workbook, removed_shared_refs)
+        self._drop_bin_binary_index(updates, removed, path)
+        self._apply_parts(updates, removed)
+        self._account_removed_shared_strings(removed_shared_refs)
+        if self._shared_strings_loaded and "xl/sharedStrings.bin" in updates:
+            self._shared_strings_data = updates["xl/sharedStrings.bin"]
+
+    def _rebuild_bin_rows(
+        self,
+        data: bytes,
+        begin_end: int,
+        end_start: int,
+        row_starts: list[tuple[int, int]],
+        targets: dict[str, Any],
+        style_ids: dict[str, int],
+        context: FormulaContext | None,
+        sheet_name: str,
+    ) -> tuple[bytes, int]:
         by_row: dict[Any, Any] = {}
         for ref, value in targets.items():
             col, row, _, _ = parse_cell_range(ref)
@@ -643,7 +662,16 @@ class XlsbEditMixin(SheetEditMixin):
         for row in sorted(by_row):
             output.append(new_row_bytes(row, by_row[row], context, sheet_name, self._date_1904))
         output.append(data[end_start:])
-        patched = b"".join(output)
+        return b"".join(output), removed_shared_refs
+
+    @staticmethod
+    def _patch_bin_dimension(
+        patched: bytes,
+        dimension: Any,
+        begin_start: int,
+        targets: dict[str, Any],
+        cell_bounds: Any,
+    ) -> bytes:
         coordinates = [parse_cell_range(ref) for ref in targets]
         # Existing cells count too: xlspy before 0.11 wrote an A1:A1 placeholder.
         if cell_bounds is not None:
@@ -663,9 +691,17 @@ class XlsbEditMixin(SheetEditMixin):
         )
         if dimension is not None and dimension[1] <= begin_start:
             # Before the sheet data, so its offsets are unchanged in ``patched``.
-            patched = patched[: dimension[0]] + build_record(0x94, bounds) + patched[dimension[1] :]
-        else:
-            patched = replace_records(patched, {0x94}, build_record(0x94, bounds), before=(0x85, 0x91))
+            return patched[: dimension[0]] + build_record(0x94, bounds) + patched[dimension[1] :]
+        return cast(bytes, replace_records(patched, {0x94}, build_record(0x94, bounds), before=(0x85, 0x91)))
+
+    def _bin_update_parts(
+        self,
+        path: str,
+        patched: bytes,
+        context: FormulaContext | None,
+        original_workbook: bytes | None,
+        removed_shared_refs: int,
+    ) -> tuple[dict[str, Any], list[str]]:
         updates: dict[str, Any] = {path: patched}
         removed: list[str] = []
         if context is not None:
@@ -681,6 +717,9 @@ class XlsbEditMixin(SheetEditMixin):
                     chunks.append(sst[record.header_start : record.data_end])
             updates["xl/sharedStrings.bin"] = b"".join(chunks)
         self._invalidate_calculation(updates, removed)
+        return updates, removed
+
+    def _drop_bin_binary_index(self, updates: dict[str, Any], removed: list[str], path: str) -> None:
         # Binary indexes contain offsets into row data. Discard the affected
         # cache rather than leave stale offsets; Excel can regenerate it.
         rp, rels, _ = find_comment_parts(self._package.get, self._package.names(), path)
@@ -698,15 +737,6 @@ class XlsbEditMixin(SheetEditMixin):
         if index_removed:
             updates[rp] = ET.tostring(rels, encoding="utf-8")
             updates["[Content_Types].xml"] = ET.tostring(types, encoding="utf-8")
-        self._apply_parts(updates, removed)
-        if self._shared_strings_loaded:
-            self._shared_strings_total = max(0, self._shared_strings_total - removed_shared_refs)
-            if "xl/sharedStrings.bin" in updates:
-                self._shared_strings_data = updates["xl/sharedStrings.bin"]
-        if self._stream_shared_strings is not None:
-            self._stream_shared_strings.total_count = max(
-                0, self._stream_shared_strings.total_count - removed_shared_refs
-            )
 
 
 def encode_cell(

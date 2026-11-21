@@ -223,9 +223,24 @@ duplicated parameter lists in `_xlsx_writer_host.py` and `_xlsb_writer_host.py`
 shrank to the same contract, and the unused `SheetOptions.as_kwargs()` helper
 was removed.
 
+The critical paths were then split by phase. The XLSB sheet writer keeps a
+small `_BinSheetState` across row preparation, native encoding and the Python
+fallback; its Python row path is split by cell kind (scalars, integers,
+temporal values, formulas/array followers, rich text). The XLSX body and cell
+writers got the same treatment, `_sheet_tail` now builds filters, merges,
+validations and print settings through named helpers, and `_create_styles_xml`
+is assembled from the number-format, XF, font, fill, border and dxf parts.
+Both `update_cells` implementations validate through one shared helper in
+`_edit_base.py` and stage validation, row rebuilding, dimension patching and
+bookkeeping separately. `save_loaded` is a sequence of named save phases, and
+the workbook metadata and conditional-format readers dispatch to per-element
+helpers. The C901 allow-list lost eight files; the remaining entries are the
+formula compiler/decoder, the streaming fast-sheet and tokenizer parsers, the
+BIFF reader and pivot rendering.
+
 The full native suite passed **10,376 tests, 345 skipped, 1 xfailed** in 4:58;
 the pure-Python pass took **9,270 tests, 1,452 skipped** in 2:51. Combined
-coverage is **92%** branch coverage over 27,651 statements. `ruff check`,
+coverage is **92%** branch coverage over 27,873 statements. `ruff check`,
 `ruff format --check`, `mypy` (149 source files) and `lint-imports` (4
 contracts) are clean; the COM subset rerun locally after the fixture cleanup
 passed **103 tests, 6 skipped** with Excel 16.0.

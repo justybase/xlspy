@@ -162,11 +162,16 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         return f"<color {self._color_attrs(color_key)}/>"
 
     def _font_xml(self, font_key, *, for_dxf: bool = False) -> str:
+        parts = self._font_face_parts(font_key, for_dxf=for_dxf)
+        parts.extend(self._font_emphasis_parts(font_key))
+        return f"<font>{''.join(parts)}</font>"
+
+    def _font_face_parts(self, font_key, *, for_dxf: bool) -> list[str]:
+        """Size, color, name, family and scheme; a dxf names only what it sets."""
         name = font_key.name
-        size = font_key.size
         parts = []
-        if size is not None:
-            parts.append(f'<sz val="{size}"/>')
+        if font_key.size is not None:
+            parts.append(f'<sz val="{font_key.size}"/>')
         if for_dxf:
             # A dxf font applies only the properties it names; emitting the
             # Calibri/theme-1 defaults would override the cell's own font.
@@ -196,6 +201,12 @@ class _XlsxStylesMixin(_XlsxWriterHost):
                 parts.append('<scheme val="minor"/>')
         if font_key.charset is not None:
             parts.append(f'<charset val="{font_key.charset}"/>')
+        return parts
+
+    @staticmethod
+    def _font_emphasis_parts(font_key) -> list[str]:
+        """Bold, italic, underline, strike and the remaining font flags."""
+        parts = []
         if font_key.bold:
             parts.append("<b/>")
         if font_key.italic:
@@ -217,7 +228,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             parts.append("<condense/>")
         if font_key.extend:
             parts.append("<extend/>")
-        return f"<font>{''.join(parts)}</font>"
+        return parts
 
     def _fill_xml(self, fill_key, *, for_dxf: bool = False) -> str:
         if fill_key[0] == "gradient":
@@ -268,22 +279,51 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         return border_xml(border_key)
 
     def _create_styles_xml(self) -> str:
-        numfmts = ""
-        xf_entries = []
+        numfmts = self._number_formats_xml()
+        xf_entries = self._cell_xf_entries()
+        fonts = self._fonts_xml()
+        fills = self._fills_xml()
+        borders = self._borders_xml()
+        dxfs = self._dxfs_xml()
+        total_xf = len(xf_entries)
+        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+{numfmts}
+<fonts count="{len(fonts)}">{"".join(fonts)}</fonts>
+<fills count="{len(fills)}">{"".join(fills)}</fills>
+<borders count="{len(borders)}">
+{"".join(borders)}
+</borders>
+<cellStyleXfs count="1">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+</cellStyleXfs>
+<cellXfs count="{total_xf}">
+{"".join(xf_entries)}
+</cellXfs>
+<cellStyles count="1">
+<cellStyle name="Normal" xfId="0" builtinId="0"/>
+</cellStyles>
+{dxfs}
+<tableStyles count="0" defaultTableStyle="TableStyleMedium9" defaultPivotStyle="PivotStyleLight16"/>
+</styleSheet>'''
 
+    def _number_formats_xml(self) -> str:
         numfmt_count = len(self._format_registry)
-        if numfmt_count > 0:
-            numfmts_parts = []
-            for fmt_string, numfmt_id in self._format_registry.items():
-                escaped_fmt = saxutils.escape(fmt_string, {'"': "&quot;"})
-                numfmts_parts.append(f'<numFmt numFmtId="{numfmt_id}" formatCode="{escaped_fmt}"/>')
-            numfmts = f'<numFmts count="{numfmt_count}">{"".join(numfmts_parts)}</numFmts>'
+        if numfmt_count == 0:
+            return ""
+        parts = []
+        for fmt_string, numfmt_id in self._format_registry.items():
+            escaped_fmt = saxutils.escape(fmt_string, {'"': "&quot;"})
+            parts.append(f'<numFmt numFmtId="{numfmt_id}" formatCode="{escaped_fmt}"/>')
+        return f'<numFmts count="{numfmt_count}">{"".join(parts)}</numFmts>'
 
-        xf_entries.append('<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>')
-        xf_entries.append('<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>')
-        xf_entries.append('<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>')
-        xf_entries.append('<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>')
-
+    def _cell_xf_entries(self) -> list[str]:
+        xf_entries = [
+            '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>',
+            '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>',
+            '<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>',
+            '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>',
+        ]
         # Format XFs and style XFs share one index space, so they must be
         # emitted in index order: the position in cellXfs is the value a cell
         # references through its s= attribute.
@@ -316,12 +356,11 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             if prot_xml:
                 attrs.append('applyProtection="1"')
             custom_xfs[xf_index] = f"<xf {' '.join(attrs)}>{align_xml}{prot_xml}</xf>"
-
         for xf_index in sorted(custom_xfs):
             xf_entries.append(custom_xfs[xf_index])
+        return xf_entries
 
-        total_xf = len(xf_entries)
-
+    def _fonts_xml(self) -> list[str]:
         fonts = [
             '<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>',
             '<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/><b/></font>',
@@ -330,6 +369,9 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             if font_id < 2:
                 continue
             fonts.append(self._font_xml(key))
+        return fonts
+
+    def _fills_xml(self) -> list[str]:
         fills = [
             '<fill><patternFill patternType="none"/></fill>',
             '<fill><patternFill patternType="gray125"/></fill>',
@@ -337,13 +379,18 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         fills.extend(
             self._fill_xml(key) for key, _fill_id in sorted(self._fill_registry.items(), key=lambda item: item[1])
         )
+        return fills
+
+    def _borders_xml(self) -> list[str]:
         borders = [
             "<border><left/><right/><top/><bottom/><diagonal/></border>",
         ]
         borders.extend(
             self._border_xml(key) for key, _border_id in sorted(self._border_registry.items(), key=lambda item: item[1])
         )
+        return borders
 
+    def _dxfs_xml(self) -> str:
         dxf_fonts: list = [None] * len(self._dxf_font_registry)
         for key, dxf_font_id in self._dxf_font_registry.items():
             dxf_fonts[dxf_font_id] = key
@@ -371,28 +418,9 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             if prot is not None:
                 inner += _protection_xml(prot)
             dxf_parts.append(f"<dxf>{inner}</dxf>")
-        dxfs = f'<dxfs count="{len(dxf_parts)}">{"".join(dxf_parts)}</dxfs>' if dxf_parts else '<dxfs count="0"/>'
-
-        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-{numfmts}
-<fonts count="{len(fonts)}">{"".join(fonts)}</fonts>
-<fills count="{len(fills)}">{"".join(fills)}</fills>
-<borders count="{len(borders)}">
-{"".join(borders)}
-</borders>
-<cellStyleXfs count="1">
-<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
-</cellStyleXfs>
-<cellXfs count="{total_xf}">
-{"".join(xf_entries)}
-</cellXfs>
-<cellStyles count="1">
-<cellStyle name="Normal" xfId="0" builtinId="0"/>
-</cellStyles>
-{dxfs}
-<tableStyles count="0" defaultTableStyle="TableStyleMedium9" defaultPivotStyle="PivotStyleLight16"/>
-</styleSheet>'''
+        if not dxf_parts:
+            return '<dxfs count="0"/>'
+        return f'<dxfs count="{len(dxf_parts)}">{"".join(dxf_parts)}</dxfs>'
 
     @staticmethod
     def _format_object_xml(cfvo) -> str:
