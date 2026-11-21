@@ -34,7 +34,13 @@ from ..chart_reader import read_drawing, read_chartsheet
 from ._objects import note_unread
 from ..updater_utils import resolve_zip_target
 from ._model import CELL_SLOTS, AutoFilter, Cell, DefinedNameList, NamedStyleList, Workbook, Worksheet
-from ._reader import _read_custom_properties, _read_print_names, _read_properties, _read_sheet_relationships
+from ._reader import (
+    _attach_threaded_comments,
+    _read_custom_properties,
+    _read_print_names,
+    _read_properties,
+    _read_sheet_relationships,
+)
 from ._xlsb_layout import BEGIN_FILTER, END_FILTER, builtin_names
 from ._xlsb_loaded import remember_saved_state, remember_workbook_state
 from .._xlsb_cf import (
@@ -400,6 +406,7 @@ def _load_sheet(
         )
     _read_rules(sheet, records, formula_context, workbook._styles)
     _attach_xlsb_comments(sheet, reader, name)
+    _attach_threaded_comments(sheet, handle.package, sheet_path)
     workbook._sheets.append(sheet)
     return formula_context
 
