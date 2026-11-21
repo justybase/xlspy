@@ -1,7 +1,9 @@
 """Excel table descriptions and the column names they imply."""
 
 from __future__ import annotations
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
+from typing import Any
 from .._table_totals_names import TOTALS_FUNCTION_NAMES
 from ..formats import _unwrap_cell
 from ..hyperlinks import Hyperlink
@@ -54,7 +56,7 @@ class ExcelTable:
     show_column_stripes: bool = False
     totals_row_functions: tuple[str | None, ...] | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.display_name, str) or _TABLE_NAME_RE.fullmatch(self.display_name) is None:
             raise ValueError(f"invalid table display name {self.display_name!r}")
         if _is_reference_like(self.display_name):
@@ -105,7 +107,7 @@ class ExcelTable:
             raise TypeError("style_name must be a string")
 
 
-def table_column_names(table: ExcelTable, header_cells) -> list[str]:
+def table_column_names(table: ExcelTable, header_cells: Sequence[Any] | None) -> list[str]:
     """Column names for ``table``, checked against the cells of its header row.
 
     Excel opens a table only when each header cell holds text equal (ignoring
@@ -156,7 +158,9 @@ def table_column_names(table: ExcelTable, header_cells) -> list[str]:
     return names
 
 
-def capture_table_headers(rows, tables, store: dict):
+def capture_table_headers(
+    rows: Iterable[list[Any]], tables: Iterable[ExcelTable], store: dict[int, list[Any]]
+) -> Iterator[list[Any]]:
     """Yield ``rows`` unchanged, checking each table's header row as it passes.
 
     A copy of every header row is kept in ``store`` (row index -> cells) for
@@ -181,7 +185,9 @@ def capture_table_headers(rows, tables, store: dict):
         yield row
 
 
-def capture_table_totals(rows, tables, store: dict):
+def capture_table_totals(
+    rows: Iterable[list[Any]], tables: Iterable[ExcelTable], store: dict[int, list[Any]]
+) -> Iterator[list[Any]]:
     """Yield ``rows`` unchanged, keeping the totals row of every table that has one.
 
     The XLSB writer encodes each totals cell as a label, a sum or a custom

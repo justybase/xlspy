@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from functools import lru_cache
 
 from .exceptions import CellCoordinatesException
@@ -98,7 +99,9 @@ def range_boundaries(range_string: str) -> tuple[int | None, int | None, int | N
     return min_col, min_row, max_col, max_row
 
 
-def range_to_tuple(range_string: str):
+def range_to_tuple(
+    range_string: str,
+) -> tuple[str, tuple[int | None, int | None, int | None, int | None]]:
     """Return ``(sheetname, (min_col, min_row, max_col, max_row))``."""
     match = _SHEET_RANGE_RE.match(range_string)
     if match is None:
@@ -109,7 +112,7 @@ def range_to_tuple(range_string: str):
     return sheetname, range_boundaries(match.group("cells"))
 
 
-def rows_from_range(range_string: str):
+def rows_from_range(range_string: str) -> Iterator[tuple[str, ...]]:
     min_col, min_row, max_col, max_row = range_boundaries(range_string)
     if min_col is None or min_row is None or max_col is None or max_row is None:
         raise ValueError(f"{range_string} is not a rectangular cell range")
@@ -118,7 +121,7 @@ def rows_from_range(range_string: str):
         yield tuple(f"{col}{row}" for col in cols)
 
 
-def cols_from_range(range_string: str):
+def cols_from_range(range_string: str) -> Iterator[tuple[str, ...]]:
     min_col, min_row, max_col, max_row = range_boundaries(range_string)
     if min_col is None or min_row is None or max_col is None or max_row is None:
         raise ValueError(f"{range_string} is not a rectangular cell range")
@@ -127,7 +130,7 @@ def cols_from_range(range_string: str):
         yield tuple(f"{letter}{row}" for row in range(min_row, max_row + 1))
 
 
-def get_column_interval(start, end) -> list[str]:
+def get_column_interval(start: int | str, end: int | str) -> list[str]:
     if isinstance(start, str):
         start = column_index_from_string(start)
     if isinstance(end, str):

@@ -266,7 +266,7 @@ class Cell:
         self._sheet._mark_dirty("comments")
 
     @staticmethod
-    def _type_for(value) -> str:
+    def _type_for(value: Any) -> str:
         if value is None:
             return "n"
         if isinstance(value, bool):
@@ -480,13 +480,13 @@ class Cell:
         self._named_style = None
         self._set_style(value)
 
-    def _load_value(self, value, data_type: str, formula_text: str | None = None):
+    def _load_value(self, value: Any, data_type: str, formula_text: str | None = None) -> None:
         """Install a parsed value without importing/validating arbitrary formulas."""
         self._value = value
         self._formula = formula_text
         self._data_type = data_type
 
-    def _mark_dirty(self):
+    def _mark_dirty(self) -> None:
         if self._sheet._workbook._loaded:
             self._sheet._dirty_cells.add((self._row, self._column))
         self._sheet._mark_dirty()

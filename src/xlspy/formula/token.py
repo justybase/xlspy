@@ -26,18 +26,18 @@ class Token:
     ARG = "ARG"
     ROW = "ROW"
 
-    def __init__(self, value, type, subtype=""):
+    def __init__(self, value: str, type: str, subtype: str = "") -> None:
         self.value = value
         self.type = type
         self.subtype = subtype
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<{self.type} {self.subtype}: {self.value!r}>"
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Token):
             return NotImplemented
         return (self.value, self.type, self.subtype) == (other.value, other.type, other.subtype)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.value, self.type, self.subtype))

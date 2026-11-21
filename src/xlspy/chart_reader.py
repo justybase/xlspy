@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import posixpath
+from typing import Any
 from ._metadata import local_name as _local
 from ._safe_xml import fromstring as safe_fromstring
 
 from .charts import LoadedChart
 from .images import Image
 from .refs import column_label
+from ._zip_package import ZipPackage
 
 _XDR = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
 _A = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -35,7 +37,7 @@ _CHART_TAGS = {
 }
 
 
-def _read_chart_relationships(package, part: str) -> dict[str, tuple[str, str]]:
+def _read_chart_relationships(package: ZipPackage, part: str) -> dict[str, tuple[str, str]]:
     path = posixpath.join(posixpath.dirname(part), "_rels", posixpath.basename(part) + ".rels")
     if not package.has(path):
         return {}
@@ -54,7 +56,7 @@ def _read_chart_relationships(package, part: str) -> dict[str, tuple[str, str]]:
     return result
 
 
-def _anchor_cell(anchor) -> str:
+def _anchor_cell(anchor: Any) -> str:
     marker = next((child for child in anchor if _local(child.tag) == "from"), None)
     if marker is None:
         return "A1"
@@ -88,7 +90,7 @@ def _chart_facts(xml: bytes) -> tuple[str | None, str | None, int]:
     return chart_type, title, series
 
 
-def read_drawing(package, sheet, drawing_part: str) -> None:
+def read_drawing(package: ZipPackage, sheet: Any, drawing_part: str) -> None:
     """Append charts and images from one drawing part to ``sheet``."""
     if not package.has(drawing_part):
         return
@@ -131,7 +133,7 @@ def read_drawing(package, sheet, drawing_part: str) -> None:
                 sources.append((drawing_part, position, image))
 
 
-def read_chartsheet(package, part: str, title: str, chartsheet) -> None:
+def read_chartsheet(package: ZipPackage, part: str, title: str, chartsheet: Any) -> None:
     relationships = _read_chart_relationships(package, part)
     drawing = next(
         (target for target, kind in relationships.values() if "drawing" in kind and package.has(target)),

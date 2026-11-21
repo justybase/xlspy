@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, fields
+from typing import Any
 
 from .refs import parse_cell_range
 
@@ -42,7 +44,7 @@ class IgnoredError:
     listDataValidation: bool | None = None
     calculatedColumn: bool | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.sqref, str) or not self.sqref.strip():
             raise ValueError("ignored error needs a range such as 'A1:B5'")
         for part in self.sqref.split():
@@ -50,7 +52,7 @@ class IgnoredError:
         self.sqref = " ".join(self.sqref.split())
 
 
-def ignored_errors_xml(items, prefix: str = "") -> str:
+def ignored_errors_xml(items: Iterable[IgnoredError], prefix: str = "") -> str:
     """The ``ignoredErrors`` element for ``items``, or an empty string."""
     entries = []
     for item in items:
@@ -63,5 +65,5 @@ def ignored_errors_xml(items, prefix: str = "") -> str:
     return f"<{prefix}ignoredErrors>{''.join(entries)}</{prefix}ignoredErrors>"
 
 
-def snapshot(items) -> tuple:
+def snapshot(items: Iterable[IgnoredError]) -> tuple[tuple[Any, ...], ...]:
     return tuple(tuple(getattr(item, field.name) for field in fields(item)) for item in items)

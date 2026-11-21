@@ -9,6 +9,7 @@ from ._safe_xml import fromstring as safe_fromstring
 from .chart_reader import _REL as _REL
 from ._xlsb_metadata import read_wide, records
 from ._xlsb_formulas import external_sheet_names
+from ._zip_package import ZipPackage
 
 _PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
 _MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -30,7 +31,7 @@ class ExternalLink:
     part: str | None = None
 
 
-def _read_link_relationships(package, part: str) -> dict[str, tuple[str, str]]:
+def _read_link_relationships(package: ZipPackage, part: str) -> dict[str, tuple[str, str]]:
     path = posixpath.join(posixpath.dirname(part), "_rels", posixpath.basename(part) + ".rels")
     if not package.has(path):
         return {}
@@ -51,14 +52,14 @@ def _resolve_link_target(part: str, target: str) -> str:
     return posixpath.normpath(posixpath.join(posixpath.dirname(part), target))
 
 
-def _path_target(package, part: str, rid: str | None) -> str | None:
+def _path_target(package: ZipPackage, part: str, rid: str | None) -> str | None:
     if rid is None:
         return None
     target = _read_link_relationships(package, part).get(rid)
     return target[0] if target else None
 
 
-def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
+def read_external_links(package: ZipPackage, *, binary: bool) -> list[ExternalLink]:
     """The workbook's external links in formula order."""
     book = "xl/workbook.bin" if binary else "xl/workbook.xml"
     if not package.has(book):
@@ -90,7 +91,7 @@ def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
     return links
 
 
-def _target_rid(package, part: str, binary: bool) -> str | None:
+def _target_rid(package: ZipPackage, part: str, binary: bool) -> str | None:
     data = package.get(part)
     if binary:
         for record, payload in records(data):
@@ -105,7 +106,7 @@ def _target_rid(package, part: str, binary: bool) -> str | None:
     return None if node is None else node.get(f"{{{_REL}}}id")
 
 
-def _sheet_names(package, part: str, binary: bool) -> list[str]:
+def _sheet_names(package: ZipPackage, part: str, binary: bool) -> list[str]:
     data = package.get(part)
     if binary:
         return external_sheet_names(data)

@@ -7,8 +7,9 @@ rules from an XLSX file as XLSB.
 from __future__ import annotations
 
 import struct
+from typing import cast
 
-from ._xlsb_formulas import compile_formula, decode_formula, read_parsed
+from ._xlsb_formulas import FormulaContext, compile_formula, decode_formula, read_parsed
 from ._xlsb_metadata import read_wide, wide_string
 from .biff_utils import build_record
 from .data_validation import DataValidation, OPERATORS
@@ -55,7 +56,7 @@ def _flags(rule: DataValidation) -> int:
     return flags
 
 
-def _dval(rule: DataValidation, context) -> bytes:
+def _dval(rule: DataValidation, context: FormulaContext) -> bytes:
     ranges = [parse_cell_range(part) for part in str(rule.sqref).split()]
     first_col, first_row = ranges[0][0], ranges[0][1]
     payload = bytearray(struct.pack("<II", _flags(rule), len(ranges)))
@@ -70,7 +71,7 @@ def _dval(rule: DataValidation, context) -> bytes:
             payload += _EMPTY_FORMULA
         else:
             payload += compile_formula(
-                text,
+                cast(str, text),
                 context,
                 sheet=None,
                 origin=(first_col, first_row),
@@ -80,7 +81,7 @@ def _dval(rule: DataValidation, context) -> bytes:
     return build_record(BRT_DVAL, bytes(payload))
 
 
-def validations_bin(rules, context) -> bytes:
+def validations_bin(rules: list[DataValidation], context: FormulaContext) -> bytes:
     """BrtBeginDVals, one BrtDVal per rule and BrtEndDVals."""
     if not rules:
         return b""
@@ -101,7 +102,7 @@ _OPERATOR_NAMES = list(OPERATORS)
 _OPERATOR_TYPES = frozenset({"whole", "decimal", "date", "time", "text_length"})
 
 
-def _format_sqref(ranges) -> str:
+def _format_sqref(ranges: list[tuple[int, int, int, int]]) -> str:
     parts = []
     for r1, r2, c1, c2 in ranges:
         first = f"{column_label(c1)}{r1 + 1}"
@@ -110,14 +111,14 @@ def _format_sqref(ranges) -> str:
     return " ".join(parts)
 
 
-def _formula(payload: bytes, offset: int, context, origin):
+def _formula(payload: bytes, offset: int, context: FormulaContext, origin: tuple[int, int]) -> tuple[str | None, int]:
     if payload[offset : offset + 8] == _EMPTY_FORMULA:
         return None, offset + 8
     _tokens, _extra, end = read_parsed(payload, offset)
     return decode_formula(payload[offset:end], context, origin=origin), end
 
 
-def dval_rule(payload: bytes, context) -> DataValidation | None:
+def dval_rule(payload: bytes, context: FormulaContext) -> DataValidation | None:
     """A ``DataValidation`` from a BrtDVal payload; None for an "any value" rule."""
     flags, count = struct.unpack_from("<II", payload, 0)
     kind = _TYPE_NAMES.get(flags & 0x0F)

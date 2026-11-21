@@ -8,7 +8,7 @@ with one chart. The chart reads its data from a worksheet (the chartsheet's
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .. import chart_parts
 from .._metadata import REL, PKG_REL
@@ -49,11 +49,11 @@ _DRAWING_XML = (
 )
 
 
-def pending_chartsheets(workbook) -> list:
+def pending_chartsheets(workbook: Workbook) -> list[Chartsheet]:
     return [sheet for sheet in workbook._chartsheets if sheet._part is None]
 
 
-def check_chartsheets(workbook) -> None:
+def check_chartsheets(workbook: Workbook) -> None:
     """Fail before anything is written on a chartsheet that cannot be saved."""
     for sheet in pending_chartsheets(workbook):
         if len(sheet.charts) != 1:
@@ -78,7 +78,7 @@ def _namespace_prefix(xml: str, namespace: str) -> str | None:
     return match[1] if match else None
 
 
-def add_chartsheets(updater, workbook) -> None:
+def add_chartsheets(updater: Any, workbook: Workbook) -> None:
     """Write the workbook's new chartsheets into the updater's package."""
     sheets = pending_chartsheets(workbook)
     if not sheets:
@@ -125,7 +125,7 @@ def add_chartsheets(updater, workbook) -> None:
     package.commit()
 
 
-def _set_rels(package, owner, rels) -> None:
+def _set_rels(package: _Package, owner: str, rels: ET.Element) -> None:
 
     ET.register_namespace("", PKG_REL)
     package.set(_rels_path(owner), _bytes(rels))

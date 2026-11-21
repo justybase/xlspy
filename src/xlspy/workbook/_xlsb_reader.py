@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from .._package_handle import PackageHandle
+from .._zip_package import ZipPackage
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -69,7 +70,7 @@ from ._properties import SortCondition, SortState
 _CF_RECORDS = SCALE_RECORDS | {BRT_BEGIN_CONDITIONAL_FORMATTING, BRT_BEGIN_CF_RULE, _CF_RULE_EXT}
 
 
-def _external_links(package, sheet_path: str) -> dict[str, str]:
+def _external_links(package: ZipPackage, sheet_path: str) -> dict[str, str]:
     """External relationship targets of a worksheet, by relationship id."""
     path = rels_path(sheet_path)
     if not package.has(path):
@@ -81,7 +82,9 @@ def _external_links(package, sheet_path: str) -> dict[str, str]:
     }
 
 
-def _load_cells(sheet, reader, name, sheet_data, data_only):
+def _load_cells(
+    sheet: Worksheet, reader: ExcelReader, name: str, sheet_data: bytes, data_only: bool
+) -> tuple[int, int] | None:
     """Read the cells into ``sheet``. Return the ``(start, end)`` offsets of the
     sheet data when the native loader read it, else None (the records were read in
     Python, row headers excluded)."""
@@ -109,9 +112,9 @@ def _load_cells(sheet, reader, name, sheet_data, data_only):
             if data_only
             else FormulaContext(
                 reader.get_sheet_names(),
-                reader._archive.read("xl/workbook.bin"),
+                reader._zip().read("xl/workbook.bin"),
                 reader.read_part,
-                tables=lambda: table_catalog(reader._archive.namelist(), reader.read_part),
+                tables=lambda: table_catalog(reader._zip().namelist(), reader.read_part),
             )
         )
         shared = formula_groups(groups)
@@ -130,7 +133,14 @@ def _load_cells(sheet, reader, name, sheet_data, data_only):
     return start, end
 
 
-def _set_loaded_cell(sheet, row, column, value, style_id, formula_text=None):
+def _set_loaded_cell(
+    sheet: Worksheet,
+    row: int,
+    column: int,
+    value: Any,
+    style_id: int,
+    formula_text: str | None = None,
+) -> None:
     if formula_text is not None:
         sheet._set_cell_raw(row, column, None, style_id=style_id, data_type="f", formula_text=formula_text)
     elif value is None:
@@ -143,7 +153,7 @@ def _set_loaded_cell(sheet, row, column, value, style_id, formula_text=None):
         sheet._set_cell_raw(row, column, value, style_id=style_id, data_type=kind)
 
 
-def _load_cells_python(sheet, reader, name, sheet_data, data_only):
+def _load_cells_python(sheet: Worksheet, reader: ExcelReader, name: str, sheet_data: bytes, data_only: bool) -> None:
     for row_number, cells in iter_xlsb_indexed_rows(
         reader,
         name,

@@ -25,7 +25,7 @@ def days_to_time(value: datetime.timedelta) -> datetime.time:
     return datetime.time(hours, minutes, seconds, value.microseconds)
 
 
-def time_to_days(value: datetime.time) -> float:
+def time_to_days(value: datetime.datetime | datetime.time) -> float:
     return (value.hour * 3600 + value.minute * 60 + value.second + value.microsecond / 10**6) / SECS_PER_DAY
 
 
@@ -33,7 +33,11 @@ def timedelta_to_days(value: datetime.timedelta) -> float:
     return value.total_seconds() / SECS_PER_DAY
 
 
-def from_excel(value, epoch=WINDOWS_EPOCH, timedelta=False):
+def from_excel(
+    value: float | int | None,
+    epoch: datetime.datetime = WINDOWS_EPOCH,
+    timedelta: bool = False,
+) -> datetime.datetime | datetime.date | datetime.time | datetime.timedelta | None:
     """Convert an Excel serial number to a datetime, date, time or timedelta."""
     if value is None:
         return None
@@ -56,7 +60,10 @@ def from_excel(value, epoch=WINDOWS_EPOCH, timedelta=False):
     return epoch + datetime.timedelta(days=day) + diff
 
 
-def to_excel(value, epoch=WINDOWS_EPOCH):
+def to_excel(
+    value: datetime.date | datetime.datetime | datetime.time | datetime.timedelta | None,
+    epoch: datetime.datetime = WINDOWS_EPOCH,
+) -> float | None:
     """Convert a date/datetime/time/timedelta to an Excel serial number."""
     if value is None:
         return None
@@ -64,7 +71,7 @@ def to_excel(value, epoch=WINDOWS_EPOCH):
         return time_to_days(value)
     if isinstance(value, datetime.timedelta):
         return timedelta_to_days(value)
-    if not hasattr(value, "date"):
+    if not isinstance(value, datetime.datetime):
         value = datetime.datetime.combine(value, datetime.time())
 
     days = (value - epoch).days
@@ -73,7 +80,9 @@ def to_excel(value, epoch=WINDOWS_EPOCH):
     return days + time_to_days(value)
 
 
-def from_ISO8601(formatted_string):
+def from_ISO8601(
+    formatted_string: str | None,
+) -> datetime.date | datetime.datetime | datetime.time | datetime.timedelta | None:
     """Parse the ISO-8601 date/time/duration forms Excel stores."""
     if not formatted_string:
         return None
@@ -98,8 +107,8 @@ def from_ISO8601(formatted_string):
         raise ValueError(f"Invalid datetime value {formatted_string}") from exc
 
 
-def to_ISO8601(value):
+def to_ISO8601(value: datetime.date | datetime.datetime | datetime.time) -> str:
     """Convert a date/time to an ISO-8601 string, keeping milliseconds."""
-    if hasattr(value, "microsecond") and value.microsecond:
+    if isinstance(value, (datetime.datetime, datetime.time)) and value.microsecond:
         return value.isoformat(timespec="milliseconds")
     return value.isoformat()
