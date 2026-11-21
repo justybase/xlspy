@@ -226,10 +226,7 @@ module = [
     "xlspy.workbook._objects",
     "xlspy.workbook._reader",
     "xlspy.workbook._styles",
-    "xlspy.workbook._tables",
     "xlspy.workbook._xlsb_layout",
-    "xlspy.workbook._xlsb_loaded",
-    "xlspy.workbook._xlsb_sheet_meta",
 ]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
@@ -250,7 +247,6 @@ source_modules = [
     "xlspy.workbook._worksheet",
     "xlspy.workbook._workbook",
     "xlspy.workbook._model",
-    "xlspy.workbook._tables",
 ]
 forbidden_modules = [
     "xlspy.reader",
@@ -312,8 +308,6 @@ source_modules = [
     "xlspy.workbook._xlsb_chartsheets",
     "xlspy.workbook._xlsb_drawings",
     "xlspy.workbook._xlsb_layout",
-    "xlspy.workbook._xlsb_loaded",
-    "xlspy.workbook._xlsb_sheet_meta",
     "xlspy.workbook._xlsb_styles",
     "xlspy.workbook._xlsb_tables",
 ]

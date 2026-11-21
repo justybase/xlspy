@@ -8,6 +8,8 @@ here in file order. The layouts mirror the encoders in ``writer.py`` and
 from __future__ import annotations
 
 import struct
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from .._xlsb_metadata import read_wide
 from .._xlsb_print import (
@@ -30,6 +32,9 @@ from ._xlsb_layout import FORMAT_INFO as FORMAT_INFO
 from ._model import FilterColumn
 from .._xlsb_table_part import parse_table_part
 from ._model import AutoFilter, Table, TableColumn, TableStyleInfo
+
+if TYPE_CHECKING:
+    from ._worksheet import Worksheet
 
 ROW_HEADER = 0x00
 COL_INFO = 0x3C
@@ -94,7 +99,7 @@ _HEADER_FOOTER_PARTS = (
 )
 
 
-def row_header(sheet, payload: bytes) -> None:
+def row_header(sheet: Worksheet, payload: bytes) -> None:
     """Row height, visibility, outline level and style from a BrtRowHdr."""
     row = struct.unpack_from("<I", payload, 0)[0] + 1
     style, height = struct.unpack_from("<IH", payload, 4)
@@ -109,7 +114,7 @@ def row_header(sheet, payload: bytes) -> None:
         dimension.style = style
 
 
-def _column_info(sheet, payload: bytes) -> None:
+def _column_info(sheet: Worksheet, payload: bytes) -> None:
     first, last, width, style, flags = struct.unpack_from("<IIIIH", payload, 0)
     if first > last or last > 16383:
         return
@@ -126,7 +131,7 @@ def _column_info(sheet, payload: bytes) -> None:
             dimension.style = style
 
 
-def _read_sheet_properties(sheet, payload: bytes) -> None:
+def _read_sheet_properties(sheet: Worksheet, payload: bytes) -> None:
     properties = sheet.sheet_properties
     color = read_brt_color(payload, 3)
     if color is not None and not color.auto:
@@ -135,7 +140,7 @@ def _read_sheet_properties(sheet, payload: bytes) -> None:
         properties.pageSetUpPr.fitToPage = True
 
 
-def _sheet_view(sheet, payload: bytes) -> None:
+def _sheet_view(sheet: Worksheet, payload: bytes) -> None:
     view = sheet._sheet_view
     flags = payload[0]
     view.windowProtection = True if flags & 0x01 else None
@@ -154,7 +159,7 @@ def _sheet_view(sheet, payload: bytes) -> None:
         view.zoomScaleNormal = normal if normal not in (0, 100) else None
 
 
-def _pane(sheet, payload: bytes) -> None:
+def _pane(sheet: Worksheet, payload: bytes) -> None:
     x_split, y_split = struct.unpack_from("<dd", payload, 0)
     top, left = struct.unpack_from("<II", payload, 16)
     flags = payload[28] if len(payload) > 28 else 0
@@ -173,7 +178,7 @@ def _pane(sheet, payload: bytes) -> None:
         sheet._freeze_panes = cell
 
 
-def _selection(sheet, payload: bytes) -> None:
+def _selection(sheet: Worksheet, payload: bytes) -> None:
     pane, row, column, active_id, count = struct.unpack_from("<5I", payload, 0)
     ranges = []
     for index in range(count):
@@ -190,7 +195,7 @@ def _selection(sheet, payload: bytes) -> None:
     )
 
 
-def _sheet_format(sheet, payload: bytes) -> None:
+def _sheet_format(sheet: Worksheet, payload: bytes) -> None:
     width, base, height, flags, row_level, column_level = struct.unpack_from("<IHHHBB", payload, 0)
     fmt = sheet.sheet_format
     fmt.defaultColWidth = None if width == 0xFFFFFFFF else width / 256
@@ -204,7 +209,7 @@ def _sheet_format(sheet, payload: bytes) -> None:
     fmt.outlineLevelCol = column_level or None
 
 
-def _protection(sheet, payload: bytes) -> None:
+def _protection(sheet: Worksheet, payload: bytes) -> None:
     values = struct.unpack_from("<H16I", payload, 0)
     password, flags = values[0], values[1:]
     protection = sheet.protection
@@ -215,7 +220,7 @@ def _protection(sheet, payload: bytes) -> None:
     protection.set_password(f"{password:04X}" if password else None, already_hashed=True)
 
 
-def _protection_iso(sheet, payload: bytes) -> None:
+def _protection_iso(sheet: Worksheet, payload: bytes) -> None:
     """The ISO protection record: the legacy flags plus the strong hash."""
     sheet._protection_iso = payload
     if len(payload) < 4 + 64:
@@ -240,7 +245,7 @@ def _protection_iso(sheet, payload: bytes) -> None:
             sheet._protection_iso_algorithm = protection.algorithmName
 
 
-def _read_xlsb_page_setup(sheet, payload: bytes) -> None:
+def _read_xlsb_page_setup(sheet: Worksheet, payload: bytes) -> None:
     paper, scale, _hres, _vres, copies, first_page, width, height, flags = struct.unpack_from("<8IH", payload, 0)
     setup = sheet.page_setup
     if not flags & 0x40:
@@ -256,7 +261,7 @@ def _read_xlsb_page_setup(sheet, payload: bytes) -> None:
         setup.copies = copies
 
 
-def _read_header_footer(sheet, payload: bytes) -> None:
+def _read_header_footer(sheet: Worksheet, payload: bytes) -> None:
     flags = struct.unpack_from("<H", payload, 0)[0]
     footer = sheet.HeaderFooter
     footer.differentOddEven = True if flags & 0x01 else None
@@ -272,7 +277,7 @@ def _read_header_footer(sheet, payload: bytes) -> None:
 FILTER_RECORDS = frozenset({0xA3, 0xA5, 0xA7})
 
 
-def read_filter_record(auto_filter, record_id: int, payload: bytes) -> None:
+def read_filter_record(auto_filter: AutoFilter, record_id: int, payload: bytes) -> None:
     """Filter columns with value lists ([MS-XLSB] 2.4.380 ff.); other filters stay in the file."""
 
     if auto_filter.ref is None:
@@ -331,7 +336,7 @@ def read_table_part(data: bytes) -> Table | None:
     return table
 
 
-def apply_sheet_records(sheet, items) -> None:
+def apply_sheet_records(sheet: Worksheet, items: Iterable[tuple[int, bytes]]) -> None:
     """Read the collected ``(record_id, payload)`` pairs into the sheet."""
     breaks: list[Break] | None = None
     for record_id, payload in items:

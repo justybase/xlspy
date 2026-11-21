@@ -124,6 +124,12 @@ class Worksheet:
         self._images: list[Image] = []
         self._drawing_sources: list[tuple[str, int, Any]] = []
         self._saved_drawing_objects: list[Any] | None = None
+        self._saved_merges: Any = None
+        self._saved_object_signatures: dict[str, Any] | None = None
+        self._saved_table_objects: list[Any] = []
+        self._saved_layout: Any = None
+        self._protection_iso: bytes | None = None
+        self._protection_iso_algorithm: str | None = None
         self._conditional_formats = ConditionalFormattingList()
         # For a loaded workbook: how many objects of each list a save already
         # put into the package (see _objects.pending_objects).

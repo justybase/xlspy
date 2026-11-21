@@ -120,10 +120,10 @@ class HeaderFooter:
     """``ws.HeaderFooter``: odd/even/first page headers and footers."""
 
     def __init__(self) -> None:
-        self.differentFirst = None
-        self.differentOddEven = None
-        self.scaleWithDoc = None
-        self.alignWithMargins = None
+        self.differentFirst: bool | None = None
+        self.differentOddEven: bool | None = None
+        self.scaleWithDoc: bool | None = None
+        self.alignWithMargins: bool | None = None
         self.oddHeader = HeaderFooterItem()
         self.oddFooter = HeaderFooterItem()
         self.evenHeader = HeaderFooterItem()

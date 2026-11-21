@@ -1,9 +1,9 @@
 """Worksheet lists: conditional formatting, tables and data validations."""
 
 from __future__ import annotations
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from ..styles import (
     CellIsRule,
     ColorScaleRule,
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 _CF_RULES = (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule, *EXTRA_CF_RULES)
 
 
-def _expect(value, expected, what: str, hint: str):
+def _expect(value: object, expected: Any, what: str, hint: str) -> None:
     """Type check for the ``add_*`` methods; openpyxl objects get a hint."""
     if not isinstance(value, expected):
         module = type(value).__module__ or ""
@@ -32,17 +32,17 @@ def _expect(value, expected, what: str, hint: str):
 @dataclass
 class ConditionalFormatting:
     sqref: str
-    rules: list = field(default_factory=list)
+    rules: list[Any] = field(default_factory=list)
     pivot: bool | None = None
 
 
 class ConditionalFormattingList:
     """``ws.conditional_formatting``: rules grouped by range, as openpyxl."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._items: list[ConditionalFormatting] = []
 
-    def add(self, range_string: str, rule):
+    def add(self, range_string: str, rule: Any) -> Any:
         """Apply ``rule`` to ``range_string`` (its own ``sqref`` is replaced).
         Returns the rule as stored."""
         _expect(rule, _CF_RULES, "rule", "an xlspy conditional formatting rule (CellIsRule, ...)")
@@ -55,28 +55,32 @@ class ConditionalFormattingList:
         self._items.append(ConditionalFormatting(normalized, [stored]))
         return stored
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[ConditionalFormatting]:
         return iter(self._items)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._items)
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self._items)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int | slice | str) -> Any:
+        if isinstance(key, slice):
+            return self._items[key]
         if isinstance(key, int) and not isinstance(key, bool):
             return self._items[key]
+        if not isinstance(key, str):
+            raise KeyError(key)
         normalized = _normalize_sqref(key)
         for item in self._items:
             if item.sqref == normalized:
                 return item.rules
         raise KeyError(key)
 
-    def all_rules(self):
+    def all_rules(self) -> list[Any]:
         return [rule for item in self._items for rule in item.rules]
 
-    def remove(self, rule_or_range) -> None:
+    def remove(self, rule_or_range: Any) -> None:
         if isinstance(rule_or_range, str):
             normalized = _normalize_sqref(rule_or_range)
             self._items = [item for item in self._items if item.sqref != normalized]
@@ -224,13 +228,20 @@ class TableList(list):
                 return index
         raise KeyError(name)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int | slice | str) -> Any:  # type: ignore[override]
+        if isinstance(key, slice):
+            return super().__getitem__(key)
         if isinstance(key, str):
             return super().__getitem__(self._index(key))
         return super().__getitem__(key)
 
-    def __delitem__(self, key) -> None:
-        super().__delitem__(self._index(key) if isinstance(key, str) else key)
+    def __delitem__(self, key: int | slice | str) -> None:  # type: ignore[override]
+        if isinstance(key, slice):
+            super().__delitem__(key)
+        elif isinstance(key, str):
+            super().__delitem__(self._index(key))
+        else:
+            super().__delitem__(key)
 
     def __contains__(self, key: object) -> bool:
         if isinstance(key, str):
@@ -253,11 +264,11 @@ class TableList(list):
         """``(name, ref)`` for each table, as openpyxl's ``TableList.items()``."""
         return [(name, table.ref) for name, table in zip(self.keys(), self)]
 
-    def add(self, table) -> None:
+    def add(self, table: Any) -> None:
         """Add a table (the same as ``append``)."""
         self.append(table)
 
-    def remove(self, table_or_name) -> None:
+    def remove(self, table_or_name: Any) -> None:
         """Remove a table, given as the object or its name; raises KeyError for an unknown name."""
         if isinstance(table_or_name, str):
             del self[table_or_name]
@@ -278,8 +289,8 @@ class DataValidationList(list):
         """
         return self
 
-    def add(self, rule) -> None:
+    def add(self, rule: Any) -> None:
         self.append(rule)
 
-    def remove(self, rule) -> None:
+    def remove(self, rule: Any) -> None:
         super().remove(rule)

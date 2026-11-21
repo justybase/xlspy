@@ -9,6 +9,7 @@ from dataclasses import replace
 import os
 import shutil
 import tempfile
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from ..refs import parse_cell_range
 from . import _props
@@ -18,15 +19,19 @@ from ._chartsheets import check_chartsheets
 from ._xlsb_chartsheets import add_chartsheets_xlsb
 from ._xlsb_drawings import add_drawing_objects
 from ._xlsb_tables import plan_tables, sync_tables
+
+if TYPE_CHECKING:
+    from ._workbook import Workbook
+    from ._worksheet import Worksheet
 from ._objects import _object_values, check_unread, object_signatures
 from ._xlsb_layout import changed_groups, layout_state, patch_layout, save_builtin_names
 
 
-def _merge_signature(sheet):
+def _merge_signature(sheet: Worksheet) -> Any:
     return frozenset(str(value) for value in sheet.merged_cells.ranges)
 
 
-def remember_saved_state(sheet) -> None:
+def remember_saved_state(sheet: Worksheet) -> None:
     """Record what the file holds, so that save can tell which parts were edited."""
     sheet._saved_merges = _merge_signature(sheet)
     sheet._saved_object_counts = {
@@ -40,27 +45,27 @@ def remember_saved_state(sheet) -> None:
     remember_drawing_objects(sheet)
 
 
-def remember_workbook_state(workbook) -> None:
+def remember_workbook_state(workbook: Workbook) -> None:
     _props.remember(workbook)
 
 
-def _unsupported_loaded_feature(what: str):
-    return UnsupportedFeatureError(
+def _unsupported_loaded_feature(what: str) -> NoReturn:
+    raise UnsupportedFeatureError(
         f"{what} cannot be saved into a loaded XLSB workbook yet; "
         "build the workbook with Workbook() and save it as .xlsb instead"
     )
 
 
-def _is_new(sheet) -> bool:
+def _is_new(sheet: Worksheet) -> bool:
     return sheet._path is None
 
 
-def _cf_rule_signature(rule):
+def _cf_rule_signature(rule: Any) -> Any:
     """The x14 extension is separate from the base rule's priority."""
     return repr(replace(rule, priority=None))
 
 
-def _cf_extensions_for_save(sheet) -> dict[int, bytes]:
+def _cf_extensions_for_save(sheet: Worksheet) -> dict[int, bytes]:
     """Keep x14 payloads only when their rule and range still match safely."""
     rules = [(item.sqref, rule) for item in sheet.conditional_formatting for rule in item.rules]
     extensions = getattr(sheet, "_cf_extensions", {})
@@ -114,11 +119,11 @@ def _cf_extensions_for_save(sheet) -> dict[int, bytes]:
     return kept
 
 
-def _reject_unsupported_sheet_edits(sheet) -> None:
+def _reject_unsupported_sheet_edits(sheet: Worksheet) -> None:
     if _is_new(sheet):
         return
     check_removals(sheet)
-    saved = sheet._saved_object_signatures
+    saved = sheet._saved_object_signatures or {}
     current = object_signatures(sheet)
     check_unread(
         sheet,
@@ -136,19 +141,19 @@ def _reject_unsupported_sheet_edits(sheet) -> None:
     )
 
 
-def _reject_unsupported_edits(workbook) -> None:
+def _reject_unsupported_edits(workbook: Workbook) -> None:
     """Fail loudly, before anything is written, on edits that cannot be saved yet."""
-    styles = workbook._styles
+    styles = cast(Any, workbook._styles)
     if workbook._styles_dirty and not hasattr(styles, "to_bin"):
         raise UnsupportedFeatureError("style changes are not supported when saving a loaded XLSB workbook")
     if styles.is_modified() and not getattr(workbook, "_xlsb_styles_path", None):
-        raise _unsupported_loaded_feature("style changes (the file has no style sheet)")
+        _unsupported_loaded_feature("style changes (the file has no style sheet)")
     for sheet in workbook._sheets:
         _reject_unsupported_sheet_edits(sheet)
     check_chartsheets(workbook)
 
 
-def _sync_sheet_list(workbook, updater) -> None:
+def _sync_sheet_list(workbook: Workbook, updater: Any) -> None:
     """Remove, rename, add and reorder the package's sheets to match the model."""
     sheets = workbook._sheets
     loaded = [sheet for sheet in sheets if not _is_new(sheet)]
@@ -192,7 +197,7 @@ def _sync_sheet_list(workbook, updater) -> None:
         updater.set_active_sheet(active)
 
 
-def _save_defined_names(workbook, updater, renamed) -> None:
+def _save_defined_names(workbook: Workbook, updater: Any, renamed: Any) -> None:
     names = {(item.name, item.formula, item.scope, item.hidden, item.comment) for item in workbook.defined_names}
     previous = getattr(workbook, "_loaded_defined_names", names)
     dirty = bool(getattr(workbook, "_defined_names_dirty", False))
@@ -228,7 +233,7 @@ def _save_defined_names(workbook, updater, renamed) -> None:
     workbook._defined_names_dirty = False
 
 
-def _save_cells(sheet, updater, everything: bool) -> None:
+def _save_cells(sheet: Worksheet, updater: Any, everything: bool) -> None:
     updates = {}
     style_ids = {}
     if everything:
@@ -249,14 +254,14 @@ def _save_cells(sheet, updater, everything: bool) -> None:
     if not everything:
         for ref in _in_sheet_order(sheet._dirty_styles):
             col, row, _, _ = parse_cell_range(ref)
-            cell = sheet._existing_cell(row + 1, col + 1)
-            if cell is not None:
-                style_ids[ref] = cell._style_id
+            existing = sheet._existing_cell(row + 1, col + 1)
+            if existing is not None:
+                style_ids[ref] = existing._style_id
     if updates or style_ids:
         updater.update_cells(sheet.title, updates, styles=style_ids)
 
 
-def _save_sheet(sheet, updater) -> None:
+def _save_sheet(sheet: Worksheet, updater: Any) -> None:
     new = getattr(sheet, "_saved_layout", None) is None
     # Merges first: a range removed here frees its cells for the updates, and
     # one added here already has had its interior values cleared by the model.
@@ -272,10 +277,11 @@ def _save_sheet(sheet, updater) -> None:
         if patched != data:
             handle.apply_parts({path: patched})
     save_builtin_names(updater, sheet, groups)
+    saved_signatures = sheet._saved_object_signatures or {}
     validations_changed = (
         bool(sheet.data_validations)
         if new
-        else object_signatures(sheet)["data_validations"] != sheet._saved_object_signatures.get("data_validations", ())
+        else object_signatures(sheet)["data_validations"] != saved_signatures.get("data_validations", ())
     )
     if validations_changed:
         updater.set_data_validations(sheet.title, sheet.data_validations)
@@ -284,10 +290,9 @@ def _save_sheet(sheet, updater) -> None:
         bool(sheet.conditional_formatting)
         if new
         else (
-            current_signatures["conditional_formatting"]
-            != sheet._saved_object_signatures.get("conditional_formatting", ())
+            current_signatures["conditional_formatting"] != saved_signatures.get("conditional_formatting", ())
             or current_signatures["conditional_formatting_groups"]
-            != sheet._saved_object_signatures.get("conditional_formatting_groups", ())
+            != saved_signatures.get("conditional_formatting_groups", ())
         )
     )
     if formats_changed:
@@ -295,7 +300,7 @@ def _save_sheet(sheet, updater) -> None:
         updater.set_conditional_formats(
             sheet.title,
             [(item.sqref, item.pivot, item.rules) for item in sheet.conditional_formatting],
-            sheet._workbook._styles.dxf_id,
+            cast(Any, sheet._workbook._styles).dxf_id,
             kept,
         )
         sheet._cf_extensions = {
@@ -314,6 +319,7 @@ def _save_sheet(sheet, updater) -> None:
             updater.set_hyperlinks(sheet.title, links)
     else:
         _save_hyperlinks(updater, sheet, sheet.title)
+    comments: dict[str, Any] = {}
     if new:
         comments = {
             cell.coordinate: cell._comment
@@ -322,7 +328,6 @@ def _save_sheet(sheet, updater) -> None:
             if cell._comment is not None
         }
     else:
-        comments = {}
         for ref in _in_sheet_order(sheet._dirty_comments):
             col, row, _, _ = parse_cell_range(ref)
             cell = sheet._existing_cell(row + 1, col + 1)
@@ -331,7 +336,7 @@ def _save_sheet(sheet, updater) -> None:
         updater.set_comments(sheet.title, comments)
 
 
-def save_loaded_xlsb(workbook, filename) -> None:
+def save_loaded_xlsb(workbook: Workbook, filename: Any) -> None:
     updater = workbook._updater
     if updater is None:
         raise ValueError("this workbook was not loaded from an XLSB package")
@@ -360,7 +365,7 @@ def save_loaded_xlsb(workbook, filename) -> None:
             updater.set_sheet_state(chartsheet.title, chartsheet.sheet_state)
     _props.save_properties(updater, workbook)
     # After the sheets: their conditional formats may add differential styles.
-    styles = workbook._styles
+    styles = cast(Any, workbook._styles)
     handle = PackageHandle(updater)
     if styles.is_modified():
         handle.package.set(workbook._xlsb_styles_path, styles.to_bin())
