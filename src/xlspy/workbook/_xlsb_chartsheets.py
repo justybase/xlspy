@@ -13,7 +13,8 @@ import struct
 
 from .. import chart_parts
 from .._xlsb_metadata import wide_string
-from .._xlsb_sheets import _STATES, _Entry, _bundles
+from .._sheet_common import STATE_CODES
+from .._xlsb_sheets import _Entry, _bundles
 from ..biff_utils import build_record
 from ..refs import column_label
 from ._chartsheets import _CHART_TYPE, _DRAWING_TYPE, _DRAWING_XML, _set_rels, pending_chartsheets, source_title
@@ -75,7 +76,7 @@ def add_chartsheets_xlsb(updater: XlsbUpdater, workbook: Workbook) -> None:
             _set_rels(package, owner, rels)
         rid = package.add_rel(book_rels, "xl/workbook.bin", "chartsheet", part)
         tab_id += 1
-        entries.append(_Entry(None, _STATES[sheet.sheet_state], tab_id, rid, sheet.title))
+        entries.append(_Entry(None, STATE_CODES[sheet.sheet_state], tab_id, rid, sheet.title))
         added.append((sheet, part))
     handle = PackageHandle(updater)
     package.set("xl/workbook.bin", handle.rewrite_sheet_list(book, entries, {}))

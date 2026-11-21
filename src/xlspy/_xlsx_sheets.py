@@ -17,6 +17,7 @@ from xml.sax.saxutils import escape as _xml_escape, quoteattr
 
 from ._metadata import CT, MAIN, PKG_REL, REL, element_pattern, replace_element, tag_attributes
 from ._safe_xml import fromstring as safe_fromstring
+from ._sheet_common import SHEET_STATES, check_sheet_state, next_sheet_part
 from ._xlsx_edit import _bytes as _xml
 from ._xml_text import replace_or_add_xml_attribute, unescape_xml_text
 from .comments import rels_path as _part_rels_path
@@ -33,7 +34,6 @@ if TYPE_CHECKING:
     from .updater_utils import ZipPackage
 
 
-_SHEET_STATES = frozenset({"visible", "hidden", "veryHidden"})
 _FORMULA_TAGS = r"(?:f|formula|formula1|formula2|calculatedColumnFormula)"
 _FORMULA_ELEMENT = re.compile(
     rf"(<(?:[A-Za-z_][\w.-]*:)?{_FORMULA_TAGS}\b[^>]*?(?<!/)>)"
@@ -97,7 +97,7 @@ class XlsxSheetsMixin:
             if name is None:
                 continue
             state = node.get("state", "visible")
-            states[name] = state if state in _SHEET_STATES else "visible"
+            states[name] = state if state in SHEET_STATES else "visible"
         return states
 
     def get_active_sheet(self) -> int:
@@ -123,8 +123,7 @@ class XlsxSheetsMixin:
 
     def set_sheet_state(self, name: str, state: str) -> None:
         """Set a sheet to ``"visible"``, ``"hidden"`` or ``"veryHidden"``."""
-        if state not in _SHEET_STATES:
-            raise ValueError(f"invalid sheet state {state!r}")
+        check_sheet_state(state)
         xml = self._workbook_xml()
         found = False
 
@@ -145,12 +144,11 @@ class XlsxSheetsMixin:
     def add_sheet(self, name: str, index: int | None = None, *, state: str = "visible") -> str:
         """Add an empty worksheet at ``index`` (default: last); return its part path."""
         check_sheet_name(name, self._sheets)
-        if state not in _SHEET_STATES:
-            raise ValueError(f"invalid sheet state {state!r}")
+        check_sheet_state(state)
 
         current = list(self._sheets)
         position = len(current) if index is None else max(0, min(index, len(current)))
-        path = _new_sheet_path(self._package)
+        path = next_sheet_part(self._package.names(), "xml")
         xml = self._workbook_xml()
         root = safe_fromstring(xml)
         sheet_id = (
@@ -190,19 +188,7 @@ class XlsxSheetsMixin:
         active = mapping.get(previous_active, previous_active)
         states = self.get_sheet_states()
         states[name] = state
-        if not 0 <= active < len(order) or states.get(order[active], "visible") != "visible":
-            active = next(
-                (place for place, sheet in enumerate(order) if states.get(sheet, "visible") == "visible"),
-                0,
-            )
-        view = element_pattern("workbookView").search(xml)
-        first = None
-        if view is not None:
-            opening = _opening_tag(view.group(0))
-            first = _int_attribute(tag_attributes(opening).get("firstSheet"))
-            if first is not None:
-                first = min(mapping.get(first, 0), active)
-        xml = _write_view(xml, active, first)
+        xml = _remap_active_and_first(xml, mapping, order, states, active)
 
         updates: dict[str, Any] = {
             "xl/workbook.xml": xml,
@@ -245,19 +231,7 @@ class XlsxSheetsMixin:
         active = mapping.get(previous_active, min(previous_active, len(order) - 1))
         states = self.get_sheet_states()
         states.pop(name, None)
-        if not 0 <= active < len(order) or states.get(order[active], "visible") != "visible":
-            active = next(
-                (place for place, sheet in enumerate(order) if states.get(sheet, "visible") == "visible"),
-                0,
-            )
-        view = element_pattern("workbookView").search(xml)
-        first = None
-        if view is not None:
-            opening = _opening_tag(view.group(0))
-            first = _int_attribute(tag_attributes(opening).get("firstSheet"))
-            if first is not None:
-                first = min(mapping.get(first, 0), active)
-        xml = _write_view(xml, active, first)
+        xml = _remap_active_and_first(xml, mapping, order, states, active)
 
         rels_path = "xl/_rels/workbook.xml.rels"
         rels = safe_fromstring(package.get(rels_path))
@@ -335,25 +309,41 @@ class XlsxSheetsMixin:
         active = self.get_active_sheet()
         active = mapping.get(active, active)
         states = self.get_sheet_states()
-        if not 0 <= active < len(order) or states.get(order[active], "visible") != "visible":
-            active = next(
-                (position for position, name in enumerate(order) if states.get(name, "visible") == "visible"),
-                0,
-            )
-        view = element_pattern("workbookView").search(xml)
-        first = None
-        if view is not None:
-            opening = _opening_tag(view.group(0))
-            first = _int_attribute(tag_attributes(opening).get("firstSheet"))
-            if first is not None:
-                first = min(mapping.get(first, 0), active)
-        xml = _write_view(xml, active, first)
+        xml = _remap_active_and_first(xml, mapping, order, states, active)
 
         updates: dict[str, Any] = {"xl/workbook.xml": xml}
         removed: list[str] = []
         self._recalculate(updates, removed)
         self._apply_parts(updates, removed)
         self._sheets = {name: self._sheets[name] for name in order}
+
+
+def _remap_active_and_first(
+    xml: str,
+    mapping: dict[int, int],
+    order: list[str],
+    states: dict[str, str],
+    active: int,
+) -> str:
+    """Carry the active tab and the tab-bar origin through a sheet remap.
+
+    ``mapping`` maps an old sheet index to its new one; ``order`` and ``states``
+    describe the workbook after the change. A hidden active sheet falls back to
+    the first visible one.
+    """
+    if not 0 <= active < len(order) or states.get(order[active], "visible") != "visible":
+        active = next(
+            (place for place, sheet in enumerate(order) if states.get(sheet, "visible") == "visible"),
+            0,
+        )
+    view = element_pattern("workbookView").search(xml)
+    first = None
+    if view is not None:
+        opening = _opening_tag(view.group(0))
+        first = _int_attribute(tag_attributes(opening).get("firstSheet"))
+        if first is not None:
+            first = min(mapping.get(first, 0), active)
+    return _write_view(xml, active, first)
 
 
 def _rename_sheet_entry(workbook_xml: str, old: str, new: str) -> tuple[str, bool]:
@@ -499,15 +489,6 @@ def _remove_part_overrides(types: ET.Element, parts: Iterable[str]) -> None:
     for node in list(types):
         if node.tag == f"{{{CT}}}Override" and node.get("PartName") in names:
             types.remove(node)
-
-
-def _new_sheet_path(package: ZipPackage) -> str:
-    highest = 0
-    for name in package.names():
-        match = re.fullmatch(r"xl/worksheets/sheet(\d+)\.xml", name)
-        if match:
-            highest = max(highest, int(match.group(1)))
-    return f"xl/worksheets/sheet{highest + 1}.xml"
 
 
 def _next_relationship_id(rels: ET.Element) -> str:

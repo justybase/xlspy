@@ -24,6 +24,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from ..utils.datetime import time_to_days, timedelta_to_days
 from .._metadata import tag_attributes, MAIN, REL, PKG_REL, CT, qname, element_pattern, replace_element, serialize_like
+from .._sheet_common import next_sheet_part
 from .._sheet_data import insert_rows, patch_cells, patch_rows, set_dimension_ref, sheet_data_match, tag_prefix
 from .._xlsx_edit import _bytes, _cell_xml_value, _required_match
 from ..formula.sheets import rename_sheet_references
@@ -929,15 +930,6 @@ def _sheet_xml(sheet: Worksheet, date_1904: bool, *, prefix: str = "") -> str:
     )
 
 
-def _next_sheet_path(package) -> str:
-    highest = 0
-    for name in package.names():
-        match = re.fullmatch(r"xl/worksheets/sheet(\d+)\.xml", name)
-        if match:
-            highest = max(highest, int(match.group(1)))
-    return f"xl/worksheets/sheet{highest + 1}.xml"
-
-
 def _next_rel_id(rels_root) -> str:
     highest = 0
     for node in rels_root:
@@ -966,7 +958,7 @@ def _insert_sheet_fragment(workbook_xml: str, fragment: str, index: int) -> str:
 def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None:
     handle = PackageHandle(updater)
     package = handle.package
-    path = _next_sheet_path(package)
+    path = next_sheet_part(package.names(), "xml")
     xml = _sheet_xml(sheet, handle.date_1904)
     package.set(path, xml.encode("utf-8"))
 

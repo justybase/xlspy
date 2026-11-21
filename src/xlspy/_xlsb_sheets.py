@@ -22,6 +22,7 @@ from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
 
 from ._metadata import CT, PKG_REL, REL
+from ._sheet_common import STATE_CODES, STATE_NAMES, check_sheet_state, next_sheet_part
 from ._xlsx_edit import _bytes as _xml
 from ._xlsb_formulas import SUP_SELF, FormulaContext, parsed_formula
 from ._xlsb_metadata import read_wide, records, wide_string
@@ -40,8 +41,6 @@ if TYPE_CHECKING:
 BUNDLE_SH = 0x9C
 BOOK_VIEW = 0x9E
 WORKSHEET_TYPE = "application/vnd.ms-excel.worksheet"
-_STATES = {"visible": 0, "hidden": 1, "veryHidden": 2}
-_STATE_NAMES = {value: key for key, value in _STATES.items()}
 _DELETED = 1  # flag of a name slot left behind by FormulaContext.remove_name
 
 # A worksheet as Excel writes an empty sheet: properties, dimension, one
@@ -115,7 +114,7 @@ class XlsbSheetsMixin:
     def get_sheet_states(self) -> dict[str, str]:
         """Sheet visibility (``visible``, ``hidden`` or ``veryHidden``) by name."""
         return {
-            entry.name: _STATE_NAMES.get(entry.state, "visible")
+            entry.name: STATE_NAMES.get(entry.state, "visible")
             for entry in _bundles(self._package.get("xl/workbook.bin"))
         }
 
@@ -130,15 +129,10 @@ class XlsbSheetsMixin:
     def add_sheet(self, name: str, index: int | None = None, *, state: str = "visible") -> str:
         """Add an empty worksheet at ``index`` (default: last); return its part path."""
         check_sheet_name(name, self._sheets)
-        if state not in _STATES:
-            raise ValueError(f"invalid sheet state {state!r}")
+        check_sheet_state(state)
         workbook = self._package.get("xl/workbook.bin")
         entries = _bundles(workbook)
-        names = set(self._package.names())
-        number = 1
-        while f"xl/worksheets/sheet{number}.bin" in names:
-            number += 1
-        path = f"xl/worksheets/sheet{number}.bin"
+        path = next_sheet_part(self._package.names(), "bin")
 
         rels_path = "xl/_rels/workbook.bin.rels"
         rels = safe_fromstring(self._package.get(rels_path))
@@ -156,7 +150,7 @@ class XlsbSheetsMixin:
         ET.SubElement(types, f"{{{CT}}}Override", {"PartName": "/" + path, "ContentType": WORKSHEET_TYPE})
 
         tab_id = max((entry.tab_id for entry in entries), default=0) + 1
-        new = _Entry(None, _STATES[state], tab_id, rid, name)
+        new = _Entry(None, STATE_CODES[state], tab_id, rid, name)
         index = len(entries) if index is None else max(0, min(index, len(entries)))
         entries.insert(index, new)
         parts = {
@@ -259,16 +253,15 @@ class XlsbSheetsMixin:
 
     def set_sheet_state(self, name: str, state: str) -> None:
         """Set a sheet to ``"visible"``, ``"hidden"`` or ``"veryHidden"``."""
-        if state not in _STATES:
-            raise ValueError(f"invalid sheet state {state!r}")
+        check_sheet_state(state)
         workbook = self._package.get("xl/workbook.bin")
         entries = _bundles(workbook)
         entry = next((entry for entry in entries if entry.name == name), None)
         if entry is None:
             raise KeyError(f"Worksheet not found: {name}")
-        if entry.state == _STATES[state]:
+        if entry.state == STATE_CODES[state]:
             return
-        entry.state = _STATES[state]
+        entry.state = STATE_CODES[state]
         self._apply_parts({"xl/workbook.bin": self._rewrite_sheet_list(workbook, entries, {})})
 
     def set_active_sheet(self, index: int) -> None:
