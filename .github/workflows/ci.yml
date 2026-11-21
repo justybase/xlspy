@@ -82,6 +82,10 @@ jobs:
           ruff check src tests tools benchmarks examples
 
       - name: Import layers
+        env:
+          # The package uses a src layout and this job does not build it; put
+          # the Python sources (not the Rust extension) on the import path.
+          PYTHONPATH: src
         run: |
           lint-imports
 
