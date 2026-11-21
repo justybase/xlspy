@@ -1,4 +1,5 @@
 """The model's native loops (ModelCells) and the XLSB sheet scan against their Python twins."""
+
 from __future__ import annotations
 
 import datetime
@@ -43,11 +44,35 @@ class _Day(datetime.date):
 
 
 _VALUES = [
-    None, None, 0, 1, -7, 2**70, 1.5, float("inf"), True, False, "", "text", "=A1*2", " =x", "żółć",
-    "\ud800", _Int(4), _Text("t"), _Text("=1"), _Day(2024, 2, 3), datetime.date(2024, 1, 2),
-    datetime.datetime(2024, 1, 2, 3, 4), datetime.time(1, 2), datetime.timedelta(hours=5),
-    decimal.Decimal("1.5"), Formula("1+1"), Hyperlink("https://x.example/", "x"),
-    CellRichText(["a", "b"]), b"bytes",
+    None,
+    None,
+    0,
+    1,
+    -7,
+    2**70,
+    1.5,
+    float("inf"),
+    True,
+    False,
+    "",
+    "text",
+    "=A1*2",
+    " =x",
+    "żółć",
+    "\ud800",
+    _Int(4),
+    _Text("t"),
+    _Text("=1"),
+    _Day(2024, 2, 3),
+    datetime.date(2024, 1, 2),
+    datetime.datetime(2024, 1, 2, 3, 4),
+    datetime.time(1, 2),
+    datetime.timedelta(hours=5),
+    decimal.Decimal("1.5"),
+    Formula("1+1"),
+    Hyperlink("https://x.example/", "x"),
+    CellRichText(["a", "b"]),
+    b"bytes",
 ]
 
 
@@ -58,13 +83,33 @@ def _python_only(patch):
 
 def _state(sheet):
     return (
-        sheet._max_row, sheet._max_column, sorted(sheet._dirty_cells), sorted(sheet._dirty_styles),
-        sorted(sheet._dirty_hyperlinks), sorted(sheet._dirty_meta), sheet._dirty, sheet._workbook._styles_dirty,
+        sheet._max_row,
+        sheet._max_column,
+        sorted(sheet._dirty_cells),
+        sorted(sheet._dirty_styles),
+        sorted(sheet._dirty_hyperlinks),
+        sorted(sheet._dirty_meta),
+        sheet._dirty,
+        sheet._workbook._styles_dirty,
         {
-            row: [(column, type(cell), type(cell._value), repr(cell._value), repr(cell._formula), cell._data_type,
-                   cell._style_id, repr(cell._hyperlink), cell._comment, cell._named_style, cell._sheet is sheet,
-                   cell._row, cell._column)
-                  for column, cell in cells.items()]
+            row: [
+                (
+                    column,
+                    type(cell),
+                    type(cell._value),
+                    repr(cell._value),
+                    repr(cell._formula),
+                    cell._data_type,
+                    cell._style_id,
+                    repr(cell._hyperlink),
+                    cell._comment,
+                    cell._named_style,
+                    cell._sheet is sheet,
+                    cell._row,
+                    cell._column,
+                )
+                for column, cell in cells.items()
+            ]
             for row, cells in sheet._cells.items()
         },
     )
@@ -130,8 +175,11 @@ def test_a_new_workbook_keeps_no_list_of_changed_cells():
 
 def _parts(path):
     with zipfile.ZipFile(path) as archive:
-        return {name: hashlib.sha256(archive.read(name)).hexdigest()
-                for name in archive.namelist() if name != "docProps/core.xml"}
+        return {
+            name: hashlib.sha256(archive.read(name)).hexdigest()
+            for name in archive.namelist()
+            if name != "docProps/core.xml"
+        }
 
 
 @pytest.mark.parametrize("ext", ["xlsx", "xlsb"])
@@ -199,16 +247,19 @@ _BEGIN, _END = build_record(0x91, b""), build_record(0x92, b"")
 _ROW = build_record(0, struct.pack("<I", 0) + bytes(13))
 
 
-@pytest.mark.parametrize("data, message", [
-    (b"", "no complete sheet data"),
-    (_BEGIN, "no complete sheet data"),
-    (_END, "no complete sheet data"),
-    (_BEGIN + build_record(0, b"\x00") + _END, "row record"),
-    (_BEGIN + _ROW + build_record(2, b"\x00") + _END, "cell record"),
-    (build_record(0x94, bytes(15)) + _BEGIN + _END, "dimension"),
-    (_BEGIN + _END + build_record(0xB0, bytes(15)), "cut short"),
-    (_BEGIN + _END + build_record(0x1AA, bytes(4)), "cut short"),
-])
+@pytest.mark.parametrize(
+    "data, message",
+    [
+        (b"", "no complete sheet data"),
+        (_BEGIN, "no complete sheet data"),
+        (_END, "no complete sheet data"),
+        (_BEGIN + build_record(0, b"\x00") + _END, "row record"),
+        (_BEGIN + _ROW + build_record(2, b"\x00") + _END, "cell record"),
+        (build_record(0x94, bytes(15)) + _BEGIN + _END, "dimension"),
+        (_BEGIN + _END + build_record(0xB0, bytes(15)), "cut short"),
+        (_BEGIN + _END + build_record(0x1AA, bytes(4)), "cut short"),
+    ],
+)
 def test_a_sheet_the_native_scan_leaves_to_python_is_refused_there(data, message):
     assert _accel.xlsb_sheet_scan(data) is None
     with pytest.raises(InvalidFileError, match=message):
@@ -217,6 +268,12 @@ def test_a_sheet_the_native_scan_leaves_to_python_is_refused_there(data, message
 
 def test_compact_cells_follow_the_column_before_them():
     # BrtCellBlank at column 3, then two compact cells (0xC and up carry no column).
-    data = (_BEGIN + _ROW + build_record(1, struct.pack("<II", 3, 0)) + build_record(0xD, bytes(4))
-            + build_record(0xE, bytes(4)) + _END)
+    data = (
+        _BEGIN
+        + _ROW
+        + build_record(1, struct.pack("<II", 3, 0))
+        + build_record(0xD, bytes(4))
+        + build_record(0xE, bytes(4))
+        + _END
+    )
     assert _accel.xlsb_sheet_scan(data)[7] == (3, 0, 5, 0)

@@ -85,17 +85,11 @@ def test_sorting_by_icon_needs_a_known_set_and_a_valid_index():
     with pytest.raises(UnsupportedFeatureError, match="needs an iconSet"):
         check_sort_state(_state(sortCondition=[_condition(sortBy="icon")]))
     with pytest.raises(UnsupportedFeatureError, match="unsupported icon set"):
-        check_sort_state(
-            _state(sortCondition=[_condition(sortBy="icon", iconSet="bogus", iconId=0)])
-        )
+        check_sort_state(_state(sortCondition=[_condition(sortBy="icon", iconSet="bogus", iconId=0)]))
     with pytest.raises(ValueError, match="invalid iconId"):
-        check_sort_state(
-            _state(sortCondition=[_condition(sortBy="icon", iconSet="3Arrows", iconId=3)])
-        )
+        check_sort_state(_state(sortCondition=[_condition(sortBy="icon", iconSet="3Arrows", iconId=3)]))
     with pytest.raises(ValueError, match="invalid iconId"):
-        check_sort_state(
-            _state(sortCondition=[_condition(sortBy="icon", iconSet="3Arrows", iconId="1")])
-        )
+        check_sort_state(_state(sortCondition=[_condition(sortBy="icon", iconSet="3Arrows", iconId="1")]))
 
 
 @pytest.mark.parametrize("icon_set, size", sorted(ICON_SET_SIZES.items())[:3])

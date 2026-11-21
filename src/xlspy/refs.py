@@ -10,9 +10,7 @@ from collections.abc import Iterable
 import re
 from functools import lru_cache
 
-_RANGE_RE = re.compile(
-    r"\$?([A-Za-z]{1,3})\$?([1-9][0-9]*)(?::\$?([A-Za-z]{1,3})\$?([1-9][0-9]*))?"
-)
+_RANGE_RE = re.compile(r"\$?([A-Za-z]{1,3})\$?([1-9][0-9]*)(?::\$?([A-Za-z]{1,3})\$?([1-9][0-9]*))?")
 
 
 @lru_cache(maxsize=4096)
@@ -109,8 +107,11 @@ class RangeIndex:
         """Remove the first range added with these bounds and this item."""
         c1, r1, c2, r2 = bounds
         first, last = r1 // self._ROWS, r2 // self._ROWS
-        lists = [self._wide] if last - first >= self._MAX_SPAN else [
-            self._buckets.get(bucket, []) for bucket in range(first, last + 1)]
+        lists = (
+            [self._wide]
+            if last - first >= self._MAX_SPAN
+            else [self._buckets.get(bucket, []) for bucket in range(first, last + 1)]
+        )
         for entries in lists:
             for entry in entries:
                 if entry[1:] == (c1, r1, c2, r2, item):
@@ -213,7 +214,7 @@ def cell_position(ref: str) -> tuple[int, int]:
     are validated once and cached.
     """
     letters = ref.rstrip("0123456789")
-    digits = ref[len(letters):]
+    digits = ref[len(letters) :]
     column = _COLUMN_CACHE.get(letters)
     if column is not None and digits:
         row = int(digits)
@@ -230,7 +231,7 @@ def quote_sheet_name(sheet_name: str) -> str:
     return "'" + sheet_name.replace("'", "''") + "'"
 
 
-_SHEET_NAME_FORBIDDEN = frozenset(r':\/?*[]')
+_SHEET_NAME_FORBIDDEN = frozenset(r":\/?*[]")
 
 
 def check_sheet_name(sheet_name: str, existing: Iterable[str] = ()) -> None:
@@ -251,9 +252,7 @@ def check_sheet_name(sheet_name: str, existing: Iterable[str] = ()) -> None:
     # XML 1.0 cannot carry these at all, so the XLSX workbook part would not parse.
     control = sorted({ch for ch in sheet_name if ord(ch) < 0x20 or ord(ch) in (0xFFFE, 0xFFFF)})
     if control:
-        raise ValueError(
-            f"sheet name {sheet_name!r} contains control characters {control!r}"
-        )
+        raise ValueError(f"sheet name {sheet_name!r} contains control characters {control!r}")
     if sheet_name[0] == "'" or sheet_name[-1] == "'":
         raise ValueError(f"sheet name {sheet_name!r} must not start or end with an apostrophe")
     if sheet_name.casefold() == "history":

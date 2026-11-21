@@ -12,7 +12,9 @@ def test_excel_opens_an_xlsb_after_a_table_is_removed(tmp_path, excel, open_work
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Data"
-    for row, values in enumerate([["name", "qty", "", "code", "n"], ["a", 2, None, "x", 10], ["b", 3, None, "y", 20]], start=1):
+    for row, values in enumerate(
+        [["name", "qty", "", "code", "n"], ["a", 2, None, "x", 10], ["b", 3, None, "y", 20]], start=1
+    ):
         for column, value in enumerate(values, start=1):
             sheet.cell(row=row, column=column, value=value)
     sheet.add_table(ExcelTable("Tbl", "A1:B3"))

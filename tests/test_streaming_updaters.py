@@ -73,23 +73,17 @@ def _add_complex_parts(path: Path, binary: bool) -> None:
             sheet = sheet + build_record(0xA1, b"\x00" * 16)
             sheet_name = "Data".encode("utf-16le")
             source_payload = (
-                b"\x00\x00\x00"
-                + struct.pack("<I", len("Data"))
-                + sheet_name
-                + struct.pack("<iiii", 0, 1, 0, 1)
+                b"\x00\x00\x00" + struct.pack("<I", len("Data")) + sheet_name + struct.pack("<iiii", 0, 1, 0, 1)
             )
             replacements = {
                 "xl/worksheets/sheet1.bin": sheet,
                 "xl/pivotCache/pivotCacheDefinition1.bin": (
-                    build_record(0xB3, b"\x00\x00\x00\x00")
-                    + build_record(0xBB, source_payload)
+                    build_record(0xB3, b"\x00\x00\x00\x00") + build_record(0xBB, source_payload)
                 ),
             }
         else:
             sheet = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
-            sheet = sheet.replace(
-                "</worksheet>", '<autoFilter ref="A1:D2"/></worksheet>'
-            )
+            sheet = sheet.replace("</worksheet>", '<autoFilter ref="A1:D2"/></worksheet>')
             replacements = {
                 "xl/worksheets/sheet1.xml": sheet.encode("utf-8"),
                 "xl/pivotCache/pivotCacheDefinition1.xml": (
@@ -98,9 +92,7 @@ def _add_complex_parts(path: Path, binary: bool) -> None:
                     b'<worksheetSource ref="A1:D2" sheet="Data"/>'
                     b"</cacheSource></pivotCacheDefinition>"
                 ),
-                "xl/pivotTables/pivotTable1.xml": (
-                    b'<pivotTableDefinition refreshOnLoad="0"/>'
-                ),
+                "xl/pivotTables/pivotTable1.xml": (b'<pivotTableDefinition refreshOnLoad="0"/>'),
             }
     rewrite_workbook_members(path, replacements)
 
@@ -157,9 +149,7 @@ class _OneShotRows:
     ("binary", "shared_strings"),
     [(False, True), (False, False), (True, True)],
 )
-def test_streaming_output_matches_regular_output_byte_for_byte(
-    tmp_path, binary, shared_strings
-):
+def test_streaming_output_matches_regular_output_byte_for_byte(tmp_path, binary, shared_strings):
     extension = ".xlsb" if binary else ".xlsx"
     source = tmp_path / f"source{extension}"
     regular = tmp_path / f"regular{extension}"
@@ -178,9 +168,7 @@ def test_streaming_output_matches_regular_output_byte_for_byte(
     regular.write_bytes(regular_updater.to_bytes())
 
     streaming_updater = updater_type(streamed)
-    streaming_updater.replace_sheet_data_stream(
-        "Data", _OneShotRows(ROWS), headers=HEADERS
-    )
+    streaming_updater.replace_sheet_data_stream("Data", _OneShotRows(ROWS), headers=HEADERS)
     streaming_updater.save()
 
     assert _archive_payloads(streamed) == _archive_payloads(regular)
@@ -204,9 +192,7 @@ def test_streaming_matches_regular_with_filters_and_pivot_metadata(tmp_path, bin
     regular.write_bytes(regular_updater.to_bytes())
 
     streaming_updater = updater_type(streamed)
-    streaming_updater.replace_sheet_data_stream(
-        "Data", _OneShotRows(ROWS), headers=HEADERS
-    )
+    streaming_updater.replace_sheet_data_stream("Data", _OneShotRows(ROWS), headers=HEADERS)
     streaming_updater.save()
 
     assert _archive_payloads(streamed) == _archive_payloads(regular)
@@ -229,12 +215,8 @@ def test_streaming_supports_multiple_sheet_replacements(tmp_path, binary):
     regular.write_bytes(regular_updater.to_bytes())
 
     streaming_updater = updater_type(streamed)
-    streaming_updater.replace_sheet_data_stream(
-        "Data", _OneShotRows(ROWS), headers=HEADERS
-    )
-    streaming_updater.replace_sheet_data_stream(
-        "Keep", _OneShotRows([["changed", 10]])
-    )
+    streaming_updater.replace_sheet_data_stream("Data", _OneShotRows(ROWS), headers=HEADERS)
+    streaming_updater.replace_sheet_data_stream("Keep", _OneShotRows([["changed", 10]]))
     streaming_updater.save()
 
     assert _archive_payloads(streamed) == _archive_payloads(regular)
@@ -257,21 +239,15 @@ def test_streaming_replacing_same_sheet_again_matches_regular(tmp_path, binary):
     regular.write_bytes(regular_updater.to_bytes())
 
     streaming_updater = updater_type(streamed)
-    streaming_updater.replace_sheet_data_stream(
-        "Data", _OneShotRows(ROWS), headers=HEADERS
-    )
-    streaming_updater.replace_sheet_data_stream(
-        "Data", _OneShotRows([["final", 7]]), headers=HEADERS
-    )
+    streaming_updater.replace_sheet_data_stream("Data", _OneShotRows(ROWS), headers=HEADERS)
+    streaming_updater.replace_sheet_data_stream("Data", _OneShotRows([["final", 7]]), headers=HEADERS)
     streaming_updater.save()
 
     assert _archive_payloads(streamed) == _archive_payloads(regular)
 
 
 @pytest.mark.parametrize("binary", [False, True])
-def test_streaming_save_does_not_materialize_rows_or_archive(
-    tmp_path, binary, monkeypatch
-):
+def test_streaming_save_does_not_materialize_rows_or_archive(tmp_path, binary, monkeypatch):
     extension = ".xlsb" if binary else ".xlsx"
     path = tmp_path / f"streaming{extension}"
     _write_workbook(path, binary)
@@ -410,19 +386,13 @@ def test_repeated_streaming_replacements_remove_superseded_staging(tmp_path, bin
     first_sheet = updater._package._overrides[sheet_index]
     first_strings = updater._package._overrides[strings_index]
 
-    updater.replace_sheet_data_stream(
-        "Data", _OneShotRows([["second replacement", 2]]), headers=HEADERS
-    )
+    updater.replace_sheet_data_stream("Data", _OneShotRows([["second replacement", 2]]), headers=HEADERS)
 
     assert isinstance(first_sheet, Path)
     assert isinstance(first_strings, Path)
     assert not first_sheet.exists()
     assert not first_strings.exists()
-    staged_parts = [
-        item
-        for item in updater._package.temporary_directory.iterdir()
-        if item.name.startswith("part-")
-    ]
+    staged_parts = [item for item in updater._package.temporary_directory.iterdir() if item.name.startswith("part-")]
     assert len(staged_parts) == 2
 
 
@@ -440,9 +410,7 @@ def test_xlsm_updates_preserve_vba_project_bytes(tmp_path):
     regular_updater.save()
 
     streaming_updater = XlsmUpdater(streamed)
-    streaming_updater.replace_sheet_data_stream(
-        "Data", _OneShotRows(ROWS), headers=HEADERS
-    )
+    streaming_updater.replace_sheet_data_stream("Data", _OneShotRows(ROWS), headers=HEADERS)
     streaming_updater.save()
 
     assert _archive_payloads(streamed) == _archive_payloads(regular)
@@ -450,8 +418,5 @@ def test_xlsm_updates_preserve_vba_project_bytes(tmp_path):
         with zipfile.ZipFile(path) as archive:
             assert archive.read("xl/vbaProject.bin") == macro_payload
             assert (
-                archive.read("[Content_Types].xml").count(
-                    b"application/vnd.ms-excel.sheet.macroEnabled.main+xml"
-                )
-                == 1
+                archive.read("[Content_Types].xml").count(b"application/vnd.ms-excel.sheet.macroEnabled.main+xml") == 1
             )

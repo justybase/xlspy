@@ -18,7 +18,7 @@ def _parts(path):
 
 def _drawing_rel(sheet_bin: bytes) -> str:
     (record,) = [record for record in iter_records(sheet_bin) if record.record_id == _BRT_DRAWING]
-    payload = sheet_bin[record.data_start:record.data_end]
+    payload = sheet_bin[record.data_start : record.data_end]
     return payload[4:].decode("utf-16-le")
 
 
@@ -46,7 +46,10 @@ def test_pictures_share_media_and_link_from_the_drawing(tmp_path):
         assert rels.count('Target="../media/image1.png"') == pictures
         sheet_rels = parts[f"xl/worksheets/_rels/sheet{number}.bin.rels"].decode()
         rel_id = _drawing_rel(parts[f"xl/worksheets/sheet{number}.bin"])
-        assert f'Id="{rel_id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"' in sheet_rels
+        assert (
+            f'Id="{rel_id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"'
+            in sheet_rels
+        )
     assert 'descr="Company logo"' in parts["xl/drawings/drawing2.xml"].decode()
     # Every XLSB carries the theme, pictures or not.
     assert parts["xl/theme/theme1.xml"]

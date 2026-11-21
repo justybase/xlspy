@@ -14,11 +14,19 @@ def source(request, tmp_path):
     sheet = workbook.active
     for row in (["name", "value"], ["a", 1], ["b", 2], ["c", 3]):
         sheet.append(row)
-    chart = Chart(
-        "bar", [ChartSeries("B2:B4", categories="A2:A4")], title="Original",
-        x_axis=ChartAxis(title="Names"),
-    ) if request.param == "xlsx" else Chart(
-        "bar", [ChartSeries("B2:B4", categories="A2:A4")], title="Original",
+    chart = (
+        Chart(
+            "bar",
+            [ChartSeries("B2:B4", categories="A2:A4")],
+            title="Original",
+            x_axis=ChartAxis(title="Names"),
+        )
+        if request.param == "xlsx"
+        else Chart(
+            "bar",
+            [ChartSeries("B2:B4", categories="A2:A4")],
+            title="Original",
+        )
     )
     sheet.add_chart(chart, "D2")
     path = tmp_path / f"source.{request.param}"
@@ -53,9 +61,14 @@ def test_title_is_changed_on_save(source, tmp_path):
 def test_title_can_be_removed_and_added(source, tmp_path):
     chart, _ = _roundtrip(source, tmp_path, lambda c: setattr(c, "title", None))
     assert chart.title is None
-    chart, _ = _roundtrip(source, tmp_path, lambda c: (
-        setattr(c, "title", None), setattr(c, "title", "Back"),
-    ))
+    chart, _ = _roundtrip(
+        source,
+        tmp_path,
+        lambda c: (
+            setattr(c, "title", None),
+            setattr(c, "title", "Back"),
+        ),
+    )
     assert chart.title == "Back"
 
 
@@ -99,7 +112,7 @@ def test_edits_keep_unrelated_markup():
         b'</c:rich></c:tx></c:title><c:autoTitleDeleted val="0"/><c:plotArea>'
         b'<c:catAx><c:axId val="1"/><c:axPos val="b"/><c:numFmt formatCode="G"/></c:catAx>'
         b'<c:valAx><c:axId val="2"/><c:axPos val="l"/><c:crossAx val="1"/></c:valAx>'
-        b'</c:plotArea></c:chart></c:chartSpace>'
+        b"</c:plotArea></c:chart></c:chartSpace>"
     )
     edited = set_chart_title(xml, "New").decode()
     assert 'mc:Ignorable="c14"' in edited and 'sz="2000"' in edited
@@ -118,10 +131,16 @@ def _series_book(tmp_path, ext):
     sheet = workbook.active
     for row in (["n", "a", "b"], ["x", 1, 10], ["y", 2, 30]):
         sheet.append(row)
-    sheet.add_chart(Chart("bar", [
-        ChartSeries("B2:B3", categories="A2:A3", title="One", color="#FF0000"),
-        ChartSeries("C2:C3", categories="A2:A3", title_cell="C1"),
-    ]), "E2")
+    sheet.add_chart(
+        Chart(
+            "bar",
+            [
+                ChartSeries("B2:B3", categories="A2:A3", title="One", color="#FF0000"),
+                ChartSeries("C2:C3", categories="A2:A3", title_cell="C1"),
+            ],
+        ),
+        "E2",
+    )
     sheet.add_chart(Chart("line", [ChartSeries("B2:B3", categories="A2:A3", color="#00FF00")]), "E20")
     path = tmp_path / f"series.{ext}"
     workbook.save(path)
@@ -167,25 +186,25 @@ def test_series_color_edits_keep_the_rest_of_the_shape():
         b'<c:lineChart><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>S!$B$1</c:f>'
         b'</c:strRef></c:tx><c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:schemeClr val="accent1"/>'
         b'</a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:marker><c:symbol val="none"/></c:marker>'
-        b'<c:val><c:numRef><c:f>S!$B$2:$B$3</c:f></c:numRef></c:val></c:ser></c:lineChart>'
+        b"<c:val><c:numRef><c:f>S!$B$2:$B$3</c:f></c:numRef></c:val></c:ser></c:lineChart>"
         b'<c:barChart><c:ser><c:idx val="1"/><c:order val="1"/><c:invertIfNegative val="0"/>'
-        b'<c:val><c:numRef><c:f>S!$C$2:$C$3</c:f></c:numRef></c:val></c:ser></c:barChart>'
-        b'</c:plotArea></c:chart></c:chartSpace>'
+        b"<c:val><c:numRef><c:f>S!$C$2:$C$3</c:f></c:numRef></c:val></c:ser></c:barChart>"
+        b"</c:plotArea></c:chart></c:chartSpace>"
     )
     edited = set_series_color(xml, 0, "ABCDEF").decode()
     assert 'w="28575" cap="rnd"' in edited and "<a:round/>" in edited and "accent1" not in edited
     assert edited.index("ABCDEF") < edited.index("<a:round/>") and "<a:effectLst/>" in edited
     edited = set_series_color(xml, 1, "112233").decode()
-    assert "<c:spPr><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill></c:spPr>" in edited
-    assert edited.index("<c:order val=\"1\"/>") < edited.index("112233") < edited.index("invertIfNegative")
+    assert '<c:spPr><a:solidFill><a:srgbClr val="112233"/></a:solidFill></c:spPr>' in edited
+    assert edited.index('<c:order val="1"/>') < edited.index("112233") < edited.index("invertIfNegative")
     assert "<c:v>T</c:v>" in set_series_title(xml, 0, "T").decode()
     assert "<c:tx><c:v>T</c:v></c:tx><c:spPr>" in set_series_title(xml, 0, "T").decode()
-    assert "<c:order val=\"1\"/><c:tx><c:v>U</c:v></c:tx>" in set_series_title(xml, 1, "U").decode()
+    assert '<c:order val="1"/><c:tx><c:v>U</c:v></c:tx>' in set_series_title(xml, 1, "U").decode()
 
 
 _AXIS = (
     '<c:valAx xmlns:c="c"><c:axId val="2"/><c:axPos val="l"/>'
-    '<c:majorGridlines><c:spPr><a:ln/></c:spPr></c:majorGridlines>'
+    "<c:majorGridlines><c:spPr><a:ln/></c:spPr></c:majorGridlines>"
     '<c:numFmt formatCode="General" sourceLinked="1"/><c:crossAx val="1"/></c:valAx>'
 )
 

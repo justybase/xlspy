@@ -63,9 +63,7 @@ def test_loaded_save_keeps_interacting_features_and_is_idempotent(tmp_path, suff
     content_types = ET.fromstring(_parts(target)["[Content_Types].xml"])
     overrides = [
         node.get("PartName")
-        for node in content_types.findall(
-            "{http://schemas.openxmlformats.org/package/2006/content-types}Override"
-        )
+        for node in content_types.findall("{http://schemas.openxmlformats.org/package/2006/content-types}Override")
     ]
     assert len(overrides) == len(set(overrides))
 

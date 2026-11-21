@@ -34,9 +34,7 @@ if TYPE_CHECKING:
 
 
 _SHEET_STATES = frozenset({"visible", "hidden", "veryHidden"})
-_FORMULA_TAGS = (
-    r"(?:f|formula|formula1|formula2|calculatedColumnFormula)"
-)
+_FORMULA_TAGS = r"(?:f|formula|formula1|formula2|calculatedColumnFormula)"
 _FORMULA_ELEMENT = re.compile(
     rf"(<(?:[A-Za-z_][\w.-]*:)?{_FORMULA_TAGS}\b[^>]*?(?<!/)>)"
     rf"(.*?)(</(?:[A-Za-z_][\w.-]*:)?{_FORMULA_TAGS}\s*>)",
@@ -53,17 +51,24 @@ _DEFINED_NAME_ELEMENT = re.compile(
     re.DOTALL,
 )
 _REFERENCE_PART = re.compile(r"xl/(?:worksheets|chartsheets|tables)/[^/]+\.xml")
-_WORKSHEET_CONTENT_TYPE = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
-)
+_WORKSHEET_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
 _EMPTY_WORKSHEET = (
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    f'<worksheet xmlns="{MAIN}"><sheetData/></worksheet>'
+    f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="{MAIN}"><sheetData/></worksheet>'
 ).encode()
 _WORKBOOK_VIEW_SUCCESSORS = (
-    "sheets", "functionGroups", "externalReferences", "definedNames",
-    "calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr",
-    "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects",
+    "sheets",
+    "functionGroups",
+    "externalReferences",
+    "definedNames",
+    "calcPr",
+    "oleSize",
+    "customWorkbookViews",
+    "pivotCaches",
+    "smartTagPr",
+    "smartTagTypes",
+    "webPublishing",
+    "fileRecoveryPr",
+    "webPublishObjects",
     "extLst",
 )
 
@@ -129,10 +134,7 @@ class XlsxSheetsMixin:
             if tag_attributes(opening).get("name") != name:
                 return match.group(0)
             found = True
-            return (
-                replace_or_add_xml_attribute(opening, "state", state)
-                + match.group(0)[len(opening):]
-            )
+            return replace_or_add_xml_attribute(opening, "state", state) + match.group(0)[len(opening) :]
 
         updated = element_pattern("sheet").sub(change, xml)
         if not found:
@@ -140,9 +142,7 @@ class XlsxSheetsMixin:
         if updated != xml:
             self._apply_parts({"xl/workbook.xml": updated})
 
-    def add_sheet(
-        self, name: str, index: int | None = None, *, state: str = "visible"
-    ) -> str:
+    def add_sheet(self, name: str, index: int | None = None, *, state: str = "visible") -> str:
         """Add an empty worksheet at ``index`` (default: last); return its part path."""
         check_sheet_name(name, self._sheets)
         if state not in _SHEET_STATES:
@@ -153,13 +153,13 @@ class XlsxSheetsMixin:
         path = _new_sheet_path(self._package)
         xml = self._workbook_xml()
         root = safe_fromstring(xml)
-        sheet_id = max(
-            (
-                int(node.get("sheetId", "0") or 0)
-                for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
-            ),
-            default=0,
-        ) + 1
+        sheet_id = (
+            max(
+                (int(node.get("sheetId", "0") or 0) for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")),
+                default=0,
+            )
+            + 1
+        )
 
         rels_path = "xl/_rels/workbook.xml.rels"
         rels = safe_fromstring(self._package.get(rels_path))
@@ -181,10 +181,7 @@ class XlsxSheetsMixin:
         )
 
         state_attribute = "" if state == "visible" else f' state="{state}"'
-        fragment = (
-            f'<sheet xmlns:r="{REL}" name={quoteattr(name)} sheetId="{sheet_id}" '
-            f'r:id="{rid}"{state_attribute}/>'
-        )
+        fragment = f'<sheet xmlns:r="{REL}" name={quoteattr(name)} sheetId="{sheet_id}" r:id="{rid}"{state_attribute}/>'
         xml = _splice_sheet_entry(xml, fragment, position)
 
         order = current[:position] + [name] + current[position:]
@@ -195,8 +192,7 @@ class XlsxSheetsMixin:
         states[name] = state
         if not 0 <= active < len(order) or states.get(order[active], "visible") != "visible":
             active = next(
-                (place for place, sheet in enumerate(order)
-                 if states.get(sheet, "visible") == "visible"),
+                (place for place, sheet in enumerate(order) if states.get(sheet, "visible") == "visible"),
                 0,
             )
         view = element_pattern("workbookView").search(xml)
@@ -217,9 +213,7 @@ class XlsxSheetsMixin:
         removed: list[str] = []
         self._recalculate(updates, removed)
         self._apply_parts(updates, removed)
-        self._sheets = {
-            sheet: (path if sheet == name else self._sheets[sheet]) for sheet in order
-        }
+        self._sheets = {sheet: (path if sheet == name else self._sheets[sheet]) for sheet in order}
         return path
 
     def remove_sheet(self, name: str) -> None:
@@ -236,13 +230,9 @@ class XlsxSheetsMixin:
         # As for XLSB: slicers and pivots own workbook-level caches that would
         # be left pointing at a removed sheet.
         if sheet_has_slicers(package, path):
-            raise UnsupportedFeatureError(
-                f"sheet {name!r} holds table slicers; removing it is not supported yet"
-            )
+            raise UnsupportedFeatureError(f"sheet {name!r} holds table slicers; removing it is not supported yet")
         if sheet_has_pivots(package, path):
-            raise UnsupportedFeatureError(
-                f"sheet {name!r} holds pivot tables; removing it is not supported yet"
-            )
+            raise UnsupportedFeatureError(f"sheet {name!r} holds pivot tables; removing it is not supported yet")
 
         current = list(self._sheets)
         removed_index = current.index(name)
@@ -250,22 +240,14 @@ class XlsxSheetsMixin:
         xml = self._workbook_xml()
         xml, rid = _remove_sheet_entry(xml, name)
         xml = _strip_local_sheet_names(xml, removed_index)
-        mapping = {
-            old: order.index(sheet)
-            for old, sheet in enumerate(current)
-            if sheet != name
-        }
+        mapping = {old: order.index(sheet) for old, sheet in enumerate(current) if sheet != name}
         previous_active = self.get_active_sheet()
         active = mapping.get(previous_active, min(previous_active, len(order) - 1))
         states = self.get_sheet_states()
         states.pop(name, None)
-        if (
-            not 0 <= active < len(order)
-            or states.get(order[active], "visible") != "visible"
-        ):
+        if not 0 <= active < len(order) or states.get(order[active], "visible") != "visible":
             active = next(
-                (place for place, sheet in enumerate(order)
-                 if states.get(sheet, "visible") == "visible"),
+                (place for place, sheet in enumerate(order) if states.get(sheet, "visible") == "visible"),
                 0,
             )
         view = element_pattern("workbookView").search(xml)
@@ -315,10 +297,7 @@ class XlsxSheetsMixin:
         updates.update(_renamed_reference_parts(self._package, old, new))
         updates.update(renamed_chart_parts(self._package, old, new))
         self._apply_parts(updates)
-        self._sheets = {
-            (new if name == old else name): path
-            for name, path in self._sheets.items()
-        }
+        self._sheets = {(new if name == old else name): path for name, path in self._sheets.items()}
         if old in self._chartsheets:
             self._chartsheets.discard(old)
             self._chartsheets.add(new)
@@ -347,21 +326,18 @@ class XlsxSheetsMixin:
         closing_start = body.rfind("</")
         reordered = "".join(by_name[name] for name in order)
         body = body[:opening_end] + reordered + body[closing_start:]
-        xml = xml[:container.start()] + body + xml[container.end():]
+        xml = xml[: container.start()] + body + xml[container.end() :]
 
         mapping = {}
         for new, name in enumerate(order):
             mapping[current.index(name)] = new
-        xml = element_pattern("definedName").sub(
-            lambda match: _remap_local_sheet_id(match, mapping), xml
-        )
+        xml = element_pattern("definedName").sub(lambda match: _remap_local_sheet_id(match, mapping), xml)
         active = self.get_active_sheet()
         active = mapping.get(active, active)
         states = self.get_sheet_states()
         if not 0 <= active < len(order) or states.get(order[active], "visible") != "visible":
             active = next(
-                (position for position, name in enumerate(order)
-                 if states.get(name, "visible") == "visible"),
+                (position for position, name in enumerate(order) if states.get(name, "visible") == "visible"),
                 0,
             )
         view = element_pattern("workbookView").search(xml)
@@ -380,17 +356,14 @@ class XlsxSheetsMixin:
         self._sheets = {name: self._sheets[name] for name in order}
 
 
-def _rename_sheet_entry(
-    workbook_xml: str, old: str, new: str
-) -> tuple[str, bool]:
+def _rename_sheet_entry(workbook_xml: str, old: str, new: str) -> tuple[str, bool]:
     for match in list(element_pattern("sheet").finditer(workbook_xml)):
         if tag_attributes(match.group(0)).get("name") != old:
             continue
         opening = _opening_tag(match.group(0))
         renamed = replace_or_add_xml_attribute(opening, "name", new)
         return (
-            workbook_xml[:match.start()] + renamed
-            + workbook_xml[match.start() + len(opening):],
+            workbook_xml[: match.start()] + renamed + workbook_xml[match.start() + len(opening) :],
             True,
         )
     return workbook_xml, False
@@ -402,9 +375,7 @@ def _rename_formula_text(text: str, old: str, new: str) -> str:
     return text if updated == decoded else _xml_escape(updated)
 
 
-def _rename_hyperlink_location(
-    match: re.Match[str], old: str, new: str
-) -> str:
+def _rename_hyperlink_location(match: re.Match[str], old: str, new: str) -> str:
     quoted = match.group(2)
     decoded = unescape_xml_text(quoted[1:-1])
     updated = rename_formula_sheet_references(decoded, old, new)
@@ -413,20 +384,14 @@ def _rename_hyperlink_location(
     return match.group(1) + quoteattr(updated)
 
 
-def _renamed_reference_parts(
-    package: ZipPackage, old: str, new: str
-) -> dict[str, bytes]:
+def _renamed_reference_parts(package: ZipPackage, old: str, new: str) -> dict[str, bytes]:
     parts: dict[str, bytes] = {}
     for name in package.names():
         if _REFERENCE_PART.fullmatch(name) is None:
             continue
         xml = package.get(name).decode("utf-8")
         updated = _FORMULA_ELEMENT.sub(
-            lambda match: (
-                match.group(1)
-                + _rename_formula_text(match.group(2), old, new)
-                + match.group(3)
-            ),
+            lambda match: match.group(1) + _rename_formula_text(match.group(2), old, new) + match.group(3),
             xml,
         )
         updated = _HYPERLINK_LOCATION.sub(
@@ -440,11 +405,7 @@ def _renamed_reference_parts(
 
 def _rename_defined_names(workbook_xml: str, old: str, new: str) -> str:
     return _DEFINED_NAME_ELEMENT.sub(
-        lambda match: (
-            match.group(1)
-            + _rename_formula_text(match.group(2), old, new)
-            + match.group(3)
-        ),
+        lambda match: match.group(1) + _rename_formula_text(match.group(2), old, new) + match.group(3),
         workbook_xml,
     )
 
@@ -459,7 +420,7 @@ def _remove_sheet_entry(workbook_xml: str, name: str) -> tuple[str, str | None]:
             None,
         )
         return (
-            workbook_xml[:match.start()] + workbook_xml[match.end():],
+            workbook_xml[: match.start()] + workbook_xml[match.end() :],
             rid,
         )
     return workbook_xml, None
@@ -474,10 +435,7 @@ def _strip_local_sheet_names(workbook_xml: str, removed_index: int) -> str:
         if value == removed_index:
             return ""
         if value > removed_index:
-            return (
-                replace_or_add_xml_attribute(opening, "localSheetId", value - 1)
-                + match.group(0)[len(opening):]
-            )
+            return replace_or_add_xml_attribute(opening, "localSheetId", value - 1) + match.group(0)[len(opening) :]
         return match.group(0)
 
     return element_pattern("definedName").sub(change, workbook_xml)
@@ -489,9 +447,7 @@ def _sheet_part_target(source: str, target: str) -> str:
     return posixpath.normpath(posixpath.join(posixpath.dirname(source), target))
 
 
-def _sheet_part_referenced(
-    package: ZipPackage, part: str, skip: set[str]
-) -> bool:
+def _sheet_part_referenced(package: ZipPackage, part: str, skip: set[str]) -> bool:
     for name in package.names():
         if not name.endswith(".rels") or name in skip:
             continue
@@ -573,7 +529,7 @@ def _splice_sheet_entry(workbook_xml: str, fragment: str, index: int) -> str:
     if position < 0:
         position = len(body)
     body = body[:position] + fragment + body[position:]
-    return workbook_xml[:match.start()] + body + workbook_xml[match.end():]
+    return workbook_xml[: match.start()] + body + workbook_xml[match.end() :]
 
 
 def _patch_opening(xml: str, tag: str, change: Callable[[str], str]) -> str:
@@ -581,10 +537,7 @@ def _patch_opening(xml: str, tag: str, change: Callable[[str], str]) -> str:
     if match is None:
         return xml
     opening = _opening_tag(match.group(0))
-    return (
-        xml[:match.start()] + change(opening)
-        + xml[match.start() + len(opening):]
-    )
+    return xml[: match.start()] + change(opening) + xml[match.start() + len(opening) :]
 
 
 def _set_view_attributes(opening: str, active: int, first: int | None) -> str:
@@ -597,14 +550,11 @@ def _set_view_attributes(opening: str, active: int, first: int | None) -> str:
 def _write_view(xml: str, active: int, first: int | None) -> str:
     if element_pattern("workbookView").search(xml) is None:
         first_attribute = "" if first is None else f' firstSheet="{min(first, active)}"'
-        fragment = (
-            f'<bookViews xmlns="{MAIN}">'
-            f'<workbookView activeTab="{active}"{first_attribute}/>'
-            "</bookViews>"
-        )
+        fragment = f'<bookViews xmlns="{MAIN}"><workbookView activeTab="{active}"{first_attribute}/></bookViews>'
         return replace_element(xml, "bookViews", fragment, before=_WORKBOOK_VIEW_SUCCESSORS)
     return _patch_opening(
-        xml, "workbookView",
+        xml,
+        "workbookView",
         lambda opening: _set_view_attributes(opening, active, first),
     )
 
@@ -633,4 +583,4 @@ def _remap_local_sheet_id(match: re.Match[str], mapping: dict[int, int]) -> str:
     new = mapping.get(old)
     if new is None:
         return match.group(0)
-    return replace_or_add_xml_attribute(opening, "localSheetId", new) + match.group(0)[len(opening):]
+    return replace_or_add_xml_attribute(opening, "localSheetId", new) + match.group(0)[len(opening) :]

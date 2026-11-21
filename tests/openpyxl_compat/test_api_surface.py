@@ -24,16 +24,28 @@ def test_workbook_metadata_surface():
     try:
         security = _check(wb, "security", "A3")
         for name in (
-            "lockStructure", "lockWindows", "lockRevision",
-            "workbookPassword", "revisionsPassword",
+            "lockStructure",
+            "lockWindows",
+            "lockRevision",
+            "workbookPassword",
+            "revisionsPassword",
         ):
             _check(security, name, "A3/B11")
 
         calculation = _check(wb, "calculation", "A3")
         for name in (
-            "calcId", "calcMode", "fullCalcOnLoad", "refMode", "iterate",
-            "iterateCount", "iterateDelta", "fullPrecision", "calcCompleted",
-            "calcOnSave", "concurrentCalc", "forceFullCalc",
+            "calcId",
+            "calcMode",
+            "fullCalcOnLoad",
+            "refMode",
+            "iterate",
+            "iterateCount",
+            "iterateDelta",
+            "fullPrecision",
+            "calcCompleted",
+            "calcOnSave",
+            "concurrentCalc",
+            "forceFullCalc",
         ):
             _check(calculation, name, "A3/B11")
 
@@ -61,18 +73,32 @@ def test_worksheet_metadata_surface():
     try:
         sheet_format = _check(ws, "sheet_format", "B2")
         for name in (
-            "baseColWidth", "defaultColWidth", "defaultRowHeight",
-            "customHeight", "zeroHeight", "thickTop", "thickBottom",
-            "outlineLevelRow", "outlineLevelCol",
+            "baseColWidth",
+            "defaultColWidth",
+            "defaultRowHeight",
+            "customHeight",
+            "zeroHeight",
+            "thickTop",
+            "thickBottom",
+            "outlineLevelRow",
+            "outlineLevelCol",
         ):
             _check(sheet_format, name, "B2")
 
         properties = _check(ws, "sheet_properties", "B3")
         for name in (
-            "codeName", "enableFormatConditionsCalculation", "filterMode",
-            "published", "syncHorizontal", "syncRef", "syncVertical",
-            "transitionEvaluation", "transitionEntry", "tabColor",
-            "outlinePr", "pageSetUpPr",
+            "codeName",
+            "enableFormatConditionsCalculation",
+            "filterMode",
+            "published",
+            "syncHorizontal",
+            "syncRef",
+            "syncVertical",
+            "transitionEvaluation",
+            "transitionEntry",
+            "tabColor",
+            "outlinePr",
+            "pageSetUpPr",
         ):
             _check(properties, name, "B3")
         for name in ("applyStyles", "summaryBelow", "summaryRight"):
@@ -80,12 +106,27 @@ def test_worksheet_metadata_surface():
 
         view = _check(ws, "sheet_view", "B1")
         for name in (
-            "windowProtection", "showFormulas", "showGridLines",
-            "showRowColHeaders", "showZeros", "rightToLeft", "tabSelected",
-            "showRuler", "showOutlineSymbols", "defaultGridColor",
-            "showWhiteSpace", "view", "topLeftCell", "colorId", "zoomScale",
-            "zoomScaleNormal", "zoomScaleSheetLayoutView",
-            "zoomScalePageLayoutView", "workbookViewId", "selection", "pane",
+            "windowProtection",
+            "showFormulas",
+            "showGridLines",
+            "showRowColHeaders",
+            "showZeros",
+            "rightToLeft",
+            "tabSelected",
+            "showRuler",
+            "showOutlineSymbols",
+            "defaultGridColor",
+            "showWhiteSpace",
+            "view",
+            "topLeftCell",
+            "colorId",
+            "zoomScale",
+            "zoomScaleNormal",
+            "zoomScaleSheetLayoutView",
+            "zoomScalePageLayoutView",
+            "workbookViewId",
+            "selection",
+            "pane",
         ):
             _check(view, name, "B1")
 
@@ -95,26 +136,48 @@ def test_worksheet_metadata_surface():
 
         setup = _check(ws, "page_setup", "B5")
         for name in (
-            "orientation", "paperSize", "scale", "firstPageNumber",
-            "fitToHeight", "fitToWidth", "draft", "horizontalDpi",
-            "verticalDpi", "copies", "pageOrder", "useFirstPageNumber",
-            "paperHeight", "paperWidth", "blackAndWhite", "cellComments",
+            "orientation",
+            "paperSize",
+            "scale",
+            "firstPageNumber",
+            "fitToHeight",
+            "fitToWidth",
+            "draft",
+            "horizontalDpi",
+            "verticalDpi",
+            "copies",
+            "pageOrder",
+            "useFirstPageNumber",
+            "paperHeight",
+            "paperWidth",
+            "blackAndWhite",
+            "cellComments",
             "errors",
         ):
             _check(setup, name, "B5")
 
         options = _check(ws, "print_options", "B6")
         for name in (
-            "horizontalCentered", "verticalCentered", "headings",
-            "gridLines", "gridLinesSet",
+            "horizontalCentered",
+            "verticalCentered",
+            "headings",
+            "gridLines",
+            "gridLinesSet",
         ):
             _check(options, name, "B6")
 
         footer = _check(ws, "HeaderFooter", "B7")
         for name in (
-            "differentFirst", "differentOddEven", "scaleWithDoc",
-            "alignWithMargins", "oddHeader", "oddFooter", "evenHeader",
-            "evenFooter", "firstHeader", "firstFooter",
+            "differentFirst",
+            "differentOddEven",
+            "scaleWithDoc",
+            "alignWithMargins",
+            "oddHeader",
+            "oddFooter",
+            "evenHeader",
+            "evenFooter",
+            "firstHeader",
+            "firstFooter",
         ):
             _check(footer, name, "B7")
 
@@ -124,10 +187,22 @@ def test_worksheet_metadata_surface():
 
         protection = _check(ws, "protection", "B10")
         for name in (
-            "sheet", "objects", "scenarios", "formatCells", "formatRows",
-            "formatColumns", "insertColumns", "insertRows", "insertHyperlinks",
-            "deleteColumns", "deleteRows", "selectLockedCells", "sort",
-            "autoFilter", "pivotTables", "password",
+            "sheet",
+            "objects",
+            "scenarios",
+            "formatCells",
+            "formatRows",
+            "formatColumns",
+            "insertColumns",
+            "insertRows",
+            "insertHyperlinks",
+            "deleteColumns",
+            "deleteRows",
+            "selectLockedCells",
+            "sort",
+            "autoFilter",
+            "pivotTables",
+            "password",
         ):
             _check(protection, name, "B10")
 
@@ -148,8 +223,17 @@ def test_cell_surface():
     wb = xlspy.Workbook()
     cell = wb.active["A1"]
     try:
-        for name in ("is_date", "encoding", "base_date", "row", "column",
-                     "coordinate", "column_letter", "data_type", "internal_value"):
+        for name in (
+            "is_date",
+            "encoding",
+            "base_date",
+            "row",
+            "column",
+            "coordinate",
+            "column_letter",
+            "data_type",
+            "internal_value",
+        ):
             _check(cell, name, "A10/D8")
     finally:
         close_quietly(wb)
@@ -204,9 +288,15 @@ def test_styles_numbers_surface():
     except ImportError:
         gap_xfail("D1: xlspy.styles.numbers is missing")
     for name in (
-        "FORMAT_GENERAL", "FORMAT_TEXT", "FORMAT_DATE_YYYYMMDD2",
-        "builtin_format_code", "builtin_format_id", "is_builtin",
-        "is_date_format", "is_datetime", "is_timedelta_format",
+        "FORMAT_GENERAL",
+        "FORMAT_TEXT",
+        "FORMAT_DATE_YYYYMMDD2",
+        "builtin_format_code",
+        "builtin_format_id",
+        "is_builtin",
+        "is_date_format",
+        "is_datetime",
+        "is_timedelta_format",
     ):
         _check(numbers, name, "D1")
 
@@ -241,8 +331,13 @@ def test_tables_surface():
         except (TypeError, KeyError, IndexError):
             gap_xfail("C1: tables are not a name-keyed collection")
         for name in (
-            "displayName", "ref", "tableColumns", "tableStyleInfo",
-            "totalsRowCount", "autoFilter", "sortState",
+            "displayName",
+            "ref",
+            "tableColumns",
+            "tableStyleInfo",
+            "totalsRowCount",
+            "autoFilter",
+            "sortState",
         ):
             _check(table, name, "C1")
         _check(table.tableStyleInfo, "name", "C1")
@@ -262,9 +357,15 @@ def test_data_validation_surface():
             gap_xfail("C2: validations are not loaded from the workbook")
         rule = rules[0]
         for name in (
-            "allowBlank", "showDropDown", "showErrorMessage",
-            "showInputMessage", "errorStyle", "errorTitle", "promptTitle",
-            "imeMode", "sqref",
+            "allowBlank",
+            "showDropDown",
+            "showErrorMessage",
+            "showInputMessage",
+            "errorStyle",
+            "errorTitle",
+            "promptTitle",
+            "imeMode",
+            "sqref",
         ):
             _check(rule, name, "C2")
     finally:
@@ -301,8 +402,7 @@ def test_named_styles_surface():
 def test_charts_surface():
     from xlspy.charts import CHART_TYPES
 
-    for chart_type in ("radar", "bubble", "stock", "surface", "surface3d",
-                       "bar3d", "line3d", "pie3d", "area3d"):
+    for chart_type in ("radar", "bubble", "stock", "surface", "surface3d", "bar3d", "line3d", "pie3d", "area3d"):
         if chart_type not in CHART_TYPES:
             gap_xfail(f"C6: chart type {chart_type!r} is missing")
 

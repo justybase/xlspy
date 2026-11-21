@@ -102,10 +102,7 @@ class FormatObject:
     def __post_init__(self):
         if self.type not in _FORMAT_OBJECT_TYPES:
             raise ValueError(f"invalid format object type {self.type!r}")
-        if (
-            self.value is not None
-            and not isinstance(self.value, (str, int, float))
-        ):
+        if self.value is not None and not isinstance(self.value, (str, int, float)):
             raise TypeError("value must be a string, number, or None")
 
 
@@ -119,6 +116,7 @@ class ColorScaleRule:
     maximum: FormatObject | None
     colors: list[Color | str] | tuple[Color | str, ...]
     priority: int | None = None
+
     def __post_init__(self):
         _validate_sqref(self.sqref)
         for name in ("minimum", "midpoint", "maximum"):
@@ -130,10 +128,7 @@ class ColorScaleRule:
         colors = tuple(_coerce_color(item, "colors") for item in self.colors)
         expected = 2 if self.midpoint is None else 3
         if len(colors) != expected:
-            raise ValueError(
-                f"expected {expected} colors for a "
-                f"{'2' if expected == 2 else '3'}-color scale"
-            )
+            raise ValueError(f"expected {expected} colors for a {'2' if expected == 2 else '3'}-color scale")
         object.__setattr__(self, "colors", colors)
         _validate_priority(self.priority)
 
@@ -190,22 +185,38 @@ class IconSetRule:
     stop_if_true: bool | None = None
     priority: int | None = None
 
-    def __init__(self, sqref: str, icon_style: str, values: list[float | str] | tuple[float | str, ...],
-                 cfvo_type: str = "percent", show_value: bool | None = None,
-                 percent: bool | None = None, reverse: bool | None = None,
-                 stop_if_true: bool | None = None, priority: int | None = None, *,
-                 type: str | None = None) -> None:
+    def __init__(
+        self,
+        sqref: str,
+        icon_style: str,
+        values: list[float | str] | tuple[float | str, ...],
+        cfvo_type: str = "percent",
+        show_value: bool | None = None,
+        percent: bool | None = None,
+        reverse: bool | None = None,
+        stop_if_true: bool | None = None,
+        priority: int | None = None,
+        *,
+        type: str | None = None,
+    ) -> None:
         if type is not None and type != "iconSet":
             warnings.warn(
                 "IconSetRule(type=...) is deprecated; pass cfvo_type= "
                 "(type is the rule type, 'iconSet', as in openpyxl)",
-                DeprecationWarning, stacklevel=2,
+                DeprecationWarning,
+                stacklevel=2,
             )
             cfvo_type = type
         for name, value in (
-            ("sqref", sqref), ("icon_style", icon_style), ("values", values),
-            ("cfvo_type", cfvo_type), ("show_value", show_value), ("percent", percent),
-            ("reverse", reverse), ("stop_if_true", stop_if_true), ("priority", priority),
+            ("sqref", sqref),
+            ("icon_style", icon_style),
+            ("values", values),
+            ("cfvo_type", cfvo_type),
+            ("show_value", show_value),
+            ("percent", percent),
+            ("reverse", reverse),
+            ("stop_if_true", stop_if_true),
+            ("priority", priority),
         ):
             object.__setattr__(self, name, value)
         self.__post_init__()
@@ -227,9 +238,7 @@ class IconSetRule:
         if self.cfvo_type != "formula":
             for value in values:
                 if isinstance(value, str):
-                    raise ValueError(
-                        "string values require cfvo_type='formula'"
-                    )
+                    raise ValueError("string values require cfvo_type='formula'")
         elif any(not isinstance(value, str) for value in values):
             raise ValueError("cfvo_type='formula' requires string values")
         for attr in ("show_value", "percent", "reverse", "stop_if_true"):
@@ -341,10 +350,20 @@ class DuplicateRule:
         _check_flag(self.unique, "unique")
 
 
-TIME_PERIODS = frozenset({
-    "today", "yesterday", "tomorrow", "last7Days", "thisWeek", "lastWeek",
-    "nextWeek", "thisMonth", "lastMonth", "nextMonth",
-})
+TIME_PERIODS = frozenset(
+    {
+        "today",
+        "yesterday",
+        "tomorrow",
+        "last7Days",
+        "thisWeek",
+        "lastWeek",
+        "nextWeek",
+        "thisMonth",
+        "lastMonth",
+        "nextMonth",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,10 +405,10 @@ class BlanksRule:
 # Formulas Excel itself stores with these rules, for the range's top-left
 # cell ({c}); Excel evaluates them relative to each cell of the range.
 CF_TEXT_RULES = {
-    "contains": ("containsText", "containsText", 'NOT(ISERROR(SEARCH({t},{c})))'),
-    "notContains": ("notContainsText", "notContains", 'ISERROR(SEARCH({t},{c}))'),
-    "beginsWith": ("beginsWith", "beginsWith", 'LEFT({c},LEN({t}))={t}'),
-    "endsWith": ("endsWith", "endsWith", 'RIGHT({c},LEN({t}))={t}'),
+    "contains": ("containsText", "containsText", "NOT(ISERROR(SEARCH({t},{c})))"),
+    "notContains": ("notContainsText", "notContains", "ISERROR(SEARCH({t},{c}))"),
+    "beginsWith": ("beginsWith", "beginsWith", "LEFT({c},LEN({t}))={t}"),
+    "endsWith": ("endsWith", "endsWith", "RIGHT({c},LEN({t}))={t}"),
 }
 CF_TIME_PERIOD_FORMULAS = {
     "today": "FLOOR({c},1)=TODAY()",
@@ -410,7 +429,12 @@ CF_BLANK_RULES = {
     "no_errors": ("notContainsErrors", "NOT(ISERROR({c}))"),
 }
 EXTRA_CF_RULES = (
-    TopBottomRule, AboveAverageRule, TextRule, DuplicateRule, TimePeriodRule, BlanksRule,
+    TopBottomRule,
+    AboveAverageRule,
+    TextRule,
+    DuplicateRule,
+    TimePeriodRule,
+    BlanksRule,
 )
 
 
@@ -441,6 +465,7 @@ def _blanks_rule_type(rule: Any) -> str:
 def _fixed_rule_type(name: str) -> Callable[[Any], str]:
     def rule_type(rule: Any) -> str:
         return name
+
     rule_type.__doc__ = f"The OOXML rule type, ``{name}`` (openpyxl's ``rule.type``)."
     return rule_type
 

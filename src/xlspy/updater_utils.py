@@ -56,10 +56,7 @@ UPDATER_MAX_COLUMNS = 16384
 def dominant_styles(counts: dict[int, dict[int, int]]) -> dict[int, int]:
     """Per column, the style used most often (the lowest style index on a tie)."""
 
-    return {
-        column: max(styles.items(), key=lambda item: (item[1], -item[0]))[0]
-        for column, styles in counts.items()
-    }
+    return {column: max(styles.items(), key=lambda item: (item[1], -item[0]))[0] for column, styles in counts.items()}
 
 
 def date_like_format(format_code: str) -> bool:
@@ -87,12 +84,8 @@ def rewrite_shared_strings_xml(
         if size == 0:
             raise ValueError("Shared strings XML is empty")
         with mmap.mmap(source_stream.fileno(), 0, access=mmap.ACCESS_READ) as source:
-            opening_match = re.search(
-                rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?sst\b[^>]*>", source
-            )
-            closing_match = re.search(
-                rb"</(?:[A-Za-z_][\w.-]*:)?sst\s*>\s*$", source
-            )
+            opening_match = re.search(rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?sst\b[^>]*>", source)
+            closing_match = re.search(rb"</(?:[A-Za-z_][\w.-]*:)?sst\s*>\s*$", source)
             if not opening_match or not closing_match:
                 raise ValueError("Malformed XLSX sharedStrings.xml")
 
@@ -205,8 +198,7 @@ def check_row_columns(row: Sequence[Any]) -> None:
     for column in range(UPDATER_MAX_COLUMNS, len(row)):
         if unwrap_cell(row[column]) is not None:
             raise ValueError(
-                f"row has a value in column {column + 1}; "
-                f"Excel holds at most {UPDATER_MAX_COLUMNS} columns"
+                f"row has a value in column {column + 1}; Excel holds at most {UPDATER_MAX_COLUMNS} columns"
             )
 
 
@@ -214,10 +206,7 @@ def check_last_column(last_col: int) -> None:
     """Refuse an XLSB row header whose last column is past Excel's last column."""
 
     if last_col >= UPDATER_MAX_COLUMNS:
-        raise ValueError(
-            f"last column is {last_col + 1}; "
-            f"Excel holds at most {UPDATER_MAX_COLUMNS} columns"
-        )
+        raise ValueError(f"last column is {last_col + 1}; Excel holds at most {UPDATER_MAX_COLUMNS} columns")
 
 
 def formula_range_bounds(cell: Any) -> tuple[int, int, int, int] | None:
@@ -266,11 +255,9 @@ def normalize_merges(merges: Iterable[str]) -> list[str]:
     if not clash:
         return [ref for ref, *_ in refs]
     for i, (ref_a, c1a, r1a, c2a, r2a) in enumerate(refs):
-        for ref_b, c1b, r1b, c2b, r2b in refs[i + 1:]:
+        for ref_b, c1b, r1b, c2b, r2b in refs[i + 1 :]:
             if c1a <= c2b and c1b <= c2a and r1a <= r2b and r1b <= r2a:
-                raise ValueError(
-                    f"overlapping merged ranges {ref_a!r} and {ref_b!r}"
-                )
+                raise ValueError(f"overlapping merged ranges {ref_a!r} and {ref_b!r}")
     return [ref for ref, *_ in refs]
 
 
@@ -393,9 +380,7 @@ class TableHeader:
     columns: tuple[str, ...]
 
 
-def table_header(
-    display_name: str, ref: str, has_header_row: bool, column_names: Sequence[str]
-) -> TableHeader | None:
+def table_header(display_name: str, ref: str, has_header_row: bool, column_names: Sequence[str]) -> TableHeader | None:
     """Build a ``TableHeader``, or ``None`` for a table with no usable header."""
 
     if not has_header_row or not column_names:
@@ -453,11 +438,7 @@ def xml_table_header(table_xml: bytes) -> TableHeader | None:
 
     root = safe_fromstring(table_xml)
     has_header = (root.get("headerRowCount") or "1").strip() != "0"
-    columns = [
-        node.get("name") or ""
-        for node in root.iter()
-        if node.tag.rsplit("}", 1)[-1] == "tableColumn"
-    ]
+    columns = [node.get("name") or "" for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "tableColumn"]
     return table_header(
         root.get("displayName") or root.get("name") or "",
         root.get("ref") or "",

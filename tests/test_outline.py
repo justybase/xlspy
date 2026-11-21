@@ -21,15 +21,12 @@ def _sheet_payloads(path, record_id, part="xl/worksheets/sheet1.bin"):
         blob = archive.read(part)
     records = list(iter_records(blob))
     assert records[-1].data_end == len(blob), "sheet records must tile the buffer"
-    return [blob[record.data_start:record.data_end] for record in records if record.record_id == record_id]
+    return [blob[record.data_start : record.data_end] for record in records if record.record_id == record_id]
 
 
 def _row_flags(path):
     """Map zero-based row index to the BrtRowHdr flags byte (payload offset 11)."""
-    return {
-        struct.unpack_from("<I", payload, 0)[0]: payload[11]
-        for payload in _sheet_payloads(path, 0x0000)
-    }
+    return {struct.unpack_from("<I", payload, 0)[0]: payload[11] for payload in _sheet_payloads(path, 0x0000)}
 
 
 def test_build_outline_returns_none_without_groups():
@@ -42,9 +39,15 @@ def test_outline_levels_follow_nesting_depth():
 
     assert outline.max_level == 2
     assert [outline.state_at(i) for i in range(9)] == [
-        (0, False), (0, False),
-        (2, False), (2, False), (1, False),
-        (2, True), (2, True), (1, False), (0, False),
+        (0, False),
+        (0, False),
+        (2, False),
+        (2, False),
+        (1, False),
+        (2, True),
+        (2, True),
+        (1, False),
+        (0, False),
     ]
     assert outline.collapsed_at(7)
     assert not outline.collapsed_at(6)
@@ -112,7 +115,12 @@ def test_xlsx_writes_outline_attributes_and_reads_back(tmp_path):
     assert sheet.sheet_format.outlineLevelRow == 2
     assert sheet.sheet_format.outlineLevelCol == 1
     assert {c: sheet.column_dimensions[c].outline_level for c in "DEFHIJ"} == {
-        "D": 1, "E": 1, "F": 1, "H": 1, "I": 1, "J": 1,
+        "D": 1,
+        "E": 1,
+        "F": 1,
+        "H": 1,
+        "I": 1,
+        "J": 1,
     }
 
 
@@ -158,12 +166,12 @@ def test_xlsb_row_headers_carry_level_hidden_and_collapsed_bits(tmp_path):
         writer.write_sheet(ROWS, row_groups=ROW_GROUPS, column_groups=COL_GROUPS)
 
     flags = _row_flags(path)
-    assert flags[2] == 0x02          # outline level 2
+    assert flags[2] == 0x02  # outline level 2
     assert flags[3] == 0x02
-    assert flags[4] == 0x01          # outline level 1, summary of 2..3
-    assert flags[5] == 0x12          # level 2, hidden
+    assert flags[4] == 0x01  # outline level 1, summary of 2..3
+    assert flags[5] == 0x12  # level 2, hidden
     assert flags[6] == 0x12
-    assert flags[7] == 0x09          # level 1, collapsed summary row
+    assert flags[7] == 0x09  # level 1, collapsed summary row
     assert flags[0] == 0 and flags[1] == 0 and flags[8] == 0
 
 
@@ -175,14 +183,12 @@ def test_xlsb_column_infos_carry_level_and_collapsed_bits(tmp_path):
 
     columns = {
         first: flags
-        for first, last, _, _, flags in (
-            struct.unpack("<IIIIH", payload) for payload in _sheet_payloads(path, 0x003C)
-        )
+        for first, last, _, _, flags in (struct.unpack("<IIIIH", payload) for payload in _sheet_payloads(path, 0x003C))
     }
-    assert columns[2] == 0x0002          # column C: ungrouped
-    assert columns[3] == 0x0103          # column D: level 1, hidden
-    assert columns[5] == 0x0103          # column F: level 1, hidden
-    assert columns[6] == 0x1002          # column G: summary, collapsed
+    assert columns[2] == 0x0002  # column C: ungrouped
+    assert columns[3] == 0x0103  # column D: level 1, hidden
+    assert columns[5] == 0x0103  # column F: level 1, hidden
+    assert columns[6] == 0x1002  # column G: summary, collapsed
 
 
 def test_xlsb_nested_column_levels(tmp_path):
@@ -193,9 +199,7 @@ def test_xlsb_nested_column_levels(tmp_path):
 
     levels = {
         first: (flags >> 8) & 7
-        for first, _, _, _, flags in (
-            struct.unpack("<IIIIH", payload) for payload in _sheet_payloads(path, 0x003C)
-        )
+        for first, _, _, _, flags in (struct.unpack("<IIIIH", payload) for payload in _sheet_payloads(path, 0x003C))
     }
     assert [levels[c] for c in range(2, 6)] == [1, 2, 2, 1]
 
@@ -239,7 +243,7 @@ def test_xlsb_plain_sheet_records_are_unchanged_by_the_feature(tmp_path):
         writer.write_sheet(ROWS, hidden_rows=[2])
 
     flags = _row_flags(path)
-    assert flags[2] == 0x10          # only the existing hidden bit
+    assert flags[2] == 0x10  # only the existing hidden bit
     assert all(flags[i] == 0 for i in range(12) if i != 2)
 
 
@@ -293,7 +297,8 @@ def _xlsb_row_flags(path, part="xl/worksheets/sheet1.bin"):
     assert records[-1].data_end == len(blob), "sheet records must tile the buffer"
     return {
         struct.unpack_from("<I", blob, r.data_start)[0]: blob[r.data_start + 11]
-        for r in records if r.record_id == 0x0000
+        for r in records
+        if r.record_id == 0x0000
     }
 
 

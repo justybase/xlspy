@@ -77,13 +77,8 @@ def test_xlsb_takes_ignored_errors_like_xlsx(tmp_path):
         writer.add_sheet("S")
         writer.write_sheet(
             [[1]],
-            options=SheetOptions(ignored_errors=[
-                IgnoredError("A1", numberStoredAsText=True)
-            ]),
+            options=SheetOptions(ignored_errors=[IgnoredError("A1", numberStoredAsText=True)]),
         )
     data = _part(path, "xl/worksheets/sheet1.bin")
-    records = [
-        (record.record_id, data[record.data_start:record.data_end])
-        for record in iter_records(data)
-    ]
+    records = [(record.record_id, data[record.data_start : record.data_end]) for record in iter_records(data)]
     assert [item.sqref for item in ignored_errors_from_records(records)] == ["A1"]

@@ -54,7 +54,7 @@ def _mutate(data, rng):
         for _ in range(rng.randint(1, 8)):
             out[rng.randrange(len(out))] = rng.randrange(256)
     elif operation == 1:
-        del out[rng.randrange(len(out) + 1):]
+        del out[rng.randrange(len(out) + 1) :]
     elif operation == 2:
         at = rng.randrange(len(out) + 1)
         out[at:at] = bytes(rng.randrange(256) for _ in range(rng.randint(1, 16)))

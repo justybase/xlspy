@@ -14,11 +14,7 @@ def _chart_parts(path):
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         assert "xl/charts/chart1.xml" in names
-        return {
-            name: archive.read(name).decode()
-            for name in names
-            if "/drawings/" in name or "/charts/" in name
-        }
+        return {name: archive.read(name).decode() for name in names if "/drawings/" in name or "/charts/" in name}
 
 
 def test_chart_model_rejects_invalid_input():
@@ -110,7 +106,10 @@ def test_charts_round_trip_through_openpyxl(tmp_path):
             title = (chart.title.tx.rich.p[0].r[0].t if chart.title else None) or None
             by_title[(ws.title, title)] = chart
     assert set(by_title) == {
-        ("Data", "Sales & <Costs>"), ("Data", "Trend"), ("Data", "Share"), ("Other", None),
+        ("Data", "Sales & <Costs>"),
+        ("Data", "Trend"),
+        ("Data", "Share"),
+        ("Other", None),
     }
 
     bar = by_title[("Data", "Sales & <Costs>")]
@@ -154,16 +153,16 @@ def test_chart_xml_matches_openpyxl_shape(tmp_path):
 
     chart = parts["xl/charts/chart1.xml"]
     assert chart.startswith("<chartSpace ")
-    assert "<style val=\"10\"/>" in chart
+    assert '<style val="10"/>' in chart
     assert "<a:t>Sales &amp; &lt;Costs&gt;</a:t>" in chart
     assert chart.count("<ser>") == 2
     assert "<f>'Data'!$B$2:$B$4</f>" in chart
     assert "<f>'Data'!B1</f>" in chart
     assert "<tx><v>Lit</v></tx>" in chart
-    assert "<barDir val=\"col\"/>" in chart
-    assert "<gapWidth val=\"150\"/>" in chart
+    assert '<barDir val="col"/>' in chart
+    assert '<gapWidth val="150"/>' in chart
     # An absent overlay element would let Excel draw the legend over the plot.
-    assert "<legend><legendPos val=\"r\"/><overlay val=\"0\"/></legend>" in chart
+    assert '<legend><legendPos val="r"/><overlay val="0"/></legend>' in chart
 
     with zipfile.ZipFile(path) as archive:
         content_types = archive.read("[Content_Types].xml").decode()
@@ -257,8 +256,10 @@ def test_untitled_single_series_chart_keeps_the_automatic_title(tmp_path, writer
         writer.add_sheet("Data")
         writer.write_sheet(
             [["k", "a", "b"], ["x", 1, 2], ["y", 3, 4]],
-            charts=[Chart("bar", [ChartSeries("B2:B3", title_cell="B1")], anchor="E2"),
-                    Chart("bar", [ChartSeries("B2:B3"), ChartSeries("C2:C3")], anchor="E20")],
+            charts=[
+                Chart("bar", [ChartSeries("B2:B3", title_cell="B1")], anchor="E2"),
+                Chart("bar", [ChartSeries("B2:B3"), ChartSeries("C2:C3")], anchor="E20"),
+            ],
         )
     with zipfile.ZipFile(path) as archive:
         single, double = (archive.read(f"xl/charts/chart{i}.xml").decode() for i in (1, 2))
@@ -283,10 +284,20 @@ def test_radar_chart_is_written_as_radar_not_pie(tmp_path):
     assert "pieChart" not in chart
 
 
-@pytest.mark.parametrize("chart_type", [
-    "area3d", "bar3d", "bubble", "line3d", "pie3d",
-    "projected_pie", "stock", "surface", "surface3d",
-])
+@pytest.mark.parametrize(
+    "chart_type",
+    [
+        "area3d",
+        "bar3d",
+        "bubble",
+        "line3d",
+        "pie3d",
+        "projected_pie",
+        "stock",
+        "surface",
+        "surface3d",
+    ],
+)
 def test_unsupported_chart_types_raise_instead_of_becoming_pie(chart_type):
     with pytest.raises(ValueError):
         Chart(chart_type, [ChartSeries("B1:B5")])

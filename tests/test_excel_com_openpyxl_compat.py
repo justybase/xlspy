@@ -13,9 +13,27 @@ import pytest
 pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 from xlspy import (  # noqa: E402
-    AboveAverageRule, BlanksRule, CellIsRule, CellRichText, Chart, ChartSeries, Comment,
-    DataValidation, DifferentialStyle, DuplicateRule, ExcelTable, Font, Image, InlineFont,
-    TextBlock, TextRule, TimePeriodRule, TopBottomRule, Workbook, XlsbWriter, XlsxWriter,
+    AboveAverageRule,
+    BlanksRule,
+    CellIsRule,
+    CellRichText,
+    Chart,
+    ChartSeries,
+    Comment,
+    DataValidation,
+    DifferentialStyle,
+    DuplicateRule,
+    ExcelTable,
+    Font,
+    Image,
+    InlineFont,
+    TextBlock,
+    TextRule,
+    TimePeriodRule,
+    TopBottomRule,
+    Workbook,
+    XlsbWriter,
+    XlsxWriter,
     load_workbook,
 )
 
@@ -34,8 +52,12 @@ def _png(width, height):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
 
 
 @pytest.fixture(scope="module")
@@ -77,8 +99,9 @@ def _model_report():
     sheet.add_chart(Chart("bar", [ChartSeries("B2:B4", categories="A2:A4")]), "D2")
     sheet.add_image(Image(io.BytesIO(_png(40, 20))), "D20")
     sheet.add_table(ExcelTable(display_name="Sales", ref="A1:B4"))
-    sheet.add_data_validation(DataValidation(type="whole", sqref="B2:B4", operator="between",
-                                             formula1="0", formula2="100"))
+    sheet.add_data_validation(
+        DataValidation(type="whole", sqref="B2:B4", operator="between", formula1="0", formula2="100")
+    )
     sheet.conditional_formatting.add("B2:B4", CellIsRule("A1", "greaterThan", ["15"], dxf=BOLD))
     sheet.print_title_rows = "1:1"
     sheet.print_area = "A1:B4"

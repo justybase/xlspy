@@ -41,28 +41,39 @@ def test_the_values_are_the_ones_excel_calculated():
         workbook.close()
 
 
-@pytest.mark.parametrize(("flags", "first", "last", "expected"), [
-    (0x0000, 0, 0, "Tbl"),
-    (0x0001, 2, 2, "Tbl[qty]"),
-    (0x0002, 2, 3, "Tbl[[qty]:[my col]]"),
-    (0x0004, 0, 0, "Tbl[#All]"),
-    (0x0011, 2, 2, "Tbl[[#Data],[qty]]"),
-    (0x0012, 1, 3, "Tbl[[#Data],[ins]:[my col]]"),
-    (0x0019, 2, 2, "Tbl[[#Headers],[#Data],[qty]]"),
-    (0x0030, 0, 0, "Tbl[[#Data],[#Totals]]"),
-    (0x0640, 0, 0, "Tbl[#This Row]"),
-    (0x0641, 2, 2, "Tbl[[#This Row],[qty]]"),
-    (0x0642, 2, 3, "Tbl[[#This Row],[qty]:[my col]]"),
-    (0x0021, 4, 4, "Tbl[[#Totals],[z]]"),
-])
+@pytest.mark.parametrize(
+    ("flags", "first", "last", "expected"),
+    [
+        (0x0000, 0, 0, "Tbl"),
+        (0x0001, 2, 2, "Tbl[qty]"),
+        (0x0002, 2, 3, "Tbl[[qty]:[my col]]"),
+        (0x0004, 0, 0, "Tbl[#All]"),
+        (0x0011, 2, 2, "Tbl[[#Data],[qty]]"),
+        (0x0012, 1, 3, "Tbl[[#Data],[ins]:[my col]]"),
+        (0x0019, 2, 2, "Tbl[[#Headers],[#Data],[qty]]"),
+        (0x0030, 0, 0, "Tbl[[#Data],[#Totals]]"),
+        (0x0640, 0, 0, "Tbl[#This Row]"),
+        (0x0641, 2, 2, "Tbl[[#This Row],[qty]]"),
+        (0x0642, 2, 3, "Tbl[[#This Row],[qty]:[my col]]"),
+        (0x0021, 4, 4, "Tbl[[#Totals],[z]]"),
+    ],
+)
 def test_the_flags_of_a_reference(flags, first, last, expected):
     assert structured_reference("Tbl", COLUMNS, flags, first, last) == expected
 
 
-@pytest.mark.parametrize(("name", "expected"), [
-    ("a[b]", "Tbl[a'[b']]"), ("a#b", "Tbl[a'#b]"), ("it's", "Tbl[it''s]"), ("a,b", "Tbl[a,b]"),
-    (" lead", "Tbl[[ lead]]"), ("trail ", "Tbl[[trail ]]"), ("two words", "Tbl[two words]"),
-])
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("a[b]", "Tbl[a'[b']]"),
+        ("a#b", "Tbl[a'#b]"),
+        ("it's", "Tbl[it''s]"),
+        ("a,b", "Tbl[a,b]"),
+        (" lead", "Tbl[[ lead]]"),
+        ("trail ", "Tbl[[trail ]]"),
+        ("two words", "Tbl[two words]"),
+    ],
+)
 def test_column_names_with_special_characters(name, expected):
     assert structured_reference("Tbl", [name], 0x0001, 0, 0) == expected
 

@@ -16,9 +16,7 @@ from ._text import check_xml_text
 from .refs import parse_cell_range
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-_JPEG_START_OF_FRAME = frozenset(
-    {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
-)
+_JPEG_START_OF_FRAME = frozenset({0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF})
 _MAX_PIXELS = 16384
 
 
@@ -39,9 +37,9 @@ def _jpeg_size(data: bytes) -> tuple[int, int]:
             index += 1
             continue
         if marker in _JPEG_START_OF_FRAME:
-            height, width = struct.unpack(">HH", data[index + 5:index + 9])
+            height, width = struct.unpack(">HH", data[index + 5 : index + 9])
             return width, height
-        (segment_length,) = struct.unpack(">H", data[index + 2:index + 4])
+        (segment_length,) = struct.unpack(">H", data[index + 2 : index + 4])
         index += 2 + segment_length
     raise ValueError("JPEG file has no frame header with its dimensions")
 
@@ -173,9 +171,7 @@ def _identify(data: bytes, label: str) -> tuple[str, int, int]:
             height = abs(height)  # negative for top-down bitmaps
             extension = "bmp"
         else:
-            raise ValueError(
-                f"{label} is not a PNG, JPEG, GIF or BMP image; other image formats are not supported"
-            )
+            raise ValueError(f"{label} is not a PNG, JPEG, GIF or BMP image; other image formats are not supported")
     except struct.error as exc:
         raise ValueError(f"{label} has a truncated image header") from exc
     if width < 1 or height < 1:

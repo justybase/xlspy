@@ -37,10 +37,7 @@ def _png_bytes(width, height):
     raw = b"".join(b"\x00" + b"\xff\x00\x00" * width for _ in range(height))
 
     def chunk(kind, data):
-        return (
-            struct.pack(">I", len(data)) + kind + data
-            + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
-        )
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
     return (
         b"\x89PNG\r\n\x1a\n"
@@ -54,8 +51,11 @@ def _jpeg_bytes(width, height):
     # Minimal header-only JPEG: SOI, APP0, SOF0 with the dimensions, EOI.
     app0 = b"\xff\xe0" + struct.pack(">H", 16) + b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
     sof = (
-        b"\xff\xc0" + struct.pack(">H", 17) + b"\x08"
-        + struct.pack(">HH", height, width) + b"\x03"
+        b"\xff\xc0"
+        + struct.pack(">H", 17)
+        + b"\x08"
+        + struct.pack(">HH", height, width)
+        + b"\x03"
         + b"\x01\x11\x00\x02\x11\x00\x03\x11\x00"
     )
     return b"\xff\xd8" + app0 + sof + b"\xff\xd9"
@@ -99,12 +99,15 @@ def test_formula_cells_round_trip_with_cached_values(tmp_path):
     path = tmp_path / "formulas.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Report")
-        writer.write_sheet([
-            ["Revenue", "Cost", "Profit", "Label"],
-            [1000, 700, Formula("A2-B2", value=300), Formula('"Gain: "&C2', value="Gain: 300")],
-            [2000, 900, Formula("A3-B3"), None],
-            ["Total", None, Formula("SUM(C2:C3)"), None],
-        ], styles={"C2:C4": Style(number_format="#,##0")})
+        writer.write_sheet(
+            [
+                ["Revenue", "Cost", "Profit", "Label"],
+                [1000, 700, Formula("A2-B2", value=300), Formula('"Gain: "&C2', value="Gain: 300")],
+                [2000, 900, Formula("A3-B3"), None],
+                ["Total", None, Formula("SUM(C2:C3)"), None],
+            ],
+            styles={"C2:C4": Style(number_format="#,##0")},
+        )
 
     sheet = _read(path, "Report")
     assert sheet["C2"].value == "=A2-B2"
@@ -143,7 +146,7 @@ def test_formulas_use_recalculation_and_escape_xml(tmp_path):
     path = tmp_path / "escape.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Sheet1")
-        writer.write_sheet([[Formula("IF(A1<0,\"<neg>\",A1&\"x\")")]])
+        writer.write_sheet([[Formula('IF(A1<0,"<neg>",A1&"x")')]])
     sheet = part_text(path, "xl/worksheets/sheet1.xml")
     assert "<f>IF(A1&lt;0,&quot;&lt;neg&gt;&quot;" in sheet or "&lt;neg&gt;" in sheet
     assert 'fullCalcOnLoad="1"' in part_text(path, "xl/workbook.xml")
@@ -218,9 +221,16 @@ def test_list_dropdown_with_literal_and_range_sources(tmp_path):
             [["Status"], ["New"]],
             data_validations=[
                 DataValidation(
-                    "list", "B2:B1000", formula1='"New,Active,Closed"', allow_blank=True,
-                    show_input_message=True, prompt_title="Pick", prompt="One of three",
-                    error_title="Bad", error="Choose from the list", error_style="warning",
+                    "list",
+                    "B2:B1000",
+                    formula1='"New,Active,Closed"',
+                    allow_blank=True,
+                    show_input_message=True,
+                    prompt_title="Pick",
+                    prompt="One of three",
+                    error_title="Bad",
+                    error="Choose from the list",
+                    error_style="warning",
                 ),
                 DataValidation("list", ["D2:D5", "F2"], formula1="Lists!$A$1:$A$9", show_dropdown=False),
             ],
@@ -244,12 +254,15 @@ def test_list_dropdown_with_literal_and_range_sources(tmp_path):
     assert ranged.showDropDown is True
 
 
-@pytest.mark.parametrize("kind,operator,values,expected", [
-    ("whole", "between", (1, 10), ("1", "10")),
-    ("decimal", "not_between", (0.5, 2.5), ("0.5", "2.5")),
-    ("text_length", "less_than_or_equal", (20, None), ("20", None)),
-    ("custom", None, ("ISNUMBER(A1)", None), ("ISNUMBER(A1)", None)),
-])
+@pytest.mark.parametrize(
+    "kind,operator,values,expected",
+    [
+        ("whole", "between", (1, 10), ("1", "10")),
+        ("decimal", "not_between", (0.5, 2.5), ("0.5", "2.5")),
+        ("text_length", "less_than_or_equal", (20, None), ("20", None)),
+        ("custom", None, ("ISNUMBER(A1)", None), ("ISNUMBER(A1)", None)),
+    ],
+)
 def test_numeric_and_custom_validation_operators(tmp_path, kind, operator, values, expected):
     path = tmp_path / f"dv_{kind}.xlsx"
     rule = DataValidation(kind, "A1:A10", formula1=values[0], formula2=values[1], operator=operator)
@@ -261,7 +274,8 @@ def test_numeric_and_custom_validation_operators(tmp_path, kind, operator, value
     assert dv.formula1 == expected[0]
     assert dv.formula2 == expected[1]
     expected_operator = {
-        "not_between": "notBetween", "less_than_or_equal": "lessThanOrEqual",
+        "not_between": "notBetween",
+        "less_than_or_equal": "lessThanOrEqual",
     }.get(operator, operator)
     # OOXML omits the operator when it is the default "between".
     assert dv.operator == (None if operator in (None, "between") else expected_operator)
@@ -271,8 +285,7 @@ def test_date_validation_serializes_dates_as_serials(tmp_path):
     import datetime
 
     path = tmp_path / "dv_date.xlsx"
-    rule = DataValidation("date", "C2", formula1=datetime.date(2026, 1, 1),
-                          operator="greater_than_or_equal")
+    rule = DataValidation("date", "C2", formula1=datetime.date(2026, 1, 1), operator="greater_than_or_equal")
     with XlsxWriter(path) as writer:
         writer.add_sheet("Sheet1")
         writer.write_sheet([["d"]], data_validations=[rule])
@@ -286,13 +299,16 @@ def test_hyperlinks_external_internal_and_styled(tmp_path):
     path = tmp_path / "links.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Index")
-        writer.write_sheet([
-            ["Name", "Link"],
-            ["Report", Hyperlink("https://example.com/report?a=1&b=2", text="Open report", tooltip="Q3 & Q4")],
-            ["Sales", Hyperlink("#'Sales Data'!B2", text="Go to sales")],
-            ["Mail", Hyperlink("mailto:team@example.com")],
-            ["Styled", Hyperlink("https://example.org", text="Žółw")],
-        ], styles={"B5": Style(bold=True)})
+        writer.write_sheet(
+            [
+                ["Name", "Link"],
+                ["Report", Hyperlink("https://example.com/report?a=1&b=2", text="Open report", tooltip="Q3 & Q4")],
+                ["Sales", Hyperlink("#'Sales Data'!B2", text="Go to sales")],
+                ["Mail", Hyperlink("mailto:team@example.com")],
+                ["Styled", Hyperlink("https://example.org", text="Žółw")],
+            ],
+            styles={"B5": Style(bold=True)},
+        )
         writer.add_sheet("Sales Data")
         writer.write_sheet([["x"], [1]])
 
@@ -311,14 +327,17 @@ def test_hyperlinks_external_internal_and_styled(tmp_path):
     assert "https://example.com/report?a=1&amp;b=2" in rels
 
 
-@pytest.mark.parametrize("target", [
-    "javascript:alert(1)",
-    "file:///C:/secret.txt",
-    "data:text/html,hi",
-    "relative/report.xlsx",
-    "https://example.com/\nbad",
-    "",
-])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "javascript:alert(1)",
+        "file:///C:/secret.txt",
+        "data:text/html,hi",
+        "relative/report.xlsx",
+        "https://example.com/\nbad",
+        "",
+    ],
+)
 def test_unsafe_or_unsupported_link_targets_are_refused(target):
     with pytest.raises((ValueError, TypeError)):
         Hyperlink(target)
@@ -410,7 +429,8 @@ def bmp_bytes(width, height):
     row += b"\x00" * (-len(row) % 4)
     pixels = row * height
     return (
-        b"BM" + struct.pack("<IHHI", 54 + len(pixels), 0, 0, 54)
+        b"BM"
+        + struct.pack("<IHHI", 54 + len(pixels), 0, 0, 54)
         + struct.pack("<IiiHHIIiiII", 40, width, height, 1, 24, 0, len(pixels), 2835, 2835, 0, 0)
         + pixels
     )
@@ -426,7 +446,11 @@ def test_images_from_memory_gif_and_bmp(tmp_path):
         Image(bmp_bytes(6, 3), anchor="C5"),
     ]
     assert [(i.extension, i.pixel_width, i.pixel_height) for i in images] == [
-        ("png", 20, 10), ("png", 40, 20), ("png", 20, 10), ("gif", 30, 30), ("bmp", 6, 3),
+        ("png", 20, 10),
+        ("png", 40, 20),
+        ("png", 20, 10),
+        ("gif", 30, 30),
+        ("bmp", 6, 3),
     ]
     path = tmp_path / "memory_images.xlsx"
     with XlsxWriter(path) as writer:
@@ -438,7 +462,9 @@ def test_images_from_memory_gif_and_bmp(tmp_path):
         drawing = archive.read("xl/drawings/drawing1.xml").decode()
     # Identical bytes are stored once.
     assert sorted(n for n in names if n.startswith("xl/media/")) == [
-        "xl/media/image1.png", "xl/media/image2.gif", "xl/media/image3.bmp",
+        "xl/media/image1.png",
+        "xl/media/image2.gif",
+        "xl/media/image3.bmp",
     ]
     assert 'Extension="gif" ContentType="image/gif"' in types
     assert 'Extension="bmp" ContentType="image/bmp"' in types
@@ -572,9 +598,13 @@ def test_horizontal_bar_chart_keeps_column_bar_default(tmp_path):
             [["Region", "Sales"], ["North", 10], ["South", 20]],
             charts=[
                 Chart("bar", [ChartSeries("B2:B3", categories="A2:A3")], anchor="D2"),
-                Chart("barh", [ChartSeries("B2:B3", categories="A2:A3", title="Sales")],
-                      anchor="D20", y_axis=ChartAxis(title="Units", minimum=0),
-                      x_axis=ChartAxis(reverse=True)),
+                Chart(
+                    "barh",
+                    [ChartSeries("B2:B3", categories="A2:A3", title="Sales")],
+                    anchor="D20",
+                    y_axis=ChartAxis(title="Units", minimum=0),
+                    x_axis=ChartAxis(reverse=True),
+                ),
             ],
         )
     ws = openpyxl.load_workbook(path)["Data"]
@@ -592,19 +622,27 @@ def test_scatter_chart_with_explicit_x_values_and_markers(tmp_path):
         writer.add_sheet("Data")
         writer.write_sheet(
             [["Temp", "Sales", "Other"], [10, 100, 1], [20, 180, 2], [30, 260, 3]],
-            charts=[Chart(
-                "scatter",
-                [
-                    ChartSeries("B2:B4", x_values="A2:A4", title="Sales",
-                                color="#C00000", marker=ChartMarker("diamond", 9), line=True),
-                    ChartSeries("C2:C4", x_values="A2:A4", title="Other"),
-                ],
-                title="Sales vs temperature",
-                x_axis=ChartAxis(title="Temperature", minimum=0, maximum=40, major_unit=10),
-                y_axis=ChartAxis(title="Units", number_format="#,##0"),
-                legend=ChartLegend("bottom"),
-                show_data_labels=True,
-            )],
+            charts=[
+                Chart(
+                    "scatter",
+                    [
+                        ChartSeries(
+                            "B2:B4",
+                            x_values="A2:A4",
+                            title="Sales",
+                            color="#C00000",
+                            marker=ChartMarker("diamond", 9),
+                            line=True,
+                        ),
+                        ChartSeries("C2:C4", x_values="A2:A4", title="Other"),
+                    ],
+                    title="Sales vs temperature",
+                    x_axis=ChartAxis(title="Temperature", minimum=0, maximum=40, major_unit=10),
+                    y_axis=ChartAxis(title="Units", number_format="#,##0"),
+                    legend=ChartLegend("bottom"),
+                    show_data_labels=True,
+                )
+            ],
         )
     chart = openpyxl.load_workbook(path)["Data"]._charts[0]
     assert type(chart).__name__ == "ScatterChart"
@@ -635,11 +673,10 @@ def test_axis_and_legend_defaults_stay_byte_compatible(tmp_path):
     path = tmp_path / "defaults.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet([["a", "b"], ["x", 1]],
-                           charts=[Chart("bar", [ChartSeries("B2:B2", categories="A2:A2")])])
+        writer.write_sheet([["a", "b"], ["x", 1]], charts=[Chart("bar", [ChartSeries("B2:B2", categories="A2:A2")])])
     xml = part_text(path, "xl/charts/chart1.xml")
     # The legend says explicitly that it does not overlay the plot area.
-    assert "<legend><legendPos val=\"r\"/><overlay val=\"0\"/></legend>" in xml
+    assert '<legend><legendPos val="r"/><overlay val="0"/></legend>' in xml
     assert "<majorGridlines/>" in xml
 
 
@@ -649,17 +686,26 @@ def test_chart_text_and_number_settings_are_serialized(tmp_path):
         writer.add_sheet("Data")
         writer.write_sheet(
             [["Month", "Revenue"], ["Jan", 100], ["Feb", 150]],
-            charts=[Chart(
-                "line",
-                [ChartSeries("B2:B3", categories="A2:A3", title="Revenue",
-                             color="#00B050", marker=ChartMarker("circle", 6))],
-                title="Revenue trend",
-                title_size=16,
-                x_axis=ChartAxis(title="Month"),
-                y_axis=ChartAxis(title="Revenue", minimum=0, number_format="#,##0"),
-                data_labels=DataLabels(number_format="#,##0", position="above"),
-                legend=False,
-            )],
+            charts=[
+                Chart(
+                    "line",
+                    [
+                        ChartSeries(
+                            "B2:B3",
+                            categories="A2:A3",
+                            title="Revenue",
+                            color="#00B050",
+                            marker=ChartMarker("circle", 6),
+                        )
+                    ],
+                    title="Revenue trend",
+                    title_size=16,
+                    x_axis=ChartAxis(title="Month"),
+                    y_axis=ChartAxis(title="Revenue", minimum=0, number_format="#,##0"),
+                    data_labels=DataLabels(number_format="#,##0", position="above"),
+                    legend=False,
+                )
+            ],
         )
     xml = part_text(path, "xl/charts/chart1.xml")
     assert '<numFmt formatCode="#,##0" sourceLinked="0"/>' in xml
@@ -673,21 +719,27 @@ def test_chart_text_and_number_settings_are_serialized(tmp_path):
     assert chart.legend is None
 
 
-@pytest.mark.parametrize("builder,message", [
-    (lambda: Chart("pie", [ChartSeries("B2:B3")], x_axis=ChartAxis()), "no axes"),
-    (lambda: Chart("bar", [ChartSeries("B2:B3", x_values="A2:A3")]), "only valid for scatter"),
-    (lambda: Chart("scatter", [ChartSeries("B2:B3", categories="A2:A3")]), "take x_values"),
-    (lambda: Chart("bar", [ChartSeries("B2:B3", marker=ChartMarker())]), "only valid for line and scatter"),
-    (lambda: Chart("pie", [ChartSeries("B2:B3", color="#FF0000")]), "colour slices"),
-    (lambda: Chart("bar", [ChartSeries("B2:B3")], data_labels=DataLabels(position="inside_end"), title_size=0), "title_size"),
-    (lambda: Chart("bar", [ChartSeries("B2:B3")], data_labels=DataLabels(position="best_fit")), "not valid"),
-    (lambda: ChartAxis(minimum=5, maximum=1), "less than axis maximum"),
-    (lambda: ChartAxis(major_unit=0), "positive"),
-    (lambda: ChartLegend("middle"), "invalid legend position"),
-    (lambda: ChartMarker("heart"), "invalid marker symbol"),
-    (lambda: ChartSeries("B2:B3", color="blue"), "#RRGGBB"),
-    (lambda: Chart("bar", [ChartSeries("B2:B3")], legend="yes"), "legend must be"),
-])
+@pytest.mark.parametrize(
+    "builder,message",
+    [
+        (lambda: Chart("pie", [ChartSeries("B2:B3")], x_axis=ChartAxis()), "no axes"),
+        (lambda: Chart("bar", [ChartSeries("B2:B3", x_values="A2:A3")]), "only valid for scatter"),
+        (lambda: Chart("scatter", [ChartSeries("B2:B3", categories="A2:A3")]), "take x_values"),
+        (lambda: Chart("bar", [ChartSeries("B2:B3", marker=ChartMarker())]), "only valid for line and scatter"),
+        (lambda: Chart("pie", [ChartSeries("B2:B3", color="#FF0000")]), "colour slices"),
+        (
+            lambda: Chart("bar", [ChartSeries("B2:B3")], data_labels=DataLabels(position="inside_end"), title_size=0),
+            "title_size",
+        ),
+        (lambda: Chart("bar", [ChartSeries("B2:B3")], data_labels=DataLabels(position="best_fit")), "not valid"),
+        (lambda: ChartAxis(minimum=5, maximum=1), "less than axis maximum"),
+        (lambda: ChartAxis(major_unit=0), "positive"),
+        (lambda: ChartLegend("middle"), "invalid legend position"),
+        (lambda: ChartMarker("heart"), "invalid marker symbol"),
+        (lambda: ChartSeries("B2:B3", color="blue"), "#RRGGBB"),
+        (lambda: Chart("bar", [ChartSeries("B2:B3")], legend="yes"), "legend must be"),
+    ],
+)
 def test_chart_model_rejects_invalid_settings(builder, message):
     with pytest.raises((ValueError, TypeError), match=message):
         builder()

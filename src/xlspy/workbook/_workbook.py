@@ -16,7 +16,15 @@ from ..styles import (
 )
 from ._styles import XlsxStyleTable
 from ._coords import MultiCellRange
-from ._properties import BookView, CalcProperties, CustomPropertyList, DefinedNameList, DocumentProperties, SheetViewList, WorkbookSecurity
+from ._properties import (
+    BookView,
+    CalcProperties,
+    CustomPropertyList,
+    DefinedNameList,
+    DocumentProperties,
+    SheetViewList,
+    WorkbookSecurity,
+)
 from ._worksheet import Chartsheet, Worksheet, WriteOnlyWorksheet
 
 if TYPE_CHECKING:
@@ -52,6 +60,7 @@ class Workbook:
         `load_workbook` to open an existing file, and `XlsxWriter` /
         `XlsbWriter` for the faster row-oriented API.
     """
+
     # Set by the loaders and the XLSB saver; a workbook built in memory has none of them.
     _updater: Any
     _xlsb_styles_path: Any
@@ -133,9 +142,7 @@ class Workbook:
         if base.casefold() not in taken:
             return base
         numbers = [
-            int(name[len(base):])
-            for name in taken
-            if name.startswith(base.casefold()) and name[len(base):].isdigit()
+            int(name[len(base) :]) for name in taken if name.startswith(base.casefold()) and name[len(base) :].isdigit()
         ]
         return f"{base}{max(numbers, default=0) + 1}"
 
@@ -191,10 +198,7 @@ class Workbook:
     @property
     def style_names(self) -> list[str]:
         """The names of the workbook's named styles, as openpyxl lists them."""
-        return [
-            entry if isinstance(entry, str) else entry.name
-            for entry in self.named_styles
-        ]
+        return [entry if isinstance(entry, str) else entry.name for entry in self.named_styles]
 
     @property
     def worksheets(self) -> list[Worksheet]:
@@ -261,7 +265,7 @@ class Workbook:
         if title is None:
             title = self._default_sheet_title()
         self._check_title(title)
-        cls =WriteOnlyWorksheet if self.write_only else Worksheet
+        cls = WriteOnlyWorksheet if self.write_only else Worksheet
         sheet = cls(self, title, index=index)
         if index is None:
             self._sheets.append(sheet)
@@ -361,8 +365,16 @@ class Workbook:
         # The view list holds the object, not a copy; rebind it or ``views``
         # keeps reporting the default view the new sheet was created with.
         target._views = SheetViewList(target._sheet_view)
-        for name in ("page_setup", "page_margins", "print_options", "HeaderFooter",
-                     "sheet_format", "row_breaks", "col_breaks", "ignored_errors"):
+        for name in (
+            "page_setup",
+            "page_margins",
+            "print_options",
+            "HeaderFooter",
+            "sheet_format",
+            "row_breaks",
+            "col_breaks",
+            "ignored_errors",
+        ):
             setattr(target, name, copy.deepcopy(getattr(from_worksheet, name)))
         target._mark_dirty("copy")
         return target
@@ -386,8 +398,9 @@ class Workbook:
         self.named_styles.add(style)
         self._styles_dirty = True
 
-    def create_named_range(self, name: str, worksheet: Worksheet | None = None,
-                           value: str | None = None, scope: str | None = None) -> None:
+    def create_named_range(
+        self, name: str, worksheet: Worksheet | None = None, value: str | None = None, scope: str | None = None
+    ) -> None:
         """Add a defined name, as openpyxl's deprecated ``create_named_range``.
 
         Prefer ``workbook.defined_names[name] = DefinedName(...)``.
@@ -431,10 +444,7 @@ class Workbook:
                     if isinstance(formula, DataTableFormula):
                         # A data-table formula has no text to rename.
                         continue
-                    text = (
-                        formula.text if isinstance(formula, (Formula, ArrayFormula))
-                        else formula
-                    )
+                    text = formula.text if isinstance(formula, (Formula, ArrayFormula)) else formula
                     updated = renamed(text)
                     if updated != text:
                         if isinstance(formula, ArrayFormula):
@@ -457,9 +467,15 @@ class Workbook:
         names = self.defined_names
         names._items = [
             DefinedName(
-                item.name, renamed(item.formula), title if item.scope == old else item.scope,
-                item.localSheetId, item.hidden, item.comment,
-            ) if renamed(item.formula) != item.formula or item.scope == old else item
+                item.name,
+                renamed(item.formula),
+                title if item.scope == old else item.scope,
+                item.localSheetId,
+                item.hidden,
+                item.comment,
+            )
+            if renamed(item.formula) != item.formula or item.scope == old
+            else item
             for item in names._items
         ]
         if self._loaded:
@@ -473,6 +489,7 @@ class Workbook:
         if self._read_only:
             raise ValueError("a read-only workbook cannot be saved")
         from ._writer import save_workbook
+
         save_workbook(self, filename)
 
     def close(self) -> None:

@@ -59,13 +59,9 @@ def test_validation_edit_add_remove(tmp_path):
     output = tmp_path / "validations.xlsx"
     try:
         sheet = workbook["Objects"]
-        sheet.data_validations[0] = replace(
-            sheet.data_validations[0], error_title="Changed title"
-        )
+        sheet.data_validations[0] = replace(sheet.data_validations[0], error_title="Changed title")
         sheet.data_validations.remove(sheet.data_validations[1])
-        sheet.add_data_validation(
-            DataValidation("list", "F2:F10", '"Yes,No"', allow_blank=True)
-        )
+        sheet.add_data_validation(DataValidation("list", "F2:F10", '"Yes,No"', allow_blank=True))
         workbook.save(output)
     finally:
         close_quietly(workbook)
@@ -89,7 +85,8 @@ def test_conditional_formatting_edit_add_remove(tmp_path):
         sheet.conditional_formatting.add(
             "E2:E5",
             FormulaRule(
-                "E2:E5", ["E2>0"],
+                "E2:E5",
+                ["E2>0"],
                 dxf=DifferentialStyle(font=Font(bold=True)),
             ),
         )
@@ -103,10 +100,7 @@ def test_conditional_formatting_edit_add_remove(tmp_path):
         assert "B2:B5" not in ranges
         assert "E2:E5" in ranges
         rules = [
-            rule
-            for item in book["Objects"].conditional_formatting
-            for rule in item.rules
-            if str(item.sqref) == "E2:E5"
+            rule for item in book["Objects"].conditional_formatting for rule in item.rules if str(item.sqref) == "E2:E5"
         ]
         assert rules and rules[0].type == "expression"
         # Loaded rules are rewritten from the model: their formulas must survive.

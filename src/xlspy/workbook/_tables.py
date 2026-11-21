@@ -89,6 +89,7 @@ class ConditionalFormattingList:
 
 class TableColumn:
     """A column of a ``Table``: its name and totals row settings."""
+
     def __init__(
         self,
         id: int | None = None,
@@ -110,6 +111,7 @@ class TableColumn:
 
 class TableStyleInfo:
     """A table's style name and banding options."""
+
     def __init__(
         self,
         name: str | None = None,
@@ -131,6 +133,7 @@ class Table:
     Add it with ``Worksheet.add_table``. ``ExcelTable`` is the equivalent for
     the writers.
     """
+
     def __init__(
         self,
         id: int = 1,
@@ -209,8 +212,11 @@ class TableList(list):
 
     @staticmethod
     def _name(table: object) -> str:
-        return next(name for attr in ("displayName", "display_name", "name")
-                    if isinstance(name := getattr(table, attr, None), str))
+        return next(
+            name
+            for attr in ("displayName", "display_name", "name")
+            if isinstance(name := getattr(table, attr, None), str)
+        )
 
     def _index(self, name: str) -> int:
         for index, table in enumerate(self):

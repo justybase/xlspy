@@ -2,8 +2,9 @@ import datetime
 from decimal import Decimal
 import os
 import sys
+
 # Add src to path for local testing
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from xlspy import XlsxWriter
 
@@ -15,7 +16,7 @@ if __name__ == "__main__":
         ["Alice", 25, "New York", datetime.date.today()],
         ["Bob", 30, "London", Decimal(3.14)],
         ["Charlie", 35, "Paris", datetime.datetime.now()],
-        [True, False, None, datetime.datetime.now(datetime.UTC)]
+        [True, False, None, datetime.datetime.now(datetime.UTC)],
     ]
     data2 = [
         ["Name", "Age", "City", "info"],
@@ -25,7 +26,7 @@ if __name__ == "__main__":
         ["2Bob", 30, "London", Decimal(5.14)],
         ["2Charlie", 35, "Paris", datetime.datetime.now()],
         [True, False, None, datetime.datetime.now(datetime.UTC)],
-        [True, False, None, datetime.datetime.now(datetime.UTC)]
+        [True, False, None, datetime.datetime.now(datetime.UTC)],
     ]
     with XlsxWriter("test.xlsx") as writer:
         writer.add_sheet("Sheet1")

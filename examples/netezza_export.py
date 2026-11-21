@@ -3,6 +3,7 @@
 Needs ``pip install nzpy-extended`` and a reachable Netezza server; set NZ_DEV_HOST,
 NZ_DEV_PORT, NZ_DEV_DB, NZ_DEV_USER and NZ_DEV_PASSWORD.
 """
+
 import os
 from collections.abc import Generator
 from xlspy import XlsbWriter

@@ -13,6 +13,7 @@ on the same bytes, and ``reader`` then uses it too.
 Usage (from the repository root):
     py -3.14 benchmarks/bench_sst.py [--strings 1000000] [--repeat 7] [--out benchmarks/sst.json]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,8 +40,10 @@ def sst_xml(count, entity=False):
         # A comment: the regex parser and the native parser both refuse it, so the
         # whole part goes to expat. (A character reference no longer does: C2 decodes it.)
         items[0] = "<si><!-- note --><t>&#65;</t></si>"
-    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            f'<sst xmlns="{MAIN_NS}" count="{count}" uniqueCount="{count}">' + "".join(items) + "</sst>")
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<sst xmlns="{MAIN_NS}" count="{count}" uniqueCount="{count}">' + "".join(items) + "</sst>"
+    )
 
 
 def make_book(path, count, entity):
@@ -121,8 +124,7 @@ def main():
         "platform": platform.platform(),
         "strings": args.strings,
         "repeat": args.repeat,
-        "accel": {"mode": _accel.ACCEL_MODE, "have_native": _accel.HAVE_NATIVE,
-                  "backends": dict(_accel.ACCEL_BACKEND)},
+        "accel": {"mode": _accel.ACCEL_MODE, "have_native": _accel.HAVE_NATIVE, "backends": dict(_accel.ACCEL_BACKEND)},
         "results": results,
     }
     if args.out:

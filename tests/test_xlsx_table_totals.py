@@ -61,9 +61,14 @@ def test_explicit_totals_function_is_written(tmp_path):
     for row, values in enumerate([["name", "qty"], ["a", 2], ["b", 3], ["Total", 5]], start=1):
         for column, cell in enumerate(values, start=1):
             sheet.cell(row=row, column=column, value=cell)
-    sheet.add_table(ExcelTable(
-        "Tbl", "A1:B4", totals_row=True, totals_row_functions=("label", "average"),
-    ))
+    sheet.add_table(
+        ExcelTable(
+            "Tbl",
+            "A1:B4",
+            totals_row=True,
+            totals_row_functions=("label", "average"),
+        )
+    )
     workbook.save(path)
     workbook.close()
 

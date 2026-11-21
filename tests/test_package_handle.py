@@ -1,4 +1,5 @@
 """The object model reaches an updater's package only through PackageHandle."""
+
 from __future__ import annotations
 
 import ast

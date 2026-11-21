@@ -1,4 +1,5 @@
 """XlsxWriter sheet-level XML: head, views, columns, tail, tables, hyperlinks, page setup."""
+
 from __future__ import annotations
 
 import xml.sax.saxutils as saxutils
@@ -31,20 +32,14 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
 
     def _table_xml(self, table: ExcelTable, table_id: int, names: list[str], totals_cells=None) -> str:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
-        ref = (
-            f"{self._letters[first_col]}{first_row + 1}:"
-            f"{self._letters[last_col]}{last_row + 1}"
-        )
+        ref = f"{self._letters[first_col]}{first_row + 1}:{self._letters[last_col]}{last_row + 1}"
         filter_last_row = last_row - 1 if table.totals_row else last_row
-        filter_ref = (
-            f"{self._letters[first_col]}{first_row + 1}:"
-            f"{self._letters[last_col]}{filter_last_row + 1}"
-        )
-        name = saxutils.escape(table.display_name, {'"': '&quot;'})
+        filter_ref = f"{self._letters[first_col]}{first_row + 1}:{self._letters[last_col]}{filter_last_row + 1}"
+        name = saxutils.escape(table.display_name, {'"': "&quot;"})
         # Names must equal the header cells as Excel reads them, so they get the
         # same _xHHHH_ escapes; line feeds and tabs need character references
         # in an attribute, where XML would read them as spaces.
-        attr_entities = {'"': '&quot;', '\n': '&#10;', '\t': '&#9;'}
+        attr_entities = {'"': "&quot;", "\n": "&#10;", "\t": "&#9;"}
         explicit = getattr(table, "totals_row_functions", None)
         columns = []
         for index, column_name in enumerate(names):
@@ -102,7 +97,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             if table_totals is not None:
                 totals = table_totals.get(r2)
                 if totals is not None:
-                    totals = totals[c1:c2 + 1]
+                    totals = totals[c1 : c2 + 1]
             self._tables_xml[table_id] = self._table_xml(table, table_id, names, totals)
             rid = f"rId{position}"
             rels.append((rid, _REL_TABLE, f"../tables/table{table_id}.xml", False))
@@ -121,23 +116,27 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         for slicer in slicer_specs:
             table_id, names = self._table_info[slicer.table.casefold()]
             column_id = next(
-                (index + 1 for index, name in enumerate(names)
-                 if name.casefold() == slicer.column.casefold()),
+                (index + 1 for index, name in enumerate(names) if name.casefold() == slicer.column.casefold()),
                 None,
             )
             if column_id is None:
-                raise ValueError(
-                    f"slicer column {slicer.column!r} is not a column of table {slicer.table!r}"
-                )
+                raise ValueError(f"slicer column {slicer.column!r} is not a column of table {slicer.table!r}")
             part_no = self._next_slicer_part
             self._next_slicer_part += 1
-            self._slicer_part_files.append((
-                f"xl/slicers/slicer{part_no}.xml", slicer_part_xml(slicer), CT_SLICER,
-            ))
-            self._slicer_part_files.append((
-                f"xl/slicerCaches/slicerCache{part_no}.xml",
-                slicer_cache_xml(slicer, table_id, column_id), CT_SLICER_CACHE,
-            ))
+            self._slicer_part_files.append(
+                (
+                    f"xl/slicers/slicer{part_no}.xml",
+                    slicer_part_xml(slicer),
+                    CT_SLICER,
+                )
+            )
+            self._slicer_part_files.append(
+                (
+                    f"xl/slicerCaches/slicerCache{part_no}.xml",
+                    slicer_cache_xml(slicer, table_id, column_id),
+                    CT_SLICER_CACHE,
+                )
+            )
             self._slicer_cache_names.append(slicer.cache_name)
             resolved.append((slicer, part_no))
         return resolved
@@ -165,26 +164,50 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             link_rels.append((rid, _REL_HYPERLINK, link.target, True))
         return link_rels
 
-    def _sheet_head(self, body, sheet_index, split_freeze, freeze_panes, widths,
-                    hidden_cols, print_spec, row_outline=None, col_outline=None,
-                    show_grid_lines=True, meter=None, autofit_padding=0.0, filter_cells=(),
-                    tab_key=None, zoom=None, view=(True, True, False)):
+    def _sheet_head(
+        self,
+        body,
+        sheet_index,
+        split_freeze,
+        freeze_panes,
+        widths,
+        hidden_cols,
+        print_spec,
+        row_outline=None,
+        col_outline=None,
+        show_grid_lines=True,
+        meter=None,
+        autofit_padding=0.0,
+        filter_cells=(),
+        tab_key=None,
+        zoom=None,
+        view=(True, True, False),
+    ):
         """Everything before ``<sheetData>`` content: properties, views, widths."""
-        parts = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                 '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-                 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">']
+        parts = [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        ]
         sheet_pr = ""
         if tab_key is not None:
-            sheet_pr += f'<tabColor {self._color_attrs(tab_key)}/>'
+            sheet_pr += f"<tabColor {self._color_attrs(tab_key)}/>"
         if print_spec is not None and print_spec.fit_to_page:
             sheet_pr += '<pageSetUpPr fitToPage="1"/>'
         if sheet_pr:
-            parts.append(f'<sheetPr>{sheet_pr}</sheetPr>')
+            parts.append(f"<sheetPr>{sheet_pr}</sheetPr>")
         if body.num_rows > 0 and body.max_cols > 0:
             parts.append(f'<dimension ref="A1:{self._letters[body.max_cols - 1]}{body.num_rows}"/>')
-        parts.append(self._sheet_views_xml(
-            sheet_index, split_freeze, freeze_panes, show_grid_lines, zoom, view,
-        ))
+        parts.append(
+            self._sheet_views_xml(
+                sheet_index,
+                split_freeze,
+                freeze_panes,
+                show_grid_lines,
+                zoom,
+                view,
+            )
+        )
         max_row_level = row_outline.max_level if row_outline is not None else 0
         max_col_level = col_outline.max_level if col_outline is not None else 0
         if max_row_level or max_col_level:
@@ -201,20 +224,23 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             if 0 <= col < body.max_cols:
                 col_widths[col] = width
         parts.append(self._cols_xml(col_widths, widths, hidden_cols, body.max_cols, col_outline))
-        parts.append('<sheetData>')
+        parts.append("<sheetData>")
         return "".join(parts)
 
-    def _sheet_views_xml(self, sheet_index, split_freeze, freeze_panes,
-                         show_grid_lines=True, zoom=None, view=(True, True, False)) -> str:
+    def _sheet_views_xml(
+        self, sheet_index, split_freeze, freeze_panes, show_grid_lines=True, zoom=None, view=(True, True, False)
+    ) -> str:
         headers, zeros, right_to_left = view
         # CT_SheetView attribute order: showGridLines, showRowColHeaders, showZeros,
         # rightToLeft, tabSelected, ..., zoomScale.
-        flags = "".join((
-            "" if show_grid_lines else ' showGridLines="0"',
-            "" if headers else ' showRowColHeaders="0"',
-            "" if zeros else ' showZeros="0"',
-            ' rightToLeft="1"' if right_to_left else "",
-        ))
+        flags = "".join(
+            (
+                "" if show_grid_lines else ' showGridLines="0"',
+                "" if headers else ' showRowColHeaders="0"',
+                "" if zeros else ' showZeros="0"',
+                ' rightToLeft="1"' if right_to_left else "",
+            )
+        )
         tab = flags + (' tabSelected="1"' if sheet_index == 0 else "")
         if zoom is not None:
             tab += f' zoomScale="{zoom}" zoomScaleNormal="{zoom}"'
@@ -244,7 +270,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         parts.append('state="frozen"')
         return (
             f'<sheetViews><sheetView{tab} workbookViewId="0">'
-            f'<pane {" ".join(parts)}/>'
+            f"<pane {' '.join(parts)}/>"
             f'<selection pane="{active}" activeCell="{top_left}" sqref="{top_left}"/>'
             "</sheetView></sheetViews>"
         )
@@ -255,21 +281,27 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             covered |= col_outline.indices()
         if not (any(width != 8.43 for width in col_widths) or covered):
             return ""
-        parts = ['<cols>']
+        parts = ["<cols>"]
         emitted = set()
         for i, width in enumerate(col_widths):
             explicit = widths.get(i)
             hidden_attr = ' hidden="1"' if i in hidden_cols else ""
             outline_attr = _outline_col_attr(col_outline, i)
             if explicit is not None:
-                parts.append(f'<col min="{i + 1}" max="{i + 1}" width="{explicit:.2f}" bestFit="1" customWidth="1"{hidden_attr}{outline_attr}/>')
+                parts.append(
+                    f'<col min="{i + 1}" max="{i + 1}" width="{explicit:.2f}" bestFit="1" customWidth="1"{hidden_attr}{outline_attr}/>'
+                )
                 emitted.add(i)
             elif width != 8.43:
                 # Automatic widths count characters; the file adds the cell padding.
-                parts.append(f'<col min="{i + 1}" max="{i + 1}" width="{file_width(width):.2f}" bestFit="1" customWidth="1"{hidden_attr}{outline_attr}/>')
+                parts.append(
+                    f'<col min="{i + 1}" max="{i + 1}" width="{file_width(width):.2f}" bestFit="1" customWidth="1"{hidden_attr}{outline_attr}/>'
+                )
                 emitted.add(i)
             elif hidden_attr or outline_attr:
-                parts.append(f'<col min="{i + 1}" max="{i + 1}" width="8.43" customWidth="0"{hidden_attr}{outline_attr}/>')
+                parts.append(
+                    f'<col min="{i + 1}" max="{i + 1}" width="8.43" customWidth="0"{hidden_attr}{outline_attr}/>'
+                )
                 emitted.add(i)
         # Columns past the data (explicit widths, hidden flags or groups) come
         # last, which keeps the <col> entries in ascending order.
@@ -281,15 +313,32 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             outline_attr = _outline_col_attr(col_outline, i)
             width_attr = f"{explicit:.2f}" if explicit is not None else "8.43"
             custom = "1" if explicit is not None else "0"
-            parts.append(f'<col min="{i + 1}" max="{i + 1}" width="{width_attr}" customWidth="{custom}"{hidden_attr}{outline_attr}/>')
-        parts.append('</cols>')
+            parts.append(
+                f'<col min="{i + 1}" max="{i + 1}" width="{width_attr}" customWidth="{custom}"{hidden_attr}{outline_attr}/>'
+            )
+        parts.append("</cols>")
         return "".join(parts)
 
-    def _sheet_tail(self, body, sheet_index, merge_refs, cf_rules, table_specs,
-                    table_bounds, validations, link_rels, auto_filter, drawing_rid,
-                    print_spec, *, auto_filter_ref=None, header_rows=1, sort_state=None):
+    def _sheet_tail(
+        self,
+        body,
+        sheet_index,
+        merge_refs,
+        cf_rules,
+        table_specs,
+        table_bounds,
+        validations,
+        link_rels,
+        auto_filter,
+        drawing_rid,
+        print_spec,
+        *,
+        auto_filter_ref=None,
+        header_rows=1,
+        sort_state=None,
+    ):
         """Everything after the row data, in schema order."""
-        parts = ['</sheetData>']
+        parts = ["</sheetData>"]
         data_filter = None
         if body.num_rows > header_rows and body.value_cols > 0:
             # The filter buttons sit on the last header row; the range spans the
@@ -305,8 +354,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             data_filter = None
         # A table brings its own filter: none for the sheet over the same range.
         if sort_state is not None and (
-            data_filter is None
-            or parse_cell_range(data_filter) in {parse_cell_range(ref) for ref in body.table_refs}
+            data_filter is None or parse_cell_range(data_filter) in {parse_cell_range(ref) for ref in body.table_refs}
         ):
             raise ValueError("sort_state needs an auto filter (auto_filter_ref or data with header)")
         if data_filter is not None and parse_cell_range(data_filter) not in {
@@ -343,26 +391,27 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
                     c += "/>"
                     conds.append(c)
                 sort_xml = (
-                    f'<sortState {" ".join(sort_attrs)}>{"".join(conds)}</sortState>'
-                    if sort_attrs or conds else ""
+                    f"<sortState {' '.join(sort_attrs)}>{''.join(conds)}</sortState>" if sort_attrs or conds else ""
                 )
             if sort_xml:
                 parts.append(f'<autoFilter ref="{data_filter}">{sort_xml}</autoFilter>')
             else:
                 parts.append(f'<autoFilter ref="{data_filter}"/>')
             first_col, first_row, last_col, last_row = parse_cell_range(data_filter)
-            self._filtered_data_list.append(FilterData(
-                sheet_index=sheet_index,
-                start_column=first_col,
-                end_column=last_col,
-                start_row=first_row,
-                end_row=last_row,
-            ))
+            self._filtered_data_list.append(
+                FilterData(
+                    sheet_index=sheet_index,
+                    start_column=first_col,
+                    end_column=last_col,
+                    start_row=first_row,
+                    end_row=last_row,
+                )
+            )
         if merge_refs:
             parts.append(f'<mergeCells count="{len(merge_refs)}">')
             for ref in merge_refs:
                 parts.append(f'<mergeCell ref="{ref}"/>')
-            parts.append('</mergeCells>')
+            parts.append("</mergeCells>")
         if cf_rules:
             by_range: dict[str, list] = {}
             for rule in cf_rules:
@@ -371,11 +420,11 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
                 parts.append(f'<conditionalFormatting sqref="{sqref}">')
                 for rule in rules:
                     parts.append(self._cf_rule_xml(rule, set(table_bounds)))
-                parts.append('</conditionalFormatting>')
+                parts.append("</conditionalFormatting>")
         if validations:
             parts.append(f'<dataValidations count="{len(validations)}">')
             parts.extend(data_validation_xml(rule) for rule in validations)
-            parts.append('</dataValidations>')
+            parts.append("</dataValidations>")
         if body.hyperlinks:
             parts.append(self._hyperlinks_xml(body.hyperlinks, link_rels))
         if print_spec is not None:
@@ -405,13 +454,13 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             parts.append(f'<tableParts count="{len(table_rels)}">')
             for rid, _table_id in table_rels:
                 parts.append(f'<tablePart r:id="{rid}"/>')
-            parts.append('</tableParts>')
-        parts.append('</worksheet>')
+            parts.append("</tableParts>")
+        parts.append("</worksheet>")
         return "".join(parts)
 
     def _hyperlinks_xml(self, hyperlinks, link_rels) -> str:
         rid_by_target = {target: rid for rid, _type, target, _ext in link_rels}
-        parts = ['<hyperlinks>']
+        parts = ["<hyperlinks>"]
         for row_idx, col_idx, link in hyperlinks:
             ref = f"{self._letters[col_idx]}{row_idx + 1}"
             attrs = f'ref="{ref}"'
@@ -422,7 +471,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             if link.tooltip:
                 attrs += f' tooltip="{saxutils.escape(link.tooltip, {chr(34): "&quot;"})}"'
             parts.append(f"<hyperlink {attrs}/>")
-        parts.append('</hyperlinks>')
+        parts.append("</hyperlinks>")
         return "".join(parts)
 
     @staticmethod
@@ -451,7 +500,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             attrs.append(f'orientation="{print_spec.orientation}"')
         if not attrs:
             return ""
-        return f'<pageSetup {" ".join(attrs)}/>'
+        return f"<pageSetup {' '.join(attrs)}/>"
 
     @staticmethod
     def _header_footer_xml(print_spec) -> str:

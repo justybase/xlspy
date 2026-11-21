@@ -9,8 +9,12 @@ from ._ranges import merge_styles
 from ._style import Style
 
 
-def _xf_for_style_format(style: Style, overlay: str | Style, register_style: Callable[[Style], int],
-                         cache: dict[tuple[object, ...], tuple[Style, str | Style, int]]) -> int:
+def _xf_for_style_format(
+    style: Style,
+    overlay: str | Style,
+    register_style: Callable[[Style], int],
+    cache: dict[tuple[object, ...], tuple[Style, str | Style, int]],
+) -> int:
     """XF of ``style`` with a cell's number format or ``Style`` on top,
     merged once per pair."""
     key: tuple[object, ...]
@@ -46,8 +50,14 @@ def _record_cell_xf(fmt_xf: dict, keep: list, base_xf: Any, overlay: Any, xf_ind
             keep.append(overlay)
 
 
-def _date_cell_xf(fmt_xf: dict[Any, int], xf_styles: dict[int, Style], register_style: Callable[[Style], int],
-                  xf_index: int, date_format: str, is_datetime: bool) -> int:
+def _date_cell_xf(
+    fmt_xf: dict[Any, int],
+    xf_styles: dict[int, Style],
+    register_style: Callable[[Style], int],
+    xf_index: int,
+    date_format: str,
+    is_datetime: bool,
+) -> int:
     """XF for a date cell whose style is ``xf_index``.
 
     A style with no number format gets ``date_format`` on top, so Excel does
@@ -68,8 +78,9 @@ def _date_cell_xf(fmt_xf: dict[Any, int], xf_styles: dict[int, Style], register_
     return result
 
 
-def _style_ids_for_row(row_styles: dict[int, Style] | None, row_length: int,
-                       register_style: Callable[[Style], Any], cache: dict) -> Any:
+def _style_ids_for_row(
+    row_styles: dict[int, Style] | None, row_length: int, register_style: Callable[[Style], Any], cache: dict
+) -> Any:
     """Convert a shared row-style map once per distinct row-style pattern."""
     if not row_styles:
         return None
@@ -78,14 +89,10 @@ def _style_ids_for_row(row_styles: dict[int, Style] | None, row_length: int,
     if cached is not None and cached[0] is row_styles:
         return cached[1]
     first_style = next(iter(row_styles.values()))
-    if (len(row_styles) == row_length
-            and all(style is first_style for style in row_styles.values())):
+    if len(row_styles) == row_length and all(style is first_style for style in row_styles.values()):
         style_ids = register_style(first_style)
     else:
-        style_ids = tuple(
-            (column, register_style(row_styles[column]))
-            for column in sorted(row_styles)
-        )
+        style_ids = tuple((column, register_style(row_styles[column])) for column in sorted(row_styles))
     # Keep the style map alive along with its cached ids so the identity key
     # cannot be reused for a different map during this sheet's write.
     cache[key] = (row_styles, style_ids)

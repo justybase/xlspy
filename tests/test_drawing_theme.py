@@ -1,4 +1,5 @@
 """The theme part a workbook with drawings refers to (images and charts)."""
+
 from __future__ import annotations
 
 import re
@@ -21,10 +22,7 @@ def _png_bytes(width=2, height=2):
     raw = b"".join(b"\x00" + b"\xff\x00\x00" * width for _ in range(height))
 
     def chunk(kind, data):
-        return (
-            struct.pack(">I", len(data)) + kind + data
-            + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
-        )
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
     return (
         b"\x89PNG\r\n\x1a\n"

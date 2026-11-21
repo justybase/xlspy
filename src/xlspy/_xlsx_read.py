@@ -1,4 +1,5 @@
 """Incremental XLSX rows and shared-formula expansion."""
+
 from __future__ import annotations
 
 import codecs
@@ -24,7 +25,7 @@ _ROW = re.compile(r"<row\b([^>]*?)(?:/>|>(.*?)</row>)", re.S)
 _ROW_NUM = re.compile(r' r="(\d+)"')
 _CELL = re.compile(
     r'<c((?: \w+="[^"]*")*)\s*'
-    r'(?:/>|>(?:<f\b[^>]*/>|<f\b[^>]*>[^<]*</f>)?(?:<v>([^<]*)</v>|<is>(.*?)</is>)?</c>)',
+    r"(?:/>|>(?:<f\b[^>]*/>|<f\b[^>]*>[^<]*</f>)?(?:<v>([^<]*)</v>|<is>(.*?)</is>)?</c>)",
     re.S,
 )
 _ATTR = re.compile(r' (\w+)="([^"]*)"')
@@ -145,8 +146,7 @@ def _row_from_element(reader, node, ns, next_row, data_only, shared):
 def _date_style_flags(reader):
     """Per cell-style flag: True when the style's number format is a date."""
     formats = reader._number_formats_type_dict
-    return [formats.get(xf["numFmtId"]) is datetime.datetime
-            for xf in reader._styles_cell_xfs_array]
+    return [formats.get(xf["numFmtId"]) is datetime.datetime for xf in reader._styles_cell_xfs_array]
 
 
 class _FastSheet:
@@ -179,7 +179,7 @@ def _probe_fast(stream, with_head=False):
             break
     if match is None or match.group(1):
         return None
-    head = raw[:match.end()]
+    head = raw[: match.end()]
     head_text = head.decode("utf-8")
     root = _ROOT.search(head_text)
     if root is None or _PREFIXED.search(head_text):
@@ -190,7 +190,7 @@ def _probe_fast(stream, with_head=False):
     xmlns = _XMLNS.search(root.group(0))
     ns = xmlns.group(1) if xmlns else MAIN
     decoder = codecs.getincrementaldecoder("utf-8")()
-    tail = raw[match.end():]
+    tail = raw[match.end() :]
     result = decoder.decode(tail, False), decoder, root.group(0), ns, tail
     return result + (head,) if with_head else result
 
@@ -199,8 +199,8 @@ def _iter_native(reader, stream, probe):
     """Rows from the native scanner, or None when the extension does not provide it."""
     _text, _decoder, root_tag, ns, raw = probe
     rows = _accel.read_xlsx_worksheet(
-        stream, raw, reader._shared_string_array, _date_style_flags(reader),
-        reader._date_1904)
+        stream, raw, reader._shared_string_array, _date_style_flags(reader), reader._date_1904
+    )
     if rows is None:
         return None
     return _native_rows(reader, rows, root_tag, ns)
@@ -280,7 +280,7 @@ def _fast_row(sheet, attrs, body, next_row):
                     raise _Fallback
                 columns[letters] = col
             digits = len(ref) - len(letters)
-            if not digits or (digits > 6 or ref[len(letters)] == "0") and not 1 <= int(ref[len(letters):]) <= 1048576:
+            if not digits or (digits > 6 or ref[len(letters)] == "0") and not 1 <= int(ref[len(letters) :]) <= 1048576:
                 raise _Fallback
         else:
             col = next_col
@@ -340,10 +340,23 @@ def _xlsx_cell_value(reader, cell, ns=MAIN):
     kind = cell.get("t", "n")
     if kind == "inlineStr":
         inline = cell.find(f"{{{ns}}}is")
-        return xstring_unescape("".join(
-            n.text or "" for child in inline for n in
-            ([child] if child.tag == f"{{{ns}}}t" else child.findall(f"{{{ns}}}t") if child.tag == f"{{{ns}}}r" else [])
-        )) if inline is not None else ""
+        return (
+            xstring_unescape(
+                "".join(
+                    n.text or ""
+                    for child in inline
+                    for n in (
+                        [child]
+                        if child.tag == f"{{{ns}}}t"
+                        else child.findall(f"{{{ns}}}t")
+                        if child.tag == f"{{{ns}}}r"
+                        else []
+                    )
+                )
+            )
+            if inline is not None
+            else ""
+        )
     value = cell.findtext(f"{{{ns}}}v", "")
     if kind == "s":
         index = int(value) if value else 0

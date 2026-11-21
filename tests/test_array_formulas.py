@@ -49,7 +49,11 @@ def test_data_table_formula_round_trip(tmp_path):
     path = tmp_path / "table.xlsx"
     workbook = Workbook()
     workbook.active["A1"] = DataTableFormula(
-        "A1:C3", dt2D=True, r1="E1", r2="E2", ca=True,
+        "A1:C3",
+        dt2D=True,
+        r1="E1",
+        r2="E2",
+        ca=True,
     )
     workbook.save(path)
 
@@ -64,7 +68,11 @@ def test_data_table_formula_round_trip(tmp_path):
         value = loaded.active["A1"].value
         assert isinstance(value, DataTableFormula)
         assert (value.ref, value.dt2D, value.r1, value.r2, value.ca) == (
-            "A1:C3", True, "E1", "E2", True,
+            "A1:C3",
+            True,
+            "E1",
+            "E2",
+            True,
         )
     finally:
         loaded.close()
@@ -111,9 +119,11 @@ def test_xlsx_writer_takes_array_and_data_table_formulas(tmp_path):
     path = tmp_path / "writer.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet([
-            [ArrayFormula("A1:A2", "ROW(A1:A2)"), DataTableFormula("B1:C2", r1="D1")],
-        ])
+        writer.write_sheet(
+            [
+                [ArrayFormula("A1:A2", "ROW(A1:A2)"), DataTableFormula("B1:C2", r1="D1")],
+            ]
+        )
 
     xml = _sheet_xml(path)
     assert 't="array" ref="A1:A2"' in xml
@@ -128,10 +138,13 @@ def test_xlsx_updater_takes_array_and_data_table_formulas(tmp_path):
 
     updater = XlsxUpdater(path)
     try:
-        updater.update_cells("Data", {
-            "A1": ArrayFormula("A1:A2", "ROW(A1:A2)"),
-            "B1": DataTableFormula("B1:C2", r1="D1"),
-        })
+        updater.update_cells(
+            "Data",
+            {
+                "A1": ArrayFormula("A1:A2", "ROW(A1:A2)"),
+                "B1": DataTableFormula("B1:C2", r1="D1"),
+            },
+        )
         updater.save(path)
     finally:
         updater.close()
@@ -151,6 +164,7 @@ def test_xlsb_writer_converts_array_formulas_and_refuses_data_tables(tmp_path):
         writer.write_sheet([[1, ArrayFormula("B1:B2", "A1:A2*2")], [2, None]])
 
     from xlspy import ExcelReader
+
     with ExcelReader(path) as reader:
         assert reader.read_all("Data", data_only=False) == [[1, "=A1:A2*2"], [2, 0]]
 
@@ -170,9 +184,12 @@ def test_xlsb_updater_takes_array_formulas(tmp_path):
 
     updater = XlsbUpdater(path)
     try:
-        updater.update_cells("Data", {
-            "C1": ArrayFormula("C1:C2", "A1:A2+B1:B2"),
-        })
+        updater.update_cells(
+            "Data",
+            {
+                "C1": ArrayFormula("C1:C2", "A1:A2+B1:B2"),
+            },
+        )
         updater.save(path)
     finally:
         updater.close()
@@ -193,10 +210,13 @@ def test_replace_sheet_data_takes_array_formulas(tmp_path, suffix):
 
     updater = XlsbUpdater(path) if suffix == "xlsb" else XlsxUpdater(path)
     try:
-        updater.replace_sheet_data("Data", [
-            [ArrayFormula("A1:A2", "ROW(A1:A2)")],
-            [],
-        ])
+        updater.replace_sheet_data(
+            "Data",
+            [
+                [ArrayFormula("A1:A2", "ROW(A1:A2)")],
+                [],
+            ],
+        )
         updater.save(path)
     finally:
         updater.close()

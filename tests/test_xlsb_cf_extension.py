@@ -79,6 +79,7 @@ def test_removed_rule_takes_only_its_extension(tmp_path):
 
 def test_priority_change_keeps_its_extension(tmp_path):
     second = tmp_path / "second.xlsb"
+
     def edit(sheet):
         item = sheet.conditional_formatting[0]
         item.rules[0] = replace(item.rules[0], priority=7)

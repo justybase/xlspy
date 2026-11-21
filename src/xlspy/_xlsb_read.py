@@ -1,4 +1,5 @@
 """Formula-aware, incremental XLSB rows (separate from the bulk native/Python path)."""
+
 from __future__ import annotations
 
 import datetime
@@ -20,31 +21,35 @@ from .exceptions import InvalidFileError
 def cached_cell(kind, payload, reader):
     if len(payload) < 8:
         raise ValueError("truncated XLSB cell header")
-    style = struct.unpack_from('<I', payload, 4)[0] & 0xFFFFFF
+    style = struct.unpack_from("<I", payload, 4)[0] & 0xFFFFFF
     formula_offset = None
     if kind == 1:
         value = None
     elif kind == 2:
         value = BiffReader._get_rk_number(payload, 8)
     elif kind in (3, 11):
-        value = CellError('error:' + ERRORS.get(payload[8], '#VALUE!'))
+        value = CellError("error:" + ERRORS.get(payload[8], "#VALUE!"))
         formula_offset = 11 if kind == 11 else None
     elif kind in (4, 10):
         value = payload[8] == 1  # only 1 is True, as in the row readers
         formula_offset = 11 if kind == 10 else None
     elif kind in (5, 9):
-        value = struct.unpack_from('<d', payload, 8)[0]
+        value = struct.unpack_from("<d", payload, 8)[0]
         formula_offset = 18 if kind == 9 else None
     elif kind in (6, 8):
         value, offset = read_wide(payload, 8)
         formula_offset = offset + 2 if kind == 8 else None
     elif kind == 7:
-        index = struct.unpack_from('<I', payload, 8)[0]
+        index = struct.unpack_from("<I", payload, 8)[0]
         value = reader._shared_string_array[index] if index < len(reader._shared_string_array) else None
     else:
         raise ValueError(f"unknown XLSB cell kind {kind}")
     if isinstance(value, float):
-        if style < len(reader._styles_cell_xfs_array) and reader._number_formats_type_dict.get(reader._styles_cell_xfs_array[style]['numFmtId']) is datetime.datetime:
+        if (
+            style < len(reader._styles_cell_xfs_array)
+            and reader._number_formats_type_dict.get(reader._styles_cell_xfs_array[style]["numFmtId"])
+            is datetime.datetime
+        ):
             value = _date_or_number(value, reader._date_1904)
         elif value.is_integer():
             value = int(value)
@@ -63,7 +68,7 @@ def _readable_value_cell(kind: int, payload: bytes) -> bool:
     if len(payload) < _VALUE_CELL_MIN[kind]:
         return False
     if kind in (6, 8):
-        chars: int = struct.unpack_from('<I', payload, 8)[0]
+        chars: int = struct.unpack_from("<I", payload, 8)[0]
         return chars * 2 + 12 <= len(payload)
     return True
 
@@ -81,8 +86,8 @@ def formula_groups(records):
     """Shared (0x1AB) and array (0x1AA) formula definitions by their master cell."""
     groups = {}
     for kind, payload in records:
-        r1, r2, c1, c2 = struct.unpack_from('<IIII', payload)
-        groups[(r1, c1)] = (kind, payload[17 if kind == 0x1AA else 16:])
+        r1, r2, c1, c2 = struct.unpack_from("<IIII", payload)
+        groups[(r1, c1)] = (kind, payload[17 if kind == 0x1AA else 16 :])
     return groups
 
 
@@ -93,7 +98,7 @@ def formula_text(formula, groups, context, sheet_name, row, column):
     if tokens[:1] == bytes((0x01,)):  # PtgExp: the cell belongs to a formula group
         if len(tokens) != 5 or len(extra) < 4:
             raise InvalidFileError("invalid XLSB shared/array formula reference")
-        source = (struct.unpack('<I', tokens[1:])[0], struct.unpack_from('<I', extra)[0])
+        source = (struct.unpack("<I", tokens[1:])[0], struct.unpack_from("<I", extra)[0])
         if source not in groups:
             raise InvalidFileError("XLSB formula group definition was not found")
         group_kind, group_formula = groups[source]
@@ -112,10 +117,16 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
         path = reader._sheet_part(sheet_name)
         if path is None:
             return  # a chartsheet: no cells
-    context = FormulaContext(
-        reader.get_sheet_names(), reader._archive.read('xl/workbook.bin'), reader.read_part,
-        tables=lambda: table_catalog(reader._archive.namelist(), reader.read_part),
-    ) if not data_only else None
+    context = (
+        FormulaContext(
+            reader.get_sheet_names(),
+            reader._archive.read("xl/workbook.bin"),
+            reader.read_part,
+            tables=lambda: table_catalog(reader._archive.namelist(), reader.read_part),
+        )
+        if not data_only
+        else None
+    )
     groups: dict[Any, Any] = {}
     current_row: int | None = None
     cells: list[Any] = []
@@ -125,7 +136,7 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
         if formula is None or data_only:
             return value
         text = formula_text(formula, groups, context, sheet_name, current_row, column)
-        return value if text is None else '=' + text
+        return value if text is None else "=" + text
 
     def finish():
         if current_row is None:
@@ -133,8 +144,7 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
         # Formula groups follow their master cell, so decode at row end.
         if with_styles:
             return current_row + 1, [
-                (column, cell_value(column, value, formula), style)
-                for column, value, formula, style in cells
+                (column, cell_value(column, value, formula), style) for column, value, formula, style in cells
             ]
         return current_row + 1, [
             (column, cell_value(column, value, formula)) for column, value, formula, _style in cells
@@ -153,10 +163,11 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
                 # stay in the row before (as in the native loader).
                 if len(payload) < 4:
                     continue
-                index = struct.unpack_from('<I', payload)[0]
+                index = struct.unpack_from("<I", payload)[0]
                 if index != 0xFFFFFFFF and index > _MAX_ROW_INDEX:
                     raise InvalidFileError(
-                        f"XLSB row record has row index {index}, past the last row ({_MAX_ROW_INDEX})")
+                        f"XLSB row record has row index {index}, past the last row ({_MAX_ROW_INDEX})"
+                    )
                 if current_row is not None and current_row >= 0:
                     yield finish()
                 current_row = -1 if index == 0xFFFFFFFF else index  # -1: no row, its cells are skipped
@@ -169,12 +180,12 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
                     if len(payload) < 4:
                         continue
                     column = previous_column + 1
-                    payload = struct.pack('<I', column) + payload
+                    payload = struct.pack("<I", column) + payload
                     kind -= 0xB
                 else:
                     if len(payload) < 8:
                         continue
-                    column = struct.unpack_from('<I', payload)[0]
+                    column = struct.unpack_from("<I", payload)[0]
                 if not 0 <= column < 16384:
                     raise InvalidFileError("XLSB column exceeds Excel limits")
                 previous_column = column
@@ -191,9 +202,7 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
         yield from scan(iter_record_payloads(data))
         return
     with reader._archive.open(path) as stream:
-        yield from scan(
-            (record.record_id, payload) for record, payload in iter_records_stream(stream)
-        )
+        yield from scan((record.record_id, payload) for record, payload in iter_records_stream(stream))
 
 
 def sheet_dimension(reader, sheet_name):
@@ -205,7 +214,7 @@ def sheet_dimension(reader, sheet_name):
     with reader._archive.open(path) as stream:
         for record, payload in iter_records_stream(stream):
             if record.record_id == 0x94 and len(payload) >= 16:
-                r1, r2, c1, c2 = struct.unpack_from('<IIII', payload)
+                r1, r2, c1, c2 = struct.unpack_from("<IIII", payload)
                 # XlsbWriter before 0.11 stored an A1:A1 placeholder whatever the
                 # data; a sheet that really is A1:A1 reads the same when unsized.
                 if (r1, r2, c1, c2) != (0, 0, 0, 0) and r1 <= r2 < 1048576 and c1 <= c2 < 16384:
@@ -218,6 +227,7 @@ def sheet_dimension(reader, sheet_name):
 
 def read_xlsb_rows(reader, sheet_name, *, data_only=True):
     """Yield rows with each value at its own position, as the bulk reader and XLSX."""
+
     def checked():
         for row_number, cells in iter_xlsb_indexed_rows(reader, sheet_name, data_only=data_only):
             if cells:

@@ -20,8 +20,10 @@ def test_multi_range_print_area_names_each_part(tmp_path):
         writer.add_sheet("Print Me")
         writer.write_sheet([["a", "b"]], print_settings=PrintSettings(print_area="A1:B2,D4:E5"))
     xml = _workbook_xml(path)
-    assert "&apos;Print Me&apos;!$A$1:$B$2,&apos;Print Me&apos;!$D$4:$E$5" in xml or \
-        "'Print Me'!$A$1:$B$2,'Print Me'!$D$4:$E$5" in xml
+    assert (
+        "&apos;Print Me&apos;!$A$1:$B$2,&apos;Print Me&apos;!$D$4:$E$5" in xml
+        or "'Print Me'!$A$1:$B$2,'Print Me'!$D$4:$E$5" in xml
+    )
 
 
 def test_filter_database_name_quotes_sheet_names_with_spaces(tmp_path):

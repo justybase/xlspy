@@ -1,4 +1,5 @@
 """XlsxWriter sheet methods: sheet loop, rows, cells, pivot and empty sheets."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -62,21 +63,31 @@ from .styles import (
     styles_for_row,
 )
 from ._widths import ColumnWidthMeter
-from ._xlsx_writer_xml import _EMPTY_ROW_STYLES, _FLUSH_BYTES, _REL_DRAWING, _REL_PIVOT_TABLE, _REL_WORKSHEET, _SheetBody, _Tee, _format_number
+from ._xlsx_writer_xml import (
+    _EMPTY_ROW_STYLES,
+    _FLUSH_BYTES,
+    _REL_DRAWING,
+    _REL_PIVOT_TABLE,
+    _REL_WORKSHEET,
+    _SheetBody,
+    _Tee,
+    _format_number,
+)
 from ._xlsx_writer_host import _XlsxWriterHost
 from ._dataframe_rows import dataframe_to_rows
 
 
 def _filter_cells(
-    tables: list[Any], table_bounds: list[Any], auto_filter: bool | None,
-    auto_filter_ref: str | None, body: Any, header_rows: int,
+    tables: list[Any],
+    table_bounds: list[Any],
+    auto_filter: bool | None,
+    auto_filter_ref: str | None,
+    body: Any,
+    header_rows: int,
 ) -> list[tuple[int, int, int]]:
     """The header cells under a filter drop-down button, as ``(row, first column,
     last column)``: they need room for it."""
-    filter_cells = [
-        (r1, c1, c2) for table, (c1, r1, c2, _r2) in zip(tables, table_bounds)
-        if table.header_row
-    ]
+    filter_cells = [(r1, c1, c2) for table, (c1, r1, c2, _r2) in zip(tables, table_bounds) if table.header_row]
     if auto_filter is not False:
         if auto_filter_ref is not None:
             c1, r1, c2, _r2 = parse_cell_range(auto_filter_ref)
@@ -93,9 +104,7 @@ _XLSX_PYTHON_CELLS = (Formula, ArrayFormula, DataTableFormula, Hyperlink, CellRi
 class _XlsxSheetMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
-
-    def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None,
-                    **kwargs: Any) -> None:
+    def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None, **kwargs: Any) -> None:
         """Write rows to the current sheet.
 
         ``data`` is consumed once, row by row. Sheet settings come from ``options``
@@ -157,16 +166,37 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         """
         self._require_writable()
         spec = self._check_sheet_options(
-            header_style=header_style, show_grid_lines=show_grid_lines, header_rows=header_rows,
-            tab_color=tab_color, zoom=zoom, show_row_col_headers=show_row_col_headers,
-            show_zero_values=show_zero_values, right_to_left=right_to_left, styles=styles,
-            merges=merges, comments=comments, sheet_protection=sheet_protection,
-            auto_filter_ref=auto_filter_ref, conditional_formats=conditional_formats, tables=tables,
-            sparklines=sparklines, slicers=slicers, charts=charts, data_validations=data_validations,
-            images=images, shapes=shapes, print_settings=print_settings, column_widths=column_widths,
-            hidden_columns=hidden_columns, row_heights=row_heights, hidden_rows=hidden_rows,
-            row_groups=row_groups, column_groups=column_groups, freeze_panes=freeze_panes,
-            autofit_rows=autofit_rows, autofit_padding=autofit_padding,
+            header_style=header_style,
+            show_grid_lines=show_grid_lines,
+            header_rows=header_rows,
+            tab_color=tab_color,
+            zoom=zoom,
+            show_row_col_headers=show_row_col_headers,
+            show_zero_values=show_zero_values,
+            right_to_left=right_to_left,
+            styles=styles,
+            merges=merges,
+            comments=comments,
+            sheet_protection=sheet_protection,
+            auto_filter_ref=auto_filter_ref,
+            conditional_formats=conditional_formats,
+            tables=tables,
+            sparklines=sparklines,
+            slicers=slicers,
+            charts=charts,
+            data_validations=data_validations,
+            images=images,
+            shapes=shapes,
+            print_settings=print_settings,
+            column_widths=column_widths,
+            hidden_columns=hidden_columns,
+            row_heights=row_heights,
+            hidden_rows=hidden_rows,
+            row_groups=row_groups,
+            column_groups=column_groups,
+            freeze_panes=freeze_panes,
+            autofit_rows=autofit_rows,
+            autofit_padding=autofit_padding,
             sort_state=sort_state,
         )
         # Every option is valid; only now record what this sheet claims. A second
@@ -186,11 +216,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         pivot_plans = normalize_pivots(pivots, spec.tables, self._pivot_names, sheet_name)
         for plan in pivot_plans:
             target_index = self._sheet_index_by_name(plan.target_sheet)
-            if (
-                target_index is not None
-                and target_index != sheet_index
-                and target_index in self._sheet_written
-            ):
+            if target_index is not None and target_index != sheet_index and target_index in self._sheet_written:
                 raise ValueError(
                     f"pivot target sheet {plan.target_sheet!r} was written before its "
                     "source sheet; write the pivot's sheet after the source sheet"
@@ -202,10 +228,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         # the head, which depends on them, is compressed separately at the end.
         compressed = segment = None
         if self._zf.threaded_deflate():
-            compressed = tempfile.SpooledTemporaryFile(
-                max_size=self._spool_max_bytes, mode="w+b")
-            segment = _zip_threads.DeflateSegment(
-                self._zf.deflate_pool(), self._zf.compresslevel, compressed)
+            compressed = tempfile.SpooledTemporaryFile(max_size=self._spool_max_bytes, mode="w+b")
+            segment = _zip_threads.DeflateSegment(self._zf.deflate_pool(), self._zf.compresslevel, compressed)
         try:
             row_sink = spool if segment is None else _Tee(spool, segment)
             pending = self._pending_pivots.pop(sheet_name, None)
@@ -219,15 +243,23 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 button_rows.add(parse_cell_range(auto_filter_ref)[1])
             width_styles = (spec.style_ranges, spec.header_style if has_styles else None)
             meter = ColumnWidthMeter(
-                lambda r, length: styles_for_row(r, length, *width_styles), spec.autofit[0], button_rows,
+                lambda r, length: styles_for_row(r, length, *width_styles),
+                spec.autofit[0],
+                button_rows,
             )
             table_totals: dict = {}
             body = self._write_body(
-                data, row_sink,
-                spec.style_ranges, spec.header_style if has_styles else None,
-                spec.heights, spec.hidden_rows, has_styles,
+                data,
+                row_sink,
+                spec.style_ranges,
+                spec.header_style if has_styles else None,
+                spec.heights,
+                spec.hidden_rows,
+                has_styles,
                 spec.tables,
-                row_outline=spec.row_outline, meter=meter, table_totals=table_totals,
+                row_outline=spec.row_outline,
+                meter=meter,
+                table_totals=table_totals,
             )
             same_sheet = self._place_pivots(feeders, sheet_name, row_sink, body)
             if segment is not None:
@@ -235,28 +267,66 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 segment = None
             table_rels, table_bounds = self._register_tables(spec.tables, sheet_id, body, table_totals)
             rels, link_rels, drawing_rid, slicer_rids = self._register_sheet_parts(
-                sheet_id, sheet_index, spec, body, table_rels, (pending or []) + same_sheet,
+                sheet_id,
+                sheet_index,
+                spec,
+                body,
+                table_rels,
+                (pending or []) + same_sheet,
             )
             if auto_filter is None and spec.tables:
                 auto_filter = False
             filter_cells = _filter_cells(
-                spec.tables, table_bounds, auto_filter, auto_filter_ref, body, spec.header_rows,
+                spec.tables,
+                table_bounds,
+                auto_filter,
+                auto_filter_ref,
+                body,
+                spec.header_rows,
             )
             head = self._sheet_head(
-                body, sheet_index, spec.split_freeze, freeze_panes, spec.widths, spec.hidden_cols,
-                spec.print_settings, row_outline=spec.row_outline, col_outline=spec.col_outline,
+                body,
+                sheet_index,
+                spec.split_freeze,
+                freeze_panes,
+                spec.widths,
+                spec.hidden_cols,
+                spec.print_settings,
+                row_outline=spec.row_outline,
+                col_outline=spec.col_outline,
                 show_grid_lines=show_grid_lines,
-                meter=meter, autofit_padding=spec.autofit[1],
-                filter_cells=filter_cells, tab_key=spec.tab_key, zoom=spec.zoom, view=spec.view,
+                meter=meter,
+                autofit_padding=spec.autofit[1],
+                filter_cells=filter_cells,
+                tab_key=spec.tab_key,
+                zoom=spec.zoom,
+                view=spec.view,
             )
             tail = self._sheet_tail(
-                body, sheet_index, spec.merge_refs, spec.cf_rules, spec.tables, table_bounds,
-                spec.validations, link_rels, auto_filter, drawing_rid, spec.print_settings,
-                auto_filter_ref=auto_filter_ref, header_rows=spec.header_rows,
+                body,
+                sheet_index,
+                spec.merge_refs,
+                spec.cf_rules,
+                spec.tables,
+                table_bounds,
+                spec.validations,
+                link_rels,
+                auto_filter,
+                drawing_rid,
+                spec.print_settings,
+                auto_filter_ref=auto_filter_ref,
+                header_rows=spec.header_rows,
                 sort_state=spec.sort_state,
             )
             tail = self._finish_tail(
-                tail, rels, sheet_id, sheet_name, spec, sheet_protection, ignored_errors, slicer_rids,
+                tail,
+                rels,
+                sheet_id,
+                sheet_name,
+                spec,
+                sheet_protection,
+                ignored_errors,
+                slicer_rids,
             )
             if rels:
                 self._sheet_rels[sheet_id] = rels
@@ -264,14 +334,18 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             if compressed is not None:
                 compressed.seek(0)
                 _zip_threads.replay_member(
-                    self._zf, f"xl/worksheets/sheet{sheet_id}.xml",
-                    head.encode('utf-8'), spool, compressed, tail.encode('utf-8'),
+                    self._zf,
+                    f"xl/worksheets/sheet{sheet_id}.xml",
+                    head.encode("utf-8"),
+                    spool,
+                    compressed,
+                    tail.encode("utf-8"),
                 )
             else:
-                with self._zf.open(f"xl/worksheets/sheet{sheet_id}.xml", 'w') as sheet_file:
-                    sheet_file.write(head.encode('utf-8'))
+                with self._zf.open(f"xl/worksheets/sheet{sheet_id}.xml", "w") as sheet_file:
+                    sheet_file.write(head.encode("utf-8"))
                     shutil.copyfileobj(spool, sheet_file, 1 << 20)
-                    sheet_file.write(tail.encode('utf-8'))
+                    sheet_file.write(tail.encode("utf-8"))
             self._sheet_written.add(sheet_index)
         except BaseException:
             # The sheet part is incomplete, so the workbook cannot be saved.
@@ -285,8 +359,13 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 compressed.close()
 
     def _register_sheet_parts(
-        self, sheet_id: int, sheet_index: int, spec: SheetSpec, body: Any,
-        table_rels: list[tuple[str, str, str, bool]], pivots: list[Any],
+        self,
+        sheet_id: int,
+        sheet_index: int,
+        spec: SheetSpec,
+        body: Any,
+        table_rels: list[tuple[str, str, str, bool]],
+        pivots: list[Any],
     ) -> tuple[list[tuple[str, str, str, bool]], list[Any], str | None, list[str]]:
         """Record the parts a written sheet refers to (hyperlinks, pivots, drawing,
         slicers, shapes, charts, images, print settings) and number their
@@ -297,16 +376,19 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         rels.extend(link_rels)
         for render in pivots:
             rid = f"rId{len(rels) + 1}"
-            rels.append((
-                rid, _REL_PIVOT_TABLE,
-                f"../pivotTables/pivotTable{render.pivot_id}.xml", False,
-            ))
+            rels.append(
+                (
+                    rid,
+                    _REL_PIVOT_TABLE,
+                    f"../pivotTables/pivotTable{render.pivot_id}.xml",
+                    False,
+                )
+            )
         slicer_parts = self._resolve_slicers(spec.slicers)
         drawing_rid = None
         if spec.charts or spec.images or spec.shapes or slicer_parts:
             drawing_rid = f"rId{len(rels) + 1}"
-            rels.append((drawing_rid, _REL_DRAWING,
-                         f"../drawings/drawing{sheet_id}.xml", False))
+            rels.append((drawing_rid, _REL_DRAWING, f"../drawings/drawing{sheet_id}.xml", False))
             self._sheet_drawings.add(sheet_id)
         slicer_rids = []
         for _slicer, part_no in slicer_parts:
@@ -321,9 +403,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             self._sheet_charts[sheet_id] = spec.charts
         if spec.images:
             self._sheet_images[sheet_id] = spec.images
-            self._sheet_image_media[sheet_id] = [
-                self._media.name(image) for image in spec.images
-            ]
+            self._sheet_image_media[sheet_id] = [self._media.name(image) for image in spec.images]
         if spec.print_settings is not None:
             self._sheet_print[sheet_index] = spec.print_settings
         for row_idx, col_idx, link in body.hyperlinks:
@@ -342,10 +422,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             self._next_pivot_id += 1
             self._pivot_renders.append(render)
             own_renders.append(render)
-        same_sheet = [
-            render for render in own_renders
-            if render.plan.target_sheet.casefold() == sheet_name.casefold()
-        ]
+        same_sheet = [render for render in own_renders if render.plan.target_sheet.casefold() == sheet_name.casefold()]
         if same_sheet:
             self._append_pivot_rows(row_sink, same_sheet, body)
         for render in own_renders:
@@ -353,50 +430,69 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 continue
             target_index = self._sheet_index_by_name(render.plan.target_sheet)
             if target_index is not None and target_index in self._sheet_written:
-                raise ValueError(
-                    f"pivot target sheet {render.plan.target_sheet!r} was written "
-                    "before its source sheet"
-                )
+                raise ValueError(f"pivot target sheet {render.plan.target_sheet!r} was written before its source sheet")
             self._pending_pivots.setdefault(render.plan.target_sheet, []).append(render)
         return same_sheet
 
     def _finish_tail(
-        self, tail: str, rels: list[tuple[str, str, str, bool]], sheet_id: int, sheet_name: str,
-        spec: SheetSpec, sheet_protection: SheetProtection | None, ignored_errors: Any, slicer_rids: list[str],
+        self,
+        tail: str,
+        rels: list[tuple[str, str, str, bool]],
+        sheet_id: int,
+        sheet_name: str,
+        spec: SheetSpec,
+        sheet_protection: SheetProtection | None,
+        ignored_errors: Any,
+        slicer_rids: list[str],
     ) -> str:
         """Add the protection, ignored errors, comment parts (to ``rels``) and the
         sparkline and slicer extensions to the sheet's closing XML."""
         if sheet_protection is not None:
-            tail = '</sheetData>' + sheet_protection.to_xml() + tail[len('</sheetData>'):]
+            tail = "</sheetData>" + sheet_protection.to_xml() + tail[len("</sheetData>") :]
         if ignored_errors:
             tail = replace_element(
-                tail, 'ignoredErrors', ignored_errors_xml(ignored_errors),
-                before=('drawing', 'legacyDrawing', 'tableParts'),
+                tail,
+                "ignoredErrors",
+                ignored_errors_xml(ignored_errors),
+                before=("drawing", "legacyDrawing", "tableParts"),
             )
         if spec.comments:
             self._sheet_comments[sheet_id] = spec.comments
             rid = f"rId{len(rels) + 1}"
-            rels.append((rid, _REL_WORKSHEET.rsplit('/', 1)[0] + '/comments',
-                         f'../comments/comment{sheet_id}.xml', False))
+            rels.append(
+                (rid, _REL_WORKSHEET.rsplit("/", 1)[0] + "/comments", f"../comments/comment{sheet_id}.xml", False)
+            )
             vml_rid = f"rId{len(rels) + 1}"
-            rels.append((vml_rid, _REL_WORKSHEET.rsplit('/', 1)[0] + '/vmlDrawing',
-                         f'../drawings/commentsDrawing{sheet_id}.vml', False))
-            tail = replace_element(tail, 'legacyDrawing', f'<legacyDrawing r:id="{vml_rid}"/>', before=('tableParts',))
+            rels.append(
+                (
+                    vml_rid,
+                    _REL_WORKSHEET.rsplit("/", 1)[0] + "/vmlDrawing",
+                    f"../drawings/commentsDrawing{sheet_id}.vml",
+                    False,
+                )
+            )
+            tail = replace_element(tail, "legacyDrawing", f'<legacyDrawing r:id="{vml_rid}"/>', before=("tableParts",))
         # Sparklines and slicers live in the sheet's extLst, which must be the last child.
         sheet_exts = [sparklines_ext(spec.sparklines, sheet_name)]
         if slicer_rids:
             items = "".join(f'<x14:slicer r:id="{rid}"/>' for rid in slicer_rids)
-            sheet_exts.append(ext(EXT_SHEET_SLICER_LIST,
-                                  f"<x14:slicerList>{items}</x14:slicerList>",
-                                  ("x14", X14), ("x15", X15)))
+            sheet_exts.append(
+                ext(EXT_SHEET_SLICER_LIST, f"<x14:slicerList>{items}</x14:slicerList>", ("x14", X14), ("x15", X15))
+            )
         extensions = ext_list(sheet_exts)
         if extensions:
-            tail = replace_element(tail, 'extLst', extensions)
+            tail = replace_element(tail, "extLst", extensions)
         return tail
 
     def write_dataframe(
-        self, df: Any, include_index: bool = False, na_rep: Any = None, formats: dict | None = None,
-        *, header_style: Style | None = None, styles: dict[str, Style] | None = None,
+        self,
+        df: Any,
+        include_index: bool = False,
+        na_rep: Any = None,
+        formats: dict | None = None,
+        *,
+        header_style: Style | None = None,
+        styles: dict[str, Style] | None = None,
         merges: list[str] | tuple[str, ...] | None = None,
         conditional_formats: list | tuple | None = None,
         tables: list[ExcelTable] | tuple[ExcelTable, ...] | None = None,
@@ -473,9 +569,20 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             pivots=pivots,
         )
 
-    def _write_body(self, data, spool, style_ranges, header_style, heights,
-                    hidden_row_set, has_styles, table_headers=(),
-                    row_outline=None, meter=None, table_totals=None):
+    def _write_body(
+        self,
+        data,
+        spool,
+        style_ranges,
+        header_style,
+        heights,
+        hidden_row_set,
+        has_styles,
+        table_headers=(),
+        row_outline=None,
+        meter=None,
+        table_totals=None,
+    ):
         """Encode every row into ``spool`` and return a ``_SheetBody``.
 
         ``meter`` measures the automatic column widths of the first rows (its
@@ -526,8 +633,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         last_written = -1  # index of the last <row> written
         for row_idx, row in enumerate(data):
             row_styles = (
-                styles_for_row(row_idx, len(row), style_ranges, header_style)
-                if has_styles else _EMPTY_ROW_STYLES
+                styles_for_row(row_idx, len(row), style_ranges, header_style) if has_styles else _EMPTY_ROW_STYLES
             )
             if row_idx < measure_until:
                 if fast_add is not None and row_idx not in slow_rows:
@@ -560,20 +666,32 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             # for the Python path.
             style_ids = (
                 _style_ids_for_row(
-                    row_styles, len(row), self._register_style,
+                    row_styles,
+                    len(row),
+                    self._register_style,
                     row_style_ids_cache,
                 )
-                if row_styles else None
+                if row_styles
+                else None
             )
             # Link cells need the built-in link style registered first: the Python
             # path registers it on the first link, so the xf order is unchanged.
             if pending_links:
                 pending_links.clear()  # from a row that went to Python
             c_row = accel_encode_xlsx_row(
-                row, ss_dict, ss_list,
-                self._sst_unique_count, self._sst_all_count,
-                row_idx, use_sst, style_ids, fmt_xf or None, row_attrs or None,
-                link_xf, write_r, cell_hook,
+                row,
+                ss_dict,
+                ss_list,
+                self._sst_unique_count,
+                self._sst_all_count,
+                row_idx,
+                use_sst,
+                style_ids,
+                fmt_xf or None,
+                row_attrs or None,
+                link_xf,
+                write_r,
+                cell_hook,
             )
             if c_row is not None:
                 row_xml, self._sst_unique_count, self._sst_all_count, links = c_row
@@ -583,11 +701,11 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                     links = sorted([*links, *pending_links], key=lambda link: link[1])
                 hyperlinks.extend(links)
             else:
-                row_number = f' r="{row_idx + 1}"' if write_r else ''
-                text.write(f'<row{row_number}{row_attrs}>')
+                row_number = f' r="{row_idx + 1}"' if write_r else ""
+                text.write(f"<row{row_number}{row_attrs}>")
                 self._write_row_cells(text, row, row_idx, row_styles, hyperlinks, arrays)
-                text.write('</row>')
-                buf.write(text.getvalue().encode('utf-8'))
+                text.write("</row>")
+                buf.write(text.getvalue().encode("utf-8"))
                 text.seek(0)
                 text.truncate()
                 if not link_xf:
@@ -618,7 +736,12 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         if num_rows == 0:
             max_cols = 1
         return _SheetBody(
-            num_rows, max_cols, head, hyperlinks, header_rows=header_rows, value_cols=value_cols,
+            num_rows,
+            max_cols,
+            head,
+            hyperlinks,
+            header_rows=header_rows,
+            value_cols=value_cols,
             array_rows=max((r2 + 1 for _c1, _r1, _c2, r2 in arrays), default=0),
         )
 
@@ -657,7 +780,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 # Every cell of the row is written, so none needs its r (as the
                 # native encoder writes them).
                 if cell_style is None:
-                    buf.write('<c/>')
+                    buf.write("<c/>")
                 else:
                     xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
                     buf.write(f'<c s="{xf_index}"/>')
@@ -687,21 +810,21 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             if overlay is not None:
                 if cell_style is not None:
                     xf_index = _xf_for_style_format(
-                        cell_style, overlay, self._register_style,
+                        cell_style,
+                        overlay,
+                        self._register_style,
                         self._style_format_xf,
                     )
                     # Only a registered style has the id the native encoder sees.
                     base_xf = self._style_xf_map.get(cell_style)
                     if base_xf is not None:
-                        _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
-                                        base_xf, overlay, xf_index)
+                        _record_cell_xf(self._fmt_xf, self._fmt_xf_styles, base_xf, overlay, xf_index)
                 else:
                     if isinstance(overlay, str):
                         xf_index = self._register_format(overlay)
                     else:
                         xf_index = self._register_style(overlay)
-                    _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
-                                    None, overlay, xf_index)
+                    _record_cell_xf(self._fmt_xf, self._fmt_xf_styles, None, overlay, xf_index)
             elif cell_style is not None:
                 xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
             else:
@@ -712,13 +835,15 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             if cell is None:
                 # (None, format) or (None, Style): a formatted cell without a
                 # value, written like a blank with a range style.
-                buf.write('<c/>' if xf_index is None else f'<c s="{xf_index}"/>')
+                buf.write("<c/>" if xf_index is None else f'<c s="{xf_index}"/>')
             elif isinstance(cell, (Formula, ArrayFormula, DataTableFormula)):
                 self._write_formula_cell(buf, cell, xf_index)
                 if arrays is not None:
                     ref = (
-                        cell.ref if isinstance(cell, ArrayFormula)
-                        else cell.array_ref if isinstance(cell, Formula)
+                        cell.ref
+                        if isinstance(cell, ArrayFormula)
+                        else cell.array_ref
+                        if isinstance(cell, Formula)
                         else None
                     )
                     if ref is not None:
@@ -726,7 +851,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             elif isinstance(cell, str):
                 self._write_string_cell(buf, cell, row_idx == 0, xf_index)
             elif isinstance(cell, bool):
-                s_attr = f' s="{xf_index}"' if xf_index is not None else ''
+                s_attr = f' s="{xf_index}"' if xf_index is not None else ""
                 buf.write(f'<c t="b"{s_attr}><v>{"1" if cell else "0"}</v></c>')
             elif isinstance(cell, (int, float, Decimal)):
                 if isinstance(cell, (float, Decimal)) and not math.isfinite(float(cell)):
@@ -739,8 +864,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                     # An int past the float range: the digits, as text (as XlsbWriter writes it).
                     self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
                 else:
-                    s_attr = f' s="{xf_index}"' if xf_index is not None else ''
-                    buf.write(f'<c{s_attr}><v>{number}</v></c>')
+                    s_attr = f' s="{xf_index}"' if xf_index is not None else ""
+                    buf.write(f"<c{s_attr}><v>{number}</v></c>")
             elif isinstance(cell, datetime.datetime):
                 if cell.year < 1900 or cell.year > 9999:
                     self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
@@ -748,9 +873,17 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                     if cell.tzinfo is not None:
                         cell = cell.replace(tzinfo=None)
                     excel_date = datetime_to_serial(cell)
-                    style_ref = 2 if xf_index is None else _date_cell_xf(
-                        self._fmt_xf, self._xf_styles, self._register_style,
-                        xf_index, DEFAULT_DATETIME_FORMAT, True,
+                    style_ref = (
+                        2
+                        if xf_index is None
+                        else _date_cell_xf(
+                            self._fmt_xf,
+                            self._xf_styles,
+                            self._register_style,
+                            xf_index,
+                            DEFAULT_DATETIME_FORMAT,
+                            True,
+                        )
                     )
                     buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
             elif isinstance(cell, datetime.date):
@@ -758,9 +891,17 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                     self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
                 else:
                     excel_date = datetime_to_serial(cell)
-                    style_ref = 1 if xf_index is None else _date_cell_xf(
-                        self._fmt_xf, self._xf_styles, self._register_style,
-                        xf_index, DEFAULT_DATE_FORMAT, False,
+                    style_ref = (
+                        1
+                        if xf_index is None
+                        else _date_cell_xf(
+                            self._fmt_xf,
+                            self._xf_styles,
+                            self._register_style,
+                            xf_index,
+                            DEFAULT_DATE_FORMAT,
+                            False,
+                        )
                     )
                     buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
             elif isinstance(cell, CellRichText):
@@ -769,15 +910,14 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
 
     def _write_formula_cell(self, buf, formula: Formula | ArrayFormula | DataTableFormula, xf_index):
-        s_attr = f' s="{xf_index}"' if xf_index is not None else ''
+        s_attr = f' s="{xf_index}"' if xf_index is not None else ""
         if isinstance(formula, ArrayFormula):
             buf.write(
-                f'<c{s_attr}><f t="array" ref={saxutils.quoteattr(formula.ref)}>'
-                f"{saxutils.escape(formula.text)}</f></c>"
+                f'<c{s_attr}><f t="array" ref={saxutils.quoteattr(formula.ref)}>{saxutils.escape(formula.text)}</f></c>'
             )
             return
         if isinstance(formula, DataTableFormula):
-            attrs = ["t=\"dataTable\"", f"ref={saxutils.quoteattr(formula.ref)}"]
+            attrs = ['t="dataTable"', f"ref={saxutils.quoteattr(formula.ref)}"]
             for name in ("dt2D", "dtr", "del1", "del2", "ca"):
                 if getattr(formula, name):
                     attrs.append(f'{name}="1"')
@@ -785,28 +925,26 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 value = getattr(formula, name)
                 if value is not None:
                     attrs.append(f"{name}={saxutils.quoteattr(value)}")
-            buf.write(f'<c{s_attr}><f {" ".join(attrs)}/></c>')
+            buf.write(f"<c{s_attr}><f {' '.join(attrs)}/></c>")
             return
         value = formula.value
-        t_attr = ''
-        v_xml = ''
+        t_attr = ""
+        v_xml = ""
         if isinstance(value, str):
             check_cell_text(value)
             t_attr = ' t="str"'
-            v_xml = f'<v>{xstring_escape(saxutils.escape(value))}</v>'
+            v_xml = f"<v>{xstring_escape(saxutils.escape(value))}</v>"
         elif value is not None:
-            v_xml = f'<v>{_format_number(float(value) if isinstance(value, Decimal) else value)}</v>'
+            v_xml = f"<v>{_format_number(float(value) if isinstance(value, Decimal) else value)}</v>"
         range_ref = formula.spill_ref if formula.spill_ref is not None else formula.array_ref
-        f_attr = f' t="array" ref="{range_ref}"' if range_ref is not None else ''
-        cm_attr = ''
+        f_attr = f' t="array" ref="{range_ref}"' if range_ref is not None else ""
+        cm_attr = ""
         if formula.spill_ref is not None:
             # A dynamic-array anchor: cm="1" points at the XLDAPR block of
             # xl/metadata.xml, which the writer adds when it sees one.
             cm_attr = ' cm="1"'
             self._has_dynamic = True
-        buf.write(
-            f'<c{cm_attr}{s_attr}{t_attr}><f{f_attr}>{saxutils.escape(formula.text)}</f>{v_xml}</c>'
-        )
+        buf.write(f"<c{cm_attr}{s_attr}{t_attr}><f{f_attr}>{saxutils.escape(formula.text)}</f>{v_xml}</c>")
 
     def _append_pivot_rows(self, sink, renders, body) -> None:
         """Write pivot cells below the streamed rows of the source sheet."""
@@ -831,8 +969,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             buf = io.StringIO()
             buf.write(f'<row r="{row_idx + 1}">')
             self._write_row_cells(buf, cell_row, row_idx, {}, [])
-            buf.write('</row>')
-            sink.write(buf.getvalue().encode('utf-8'))
+            buf.write("</row>")
+            sink.write(buf.getvalue().encode("utf-8"))
             body.num_rows = max(body.num_rows, row_idx + 1)
             body.max_cols = max(body.max_cols, width)
             body.value_cols = max(body.value_cols, width)
@@ -854,7 +992,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             buf = io.StringIO()
             buf.write(f'<row r="{row_idx + 1}">')
             self._write_row_cells(buf, cell_row, row_idx, {}, [])
-            buf.write('</row>')
+            buf.write("</row>")
             rows_xml.append(buf.getvalue())
             max_row = max(max_row, row_idx + 1)
             max_col = max(max_col, width)
@@ -871,10 +1009,14 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         rels: list[Any] = []
         for render in renders:
             rid = f"rId{len(rels) + 1}"
-            rels.append((
-                rid, _REL_PIVOT_TABLE,
-                f"../pivotTables/pivotTable{render.pivot_id}.xml", False,
-            ))
+            rels.append(
+                (
+                    rid,
+                    _REL_PIVOT_TABLE,
+                    f"../pivotTables/pivotTable{render.pivot_id}.xml",
+                    False,
+                )
+            )
         if rels:
             self._sheet_rels[sheet_id] = rels
 
@@ -889,7 +1031,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             f"xl/worksheets/sheet{sheet_index + 1}.xml",
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            '<sheetData/></worksheet>',
+            "<sheetData/></worksheet>",
         )
 
     def _write_rich_cell(self, buffer, rich: CellRichText, is_header: bool, xf_index):
@@ -897,7 +1039,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         if xf_index is not None:
             style_ref = f' s="{xf_index}"'
         else:
-            style_ref = ' s="3"' if is_header else ''
+            style_ref = ' s="3"' if is_header else ""
         if not self._use_shared_strings:
             buffer.write(f'<c t="inlineStr"{style_ref}><is>{runs}</is></c>')
             return
@@ -913,7 +1055,9 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             self._sst_unique_count += 1
         buffer.write(f'<c t="s"{style_ref}><v>{string_index}</v></c>')
 
-    def _write_string_cell(self, buffer: io.StringIO, cell_value: str, is_header: bool = False, xf_index: int | None = None):
+    def _write_string_cell(
+        self, buffer: io.StringIO, cell_value: str, is_header: bool = False, xf_index: int | None = None
+    ):
         check_cell_text(cell_value)
         if self._use_shared_strings:
             self._sst_all_count += 1
@@ -928,13 +1072,13 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             if xf_index is not None:
                 style_ref = f' s="{xf_index}"'
             else:
-                style_ref = ' s="3"' if is_header else ''
+                style_ref = ' s="3"' if is_header else ""
             buffer.write(f'<c t="s"{style_ref}><v>{string_index}</v></c>')
         else:
             escaped_value = xstring_escape(saxutils.escape(cell_value))
             if xf_index is not None:
                 style_ref = f' s="{xf_index}"'
             else:
-                style_ref = ' s="3"' if is_header else ''
+                style_ref = ' s="3"' if is_header else ""
             space = xml_space_attribute(cell_value)
             buffer.write(f'<c t="inlineStr"{style_ref}><is><t{space}>{escaped_value}</t></is></c>')

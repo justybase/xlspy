@@ -20,8 +20,15 @@ class StyleArray(tuple[int, ...]):
     __slots__ = ()
 
     _NAMES = (
-        "fontId", "fillId", "borderId", "numFmtId", "protectionId",
-        "alignmentId", "pivotButton", "quotePrefix", "xfId",
+        "fontId",
+        "fillId",
+        "borderId",
+        "numFmtId",
+        "protectionId",
+        "alignmentId",
+        "pivotButton",
+        "quotePrefix",
+        "xfId",
     )
 
     def __new__(cls, values: tuple[int, ...] = (0,) * 9) -> StyleArray:
@@ -80,6 +87,7 @@ class NamedStyle:
     Register it with ``Workbook.add_named_style``, then assign its name to
     ``cell.style``.
     """
+
     def __init__(
         self,
         name: str = "Normal",
@@ -127,10 +135,7 @@ class NamedStyleList(list["str | NamedStyle"]):
     def add(self, style: str | NamedStyle) -> None:
         """Add a style, replacing one with the same name."""
         name = style if isinstance(style, str) else style.name
-        self[:] = [
-            item for item in self
-            if (item if isinstance(item, str) else item.name) != name
-        ]
+        self[:] = [item for item in self if (item if isinstance(item, str) else item.name) != name]
         self.append(style)
 
     def keys(self) -> list[str]:

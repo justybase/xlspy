@@ -94,16 +94,18 @@ def _sum_pixels(text: str, advances: dict[str, int], bold: bool, pixels: int) ->
         return total
 
 
-def text_pixels(text: str, bold: bool = False, size: float | None = None, *,
-                font: str | None = None, italic: bool = False) -> int:
+def text_pixels(
+    text: str, bold: bool = False, size: float | None = None, *, font: str | None = None, italic: bool = False
+) -> int:
     """Width of ``text`` on one line at 96 DPI, in pixels, in the font named
     ``font`` (Calibri by default)."""
     pixels = _pixel_size(size)
     return _sum_pixels(text, _advances(bold, pixels, _fonts.family_key(font), italic), bold, pixels)
 
 
-def text_width(text: str, bold: bool = False, size: float | None = None, *,
-               font: str | None = None, italic: bool = False) -> float:
+def text_width(
+    text: str, bold: bool = False, size: float | None = None, *, font: str | None = None, italic: bool = False
+) -> float:
     """Width of ``text`` on one line in digits of the default font, without padding."""
     return text_pixels(text, bold, size, font=font, italic=italic) / _DIGIT_PX
 
@@ -114,8 +116,9 @@ def _column_pixels(text_px: int, margin: int) -> int:
     return max(text_px + margin, text_px * 29 // 28 + margin - 2) + _SPARE_PX
 
 
-def _autofit_pixels(text_px: int, size: float | None, font: str | None = None,
-                    bold: bool = False, italic: bool = False) -> int:
+def _autofit_pixels(
+    text_px: int, size: float | None, font: str | None = None, bold: bool = False, italic: bool = False
+) -> int:
     """The column Excel's AutoFit makes for text ``text_px`` pixels wide.
 
     Measured on a display at 100% scaling (Calibri: 11,786 cells, 8 to 36 pt;
@@ -138,16 +141,29 @@ _DATE_TOKENS = re.compile(
 )
 # Long renderings: Excel uses the reader's language for names.
 _DATE_SAMPLES = {
-    "yyyy": "2024", "yy": "24", "mmmmm": "W", "mmmm": "październik", "mmm": "Sep",
-    "mm": "12", "m": "12", "dddd": "poniedziałek", "ddd": "Wed", "dd": "30",
-    "d": "30", "hh": "23", "h": "23", "ss": "59", "s": "59", "am/pm": "PM",
+    "yyyy": "2024",
+    "yy": "24",
+    "mmmmm": "W",
+    "mmmm": "październik",
+    "mmm": "Sep",
+    "mm": "12",
+    "m": "12",
+    "dddd": "poniedziałek",
+    "ddd": "Wed",
+    "dd": "30",
+    "d": "30",
+    "hh": "23",
+    "h": "23",
+    "ss": "59",
+    "s": "59",
+    "am/pm": "PM",
     "a/p": "P",
 }
 # numFmt 14 and 22 follow the reader's locale: 2024-09-30, 30.09.2024 or (widest,
 # with slashes) 12/31/2024.
-_SHORT_DATE = "12/31/2024"           # numFmt 14, the writer's default for dates
+_SHORT_DATE = "12/31/2024"  # numFmt 14, the writer's default for dates
 _SHORT_DATETIME = "12/31/2024 23:45"  # numFmt 22, the default for datetimes
-_BOOLEAN = "PRAWDA"                 # TRUE in the longest common language
+_BOOLEAN = "PRAWDA"  # TRUE in the longest common language
 
 
 def _sections(number_format: str) -> list[str]:
@@ -174,7 +190,7 @@ def _literal_text(part: str) -> str:
         if char == '"':
             end = part.find('"', i + 1)
             end = len(part) if end < 0 else end
-            out.append(part[i + 1:end])
+            out.append(part[i + 1 : end])
             i = end + 1
             continue
         if char in "\\_" and i + 1 < len(part):
@@ -278,10 +294,10 @@ def _formatted_number_text(value: float, number_format: str) -> str:
     if match is None:
         return _literal_text(section)
     placeholder = match.group(0)
-    head, tail = section[:match.start()], section[match.end():]
+    head, tail = section[: match.start()], section[match.end() :]
     exponent = re.search(r"[eE][+-]([0#]+)$", placeholder)
     if exponent:
-        mantissa = placeholder[:exponent.start()]
+        mantissa = placeholder[: exponent.start()]
         decimals = len(mantissa.split(".", 1)[1]) if "." in mantissa else 0
         number = f"{abs(value):.{decimals}E}"
         digits, power = number.split("E")
@@ -341,12 +357,12 @@ def _format_plan(number_format: str, measure) -> tuple | None:
             plans.append((1, measure(_literal_text(section)), 0, 0, 0, 0, 0, 0))
             continue
         placeholder = match.group(0)
-        head = measure(_literal_text(section[:match.start()]))
-        tail = measure(_literal_text(section[match.end():]))
+        head = measure(_literal_text(section[: match.start()]))
+        tail = measure(_literal_text(section[match.end() :]))
         percent = _QUOTED.sub("", section).count("%")
         exponent = _EXPONENT.search(placeholder)
         if exponent:
-            mantissa = placeholder[:exponent.start()]
+            mantissa = placeholder[: exponent.start()]
             decimals = len(mantissa.split(".", 1)[1]) if "." in mantissa else 0
             plans.append((3, head, tail, decimals, 0, 0, percent, len(exponent.group(1))))
         else:
@@ -422,9 +438,16 @@ def cell_text(value, number_format: str | None = None) -> str | None:
     return _shown(value, number_format)[0]
 
 
-def cell_width(value, number_format: str | None = None, *, bold: bool = False,
-               size: float | None = None, wrap: bool = False, font: str | None = None,
-               italic: bool = False) -> float:
+def cell_width(
+    value,
+    number_format: str | None = None,
+    *,
+    bold: bool = False,
+    size: float | None = None,
+    wrap: bool = False,
+    font: str | None = None,
+    italic: bool = False,
+) -> float:
     """Column width that shows ``value`` whole (0.0 when it shows nothing).
 
     Excel's own AutoFit on a display at 100% scaling, for the fonts with
@@ -527,8 +550,8 @@ class ColumnWidthMeter:
             # Style props -> native kind; 0 plain, 1 bold (an unstyled header cell).
             self._kinds: dict = {_PLAIN_PROPS: 0, _HEADER_PROPS: 1}
             self._native = _NativeWidthMeter(
-                self._native_fallback, self._kind_of, [bool, datetime.date, datetime.datetime],
-                self._overlay_kind)
+                self._native_fallback, self._kind_of, [bool, datetime.date, datetime.datetime], self._overlay_kind
+            )
             for props, kind in self._kinds.items():
                 self._native.add_kind(kind, self._kind_spec(props))
             self.fast_add = self._native.add
@@ -570,8 +593,12 @@ class ColumnWidthMeter:
         if font is None:
             pixels = _pixel_size(size)
             advances = _advances(bold, pixels, family, italic)
-            font = self._fonts[key] = (advances, pixels, _fonts.margin(advances),
-                                       _fonts.italic_pixels(family, bold, italic, pixels))
+            font = self._fonts[key] = (
+                advances,
+                pixels,
+                _fonts.margin(advances),
+                _fonts.italic_pixels(family, bold, italic, pixels),
+            )
         return font
 
     def _rich_pixels(self, rich, family: str, bold: bool, italic: bool, size, wrap: bool) -> int:
@@ -589,7 +616,8 @@ class ColumnWidthMeter:
                 font, text = run.font, run.text
                 run_bold, run_italic = bool(font.b), bool(font.i)
                 advances, pixels, _margin, run_slant = self._font(
-                    _fonts.family_key(font.rFont), run_bold, run_italic, font.sz)
+                    _fonts.family_key(font.rFont), run_bold, run_italic, font.sz
+                )
             else:
                 text, run_bold, run_italic = str(run), bold, italic
                 advances, pixels, _margin, run_slant = self._font(family, bold, italic, size)
@@ -628,8 +656,7 @@ class ColumnWidthMeter:
             key = (kind, number_format, family, bold, italic, size)
             known = self._constant.get(key)
             if known is None:
-                known = self._constant[key] = _sum_pixels(
-                    _shown(cell, number_format)[1] or "", advances, bold, pixels)
+                known = self._constant[key] = _sum_pixels(_shown(cell, number_format)[1] or "", advances, bold, pixels)
             text_px = known
             text = None
         elif (kind is int or kind is float) and (number_format is None or number_format == "General"):
@@ -722,14 +749,10 @@ class ColumnWidthMeter:
                     width = None
                 if width:
                     best[col] = max(best[col], width + button)
-        return [
-            min(MAX_WIDTH, max(DEFAULT_WIDTH, px / _DIGIT_PX + padding)) if px else DEFAULT_WIDTH
-            for px in best
-        ]
+        return [min(MAX_WIDTH, max(DEFAULT_WIDTH, px / _DIGIT_PX + padding)) if px else DEFAULT_WIDTH for px in best]
 
 
-def estimate_column_widths(rows, max_cols: int, styles_at=None, filter_cells=(),
-                           padding: float = 0.0) -> list[float]:
+def estimate_column_widths(rows, max_cols: int, styles_at=None, filter_cells=(), padding: float = 0.0) -> list[float]:
     """Column widths that show ``rows`` whole (see ``ColumnWidthMeter``)."""
     meter = ColumnWidthMeter(styles_at, None, {r for r, _c1, _c2 in filter_cells})
     for row_idx, row in enumerate(rows):

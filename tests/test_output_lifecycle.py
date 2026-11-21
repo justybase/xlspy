@@ -120,7 +120,7 @@ def test_workbook_is_appended_after_existing_stream_content(tmp_path, writer_cls
         _two_sheets(writer)
     data = stream.getvalue()
     assert data.startswith(b"PREFIX")
-    assert _rows_of(data[len(b"PREFIX"):], ext, tmp_path, "First")[1] == ["apple", 3]
+    assert _rows_of(data[len(b"PREFIX") :], ext, tmp_path, "First")[1] == ["apple", 3]
 
 
 @pytest.mark.parametrize("writer_cls,ext", WRITERS)
@@ -208,10 +208,13 @@ def test_failure_in_a_later_sheet_discards_the_whole_workbook(tmp_path, writer_c
     assert _leftovers(tmp_path) == []
 
 
-@pytest.mark.parametrize("writer_cls,ext,method", [
-    pytest.param(XlsxWriter, "xlsx", "_sheet_tail", id="xlsx"),
-    pytest.param(XlsbWriter, "xlsb", "_create_worksheet_rels", id="xlsb"),
-])
+@pytest.mark.parametrize(
+    "writer_cls,ext,method",
+    [
+        pytest.param(XlsxWriter, "xlsx", "_sheet_tail", id="xlsx"),
+        pytest.param(XlsbWriter, "xlsb", "_create_worksheet_rels", id="xlsb"),
+    ],
+)
 def test_serialization_error_publishes_nothing(tmp_path, monkeypatch, writer_cls, ext, method):
     def broken(*args, **kwargs):
         raise RuntimeError("serializer failed")
@@ -225,10 +228,13 @@ def test_serialization_error_publishes_nothing(tmp_path, monkeypatch, writer_cls
     assert buffer.getvalue() == b""
 
 
-@pytest.mark.parametrize("writer_cls,ext,method", [
-    pytest.param(XlsxWriter, "xlsx", "_create_styles_xml", id="xlsx"),
-    pytest.param(XlsbWriter, "xlsb", "_build_styles_bin", id="xlsb"),
-])
+@pytest.mark.parametrize(
+    "writer_cls,ext,method",
+    [
+        pytest.param(XlsxWriter, "xlsx", "_create_styles_xml", id="xlsx"),
+        pytest.param(XlsbWriter, "xlsb", "_build_styles_bin", id="xlsb"),
+    ],
+)
 @pytest.mark.parametrize("kind", ["path", "bytesio"])
 def test_error_while_saving_publishes_nothing(tmp_path, monkeypatch, writer_cls, ext, method, kind):
     def broken(*args, **kwargs):

@@ -21,7 +21,7 @@ from xlspy import _accel
 
 needs_native = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
 
-ASTRAL = "\U0001D11E"  # outside the BMP: two UTF-16 units
+ASTRAL = "\U0001d11e"  # outside the BMP: two UTF-16 units
 
 CASES = [
     Formula("A1+B1"),
@@ -81,12 +81,9 @@ def test_formula_sheet_matches_python_writer(shared):
         (Formula("A1+1", value=2), b'<row r="1"><c><f>A1+1</f><v>2</v></c></row>'),
         (Formula("A1+1", value=2.5), b'<row r="1"><c><f>A1+1</f><v>2.5</v></c></row>'),
         (Formula("A1+1", value=3.0), b'<row r="1"><c><f>A1+1</f><v>3</v></c></row>'),
-        (Formula("A1&B1", value="x&y"),
-         b'<row r="1"><c t="str"><f>A1&amp;B1</f><v>x&amp;y</v></c></row>'),
-        (Formula('A1&"<"', value="a"),
-         b'<row r="1"><c t="str"><f>A1&amp;"&lt;"</f><v>a</v></c></row>'),
-        (Formula('A1&"<"'),
-         b'<row r="1"><c><f>A1&amp;"&lt;"</f></c></row>'),
+        (Formula("A1&B1", value="x&y"), b'<row r="1"><c t="str"><f>A1&amp;B1</f><v>x&amp;y</v></c></row>'),
+        (Formula('A1&"<"', value="a"), b'<row r="1"><c t="str"><f>A1&amp;"&lt;"</f><v>a</v></c></row>'),
+        (Formula('A1&"<"'), b'<row r="1"><c><f>A1&amp;"&lt;"</f></c></row>'),
     ],
 )
 def test_native_formula_row_bytes(formula, expected):

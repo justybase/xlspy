@@ -3,6 +3,7 @@
 mypy only checks callers against annotations that exist; an unannotated public
 method is silently ``Any`` for users. This guard keeps new API typed.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -13,10 +14,18 @@ import xlspy
 import xlspy.workbook
 
 # Private names are skipped, except the protocol methods users call through syntax.
-_DUNDERS = frozenset({
-    "__init__", "__enter__", "__exit__", "__iter__", "__getitem__", "__setitem__",
-    "__len__", "__contains__",
-})
+_DUNDERS = frozenset(
+    {
+        "__init__",
+        "__enter__",
+        "__exit__",
+        "__iter__",
+        "__getitem__",
+        "__setitem__",
+        "__len__",
+        "__contains__",
+    }
+)
 
 
 def _public_functions() -> Iterator[tuple[str, Callable[..., Any]]]:
@@ -52,7 +61,8 @@ def _missing_annotations(function: Callable[..., Any]) -> list[str]:
         return []
     annotations = function.__annotations__
     missing = [
-        name for name in inspect.signature(function).parameters
+        name
+        for name in inspect.signature(function).parameters
         if name not in ("self", "cls") and name not in annotations
     ]
     if "return" not in annotations:
@@ -61,11 +71,13 @@ def _missing_annotations(function: Callable[..., Any]) -> list[str]:
 
 
 def test_public_api_is_fully_annotated() -> None:
-    problems = sorted({
-        f"{name}: {', '.join(missing)}"
-        for name, function in _public_functions()
-        if (missing := _missing_annotations(function))
-    })
+    problems = sorted(
+        {
+            f"{name}: {', '.join(missing)}"
+            for name, function in _public_functions()
+            if (missing := _missing_annotations(function))
+        }
+    )
     assert not problems, "unannotated public API:\n" + "\n".join(problems)
 
 

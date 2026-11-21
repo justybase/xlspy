@@ -124,8 +124,11 @@ def comments_xml(comments, existing=None):
         return _comment_xml(ref, comments[ref], authors)
 
     xml = element_pattern("comment").sub(patch, xml)
-    added = [_comment_xml(ref, comment, authors) for ref, comment in comments.items()
-             if ref not in seen and comment is not None]
+    added = [
+        _comment_xml(ref, comment, authors)
+        for ref, comment in comments.items()
+        if ref not in seen and comment is not None
+    ]
     if added:
         xml = append_child(xml, "commentList", "".join(added))
     return xml.encode("utf-8")
@@ -135,8 +138,10 @@ def _comment_xml(ref, comment, authors):
     if comment is None:
         return ""
     index = authors[xstring_escape(comment.author)]
-    return (f'<comment xmlns="{MAIN}" ref="{ref}" authorId="{index}"><text>'
-            f'<t xml:space="preserve">{escape(xstring_escape(comment.text))}</t></text></comment>')
+    return (
+        f'<comment xmlns="{MAIN}" ref="{ref}" authorId="{index}"><text>'
+        f'<t xml:space="preserve">{escape(xstring_escape(comment.text))}</t></text></comment>'
+    )
 
 
 def read_comments(data: bytes) -> dict[str, Comment]:
@@ -160,8 +165,7 @@ def _fragment_node(xml, fragment):
 
 
 def vml_xml(comments, existing=None):
-    xml = (f'<xml xmlns:v="{V}" xmlns:o="{O}" xmlns:x="{X}"></xml>'
-           if existing is None else existing.decode("utf-8"))
+    xml = f'<xml xmlns:v="{V}" xmlns:o="{O}" xmlns:x="{X}"></xml>' if existing is None else existing.decode("utf-8")
     root = safe_fromstring(xml)  # Validate before editing any package members.
     shape_ids = {n.get("id") for n in root.iter() if n.get("id")}
     type_id = "_xlspy_t202"
@@ -200,11 +204,11 @@ def vml_xml(comments, existing=None):
             col, row, _, _ = parse_cell_range(ref)
             fragments.append(
                 f'<v:shape xmlns:v="{V}" xmlns:o="{O}" xmlns:x="{X}" id="_x0000_s{next_id}" type="#{type_id}" '
-                f'style="position:absolute;margin-left:59.25pt;margin-top:1.5pt;width:{comment.width * .75:g}pt;height:{comment.height * .75:g}pt;z-index:1;visibility:hidden" '
+                f'style="position:absolute;margin-left:59.25pt;margin-top:1.5pt;width:{comment.width * 0.75:g}pt;height:{comment.height * 0.75:g}pt;z-index:1;visibility:hidden" '
                 'fillcolor="#ffffe1" o:insetmode="auto"><v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/>'
                 '<v:path o:connecttype="none"/><v:textbox style="mso-direction-alt:auto"><div style="text-align:left"/></v:textbox>'
                 f'<x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/><x:AutoFill>False</x:AutoFill>'
-                f'<x:Row>{row}</x:Row><x:Column>{col}</x:Column></x:ClientData></v:shape>'
+                f"<x:Row>{row}</x:Row><x:Column>{col}</x:Column></x:ClientData></v:shape>"
             )
             next_id += 1
         xml = append_child(xml, "xml", "".join(fragments))
@@ -217,7 +221,11 @@ def rels_path(part):
 
 
 def resolve_part(part, target):
-    resolved = posixpath.normpath(posixpath.join(posixpath.dirname(part), target)) if not target.startswith("/") else target.lstrip("/")
+    resolved = (
+        posixpath.normpath(posixpath.join(posixpath.dirname(part), target))
+        if not target.startswith("/")
+        else target.lstrip("/")
+    )
     if resolved.startswith("../") or resolved == "..":
         raise ValueError("relationship target escapes package")
     return resolved
@@ -226,8 +234,9 @@ def resolve_part(part, target):
 _ANY_VML = object()
 
 
-def find_comment_parts(get: Callable[[str], bytes], names: Collection[str], sheet_part: str,
-                       legacy_rid: object = _ANY_VML) -> tuple[str, ET.Element, dict[str, tuple[str, str]]]:
+def find_comment_parts(
+    get: Callable[[str], bytes], names: Collection[str], sheet_part: str, legacy_rid: object = _ANY_VML
+) -> tuple[str, ET.Element, dict[str, tuple[str, str]]]:
     """Return the sheet's comments part and its note VML part.
 
     Editors pass ``legacy_rid`` (the legacyDrawing r:id, or None when the sheet
@@ -264,8 +273,9 @@ class NotePartsEdit:
     in place.
     """
 
-    def __init__(self, sheet_path: str, relationships: ET.Element,
-                 parts: dict[str, tuple[str, str]], names: Collection[str]) -> None:
+    def __init__(
+        self, sheet_path: str, relationships: ET.Element, parts: dict[str, tuple[str, str]], names: Collection[str]
+    ) -> None:
         self.sheet_path = sheet_path
         self.relationships = relationships
         self.parts = parts
@@ -286,10 +296,15 @@ class NotePartsEdit:
             index += 1
         rid = f"rId{index}"
         self._used_ids.add(rid)
-        ET.SubElement(self.relationships, f"{{{PKG_REL}}}Relationship", {
-            "Id": rid, "Type": REL + "/" + kind,
-            "Target": posixpath.relpath(part, posixpath.dirname(self.sheet_path)),
-        })
+        ET.SubElement(
+            self.relationships,
+            f"{{{PKG_REL}}}Relationship",
+            {
+                "Id": rid,
+                "Type": REL + "/" + kind,
+                "Target": posixpath.relpath(part, posixpath.dirname(self.sheet_path)),
+            },
+        )
         self.parts[kind] = (part, rid)
         return part
 
@@ -312,7 +327,7 @@ def comment_part_targets(get, names, sheet_part):
     if path not in names:
         return set()
     return {
-        resolve_part(sheet_part, rel.attrib["Target"]) for rel in safe_fromstring(get(path))
-        if rel.get("Type", "").rsplit("/", 1)[-1] in {"comments", "vmlDrawing"}
-        and rel.get("TargetMode") != "External"
+        resolve_part(sheet_part, rel.attrib["Target"])
+        for rel in safe_fromstring(get(path))
+        if rel.get("Type", "").rsplit("/", 1)[-1] in {"comments", "vmlDrawing"} and rel.get("TargetMode") != "External"
     }

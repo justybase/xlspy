@@ -90,9 +90,7 @@ class HeaderFooterItem:
 
     def code(self) -> str | None:
         parts = [
-            f"&{tag}{part.text}"
-            for tag, part in (("L", self.left), ("C", self.center), ("R", self.right))
-            if part.text
+            f"&{tag}{part.text}" for tag, part in (("L", self.left), ("C", self.center), ("R", self.right)) if part.text
         ]
         return "".join(parts) or None
 
@@ -109,7 +107,7 @@ class HeaderFooterItem:
                     current = code[index + 1]
                 else:
                     # Other codes (&P, &&, &"Font") stay in the part's text.
-                    texts[current].append(code[index:index + 2])
+                    texts[current].append(code[index : index + 2])
                 index += 2
                 continue
             texts[current].append(code[index])
@@ -143,9 +141,9 @@ def print_settings_for(sheet: Worksheet) -> PrintSettings | None:
     values: dict[str, Any] = {
         "orientation": setup.orientation,
         "paper_size": setup.paperSize,
-        "margins": None if margins == WorksheetPageMargins() else _WriterMargins(
-            **{item.name: getattr(margins, item.name) for item in fields(WorksheetPageMargins)}
-        ),
+        "margins": None
+        if margins == WorksheetPageMargins()
+        else _WriterMargins(**{item.name: getattr(margins, item.name) for item in fields(WorksheetPageMargins)}),
         "print_area": sheet.print_area,
         "repeat_rows": sheet.print_title_rows,
         "repeat_columns": sheet.print_title_cols,

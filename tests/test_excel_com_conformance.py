@@ -119,8 +119,10 @@ def _same_cell(expected, actual) -> bool:
     if isinstance(expected, bool):
         return isinstance(actual, bool) and actual is expected
     if isinstance(expected, (int, float)):
-        return isinstance(actual, (int, float)) and not isinstance(actual, bool) and math.isclose(
-            float(expected), float(actual), rel_tol=1e-9, abs_tol=1e-12
+        return (
+            isinstance(actual, (int, float))
+            and not isinstance(actual, bool)
+            and math.isclose(float(expected), float(actual), rel_tol=1e-9, abs_tol=1e-12)
         )
     return expected == actual
 

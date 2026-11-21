@@ -32,11 +32,15 @@ from ._text import _attr as _attr
 
 _MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _PIVOT_PLAIN_TYPES = (str, bool, int, float, Decimal, date, datetime)
-_PIVOT_EXT_LIST = ext_list([ext(
-    "{962EF5D1-5CA2-4c93-8EF4-DBF5C05439D2}",
-    '<x14:pivotTableDefinition hideValuesRow="1"/>',
-    ("x14", X14),
-)])
+_PIVOT_EXT_LIST = ext_list(
+    [
+        ext(
+            "{962EF5D1-5CA2-4c93-8EF4-DBF5C05439D2}",
+            '<x14:pivotTableDefinition hideValuesRow="1"/>',
+            ("x14", X14),
+        )
+    ]
+)
 _FUNCTIONS = {"sum", "count", "average", "min", "max"}
 # The dataField ``subtotal`` values; "sum" is the default and is not written.
 _SUBTOTALS = {"count": "count", "average": "average", "min": "min", "max": "max"}
@@ -155,10 +159,7 @@ class PivotValue:
             raise TypeError("pivot value function must be a string")
         function = self.function.casefold()
         if function not in _FUNCTIONS:
-            raise ValueError(
-                f"pivot value function must be one of {sorted(_FUNCTIONS)}, "
-                f"got {self.function!r}"
-            )
+            raise ValueError(f"pivot value function must be one of {sorted(_FUNCTIONS)}, got {self.function!r}")
         object.__setattr__(self, "function", function)
         for name, value in (("name", self.name), ("number_format", self.number_format)):
             if value is not None and (not isinstance(value, str) or not value):
@@ -194,14 +195,9 @@ def _value_spec(value) -> PivotValue:
         return PivotValue(value)
     if isinstance(value, (list, tuple)):
         if not 1 <= len(value) <= 4:
-            raise ValueError(
-                "a pivot value tuple must be (field[, function[, name[, format]]])"
-            )
+            raise ValueError("a pivot value tuple must be (field[, function[, name[, format]]])")
         return PivotValue(*value)
-    raise TypeError(
-        "pivot values must be PivotValue instances, field names or "
-        "(field, function, ...) tuples"
-    )
+    raise TypeError("pivot values must be PivotValue instances, field names or (field, function, ...) tuples")
 
 
 def _values(value) -> tuple[PivotValue, ...]:
@@ -306,14 +302,10 @@ class PivotTable:
     def __post_init__(self):
         rows = _pivot_axis_fields(self.rows, "rows")
         if len(rows) != 1:
-            raise ValueError(
-                "the compact pivot layout needs exactly one row field"
-            )
+            raise ValueError("the compact pivot layout needs exactly one row field")
         columns = _pivot_axis_fields(self.columns, "columns")
         if len(columns) > 1:
-            raise ValueError(
-                "the compact pivot layout accepts at most one column field"
-            )
+            raise ValueError("the compact pivot layout accepts at most one column field")
         filters = _pivot_axis_fields(self.filters, "filters")
         if len(set(rows) & set(columns)) or len((set(rows) | set(columns)) & set(filters)):
             raise ValueError("a pivot field cannot be on two axes at once")
@@ -326,9 +318,7 @@ class PivotTable:
         if isinstance(source, ExcelTable):
             object.__setattr__(self, "source", source.display_name)
         elif not isinstance(source, str) or not source:
-            raise TypeError(
-                "pivot source must be an ExcelTable or a table display name"
-            )
+            raise TypeError("pivot source must be an ExcelTable or a table display name")
 
         location_sheet, cell = _split_location(self.location)
         object.__setattr__(self, "location", cell)
@@ -336,9 +326,7 @@ class PivotTable:
             raise ValueError("pivot sheet must be a non-empty string or None")
         if location_sheet is not None:
             if self.sheet is not None and self.sheet.casefold() != location_sheet.casefold():
-                raise ValueError(
-                    "pivot location names one sheet but sheet= names another"
-                )
+                raise ValueError("pivot location names one sheet but sheet= names another")
             object.__setattr__(self, "sheet", location_sheet)
         if self.name is not None:
             if not isinstance(self.name, str) or _NAME_RE.fullmatch(self.name) is None:
@@ -388,13 +376,10 @@ def normalize_pivots(pivots, tables, used_names: set[str], current_sheet: str) -
         table = by_name.get(pivot.table_name.casefold())
         if table is None:
             raise ValueError(
-                f"pivot source table {pivot.table_name!r} is not a table written "
-                "to this sheet in this call"
+                f"pivot source table {pivot.table_name!r} is not a table written to this sheet in this call"
             )
         if not table.header_row:
-            raise ValueError(
-                f"pivot source table {table.display_name!r} needs a header row"
-            )
+            raise ValueError(f"pivot source table {table.display_name!r} needs a header row")
         name = pivot.name
         if name is None:
             index = len(names) + 1
@@ -405,14 +390,16 @@ def normalize_pivots(pivots, tables, used_names: set[str], current_sheet: str) -
             raise ValueError(f"duplicate pivot table name {name!r}")
         names.add(name.casefold())
         first_col, first_row, _last_col, _last_row = parse_cell_range(pivot.location)
-        plans.append(_PivotPlan(
-            pivot=pivot,
-            table=table,
-            target_sheet=pivot.sheet or current_sheet,
-            name=name,
-            start_col=first_col,
-            start_row=first_row,
-        ))
+        plans.append(
+            _PivotPlan(
+                pivot=pivot,
+                table=table,
+                target_sheet=pivot.sheet or current_sheet,
+                name=name,
+                start_col=first_col,
+                start_row=first_row,
+            )
+        )
     used_names.update(names)
     return plans
 
@@ -595,13 +582,14 @@ class PivotFeeder:
             col_display=col_display,
             shared_items={
                 self._row_index: list(self._row_seen),
-                **({
-                    self._col_index: list(self._col_seen),
-                } if self._col_index is not None else {}),
-                **{
-                    field: list(seen)
-                    for field, seen in self._filter_seen.items()
-                },
+                **(
+                    {
+                        self._col_index: list(self._col_seen),
+                    }
+                    if self._col_index is not None
+                    else {}
+                ),
+                **{field: list(seen) for field, seen in self._filter_seen.items()},
             },
             filter_names=[self._names[index] for index in self._filter_indices],
             column_names=list(self._names),
@@ -643,9 +631,7 @@ class PivotFeeder:
         ):
             page_row = start_row - 1 - len(self._filter_indices) + offset
             if page_row < 0:
-                raise ValueError(
-                    "pivot filters need one free row each above the pivot location"
-                )
+                raise ValueError("pivot filters need one free row each above the pivot location")
             put(page_row, start_col, name)
             put(page_row, start_col + 1, "(All)")
 
@@ -657,13 +643,11 @@ class PivotFeeder:
                 row = start_row + 1 + offset
                 put(row, start_col, _label(key))
                 for index, metric in enumerate(self._row_totals[key]):
-                    put(row, start_col + 1 + index, metric.result(specs[index].function),
-                        formats[index])
+                    put(row, start_col + 1 + index, metric.result(specs[index].function), formats[index])
             grand_row = start_row + 1 + len(row_display)
             put(grand_row, start_col, "Grand Total")
             for index, metric in enumerate(self._grand):
-                put(grand_row, start_col + 1 + index, metric.result(specs[index].function),
-                    formats[index])
+                put(grand_row, start_col + 1 + index, metric.result(specs[index].function), formats[index])
             return cells
 
         columns = len(col_display)
@@ -680,17 +664,18 @@ class PivotFeeder:
                 for column, col_key in enumerate(col_display):
                     metrics = self._groups.get((key, col_key))
                     if metrics is not None:
-                        put(row, start_col + 1 + column,
-                            metrics[0].result(specs[0].function), formats[0])
-                put(row, start_col + 1 + columns,
-                    self._row_totals[key][0].result(specs[0].function), formats[0])
+                        put(row, start_col + 1 + column, metrics[0].result(specs[0].function), formats[0])
+                put(row, start_col + 1 + columns, self._row_totals[key][0].result(specs[0].function), formats[0])
             grand_row = start_row + 2 + len(row_display)
             put(grand_row, start_col, "Grand Total")
             for column, col_key in enumerate(col_display):
-                put(grand_row, start_col + 1 + column,
-                    self._col_totals[col_key][0].result(specs[0].function), formats[0])
-            put(grand_row, start_col + 1 + columns,
-                self._grand[0].result(specs[0].function), formats[0])
+                put(
+                    grand_row,
+                    start_col + 1 + column,
+                    self._col_totals[col_key][0].result(specs[0].function),
+                    formats[0],
+                )
+            put(grand_row, start_col + 1 + columns, self._grand[0].result(specs[0].function), formats[0])
             return cells
 
         put(start_row, start_col + 1, "Column Labels")
@@ -711,20 +696,26 @@ class PivotFeeder:
                 if metrics is None:
                     continue
                 for index, metric in enumerate(metrics):
-                    put(row, start_col + 1 + column * count + index,
-                        metric.result(specs[index].function), formats[index])
+                    put(
+                        row,
+                        start_col + 1 + column * count + index,
+                        metric.result(specs[index].function),
+                        formats[index],
+                    )
             for index, metric in enumerate(self._row_totals[key]):
-                put(row, total_start + index, metric.result(specs[index].function),
-                    formats[index])
+                put(row, total_start + index, metric.result(specs[index].function), formats[index])
         grand_row = start_row + 3 + len(row_display)
         put(grand_row, start_col, "Grand Total")
         for column, col_key in enumerate(col_display):
             for index, metric in enumerate(self._col_totals[col_key]):
-                put(grand_row, start_col + 1 + column * count + index,
-                    metric.result(specs[index].function), formats[index])
+                put(
+                    grand_row,
+                    start_col + 1 + column * count + index,
+                    metric.result(specs[index].function),
+                    formats[index],
+                )
         for index, metric in enumerate(self._grand):
-            put(grand_row, total_start + index, metric.result(specs[index].function),
-                formats[index])
+            put(grand_row, total_start + index, metric.result(specs[index].function), formats[index])
         return cells
 
     def _render_ref(self, row_display, col_display) -> str:
@@ -740,10 +731,7 @@ class PivotFeeder:
         else:
             end_row = start_row + 3 + len(row_display)
             end_col = start_col + 1 + len(col_display) * count + count - 1
-        return (
-            f"{column_label(start_col)}{start_row + 1}:"
-            f"{column_label(end_col)}{end_row + 1}"
-        )
+        return f"{column_label(start_col)}{start_row + 1}:{column_label(end_col)}{end_row + 1}"
 
 
 @dataclass
@@ -815,10 +803,7 @@ def merge_cells(renders: list[PivotRender]) -> dict[tuple[int, int], object]:
         for row, column, value in render.cells:
             key = (row, column)
             if key in merged:
-                raise ValueError(
-                    "pivot tables overlap at "
-                    f"{column_label(column)}{row + 1}; move one location"
-                )
+                raise ValueError(f"pivot tables overlap at {column_label(column)}{row + 1}; move one location")
             merged[key] = value
     return merged
 
@@ -851,10 +836,7 @@ def _merge_row(row, cells: dict[int, object], row_idx: int):
     merged = list(row) + [None] * (width - len(row))
     for column, value in cells.items():
         if column < len(row) and row[column] is not None:
-            raise ValueError(
-                "pivot output would overwrite the sheet cell "
-                f"{column_label(column)}{row_idx + 1}"
-            )
+            raise ValueError(f"pivot output would overwrite the sheet cell {column_label(column)}{row_idx + 1}")
         merged[column] = value
     return merged
 
@@ -913,10 +895,7 @@ class _Stats:
             attrs = ' containsSemiMixedTypes="0" containsString="0"' + attrs + ' containsNumber="1"'
             if self.integer:
                 attrs += ' containsInteger="1"'
-            attrs += (
-                f' minValue="{_pivot_number_text(self.low)}"'
-                f' maxValue="{_pivot_number_text(self.high)}"'
-            )
+            attrs += f' minValue="{_pivot_number_text(self.low)}" maxValue="{_pivot_number_text(self.high)}"'
         return attrs
 
 
@@ -976,8 +955,10 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
         attrs += ' showAll="0"'
         if index in render.shared_items:
             display = (
-                render.row_display if index == row_field
-                else render.col_display if index == col_field
+                render.row_display
+                if index == row_field
+                else render.col_display
+                if index == col_field
                 else sorted(render.shared_items[index], key=_sort_key)
             )
             seen = render.shared_items[index]
@@ -989,8 +970,7 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
         fields.append(f"<pivotField{attrs}>{attrs_children}</pivotField>")
 
     row_items = "".join(
-        "<i><x/></i>" if position == 0 else f'<i><x v="{position}"/></i>'
-        for position in range(len(render.row_items))
+        "<i><x/></i>" if position == 0 else f'<i><x v="{position}"/></i>' for position in range(len(render.row_items))
     )
 
     col_xml = ""
@@ -1002,16 +982,12 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
             items = ["<i><x/></i>"]
             items.extend(f'<i i="{index}"><x v="{index}"/></i>' for index in range(1, count))
             col_xml = (
-                '<colFields count="1"><field x="-2"/></colFields>'
-                f'<colItems count="{count}">{"".join(items)}</colItems>'
+                f'<colFields count="1"><field x="-2"/></colFields><colItems count="{count}">{"".join(items)}</colItems>'
             )
     elif count == 1:
         items = []
         for position in range(len(render.col_items)):
-            items.append(
-                "<i><x/></i>" if position == 0
-                else f'<i><x v="{position}"/></i>'
-            )
+            items.append("<i><x/></i>" if position == 0 else f'<i><x v="{position}"/></i>')
         items.append('<i t="grand"><x/></i>')
         col_xml = (
             f'<colFields count="1"><field x="{col_field}"/></colFields>'
@@ -1020,10 +996,7 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
     else:
         items = []
         for position in range(len(render.col_items)):
-            items.append(
-                f'<i><x v="{position}"/><x/></i>' if position
-                else "<i><x/><x/></i>"
-            )
+            items.append(f'<i><x v="{position}"/><x/></i>' if position else "<i><x/><x/></i>")
             for index in range(1, count):
                 # A repeated column item names the data field, not the column.
                 items.append(f'<i r="1" i="{index}"><x v="{index}"/></i>')
@@ -1037,9 +1010,7 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
 
     page_xml = ""
     if render.filter_indices:
-        pages = "".join(
-            f'<pageField fld="{index}" hier="-1"/>' for index in render.filter_indices
-        )
+        pages = "".join(f'<pageField fld="{index}" hier="-1"/>' for index in render.filter_indices)
         page_xml = f'<pageFields count="{len(render.filter_indices)}">{pages}</pageFields>'
 
     data_fields_xml = []
@@ -1049,8 +1020,7 @@ def pivot_table_xml(render: PivotRender, data_field_format_ids: list[int | None]
             numfmt = f' numFmtId="{data_field_format_ids[index]}"'
         subtotal = "" if spec.function == "sum" else f' subtotal="{_SUBTOTALS[spec.function]}"'
         data_fields_xml.append(
-            f'<dataField name="{_attr(spec.caption)}" fld="{column}"{subtotal} '
-            f'baseField="0" baseItem="0"{numfmt}/>'
+            f'<dataField name="{_attr(spec.caption)}" fld="{column}"{subtotal} baseField="0" baseItem="0"{numfmt}/>'
         )
 
     page_attrs = ""

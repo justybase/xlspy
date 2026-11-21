@@ -3,6 +3,7 @@ import sys
 from collections.abc import Generator
 
 import pytest
+
 nzpy = pytest.importorskip("nzpy_extended.sync")
 
 from xlspy import XlsbWriter, XlsxWriter
@@ -95,9 +96,10 @@ def test_xlsx_writer():
         os.remove(OUTPUT_XLSX_FILENAME)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         import nzpy_extended.sync as nzpy
+
         main()
         print("\n" + "=" * 50)
         print("Testing XlsxWriter")
@@ -106,9 +108,11 @@ if __name__ == '__main__':
     except ImportError:
         print("nzpy-extended is not installed. Installing...")
         import subprocess
+
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", "nzpy-extended"])
             import nzpy_extended.sync as nzpy
+
             main()
             print("\n" + "=" * 50)
             print("Testing XlsxWriter")

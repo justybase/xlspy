@@ -145,11 +145,7 @@ def _border_key(border: Border) -> _BorderKey | None:
 
 
 def _pattern_fill_key(fill: PatternFill):
-    if (
-        fill.fill_type is None
-        and fill.start_color is None
-        and fill.end_color is None
-    ):
+    if fill.fill_type is None and fill.start_color is None and fill.end_color is None:
         return None
     return (
         "pattern",
@@ -164,10 +160,7 @@ def _fill_key_from(fill: PatternFill | GradientFill):
     if isinstance(fill, PatternFill):
         return _pattern_fill_key(fill)
     # GradientFill.__post_init__ has already turned every stop into a Stop.
-    stops = tuple(
-        (_color_key(stop.color), stop.position)
-        for stop in cast(tuple[Stop, ...], fill.stop)
-    )
+    stops = tuple((_color_key(stop.color), stop.position) for stop in cast(tuple[Stop, ...], fill.stop))
     return (
         "gradient",
         fill.fill_type,
@@ -226,9 +219,21 @@ def split_style(style: Style) -> tuple:
     font_key: _FontKey | None
     if font is None:
         font_key = _FontKey(
-            None, None, style.bold, style.italic, None, flat_underline, None,
+            None,
+            None,
+            style.bold,
+            style.italic,
+            None,
+            flat_underline,
+            None,
             _color_key(style.font_color),
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         if _font_is_empty(font_key):
             font_key = None
@@ -241,9 +246,7 @@ def split_style(style: Style) -> tuple:
             font.strike,
             _underline_key(font.underline) if font.underline is not None else flat_underline,
             font.vertAlign,
-            _color_key(
-                font.color if font.color is not None else style.font_color
-            ),
+            _color_key(font.color if font.color is not None else style.font_color),
             font.charset,
             font.family,
             font.scheme,
@@ -266,17 +269,21 @@ def split_style(style: Style) -> tuple:
     alignment = style.alignment
     if alignment is None:
         align_key = _AlignmentKey(
-            style.horizontal, style.vertical, style.wrap,
-            None, None, None, None, None, None,
+            style.horizontal,
+            style.vertical,
+            style.wrap,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
     else:
         align_key = _AlignmentKey(
-            alignment.horizontal
-            if alignment.horizontal is not None else style.horizontal,
-            alignment.vertical
-            if alignment.vertical is not None else style.vertical,
-            alignment.wrap_text
-            if alignment.wrap_text is not None else style.wrap,
+            alignment.horizontal if alignment.horizontal is not None else style.horizontal,
+            alignment.vertical if alignment.vertical is not None else style.vertical,
+            alignment.wrap_text if alignment.wrap_text is not None else style.wrap,
             alignment.shrink_to_fit,
             alignment.indent,
             alignment.text_rotation,
@@ -292,6 +299,10 @@ def split_style(style: Style) -> tuple:
         prot_key = _protection_key_from(protection)
 
     return (
-        font_key, fill_key, border_key,
-        style.number_format, align_key, prot_key,
+        font_key,
+        fill_key,
+        border_key,
+        style.number_format,
+        align_key,
+        prot_key,
     )

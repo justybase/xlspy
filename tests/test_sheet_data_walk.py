@@ -1,5 +1,6 @@
 """The tag-at-a-time walk over a worksheet part: the same elements as the regular
 expression it stands in for, and edit times that follow the size of the sheet."""
+
 from __future__ import annotations
 
 import random
@@ -19,10 +20,37 @@ SHEET = "xl/worksheets/sheet1.xml"
 
 # Written and damaged forms, in any order: the walk and the pattern must not differ.
 _PIECES = [
-    "<row>", "</row>", "<row/>", "<row />", '<row r="3">', '<row r="3"/>', "<row r='4' a='b'>",
-    '<row a="1" r="5">', '<row a="1"/>', '<row\nr="6">', "<x:row>", "</x:row>", "<x:row/>", '<x:row r="7">',
-    "</row >", "</row\n>", "</x:row >", "</rows>", "</rowx >", "<rows>", "<rowBreaks/>", "<row-x>", "<y:row>",
-    "</y:row>", '<c r="A1"><v>1</v></c>', "<c/>", "text", ">", "/>", "<", "</",
+    "<row>",
+    "</row>",
+    "<row/>",
+    "<row />",
+    '<row r="3">',
+    '<row r="3"/>',
+    "<row r='4' a='b'>",
+    '<row a="1" r="5">',
+    '<row a="1"/>',
+    '<row\nr="6">',
+    "<x:row>",
+    "</x:row>",
+    "<x:row/>",
+    '<x:row r="7">',
+    "</row >",
+    "</row\n>",
+    "</x:row >",
+    "</rows>",
+    "</rowx >",
+    "<rows>",
+    "<rowBreaks/>",
+    "<row-x>",
+    "<y:row>",
+    "</y:row>",
+    '<c r="A1"><v>1</v></c>',
+    "<c/>",
+    "text",
+    ">",
+    "/>",
+    "<",
+    "</",
 ]
 
 
@@ -41,8 +69,21 @@ def test_the_row_walk_finds_what_the_pattern_finds(seed):
 @pytest.mark.parametrize("seed", range(2000))
 def test_the_sheet_data_search_finds_what_the_pattern_finds(seed):
     rng = random.Random(seed)
-    pieces = ["<sheetData>", "</sheetData>", "</sheetData >", "<sheetData/>", '<sheetData a="1">', "<x:sheetData>",
-              "</x:sheetData>", "<x:sheetData/>", "<sheetDatas>", "</sheetDatas>", "<row/>", "text", "<"]
+    pieces = [
+        "<sheetData>",
+        "</sheetData>",
+        "</sheetData >",
+        "<sheetData/>",
+        '<sheetData a="1">',
+        "<x:sheetData>",
+        "</x:sheetData>",
+        "<x:sheetData/>",
+        "<sheetDatas>",
+        "</sheetDatas>",
+        "<row/>",
+        "text",
+        "<",
+    ]
     xml = "".join(rng.choice(pieces) for _ in range(rng.randint(0, 8)))
     found = sheet_data_match(xml)
     expected = element_pattern("sheetData").search(xml)
@@ -50,7 +91,11 @@ def test_the_sheet_data_search_finds_what_the_pattern_finds(seed):
         assert found is None
     else:
         assert (found.start(), found.end(), found[0], found["prefix"]) == (
-            expected.start(), expected.end(), expected[0], expected["prefix"])
+            expected.start(),
+            expected.end(),
+            expected[0],
+            expected["prefix"],
+        )
 
 
 def test_a_row_without_a_number_follows_the_previous_row():
@@ -122,15 +167,18 @@ def test_the_dimension_counts_cells_in_rows_the_edit_does_not_touch(tmp_path):
 def test_cells_without_a_reference_are_edited_where_they_stand(tmp_path):
     path = _package(tmp_path, "<row><c><v>1</v></c><c><v>2</v></c></row><row><c/><c><v>4</v></c></row>")
     xml = _edited(path, {"B2": 9}, tmp_path)
-    assert '<row><c><v>1</v></c><c><v>2</v></c></row>' in xml
-    assert '<c r="B2"><v>9</v></c>' in xml and '<v>4</v>' not in xml
+    assert "<row><c><v>1</v></c><c><v>2</v></c></row>" in xml
+    assert '<c r="B2"><v>9</v></c>' in xml and "<v>4</v>" not in xml
 
 
-@pytest.mark.parametrize("body, message", [
-    ('<row r="9"><c r="nonsense"/></row>', "invalid A1"),
-    ('<row r="9"><c r="A1:B2"/></row>', "single cell"),
-    ('<row r="x"><c r="A1"/></row>', "invalid literal"),
-])
+@pytest.mark.parametrize(
+    "body, message",
+    [
+        ('<row r="9"><c r="nonsense"/></row>', "invalid A1"),
+        ('<row r="9"><c r="A1:B2"/></row>', "single cell"),
+        ('<row r="x"><c r="A1"/></row>', "invalid literal"),
+    ],
+)
 def test_a_damaged_row_is_refused_even_when_the_edit_is_elsewhere(tmp_path, body, message):
     with pytest.raises(ValueError, match=message):
         _edited(_package(tmp_path, '<row r="1"><c r="A1"/></row>' + body), {"A1": 1}, tmp_path)

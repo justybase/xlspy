@@ -8,6 +8,7 @@ polars lacks an index, so ``include_index=True`` is rejected with a clear
 Run:
     python examples/polars_to_xlsx_xlsb.py [output_dir]
 """
+
 import datetime
 import os
 import sys
@@ -59,8 +60,6 @@ def main(output_dir: str) -> None:
 
 
 if __name__ == "__main__":
-    directory = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "output"
-    )
+    directory = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
     os.makedirs(directory, exist_ok=True)
     main(directory)

@@ -107,8 +107,11 @@ class Shape:
             _shape_color(self.line, "line")
         _shape_color(self.font_color, "font_color")
         low, high = _FONT_SIZE_LIMITS
-        if isinstance(self.font_size, bool) or not isinstance(self.font_size, (int, float)) \
-                or not low <= self.font_size <= high:
+        if (
+            isinstance(self.font_size, bool)
+            or not isinstance(self.font_size, (int, float))
+            or not low <= self.font_size <= high
+        ):
             raise ValueError(f"shape font_size must be between {low} and {high} points")
         if self.link_cell is not None:
             link_col, link_row, link_end_col, link_end_row = parse_cell_range(self.link_cell)
@@ -162,7 +165,7 @@ def _paragraphs(shape: Shape, position: int) -> str:
                 f'<a:pPr algn="{align}"/><a:t>{escaped}</a:t></a:fld>'
             )
         elif line:
-            body = f'<a:r>{_run_properties(shape, "rPr")}<a:t>{escaped}</a:t></a:r>'
+            body = f"<a:r>{_run_properties(shape, 'rPr')}<a:t>{escaped}</a:t></a:r>"
         else:
             body = ""
         end = _run_properties(shape, "endParaRPr")
@@ -180,11 +183,13 @@ def shape_frame_xml(shape: Shape, object_id: int) -> str:
     box = ' txBox="1"' if shape.kind == "textbox" else ""
     fill = (
         f'<a:solidFill><a:srgbClr val="{_shape_color(shape.fill, "fill")}"/></a:solidFill>'
-        if shape.fill is not None else "<a:noFill/>"
+        if shape.fill is not None
+        else "<a:noFill/>"
     )
     outline = (
         f'<a:ln w="12700"><a:solidFill><a:srgbClr val="{_shape_color(shape.line, "line")}"/></a:solidFill></a:ln>'
-        if shape.line is not None else "<a:ln><a:noFill/></a:ln>"
+        if shape.line is not None
+        else "<a:ln><a:noFill/></a:ln>"
     )
     return (
         "<oneCellAnchor>"

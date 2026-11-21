@@ -37,14 +37,45 @@ _CONTENT = {
 }
 # The children of <worksheet>, in schema order (CT_Worksheet).
 _SHEET_ORDER = (
-    "sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData",
-    "sheetCalcPr", "sheetProtection", "protectedRanges", "scenarios", "autoFilter",
-    "sortState", "dataConsolidate", "customSheetViews", "mergeCells", "phoneticPr",
-    "conditionalFormatting", "dataValidations", "hyperlinks", "printOptions",
-    "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks",
-    "customProperties", "cellWatches", "ignoredErrors", "smartTags", "drawing",
-    "legacyDrawing", "legacyDrawingHF", "drawingHF", "picture", "oleObjects",
-    "controls", "webPublishItems", "tableParts", "extLst",
+    "sheetPr",
+    "dimension",
+    "sheetViews",
+    "sheetFormatPr",
+    "cols",
+    "sheetData",
+    "sheetCalcPr",
+    "sheetProtection",
+    "protectedRanges",
+    "scenarios",
+    "autoFilter",
+    "sortState",
+    "dataConsolidate",
+    "customSheetViews",
+    "mergeCells",
+    "phoneticPr",
+    "conditionalFormatting",
+    "dataValidations",
+    "hyperlinks",
+    "printOptions",
+    "pageMargins",
+    "pageSetup",
+    "headerFooter",
+    "rowBreaks",
+    "colBreaks",
+    "customProperties",
+    "cellWatches",
+    "ignoredErrors",
+    "smartTags",
+    "drawing",
+    "legacyDrawing",
+    "legacyDrawingHF",
+    "drawingHF",
+    "picture",
+    "oleObjects",
+    "controls",
+    "webPublishItems",
+    "tableParts",
+    "extLst",
 )
 _ANCHOR = re.compile(r"<(oneCellAnchor|twoCellAnchor|absoluteAnchor)\b.*?</\1>", re.S)
 _OBJECT_LISTS = ("charts", "images", "tables", "data_validations", "conditional_formatting")
@@ -62,19 +93,15 @@ def pending_objects(sheet) -> dict[str, list]:
     from ._drawings import new_drawing_objects
 
     saved = sheet._saved_object_counts
-    pending = {
-        name: _object_values(sheet, name)[saved.get(name, 0):]
-        for name in _OBJECT_LISTS
-    }
+    pending = {name: _object_values(sheet, name)[saved.get(name, 0) :] for name in _OBJECT_LISTS}
     # Charts and images can be removed: the new ones are those not in the file.
     pending.update(new_drawing_objects(sheet))
     return pending
 
 
 def has_pending_objects(sheet) -> bool:
-    return (
-        any(pending_objects(sheet).values())
-        or print_settings_for(sheet) != getattr(sheet, "_saved_print_settings", None)
+    return any(pending_objects(sheet).values()) or print_settings_for(sheet) != getattr(
+        sheet, "_saved_print_settings", None
     )
 
 
@@ -82,9 +109,7 @@ def mark_objects_saved(sheet) -> None:
     from ._drawings import remember_drawing_objects
 
     remember_drawing_objects(sheet)
-    sheet._saved_object_counts = {
-        name: len(_object_values(sheet, name)) for name in _OBJECT_LISTS
-    }
+    sheet._saved_object_counts = {name: len(_object_values(sheet, name)) for name in _OBJECT_LISTS}
     sheet._saved_object_signatures = object_signatures(sheet)
     sheet._saved_print_settings = print_settings_for(sheet)
 
@@ -189,25 +214,28 @@ class _Package:
         while f"rId{index}" in used:
             index += 1
         rid = f"rId{index}"
-        ET.SubElement(rels, f"{{{PKG_REL}}}Relationship", {
-            "Id": rid, "Type": f"{REL}/{kind}",
-            "Target": posixpath.relpath(target, posixpath.dirname(part)),
-        })
+        ET.SubElement(
+            rels,
+            f"{{{PKG_REL}}}Relationship",
+            {
+                "Id": rid,
+                "Type": f"{REL}/{kind}",
+                "Target": posixpath.relpath(target, posixpath.dirname(part)),
+            },
+        )
         return rid
 
     def override(self, path: str, content_type: str) -> None:
         part_name = "/" + path
-        overrides = [
-            node for node in self.types.findall(f"{{{CT}}}Override")
-            if node.get("PartName") == part_name
-        ]
+        overrides = [node for node in self.types.findall(f"{{{CT}}}Override") if node.get("PartName") == part_name]
         if overrides:
             overrides[0].set("ContentType", content_type)
             for duplicate in overrides[1:]:
                 self.types.remove(duplicate)
             return
         ET.SubElement(
-            self.types, f"{{{CT}}}Override",
+            self.types,
+            f"{{{CT}}}Override",
             {"PartName": part_name, "ContentType": content_type},
         )
 
@@ -257,7 +285,7 @@ class _Sheet:
         limit = self._limit()
         position = limit
         p = re.escape(self.prefix)
-        for successor in _SHEET_ORDER[_SHEET_ORDER.index(tag) + 1:]:
+        for successor in _SHEET_ORDER[_SHEET_ORDER.index(tag) + 1 :]:
             match = re.compile(rf"<{p}{successor}[\s/>]").search(self.xml, 0, limit)
             if match:
                 position = match.start()
@@ -265,7 +293,7 @@ class _Sheet:
         self.xml = self.xml[:position] + fragment + self.xml[position:]
 
     def replace(self, match, fragment: str) -> None:
-        self.xml = self.xml[:match.start()] + fragment + self.xml[match.end():]
+        self.xml = self.xml[: match.start()] + fragment + self.xml[match.end() :]
 
 
 def _merge_attributes(sheet: _Sheet, tag: str, donor: str) -> None:
@@ -297,7 +325,7 @@ def _merge_header_footer(sheet: _Sheet, donor: str) -> None:
         child = f"<{p}{tag}>{found[1]}</{p}{tag}>"
         existing = re.search(rf"<{re.escape(p)}{tag}\b[^>]*?(?:/>|>.*?</{re.escape(p)}{tag}>)", host, re.S)
         if existing:
-            host = host[:existing.start()] + child + host[existing.end():]
+            host = host[: existing.start()] + child + host[existing.end() :]
             continue
         after = re.search(rf"</{re.escape(p)}oddHeader>", host) if tag == "oddFooter" else None
         position = after.end() if after else host.index(">") + 1
@@ -312,7 +340,8 @@ def _set_fit_to_page(sheet: _Sheet) -> None:
         sheet.xml = re.sub(
             rf"(<{re.escape(p)}worksheet\b[^>]*>)",
             lambda m: m[1] + f'<{p}sheetPr><{p}pageSetUpPr fitToPage="1"/></{p}sheetPr>',
-            sheet.xml, count=1,
+            sheet.xml,
+            count=1,
         )
         return
     body = setup[0]
@@ -323,7 +352,7 @@ def _set_fit_to_page(sheet: _Sheet) -> None:
         attributes["fitToPage"] = "1"
         text = "".join(f" {name}={quoteattr(value)}" for name, value in attributes.items())
         rebuilt = f"<{p}pageSetUpPr{text}" + ("/>" if tag.endswith("/>") else ">")
-        body = body[:existing.start()] + rebuilt + body[existing.end():]
+        body = body[: existing.start()] + rebuilt + body[existing.end() :]
     elif body.endswith("/>"):
         body = body[:-2] + f'><{p}pageSetUpPr fitToPage="1"/></{p}sheetPr>'
     else:
@@ -342,7 +371,10 @@ def _sheet_rels(scratch: dict[str, bytes]) -> dict[str, tuple[str, str]]:
     if not data:
         return {}
     return {
-        node.get("Id"): (node.get("Type").rsplit("/", 1)[-1], _resolve_part_target("xl/worksheets/sheet1.xml", node.get("Target")))
+        node.get("Id"): (
+            node.get("Type").rsplit("/", 1)[-1],
+            _resolve_part_target("xl/worksheets/sheet1.xml", node.get("Target")),
+        )
         for node in safe_fromstring(data)
     }
 
@@ -405,10 +437,16 @@ def _add_print_setup(sheet: _Sheet, donor: str, settings) -> None:
             # The element stays in the host part: keep its prefix and let the
             # worksheet root's default namespace cover it.
             sheet.replace(host, _with_prefix(margins, sheet.prefix))
-    if any(value is not None for value in (
-        settings.orientation, settings.paper_size, settings.scale,
-        settings.fit_to_width, settings.fit_to_height,
-    )):
+    if any(
+        value is not None
+        for value in (
+            settings.orientation,
+            settings.paper_size,
+            settings.scale,
+            settings.fit_to_width,
+            settings.fit_to_height,
+        )
+    ):
         _merge_attributes(sheet, "pageSetup", _donor_elements(donor, "pageSetup")[0])
     if settings.fit_to_width is not None or settings.fit_to_height is not None:
         _set_fit_to_page(sheet)
@@ -439,7 +477,8 @@ def _cleared_print_fields(saved, settings) -> set[str]:
     if saved is None:
         return set()
     return {
-        item.name for item in fields(saved)
+        item.name
+        for item in fields(saved)
         if _print_value_set(saved, item.name) and not _print_value_set(settings, item.name)
     }
 
@@ -455,7 +494,7 @@ def _drop_attributes(sheet: _Sheet, tag: str, names) -> None:
     if match is None:
         return
     opening = _required_match(re.match(r"<[^>]*?(?=/?>)", match[0]), "opening tag")[0]
-    sheet.replace(match, _without_attributes(opening, names) + match[0][len(opening):])
+    sheet.replace(match, _without_attributes(opening, names) + match[0][len(opening) :])
 
 
 def _drop_fit_to_page(sheet: _Sheet) -> None:
@@ -467,7 +506,7 @@ def _drop_fit_to_page(sheet: _Sheet) -> None:
     if existing is None:
         return
     tag = _without_attributes(existing[0], ["fitToPage"])
-    sheet.replace(setup, body[:existing.start()] + tag + body[existing.end():])
+    sheet.replace(setup, body[: existing.start()] + tag + body[existing.end() :])
 
 
 def _drop_print_names(package: _Package, sheet_index: int, names) -> None:
@@ -502,9 +541,7 @@ def _clear_print_setup(package: _Package, sheet: _Sheet, sheet_index: int, clear
         host = sheet.find("pageMargins")
         if host is not None:
             margins = WorksheetPageMargins()
-            text = "".join(
-                f' {item.name}="{getattr(margins, item.name)}"' for item in fields(WorksheetPageMargins)
-            )
+            text = "".join(f' {item.name}="{getattr(margins, item.name)}"' for item in fields(WorksheetPageMargins))
             sheet.replace(host, f"<{sheet.prefix}pageMargins{text}/>")
     attributes = [attribute for name, attribute in _PAGE_SETUP_ATTRIBUTES.items() if name in cleared]
     if attributes:
@@ -512,9 +549,12 @@ def _clear_print_setup(package: _Package, sheet: _Sheet, sheet_index: int, clear
     if cleared & {"fit_to_width", "fit_to_height"}:
         _drop_fit_to_page(sheet)
     centered = [
-        attribute for name, attribute in (
-            ("center_horizontally", "horizontalCentered"), ("center_vertically", "verticalCentered"),
-        ) if name in cleared
+        attribute
+        for name, attribute in (
+            ("center_horizontally", "horizontalCentered"),
+            ("center_vertically", "verticalCentered"),
+        )
+        if name in cleared
     ]
     if centered:
         _drop_attributes(sheet, "printOptions", centered)
@@ -559,15 +599,33 @@ def _set_print_names(package: _Package, scratch: dict[str, bytes], sheet_index: 
             xml = append_child(xml, "definedNames", fragment)
     else:
         xml = replace_element(
-            xml, "definedNames", f'<definedNames xmlns="{MAIN}">{"".join(fragments)}</definedNames>',
-            before=("calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr",
-                    "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"),
+            xml,
+            "definedNames",
+            f'<definedNames xmlns="{MAIN}">{"".join(fragments)}</definedNames>',
+            before=(
+                "calcPr",
+                "oleSize",
+                "customWorkbookViews",
+                "pivotCaches",
+                "smartTagPr",
+                "smartTagTypes",
+                "webPublishing",
+                "fileRecoveryPr",
+                "webPublishObjects",
+                "extLst",
+            ),
         )
     package.set("xl/workbook.xml", xml)
 
 
-def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: ET.Element,
-                 scratch: dict[str, bytes], donor_rels: dict) -> None:
+def _add_drawing(
+    package: _Package,
+    sheet: _Sheet,
+    sheet_path: str,
+    sheet_rels: ET.Element,
+    scratch: dict[str, bytes],
+    donor_rels: dict,
+) -> None:
     drawing = next((target for kind, target in donor_rels.values() if kind == "drawing"), None)
     if drawing is None:
         return
@@ -575,8 +633,11 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
     donor_drawing_rels = safe_fromstring(scratch[_rels_path(drawing)])
 
     host_drawing = next(
-        (_resolve_part_target(sheet_path, _target(node)) for node in sheet_rels
-         if node.get("Type", "").endswith("/drawing")),
+        (
+            _resolve_part_target(sheet_path, _target(node))
+            for node in sheet_rels
+            if node.get("Type", "").endswith("/drawing")
+        ),
         None,
     )
     if host_drawing is None:
@@ -601,7 +662,8 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
             target = package.free_part("xl/media", "image", extension)
             donor_types = safe_fromstring(scratch["[Content_Types].xml"])
             content_type = next(
-                item.get("ContentType") for item in donor_types
+                item.get("ContentType")
+                for item in donor_types
                 if (item.get("Extension") or "").lower() == extension.lower()
             )
             package.default(extension, content_type)
@@ -614,15 +676,23 @@ def _add_drawing(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: 
     for match in _ANCHOR.finditer(donor_xml):
         anchor = re.sub(r'\br:(id|embed)="([^"]+)"', lambda m: f'r:{m[1]}="{mapping[m[2]]}"', match[0])
         anchor = re.sub(
-            r'(<cNvPr\b[^>]*?\bid=")(\d+)"', lambda m: f'{m[1]}{offset + int(m[2])}"', anchor,
+            r'(<cNvPr\b[^>]*?\bid=")(\d+)"',
+            lambda m: f'{m[1]}{offset + int(m[2])}"',
+            anchor,
         )
         anchors.append(_with_namespaces(anchor, _XDR, a=_A, c=_C, r=REL))
     end = re.search(r"</(?:[\w.-]+:)?wsDr\s*>\s*$", host_xml)
     if end is None:  # an empty <xdr:wsDr .../>
         root = _required_match(re.search(r"<((?:[\w.-]+:)?wsDr)\b([^>]*)/>", host_xml), "wsDr element")
-        host_xml = host_xml[:root.start()] + f"<{root[1]}{root[2]}>" + "".join(anchors) + f"</{root[1]}>" + host_xml[root.end():]
+        host_xml = (
+            host_xml[: root.start()]
+            + f"<{root[1]}{root[2]}>"
+            + "".join(anchors)
+            + f"</{root[1]}>"
+            + host_xml[root.end() :]
+        )
     else:
-        host_xml = host_xml[:end.start()] + "".join(anchors) + host_xml[end.start():]
+        host_xml = host_xml[: end.start()] + "".join(anchors) + host_xml[end.start() :]
     package.set(host_drawing, host_xml)
     ET.register_namespace("", PKG_REL)
     package.set(_rels_path(host_drawing), _bytes(drawing_rels))
@@ -648,15 +718,22 @@ def _overlaps(first: str, second: str) -> bool:
     return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
 
 
-def _add_tables(package: _Package, sheet: _Sheet, sheet_path: str, sheet_rels: ET.Element,
-                scratch: dict[str, bytes], donor_rels: dict) -> None:
+def _add_tables(
+    package: _Package,
+    sheet: _Sheet,
+    sheet_path: str,
+    sheet_rels: ET.Element,
+    scratch: dict[str, bytes],
+    donor_rels: dict,
+) -> None:
     sources = [target for kind, target in donor_rels.values() if kind == "table"]
     if not sources:
         return
     existing = _existing_tables(package)
     names = {attributes.get("displayName", "").casefold() for _, attributes in existing}
     on_sheet = {
-        _resolve_part_target(sheet_path, _target(node)) for node in sheet_rels
+        _resolve_part_target(sheet_path, _target(node))
+        for node in sheet_rels
         if node.get("Type", "").endswith("/table")
     }
     next_id = max((int(attributes.get("id", 0)) for _, attributes in existing), default=0) + 1
@@ -731,12 +808,8 @@ def object_signatures(sheet) -> dict[str, tuple]:
     return {
         "tables": tuple(_table_signature(table) for table in sheet.tables),
         "data_validations": tuple(repr(rule) for rule in sheet.data_validations),
-        "conditional_formatting": tuple(
-            repr(rule) for rule in sheet.conditional_formatting.all_rules()
-        ),
-        "conditional_formatting_groups": tuple(
-            (item.sqref, item.pivot) for item in sheet.conditional_formatting
-        ),
+        "conditional_formatting": tuple(repr(rule) for rule in sheet.conditional_formatting.all_rules()),
+        "conditional_formatting_groups": tuple((item.sqref, item.pivot) for item in sheet.conditional_formatting),
     }
 
 
@@ -807,14 +880,11 @@ def _only_appended(saved, current) -> bool:
         return False
     previous_groups = saved["conditional_formatting_groups"]
     current_groups = current["conditional_formatting_groups"]
-    if (
-        len(current_groups) < len(previous_groups)
-        or current_groups[:len(previous_groups)] != previous_groups
-    ):
+    if len(current_groups) < len(previous_groups) or current_groups[: len(previous_groups)] != previous_groups:
         return False
     for name in ("tables", "data_validations", "conditional_formatting"):
         previous, now = saved[name], current[name]
-        if len(now) < len(previous) or now[:len(previous)] != previous:
+        if len(now) < len(previous) or now[: len(previous)] != previous:
             return False
     return True
 
@@ -826,15 +896,10 @@ def sync_objects(updater, workbook, sheet) -> None:
     if current == saved or saved is None or _only_appended(saved, current):
         return
 
-    names = [
-        getattr(table, "displayName", getattr(table, "display_name", None))
-        for table in sheet.tables
-    ]
+    names = [getattr(table, "displayName", getattr(table, "display_name", None)) for table in sheet.tables]
     if len(names) != len(set(names)):
         duplicate = next(name for name in names if names.count(name) > 1)
-        raise ValueError(
-            f"a table named {duplicate!r} already exists in the workbook"
-        )
+        raise ValueError(f"a table named {duplicate!r} already exists in the workbook")
 
     objects = {
         "tables": [_as_excel_table(table) for table in sheet.tables],

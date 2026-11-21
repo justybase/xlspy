@@ -1,4 +1,5 @@
 """XlsbWriter style methods: number formats, xf registration, styles.bin records."""
+
 from __future__ import annotations
 
 import typing
@@ -17,7 +18,18 @@ from ._xlsb_style_records import (
     xf_record,
 )
 from ._xlsb_cf import dxfs_bin
-from ._xlsb_writer_consts import _BRT_BEGIN_BORDERS, _BRT_BEGIN_CELL_XFS, _BRT_BEGIN_FILLS, _BRT_BEGIN_FMTS, _BRT_BEGIN_FONTS, _BRT_END_BORDERS, _BRT_END_CELL_XFS, _BRT_END_FILLS, _BRT_END_FMTS, _BRT_END_FONTS
+from ._xlsb_writer_consts import (
+    _BRT_BEGIN_BORDERS,
+    _BRT_BEGIN_CELL_XFS,
+    _BRT_BEGIN_FILLS,
+    _BRT_BEGIN_FMTS,
+    _BRT_BEGIN_FONTS,
+    _BRT_END_BORDERS,
+    _BRT_END_CELL_XFS,
+    _BRT_END_FILLS,
+    _BRT_END_FMTS,
+    _BRT_END_FONTS,
+)
 from ._xlsb_writer_host import _XlsbWriterHost
 
 
@@ -62,22 +74,16 @@ class _XlsbStylesMixin(_XlsbWriterHost):
         """Reject the few style properties XLSB cannot express."""
         alignment = style.alignment
         if alignment is not None and alignment.relative_indent is not None:
-            raise UnsupportedFeatureError(
-                "relative_indent is not supported for XLSB output"
-            )
+            raise UnsupportedFeatureError("relative_indent is not supported for XLSB output")
         border = style.border
         if border is not None:
             unsupported = [
-                name
-                for name in ("vertical", "horizontal", "start", "end")
-                if getattr(border, name) is not None
+                name for name in ("vertical", "horizontal", "start", "end") if getattr(border, name) is not None
             ]
             if border.outline is False:
                 unsupported.append("outline=False")
             if unsupported:
-                raise UnsupportedFeatureError(
-                    "XLSB output does not support border " + ", ".join(unsupported)
-                )
+                raise UnsupportedFeatureError("XLSB output does not support border " + ", ".join(unsupported))
         font = style.font
         if font is not None and font.name is not None and len(font.name) > 31:
             raise ValueError("XLSB font names are limited to 31 characters")
@@ -99,23 +105,21 @@ class _XlsbStylesMixin(_XlsbWriterHost):
         numfmt_id = 0
         if numfmt is not None:
             numfmt_id = self._register_numfmt(numfmt)
-        alignment = (
-            align_key
-            if align_key is not None and any(value is not None for value in align_key)
-            else None
-        )
+        alignment = align_key if align_key is not None and any(value is not None for value in align_key) else None
         protection = (
-            prot_key
-            if prot_key is not None
-            and (prot_key.locked is not None or prot_key.hidden is not None)
-            else None
+            prot_key if prot_key is not None and (prot_key.locked is not None or prot_key.hidden is not None) else None
         )
         xf_index = self._next_xf_index
         self._next_xf_index += 1
         self._style_xf_map[style] = xf_index
         self._xf_styles[xf_index] = style
         self._style_components[xf_index] = (
-            font_id, fill_id, border_id, numfmt_id, alignment, protection,
+            font_id,
+            fill_id,
+            border_id,
+            numfmt_id,
+            alignment,
+            protection,
         )
         return xf_index
 
@@ -140,14 +144,14 @@ class _XlsbStylesMixin(_XlsbWriterHost):
         buf.extend(template[0:3])  # BrtBeginStyleSheet
 
         # ── FMTS: built-in date and date-time formats plus user formats ──
-        buf.extend(build_record(_BRT_BEGIN_FMTS, struct.pack('<I', 2 + len(self._format_registry))))
+        buf.extend(build_record(_BRT_BEGIN_FMTS, struct.pack("<I", 2 + len(self._format_registry))))
         buf.extend(template[10:88])
         for fmt_string, numfmt_id in self._format_registry.items():
             buf.extend(self._build_numfmt_record(numfmt_id, fmt_string))
         buf.extend(build_record(_BRT_END_FMTS))
 
         # ── FONTS: built-in regular/bold Calibri plus user fonts ──
-        buf.extend(build_record(_BRT_BEGIN_FONTS, struct.pack('<I', 2 + len(self._font_registry))))
+        buf.extend(build_record(_BRT_BEGIN_FONTS, struct.pack("<I", 2 + len(self._font_registry))))
         buf.extend(template[98:180])
         for font_key, _font_id in sorted(self._font_registry.items(), key=lambda item: item[1]):
             buf.extend(self._xlsb_font_record(font_key))
@@ -155,14 +159,14 @@ class _XlsbStylesMixin(_XlsbWriterHost):
         buf.extend(build_record(_BRT_END_FONTS))
 
         # ── FILLS: built-in none/gray125 plus user fills ──
-        buf.extend(build_record(_BRT_BEGIN_FILLS, struct.pack('<I', 2 + len(self._fill_registry))))
+        buf.extend(build_record(_BRT_BEGIN_FILLS, struct.pack("<I", 2 + len(self._fill_registry))))
         buf.extend(template[203:343])
         for fill_key, _fill_id in sorted(self._fill_registry.items(), key=lambda item: item[1]):
             buf.extend(self._xlsb_fill_record(fill_key))
         buf.extend(build_record(_BRT_END_FILLS))
 
         # ── BORDERS: built-in empty border plus user borders ──
-        buf.extend(build_record(_BRT_BEGIN_BORDERS, struct.pack('<I', 1 + len(self._border_registry))))
+        buf.extend(build_record(_BRT_BEGIN_BORDERS, struct.pack("<I", 1 + len(self._border_registry))))
         buf.extend(template[353:406])
         for border_key, _border_id in sorted(self._border_registry.items(), key=lambda item: item[1]):
             buf.extend(self._xlsb_border_record(border_key))
@@ -173,7 +177,7 @@ class _XlsbStylesMixin(_XlsbWriterHost):
 
         # ── CELLXFS: four built-in XFs plus one XF per registered style ──
         total_styles = 4 + len(self._format_xf_map) + len(self._style_components)
-        buf.extend(build_record(_BRT_BEGIN_CELL_XFS, struct.pack('<I', total_styles)))
+        buf.extend(build_record(_BRT_BEGIN_CELL_XFS, struct.pack("<I", total_styles)))
         buf.extend(self._build_style_record(0))  # 0: default
         buf.extend(self._build_style_record(164, flags=0x0001))  # 1: date
         buf.extend(self._build_style_record(166, flags=0x0001))  # 2: date-time
@@ -182,21 +186,22 @@ class _XlsbStylesMixin(_XlsbWriterHost):
         # Custom format/style records follow the XF indices assigned while
         # streaming cells, so preserve that exact order.
         custom_xfs = {
-            index: (0, 0, 0, self._format_registry[fmt], None, None)
-            for fmt, index in self._format_xf_map.items()
+            index: (0, 0, 0, self._format_registry[fmt], None, None) for fmt, index in self._format_xf_map.items()
         }
         custom_xfs.update(self._style_components)
         for index in sorted(custom_xfs):
             font_id, fill_id, border_id, numfmt_id, alignment, protection = custom_xfs[index]
-            buf.extend(self._build_style_record(
-                numfmt_id,
-                font_id=font_id,
-                fill_id=fill_id,
-                border_id=border_id,
-                alignment=alignment,
-                protection=protection,
-                apply_flags=True,
-            ))
+            buf.extend(
+                self._build_style_record(
+                    numfmt_id,
+                    font_id=font_id,
+                    fill_id=fill_id,
+                    border_id=border_id,
+                    alignment=alignment,
+                    protection=protection,
+                    apply_flags=True,
+                )
+            )
         buf.extend(build_record(_BRT_END_CELL_XFS))
 
         # ── Remaining sections (styles, DXFs, tableStyles, BrtEndStyleSheet) ──

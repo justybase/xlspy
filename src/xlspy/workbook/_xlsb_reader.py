@@ -37,13 +37,24 @@ from ._reader import _read_custom_properties, _read_print_names, _read_propertie
 from ._xlsb_layout import BEGIN_FILTER, END_FILTER, builtin_names
 from ._xlsb_loaded import remember_saved_state, remember_workbook_state
 from .._xlsb_cf import (
-    BRT_BEGIN_CF_RULE, BRT_BEGIN_CONDITIONAL_FORMATTING, SCALE_RECORDS, _CF_RULE_EXT,
-    _ICON_SET_NAMES, read_conditional_formats,
+    BRT_BEGIN_CF_RULE,
+    BRT_BEGIN_CONDITIONAL_FORMATTING,
+    SCALE_RECORDS,
+    _CF_RULE_EXT,
+    _ICON_SET_NAMES,
+    read_conditional_formats,
 )
 from .._sort_state import EXTRA_ICON_SET_CODES
 from ._xlsb_sheet_meta import (
-    FILTER_RECORDS, LIST_PART, RECORDS as SHEET_RECORDS, ROW_FLAGS, ROW_HEADER,
-    apply_sheet_records, read_filter_record, read_table_part, row_header,
+    FILTER_RECORDS,
+    LIST_PART,
+    RECORDS as SHEET_RECORDS,
+    ROW_FLAGS,
+    ROW_HEADER,
+    apply_sheet_records,
+    read_filter_record,
+    read_table_part,
+    row_header,
 )
 from .._xlsb_ignored_errors import (
     RECORD_BEGIN as BEGIN_IGNORED_ERRORS,
@@ -78,18 +89,30 @@ def _load_cells(sheet, reader, name, sheet_data, data_only):
         _load_cells_python(sheet, reader, name, sheet_data, data_only)
         return None
     max_row, max_column, formulas, headers, groups, start, end = xlsb_load_cells(
-        sheet_data, reader._shared_string_array, reader._styles_cell_xfs_array,
-        _get_date_num_fmt_ids(reader._number_formats_type_dict), reader._date_1904,
-        Cell, CELL_SLOTS, sheet, sheet._cells,
+        sheet_data,
+        reader._shared_string_array,
+        reader._styles_cell_xfs_array,
+        _get_date_num_fmt_ids(reader._number_formats_type_dict),
+        reader._date_1904,
+        Cell,
+        CELL_SLOTS,
+        sheet,
+        sheet._cells,
     )
     sheet._max_row = max(sheet._max_row, max_row)
     sheet._max_column = max(sheet._max_column, max_column)
     for _row, payload in headers:
         row_header(sheet, payload)
     if formulas:
-        context = None if data_only else FormulaContext(
-            reader.get_sheet_names(), reader._archive.read("xl/workbook.bin"), reader.read_part,
-            tables=lambda: table_catalog(reader._archive.namelist(), reader.read_part),
+        context = (
+            None
+            if data_only
+            else FormulaContext(
+                reader.get_sheet_names(),
+                reader._archive.read("xl/workbook.bin"),
+                reader.read_part,
+                tables=lambda: table_catalog(reader._archive.namelist(), reader.read_part),
+            )
         )
         shared = formula_groups(groups)
         for row, kind, payload in formulas:
@@ -109,8 +132,7 @@ def _load_cells(sheet, reader, name, sheet_data, data_only):
 
 def _set_loaded_cell(sheet, row, column, value, style_id, formula_text=None):
     if formula_text is not None:
-        sheet._set_cell_raw(row, column, None, style_id=style_id, data_type="f",
-                            formula_text=formula_text)
+        sheet._set_cell_raw(row, column, None, style_id=style_id, data_type="f", formula_text=formula_text)
     elif value is None:
         if style_id:
             sheet._set_cell_raw(row, column, None, style_id=style_id)
@@ -123,7 +145,11 @@ def _set_loaded_cell(sheet, row, column, value, style_id, formula_text=None):
 
 def _load_cells_python(sheet, reader, name, sheet_data, data_only):
     for row_number, cells in iter_xlsb_indexed_rows(
-        reader, name, data_only=data_only, data=sheet_data, with_styles=True,
+        reader,
+        name,
+        data_only=data_only,
+        data=sheet_data,
+        with_styles=True,
     ):
         for column, value, style_id in cells:
             if type(value) is str and value.startswith("="):
@@ -151,7 +177,11 @@ def _range_label(payload: bytes) -> tuple[str, int, int]:
 
 
 def _read_records(
-    sheet: Worksheet, sheet_path: str, sheet_data: bytes, span: tuple[int, int] | None, package: Any,
+    sheet: Worksheet,
+    sheet_path: str,
+    sheet_data: bytes,
+    span: tuple[int, int] | None,
+    package: Any,
 ) -> _SheetRecords:
     """Walk the records the cell loader left: row headers, merged cells, the auto
     filter and hyperlinks are applied at once; the rest is collected."""
@@ -162,9 +192,9 @@ def _read_records(
     # The native loader has read the sheet data (with its row headers):
     # only the records around it are left.
     outside = (
-        iter_record_payloads(sheet_data) if span is None
-        else _chain(iter_record_payloads(sheet_data[:span[0]]),
-                    iter_record_payloads(sheet_data[span[1]:]))
+        iter_record_payloads(sheet_data)
+        if span is None
+        else _chain(iter_record_payloads(sheet_data[: span[0]]), iter_record_payloads(sheet_data[span[1] :]))
     )
     for record_id, payload in outside:
         if filter_records is not None:
@@ -207,9 +237,7 @@ def _read_records(
         # 0x480 is BrtBeginSortCond14: the same layout, with a CFFlag14 for
         # extra icon sets. Both are read with their icon details.
         elif record_id in (0x214, 0x480) and sort_state is not None and len(payload) >= 30:
-            flags, _r1, _r2, _c1, _c2, first, _second = struct.unpack_from(
-                "<HIIIIII", payload
-            )
+            flags, _r1, _r2, _c1, _c2, first, _second = struct.unpack_from("<HIIIIII", payload)
             sort_on = (flags >> 1) & 0x0F
             icon_set = icon_id = None
             if sort_on == 3:
@@ -233,9 +261,7 @@ def _read_records(
             )
             custom_length = struct.unpack_from("<i", payload, 26)[0]
             if custom_length >= 0 and 30 + 2 * custom_length <= len(payload):
-                condition.customList = payload[30:30 + 2 * custom_length].decode(
-                    "utf-16-le", "replace"
-                )
+                condition.customList = payload[30 : 30 + 2 * custom_length].decode("utf-16-le", "replace")
             sort_state.sortCondition.append(condition)
         elif record_id in FILTER_RECORDS:
             read_filter_record(sheet._auto_filter, record_id, payload)
@@ -306,7 +332,8 @@ def _read_rules(sheet: Worksheet, records: _SheetRecords, formula_context: Any, 
             # Kept with the rule while it stays as it was read.
             sheet._cf_extensions[id(rule)] = (rule, repr(rule), extension)
     note_unread(
-        sheet, "conditional_formatting",
+        sheet,
+        "conditional_formatting",
         sum(record_id == BRT_BEGIN_CF_RULE for record_id, _ in records.conditional) - read,
     )
     for payload in records.validations:
@@ -330,8 +357,14 @@ def _attach_xlsb_comments(sheet: Worksheet, reader: ExcelReader, name: str) -> N
 
 
 def _load_sheet(
-    workbook: Workbook, handle: PackageHandle, updater: XlsbUpdater, reader: ExcelReader, name: str, *,
-    data_only: bool, formula_context: FormulaContext | None,
+    workbook: Workbook,
+    handle: PackageHandle,
+    updater: XlsbUpdater,
+    reader: ExcelReader,
+    name: str,
+    *,
+    data_only: bool,
+    formula_context: FormulaContext | None,
 ) -> FormulaContext | None:
     """Load one worksheet into ``workbook``. The formula context is made when a
     sheet first needs it and returned for the next sheets."""
@@ -349,8 +382,10 @@ def _load_sheet(
     _read_related_parts(sheet, sheet_path, handle.package, records.list_parts)
     if (records.validations or records.conditional) and formula_context is None:
         formula_context = FormulaContext(
-            updater.get_sheet_names(), handle.package.get("xl/workbook.bin"),
-            handle.part_or_none, tables=lambda: table_catalog(handle.package.names(), handle.part_or_none),
+            updater.get_sheet_names(),
+            handle.package.get("xl/workbook.bin"),
+            handle.part_or_none,
+            tables=lambda: table_catalog(handle.package.names(), handle.part_or_none),
         )
     _read_rules(sheet, records, formula_context, workbook._styles)
     _attach_xlsb_comments(sheet, reader, name)
@@ -359,7 +394,10 @@ def _load_sheet(
 
 
 def _read_workbook_parts(
-    workbook: Workbook, handle: PackageHandle, updater: XlsbUpdater, reader: ExcelReader,
+    workbook: Workbook,
+    handle: PackageHandle,
+    updater: XlsbUpdater,
+    reader: ExcelReader,
 ) -> None:
     """The workbook-level state after the worksheets: defined names, sheet states,
     the active sheet, chartsheets, properties, external links and print names."""
@@ -420,14 +458,9 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         # they can disagree, and a sheet one of them lacks cannot be loaded.
         missing = set(updater.get_sheet_names()) - set(reader.get_sheet_names())
         if missing:
-            raise InvalidFileError(
-                f"cannot read the sheet list of {path!r}: xl/workbook.bin is damaged"
-            )
+            raise InvalidFileError(f"cannot read the sheet list of {path!r}: xl/workbook.bin is damaged")
         styles_path = reader._styles_location and reader._resolve_path(reader._styles_location)
-        styles_bin = (
-            handle.package.get(styles_path)
-            if styles_path and handle.package.has(styles_path) else None
-        )
+        styles_bin = handle.package.get(styles_path) if styles_path and handle.package.has(styles_path) else None
         workbook._styles = XlsbStyleTable.from_bin(styles_bin)
         workbook._xlsb_styles_path = styles_path if styles_bin is not None else None
         named_styles: list[Any] = list(workbook._styles.named_style_defs.values())
@@ -435,7 +468,13 @@ def load_workbook_xlsb(path: str | os.PathLike[str], *, data_only: bool = False)
         formula_context = None
         for name in updater.get_worksheet_names():
             formula_context = _load_sheet(
-                workbook, handle, updater, reader, name, data_only=data_only, formula_context=formula_context,
+                workbook,
+                handle,
+                updater,
+                reader,
+                name,
+                data_only=data_only,
+                formula_context=formula_context,
             )
         _read_workbook_parts(workbook, handle, updater, reader)
         return workbook

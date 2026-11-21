@@ -76,11 +76,7 @@ def test_a_gradient_fill_survives_an_xlspy_load(tmp_path):
 
 
 def test_a_gradient_without_stops_becomes_a_plain_fill():
-    fill = _read_fill(
-        safe_fromstring(
-            f'<fill xmlns="{MAIN}"><gradientFill type="path"/></fill>'
-        )
-    )
+    fill = _read_fill(safe_fromstring(f'<fill xmlns="{MAIN}"><gradientFill type="path"/></fill>'))
     assert fill.fill_type == "none"
 
 

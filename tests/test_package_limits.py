@@ -1,4 +1,5 @@
 """Limits on what a package may make the readers hold in memory."""
+
 from __future__ import annotations
 
 import zipfile

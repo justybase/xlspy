@@ -41,7 +41,7 @@ def _sample_data():
 
 def _rel_ids(payload: bytes) -> str:
     (count,) = struct.unpack("<I", payload[:4])
-    return payload[4:4 + 2 * count].decode("utf-16-le")
+    return payload[4 : 4 + 2 * count].decode("utf-16-le")
 
 
 def _drawing_records(sheet_bin: bytes):
@@ -70,10 +70,7 @@ def test_xlsb_chart_xml_matches_xlsx_except_caches(tmp_path):
     with zipfile.ZipFile(xlsx_path) as xlsx, zipfile.ZipFile(xlsb_path) as xlsb:
         # The drawing (anchors, sizes, rels) is shared verbatim.
         assert xlsb.read("xl/drawings/drawing1.xml") == xlsx.read("xl/drawings/drawing1.xml")
-        assert (
-            xlsb.read("xl/drawings/_rels/drawing1.xml.rels")
-            == xlsx.read("xl/drawings/_rels/drawing1.xml.rels")
-        )
+        assert xlsb.read("xl/drawings/_rels/drawing1.xml.rels") == xlsx.read("xl/drawings/_rels/drawing1.xml.rels")
         bar_ref = xlsx.read("xl/charts/chart1.xml").decode()
         assert "strCache" not in bar_ref and "numCache" not in bar_ref
         assert "varyColors" not in bar_ref
@@ -97,25 +94,25 @@ def test_xlsb_chart_caches_carry_cell_values(tmp_path):
         bar = archive.read("xl/charts/chart1.xml").decode()
         # Series values are cached as numbers...
         assert "<numCache><formatCode>General</formatCode>" in bar
-        assert "<pt idx=\"0\"><v>10</v></pt>" in bar
-        assert "<pt idx=\"2\"><v>60</v></pt>" in bar
+        assert '<pt idx="0"><v>10</v></pt>' in bar
+        assert '<pt idx="2"><v>60</v></pt>' in bar
         # ...titles via strRef + strCache...
         assert "<f>'Data'!B1</f><strCache>" in bar
-        assert "<pt idx=\"0\"><v>A</v></pt>" in bar
+        assert '<pt idx="0"><v>A</v></pt>' in bar
         assert "<tx><v>Lit</v></tx>" in bar
         # ...and text categories via strRef (like Excel), not numRef.
         assert "<cat><strRef><f>'Data'!$A$2:$A$4</f>" in bar
         assert "<cat><numRef>" not in bar
-        assert "<pt idx=\"0\"><v>Q1</v></pt>" in bar
+        assert '<pt idx="0"><v>Q1</v></pt>' in bar
         # Explicit single-series colors, matching Excel-generated files.
-        assert "<barChart><barDir val=\"col\"/><grouping val=\"clustered\"/>" in bar
-        assert "<varyColors val=\"0\"/>" in bar
+        assert '<barChart><barDir val="col"/><grouping val="clustered"/>' in bar
+        assert '<varyColors val="0"/>' in bar
         # Explicit axis attributes: the XLSB loader hides labels without them.
-        assert "<delete val=\"0\"/><axPos val=\"b\"/>" in bar
-        assert "<delete val=\"0\"/><axPos val=\"l\"/><majorGridlines/>" in bar
-        assert "<tickLblPos val=\"nextTo\"/>" in bar
+        assert '<delete val="0"/><axPos val="b"/>' in bar
+        assert '<delete val="0"/><axPos val="l"/><majorGridlines/>' in bar
+        assert '<tickLblPos val="nextTo"/>' in bar
         pie = archive.read("xl/charts/chart2.xml").decode()
-        assert "<pieChart><varyColors val=\"1\"/>" in pie
+        assert '<pieChart><varyColors val="1"/>' in pie
 
 
 def test_xlsb_chart_caches_use_formula_results(tmp_path):
@@ -125,11 +122,13 @@ def test_xlsb_chart_caches_use_formula_results(tmp_path):
     with XlsbWriter(path) as writer:
         writer.add_sheet("Data")
         writer.write_sheet(
-            [["Q", "A"],
-             [Hyperlink("#'Data'!A1", text="Q1"), Formula("5*2", 10)],
-             ["Q2", Formula("B2*3")],
-             ["Q3", (Formula("B2*5", 50.5), "0.0")],
-             ["Q4", None]],
+            [
+                ["Q", "A"],
+                [Hyperlink("#'Data'!A1", text="Q1"), Formula("5*2", 10)],
+                ["Q2", Formula("B2*3")],
+                ["Q3", (Formula("B2*5", 50.5), "0.0")],
+                ["Q4", None],
+            ],
             charts=[Chart("bar", [ChartSeries("B2:B5", categories="A2:A5")], anchor="E2")],
         )
 
@@ -139,10 +138,10 @@ def test_xlsb_chart_caches_use_formula_results(tmp_path):
     # A formula shows its cached result; one without a result, like an empty
     # cell, is a missing point, which Excel draws as a gap.
     assert (
-        "<numCache><formatCode>General</formatCode><ptCount val=\"4\"/>"
-        "<pt idx=\"0\"><v>10</v></pt><pt idx=\"2\"><v>50.5</v></pt></numCache>"
+        '<numCache><formatCode>General</formatCode><ptCount val="4"/>'
+        '<pt idx="0"><v>10</v></pt><pt idx="2"><v>50.5</v></pt></numCache>'
     ) in bar
-    assert "<pt idx=\"0\"><v>Q1</v></pt>" in bar
+    assert '<pt idx="0"><v>Q1</v></pt>' in bar
 
 
 def test_xlsb_chart_style_uses_c14_extension(tmp_path):
@@ -152,9 +151,12 @@ def test_xlsb_chart_style_uses_c14_extension(tmp_path):
         writer.add_sheet("Data")
         writer.write_sheet(_sample_data(), charts=_sample_charts())
         writer.add_sheet("Second")
-        writer.write_sheet([["x", 1]], charts=[
-            Chart("bar", [ChartSeries("B1:B1")], style=2, anchor="C3"),
-        ])
+        writer.write_sheet(
+            [["x", 1]],
+            charts=[
+                Chart("bar", [ChartSeries("B1:B1")], style=2, anchor="C3"),
+            ],
+        )
 
     with zipfile.ZipFile(path) as archive:
         bar = archive.read("xl/charts/chart1.xml").decode()
@@ -163,20 +165,20 @@ def test_xlsb_chart_style_uses_c14_extension(tmp_path):
         # element alone is not applied by Excel's XLSB loader.
         expected = (
             "<mc:AlternateContent"
-            " xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\">"
-            "<mc:Choice Requires=\"c14\""
-            " xmlns:c14=\"http://schemas.microsoft.com/office/drawing/2007/8/2/chart\">"
-            "<c14:style val=\"110\"/></mc:Choice>"
-            "<mc:Fallback><style val=\"10\"/></mc:Fallback>"
+            ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">'
+            '<mc:Choice Requires="c14"'
+            ' xmlns:c14="http://schemas.microsoft.com/office/drawing/2007/8/2/chart">'
+            '<c14:style val="110"/></mc:Choice>'
+            '<mc:Fallback><style val="10"/></mc:Fallback>'
             "</mc:AlternateContent>"
         )
         assert expected in bar
-        assert "<style val=\"10\"/><chart>" not in bar
+        assert '<style val="10"/><chart>' not in bar
         ET.fromstring(bar)
         # The lowest style follows the same rule (2 -> 102)...
         second = archive.read("xl/charts/chart3.xml").decode()
-        assert "<c14:style val=\"102\"/>" in second
-        assert "<mc:Fallback><style val=\"2\"/></mc:Fallback>" in second
+        assert '<c14:style val="102"/>' in second
+        assert '<mc:Fallback><style val="2"/></mc:Fallback>' in second
         # ...and charts without a style keep the implicit default: no block.
         pie = archive.read("xl/charts/chart2.xml").decode()
         assert "AlternateContent" not in pie
@@ -206,21 +208,15 @@ def test_xlsb_chart_pins_the_legacy_palette_and_title(tmp_path):
     with zipfile.ZipFile(path) as archive:
         bar = archive.read("xl/charts/chart1.xml").decode()
         # One classic Office 2007 accent per series...
-        assert "<a:srgbClr val=\"4F81BD\"/>" in bar
-        assert "<a:srgbClr val=\"C0504D\"/>" in bar
+        assert '<a:srgbClr val="4F81BD"/>' in bar
+        assert '<a:srgbClr val="C0504D"/>' in bar
         # ...and the legacy 18 pt bold title instead of the modern 14 pt one.
-        assert "<a:rPr lang=\"en-US\" sz=\"1800\" b=\"1\"/>" in bar
+        assert '<a:rPr lang="en-US" sz="1800" b="1"/>' in bar
         line = archive.read("xl/charts/chart2.xml").decode()
-        assert (
-            "<a:ln><a:solidFill><a:srgbClr val=\"4F81BD\"/></a:solidFill>"
-            "<a:prstDash val=\"solid\"/></a:ln>"
-        ) in line
+        assert ('<a:ln><a:solidFill><a:srgbClr val="4F81BD"/></a:solidFill><a:prstDash val="solid"/></a:ln>') in line
         pie = archive.read("xl/charts/chart3.xml").decode()
         for point, color in enumerate(("4F81BD", "C0504D", "9BBB59")):
-            assert (
-                f"<dPt><idx val=\"{point}\"/><spPr><a:solidFill>"
-                f"<a:srgbClr val=\"{color}\"/></a:solidFill>"
-            ) in pie
+            assert (f'<dPt><idx val="{point}"/><spPr><a:solidFill><a:srgbClr val="{color}"/></a:solidFill>') in pie
         for name in ("chart1", "chart2", "chart3"):
             ET.fromstring(archive.read(f"xl/charts/{name}.xml"))
 
@@ -239,7 +235,7 @@ def test_xlsb_brt_drawing_record(tmp_path):
     records = list(iter_records(sheet_bin))
     drawings = [r for r in records if r.record_id == _BRT_DRAWING]
     assert len(drawings) == 1
-    assert _rel_ids(sheet_bin[drawings[0].data_start:drawings[0].data_end]) == "rId2"
+    assert _rel_ids(sheet_bin[drawings[0].data_start : drawings[0].data_end]) == "rId2"
 
     # BrtDrawing sits between BrtMargins (476) and BrtEndSheet (130),
     # directly before the tail FRT alternative-content block (0x25).
@@ -291,9 +287,12 @@ def test_xlsb_charts_multi_sheet(tmp_path):
         writer.add_sheet("First")
         writer.write_sheet(_sample_data(), charts=_sample_charts())
         writer.add_sheet("Second")
-        writer.write_sheet([["x", 1]], charts=[
-            Chart("bar", [ChartSeries("B1:B1")], anchor="C3"),
-        ])
+        writer.write_sheet(
+            [["x", 1]],
+            charts=[
+                Chart("bar", [ChartSeries("B1:B1")], anchor="C3"),
+            ],
+        )
 
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
@@ -304,7 +303,7 @@ def test_xlsb_charts_multi_sheet(tmp_path):
             sheet_bin = archive.read(f"xl/worksheets/{sheet_name}")
             drawings = _drawing_records(sheet_bin)
             assert len(drawings) == 1
-            assert _rel_ids(sheet_bin[drawings[0].data_start:drawings[0].data_end]) == "rId2"
+            assert _rel_ids(sheet_bin[drawings[0].data_start : drawings[0].data_end]) == "rId2"
 
 
 def test_xlsb_plain_write_has_no_drawing(tmp_path):
@@ -316,8 +315,7 @@ def test_xlsb_plain_write_has_no_drawing(tmp_path):
     chart_path = tmp_path / "chart.xlsb"
     with XlsbWriter(chart_path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet([[f"h{j}"] + [i] * 3 for j in range(1) for i in range(11)],
-                           charts=_sample_charts()[:1])
+        writer.write_sheet([[f"h{j}"] + [i] * 3 for j in range(1) for i in range(11)], charts=_sample_charts()[:1])
 
     with zipfile.ZipFile(plain_path) as plain, zipfile.ZipFile(chart_path) as charted:
         names = plain.namelist()
@@ -349,7 +347,8 @@ def test_xlsb_charts_via_dataframe(tmp_path):
 
     df = pd.DataFrame({"Q": ["Q1", "Q2"], "A": [10, 30]})
     path = to_xlsb(
-        df, tmp_path / "df.xlsb",
+        df,
+        tmp_path / "df.xlsb",
         charts=[Chart("bar", [ChartSeries("B2:B3", title_cell="B1")], anchor="D2")],
     )
     with zipfile.ZipFile(path) as archive:

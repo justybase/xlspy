@@ -5,11 +5,12 @@ Creates both .xlsx and .xlsb files with all supported formats.
 Usage:
     python examples/format_demo.py
 """
+
 import datetime
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from xlspy import XlsbWriter, XlsxWriter, F
 

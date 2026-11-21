@@ -110,14 +110,11 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         if self._shared_strings_data is not None:
             self._shared_strings_total = max(
                 0,
-                self._shared_strings_total
-                - self._shared_string_ref_count(sheet_data),
+                self._shared_strings_total - self._shared_string_ref_count(sheet_data),
             )
             self._shared_strings_dirty = True
 
-        header_styles, data_styles = self._collect_styles(
-            sheet_data, headers_provided=header_values is not None
-        )
+        header_styles, data_styles = self._collect_styles(sheet_data, headers_provided=header_values is not None)
         date_xf = self._find_date_style() if style_fallback == "inherit" else None
         total_rows, width = self._region_size(materialized, header_values)
         last_row = max(0, total_rows - 1)
@@ -142,11 +139,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
 
         region = self._find_rows_region(sheet_data)
         old_rows_length = region.rows_end - region.rows_start
-        updated = bytearray(
-            sheet_data[: region.rows_start]
-            + new_rows
-            + sheet_data[region.rows_end :]
-        )
+        updated = bytearray(sheet_data[: region.rows_start] + new_rows + sheet_data[region.rows_end :])
         delta = len(new_rows) - old_rows_length
 
         for filter_offset in region.auto_filter_ranges:
@@ -187,14 +180,11 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         original_sheet = self._stage_part_copy(sheet_path, ".bin")
 
         self._ensure_stream_shared_strings()
-        header_styles, data_styles = self._collect_styles_stream(
-            original_sheet, headers_provided=headers is not None
-        )
+        header_styles, data_styles = self._collect_styles_stream(original_sheet, headers_provided=headers is not None)
         if self._stream_shared_strings is not None:
             self._shared_strings_total = max(
                 0,
-                self._stream_shared_strings.total_count
-                - self._shared_string_ref_count_stream(original_sheet),
+                self._stream_shared_strings.total_count - self._shared_string_ref_count_stream(original_sheet),
             )
             self._stream_shared_strings.total_count = self._shared_strings_total
             self._stream_shared_strings.dirty = True
@@ -209,9 +199,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
 
                 # The final column is not known until the generator ends: the row
                 # headers say 0 until _patch_row_headers_file.
-                writer = _XlsbRowWriter(
-                    self, header_styles, data_styles, date_xf, style_fallback, 0, sheet_name
-                )
+                writer = _XlsbRowWriter(self, header_styles, data_styles, date_xf, style_fallback, 0, sheet_name)
 
                 if header_values is not None:
                     header_texts = header_row_texts(header_values)
@@ -282,7 +270,8 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             raise ValueError("XLSB workbook relationships were not found")
         relationships = parse_relationships_xml(self._package.get(rels_path))
         chart_ids = {
-            node.get("Id") for node in safe_fromstring(self._package.get(rels_path))
+            node.get("Id")
+            for node in safe_fromstring(self._package.get(rels_path))
             if (node.get("Type") or "").endswith("/chartsheet")
         }
         self._chartsheets: set[str] = set()
@@ -317,9 +306,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         parsed = parse_shared_strings_bin(data)
         self._shared_strings_data = data
         self._shared_strings_values = parsed.values
-        self._shared_string_indices = {
-            value: index for index, value in enumerate(parsed.values)
-        }
+        self._shared_string_indices = {value: index for index, value in enumerate(parsed.values)}
         self._shared_strings_total = parsed.total_count
 
     def _ensure_stream_shared_strings(self) -> None:
@@ -414,9 +401,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
             return _record_shared_string_cells(iter_records_stream(stream))
 
     def _commit_shared_strings(self) -> None:
-        if self._shared_strings_data is None or (
-            not self._shared_strings_pending and not self._shared_strings_dirty
-        ):
+        if self._shared_strings_data is None or (not self._shared_strings_pending and not self._shared_strings_dirty):
             return
 
         new_items = bytearray()
@@ -428,13 +413,13 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         parsed = parse_shared_strings_bin(self._shared_strings_data)
         insertion = parsed.end_offset if parsed.end_offset is not None else len(self._shared_strings_data)
         updated = bytearray(
-            self._shared_strings_data[:insertion]
-            + bytes(new_items)
-            + self._shared_strings_data[insertion:]
+            self._shared_strings_data[:insertion] + bytes(new_items) + self._shared_strings_data[insertion:]
         )
         for record in iter_records(bytes(updated)):
             if record.record_id == 0x9F and record.length >= 8:
-                struct.pack_into("<II", updated, record.data_start, self._shared_strings_total, len(self._shared_strings_values))
+                struct.pack_into(
+                    "<II", updated, record.data_start, self._shared_strings_total, len(self._shared_strings_values)
+                )
                 break
 
         self._shared_strings_data = bytes(updated)
@@ -446,9 +431,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
     def _shared_string_ref_count(sheet_data: bytes) -> int:
         return _record_shared_string_cells(_with_payloads(sheet_data))
 
-    def _collect_styles(
-        self, sheet_data: bytes, *, headers_provided: bool
-    ) -> tuple[dict[int, int], dict[int, int]]:
+    def _collect_styles(self, sheet_data: bytes, *, headers_provided: bool) -> tuple[dict[int, int], dict[int, int]]:
         return _record_cell_styles(_with_payloads(sheet_data), headers_provided=headers_provided)
 
     def _cell_xf_number_formats(self) -> tuple[list[int], dict[int, str]] | None:
@@ -472,9 +455,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                 character_count = struct.unpack_from("<I", payload, 2)[0]
                 format_end = 6 + character_count * 2
                 if format_end <= record.length:
-                    custom_formats[number_format_id] = payload[6:format_end].decode(
-                        "utf-16le"
-                    )
+                    custom_formats[number_format_id] = payload[6:format_end].decode("utf-16le")
                 continue
             if record.record_id == 0x269:
                 in_cell_xfs = True
@@ -497,9 +478,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         sheet_name: str,
     ) -> tuple[bytes, bool, bool]:
         chunks: list[bytes] = []
-        max_col = max(
-            [len(row) for row in rows] + ([len(headers)] if headers is not None else []) + [0]
-        )
+        max_col = max([len(row) for row in rows] + ([len(headers)] if headers is not None else []) + [0])
         first_row = 1 if headers is not None else 0
         # A spill or array formula widens its row even when the row source is
         # shorter; the row headers must name that last column.
@@ -510,15 +489,17 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                     max_col = max(max_col, bounds[2] + 1)
         check_last_column(max(0, max_col - 1))
         writer = _XlsbRowWriter(
-            self, header_styles, data_styles, date_xf, style_fallback,
-            max(0, max_col - 1), sheet_name,
+            self,
+            header_styles,
+            data_styles,
+            date_xf,
+            style_fallback,
+            max(0, max_col - 1),
+            sheet_name,
         )
 
         if headers is not None:
-            header_texts = [
-                "" if unwrap_cell(value) is None else str(unwrap_cell(value))
-                for value in headers
-            ]
+            header_texts = ["" if unwrap_cell(value) is None else str(unwrap_cell(value)) for value in headers]
             chunks.append(writer.header(header_texts, 0))
 
         row_number = first_row
@@ -534,9 +515,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
     def _replace_context(self) -> FormulaContext:
         """The formula context of a ``replace_sheet_data`` call, built once."""
         if self._replace_formula_context is None:
-            self._replace_formula_context = self._context(
-                self._package.get("xl/workbook.bin"), self._part_or_none
-            )
+            self._replace_formula_context = self._context(self._package.get("xl/workbook.bin"), self._part_or_none)
         return self._replace_formula_context
 
     def _invalidate_replaced_formulas(self) -> None:
@@ -571,14 +550,16 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         if isinstance(value, ArrayFormula):
             value = Formula(value.text, array_ref=value.ref)
         elif isinstance(value, DataTableFormula):
-            raise UnsupportedFeatureError(
-                "an XLSB workbook cannot store a data-table formula; write it to XLSX"
-            )
+            raise UnsupportedFeatureError("an XLSB workbook cannot store a data-table formula; write it to XLSX")
         style = 0 if style_fallback == "general" else data_styles.get(column, 0)
         if isinstance(value, ArrayValue):
             return formula_cell(
-                value, column, style, self._replace_context(),
-                sheet=sheet_name, row=row_number,
+                value,
+                column,
+                style,
+                self._replace_context(),
+                sheet=sheet_name,
+                row=row_number,
             )
         if isinstance(value, Formula):
             spill = value.spill_ref is not None and value.array_ref is None
@@ -588,12 +569,20 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
                 # Tracked by the row writer for metadata ensuring.
                 converted = replace(value, array_ref=value.spill_ref, spill_ref=None)
                 return build_record(0x31, struct.pack("<I", 1)) + formula_cell(
-                    converted, column, style, self._replace_context(),
-                    sheet=sheet_name, row=row_number,
+                    converted,
+                    column,
+                    style,
+                    self._replace_context(),
+                    sheet=sheet_name,
+                    row=row_number,
                 )
             return formula_cell(
-                value, column, style, self._replace_context(),
-                sheet=sheet_name, row=row_number,
+                value,
+                column,
+                style,
+                self._replace_context(),
+                sheet=sheet_name,
+                row=row_number,
             )
         if value is None:
             return self._string_cell_bytes(column, style, "")
@@ -688,7 +677,9 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
 
     @staticmethod
     def _patch_sheet_file(
-        sheet_path: str | os.PathLike[str], last_row: int, last_col: int,
+        sheet_path: str | os.PathLike[str],
+        last_row: int,
+        last_col: int,
         rows: tuple[int, int] | None = None,
     ) -> None:
         """Patch the dimension and the autofilter ranges; ``rows`` (start, end)
@@ -696,11 +687,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
         dimension_patched = False
         with open(sheet_path, "r+b") as stream:
             for record, _ in _records_around(stream, rows):
-                if (
-                    record.record_id == _WS_DIM_RECORD
-                    and record.length >= 16
-                    and not dimension_patched
-                ):
+                if record.record_id == _WS_DIM_RECORD and record.length >= 16 and not dimension_patched:
                     # BrtWsDim: rwFirst, rwLast, colFirst, colLast (int32 each).
                     stream.seek(record.data_start + 4)
                     stream.write(struct.pack("<i", last_row))
@@ -729,9 +716,7 @@ class XlsbUpdater(_UpdaterBase, XlsbSheetsMixin, XlsbEditMixin):
 
     def _patch_pivot_caches(self, sheet_name: str, last_row: int, last_col: int) -> None:
         for path in sorted(
-            name
-            for name in self._package_names()
-            if re.fullmatch(r"xl/pivotCache/pivotCacheDefinition\d*\.bin", name)
+            name for name in self._package_names() if re.fullmatch(r"xl/pivotCache/pivotCacheDefinition\d*\.bin", name)
         ):
             data = bytearray(self._package.get(path))
             patched = False
@@ -767,9 +752,16 @@ class _XlsbRowWriter:
     through ``XlsbUpdater._value_cell_bytes``, one at a time. Row headers name
     ``last_col`` as the last column."""
 
-    def __init__(self, updater: XlsbUpdater, header_styles: dict[int, int], data_styles: dict[int, int],
-                 date_xf: int | None, style_fallback: StyleFallback, last_col: int,
-                 sheet_name: str = "") -> None:
+    def __init__(
+        self,
+        updater: XlsbUpdater,
+        header_styles: dict[int, int],
+        data_styles: dict[int, int],
+        date_xf: int | None,
+        style_fallback: StyleFallback,
+        last_col: int,
+        sheet_name: str = "",
+    ) -> None:
         self._updater = updater
         self._header_styles = header_styles
         self._data_styles = data_styles
@@ -806,21 +798,22 @@ class _XlsbRowWriter:
         unwrapped = unwrap_cell(raw)
         if isinstance(unwrapped, ArrayFormula):
             self.wrote_formula = True
-            self._register_array_range(
-                Formula(unwrapped.text, array_ref=unwrapped.ref), column, row_number
-            )
+            self._register_array_range(Formula(unwrapped.text, array_ref=unwrapped.ref), column, row_number)
         elif isinstance(unwrapped, Formula):
             self.wrote_formula = True
             if unwrapped.spill_ref is not None:
                 self.wrote_spill = True
         return self._updater._value_cell_bytes(
-            raw, column, self._data_styles, self._date_xf, self._style_fallback,
-            sheet_name=self._sheet_name, row_number=row_number,
+            raw,
+            column,
+            self._data_styles,
+            self._date_xf,
+            self._style_fallback,
+            sheet_name=self._sheet_name,
+            row_number=row_number,
         )
 
-    def _register_array_range(
-        self, formula: Formula, column: int, row_number: int
-    ) -> None:
+    def _register_array_range(self, formula: Formula, column: int, row_number: int) -> None:
         bounds = formula_range_bounds(formula)
         if bounds is None:
             return
@@ -846,9 +839,7 @@ class _XlsbRowWriter:
         for column, raw in enumerate(prepared):
             value = unwrap_cell(raw)
             if isinstance(value, ArrayFormula):
-                self._register_array_range(
-                    Formula(value.text, array_ref=value.ref), column, row_number
-                )
+                self._register_array_range(Formula(value.text, array_ref=value.ref), column, row_number)
             elif isinstance(value, Formula):
                 self._register_array_range(value, column, row_number)
         for c1, r1, c2, r2 in self.array_ranges:
@@ -880,10 +871,18 @@ class _XlsbRowWriter:
 
     def header(self, texts: list[str], row_number: int) -> bytes:
         if encode_update_xlsb_row is not None:
-            return bytes(encode_update_xlsb_row(
-                texts, row_number, self._last_col, self._style_lists[0], 0, self._string_index,
-                self._header_cell, self._updater._date_1904,
-            ))
+            return bytes(
+                encode_update_xlsb_row(
+                    texts,
+                    row_number,
+                    self._last_col,
+                    self._style_lists[0],
+                    0,
+                    self._string_index,
+                    self._header_cell,
+                    self._updater._date_1904,
+                )
+            )
         return self._row_header(row_number) + b"".join(
             self._header_cell(text, column) for column, text in enumerate(texts)
         )
@@ -895,10 +894,18 @@ class _XlsbRowWriter:
             return self._cell(raw, column, _row_number)
 
         if encode_update_xlsb_row is not None:
-            return bytes(encode_update_xlsb_row(
-                prepared, row_number, self._last_col, self._style_lists[1], self._date_xf or 0,
-                self._string_index, cell, self._updater._date_1904,
-            ))
+            return bytes(
+                encode_update_xlsb_row(
+                    prepared,
+                    row_number,
+                    self._last_col,
+                    self._style_lists[1],
+                    self._date_xf or 0,
+                    self._string_index,
+                    cell,
+                    self._updater._date_1904,
+                )
+            )
         return self._row_header(row_number) + b"".join(
             self._cell(raw, column, row_number) for column, raw in enumerate(prepared) if raw is not None
         )

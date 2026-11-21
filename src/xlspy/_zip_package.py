@@ -60,9 +60,7 @@ class DiskStringIndex:
     def __init__(self, directory: str | os.PathLike[str], *, total_count: int = 0):
         directory = Path(directory)
         self._database = sqlite3.connect(directory / "shared-strings.sqlite3")
-        self._database.execute(
-            "CREATE TABLE IF NOT EXISTS strings (value TEXT PRIMARY KEY, idx INTEGER NOT NULL)"
-        )
+        self._database.execute("CREATE TABLE IF NOT EXISTS strings (value TEXT PRIMARY KEY, idx INTEGER NOT NULL)")
         self._database.commit()
         self._pending_path = directory / "shared-strings.pending"
         self._pending = self._pending_path.open("ab+")
@@ -96,14 +94,10 @@ class DiskStringIndex:
             self.total_count += 1
             self.dirty = True
             return cached
-        result = self._database.execute(
-            "SELECT idx FROM strings WHERE value = ?", (value,)
-        ).fetchone()
+        result = self._database.execute("SELECT idx FROM strings WHERE value = ?", (value,)).fetchone()
         if result is None:
             index = self.unique_count
-            self._database.execute(
-                "INSERT INTO strings(value, idx) VALUES (?, ?)", (value, index)
-            )
+            self._database.execute("INSERT INTO strings(value, idx) VALUES (?, ?)", (value, index))
             self._uncommitted_inserts += 1
             if self._uncommitted_inserts >= 1024:
                 self._database.commit()
@@ -279,11 +273,14 @@ class ZipPackage:
         self._temporary_directory_finalizer = weakref.finalize(
             self, shutil.rmtree, self._temporary_directory, ignore_errors=True
         )
-        self._package_transaction: tuple[
-            list[zipfile.ZipInfo],
-            dict[str, int],
-            dict[int, bytes | Path],
-        ] | None = None
+        self._package_transaction: (
+            tuple[
+                list[zipfile.ZipInfo],
+                dict[str, int],
+                dict[int, bytes | Path],
+            ]
+            | None
+        ) = None
         self._superseded_paths: set[Path] = set()
 
     def close(self) -> None:
@@ -345,9 +342,7 @@ class ZipPackage:
     def temporary_path(self, *, suffix: str = "") -> Path:
         """Create a named temporary file owned by this package."""
 
-        descriptor, path = tempfile.mkstemp(
-            prefix="part-", suffix=suffix, dir=self._temporary_directory
-        )
+        descriptor, path = tempfile.mkstemp(prefix="part-", suffix=suffix, dir=self._temporary_directory)
         os.close(descriptor)
         return Path(path)
 
@@ -398,11 +393,7 @@ class ZipPackage:
 
         if self._package_transaction is None:
             return
-        current_paths = {
-            override
-            for override in self._overrides.values()
-            if isinstance(override, Path)
-        }
+        current_paths = {override for override in self._overrides.values() if isinstance(override, Path)}
         for path in self._superseded_paths:
             if path not in current_paths:
                 self._delete_staged_path(path)
@@ -416,11 +407,7 @@ class ZipPackage:
         if transaction is None:
             return
         _, _, original_overrides = transaction
-        original_paths = {
-            override
-            for override in original_overrides.values()
-            if isinstance(override, Path)
-        }
+        original_paths = {override for override in original_overrides.values() if isinstance(override, Path)}
         for override in self._overrides.values():
             if isinstance(override, Path) and override not in original_paths:
                 self._delete_staged_path(override)
@@ -474,8 +461,7 @@ class ZipPackage:
         self._entries = [info for index, info in enumerate(self._entries) if index != removed_index]
         self._indices = {info.filename: index for index, info in enumerate(self._entries)}
         self._overrides = {
-            index - (index > removed_index): value
-            for index, value in self._overrides.items() if index != removed_index
+            index - (index > removed_index): value for index, value in self._overrides.items() if index != removed_index
         }
 
     def set_file(self, name: str, path: str | os.PathLike[str]) -> None:
@@ -525,9 +511,7 @@ class ZipPackage:
         target = target.resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary_path: str | None = None
-        descriptor, temporary_path = tempfile.mkstemp(
-            prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
-        )
+        descriptor, temporary_path = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
         os.close(descriptor)
         try:
             with SafeZipFile(temporary_path, "w") as archive:

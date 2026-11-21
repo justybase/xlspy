@@ -1,6 +1,5 @@
 """Opt-in validation of notes, template edits and protection in real Excel."""
 
-
 import pytest
 
 from xlspy import Comment, DefinedName, Formula, SheetProtection, WorkbookProtection, XlsxUpdater, XlsxWriter
@@ -12,8 +11,11 @@ def test_notes_dimensions_names_and_protection_in_excel(tmp_path, open_workbook)
     path = tmp_path / "metadata.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet([[1], [2]], comments={"A1": Comment("Zażółć <&>\nline", "Jan", 300, 120), "C8": Comment("literal _x0041_", "Ola")},
-                           sheet_protection=SheetProtection(password="abc"))
+        writer.write_sheet(
+            [[1], [2]],
+            comments={"A1": Comment("Zażółć <&>\nline", "Jan", 300, 120), "C8": Comment("literal _x0041_", "Ola")},
+            sheet_protection=SheetProtection(password="abc"),
+        )
         writer.set_defined_name(DefinedName("Amount", "'Data'!$A$2"))
         writer.set_workbook_protection(WorkbookProtection(password="abc"))
     book = open_workbook(path)

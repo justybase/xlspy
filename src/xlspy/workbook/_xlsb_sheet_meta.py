@@ -11,9 +11,17 @@ import struct
 
 from .._xlsb_metadata import read_wide
 from .._xlsb_print import (
-    BRT_BEGIN_COL_BREAKS, BRT_BEGIN_HEADER_FOOTER, BRT_BEGIN_ROW_BREAKS, BRT_BREAK,
-    BRT_END_COL_BREAKS, BRT_END_ROW_BREAKS, BRT_MARGINS, BRT_PAGE_SETUP,
-    BRT_PRINT_OPTIONS, FIT_TO_PAGE_BIT, FIT_TO_PAGE_BYTE,
+    BRT_BEGIN_COL_BREAKS,
+    BRT_BEGIN_HEADER_FOOTER,
+    BRT_BEGIN_ROW_BREAKS,
+    BRT_BREAK,
+    BRT_END_COL_BREAKS,
+    BRT_END_ROW_BREAKS,
+    BRT_MARGINS,
+    BRT_PAGE_SETUP,
+    BRT_PRINT_OPTIONS,
+    FIT_TO_PAGE_BIT,
+    FIT_TO_PAGE_BYTE,
 )
 from .._xlsb_style_records import read_brt_color
 from ..refs import column_label
@@ -32,25 +40,57 @@ SELECTION = 0x98
 SHEET_PROTECTION = 0x217
 SHEET_PROTECTION_ISO = 0x2A6
 # Records collected for apply_sheet_records (row headers are filtered first).
-RECORDS = frozenset({
-    COL_INFO, WS_PROP, BEGIN_WS_VIEW, PANE, SELECTION, FORMAT_INFO, SHEET_PROTECTION,
-    SHEET_PROTECTION_ISO,
-    BRT_PRINT_OPTIONS,
-    BRT_MARGINS, BRT_PAGE_SETUP, BRT_BEGIN_HEADER_FOOTER, BRT_BEGIN_ROW_BREAKS,
-    BRT_END_ROW_BREAKS, BRT_BEGIN_COL_BREAKS, BRT_END_COL_BREAKS, BRT_BREAK,
-})
+RECORDS = frozenset(
+    {
+        COL_INFO,
+        WS_PROP,
+        BEGIN_WS_VIEW,
+        PANE,
+        SELECTION,
+        FORMAT_INFO,
+        SHEET_PROTECTION,
+        SHEET_PROTECTION_ISO,
+        BRT_PRINT_OPTIONS,
+        BRT_MARGINS,
+        BRT_PAGE_SETUP,
+        BRT_BEGIN_HEADER_FOOTER,
+        BRT_BEGIN_ROW_BREAKS,
+        BRT_END_ROW_BREAKS,
+        BRT_BEGIN_COL_BREAKS,
+        BRT_END_COL_BREAKS,
+        BRT_BREAK,
+    }
+)
 # BrtRowHdr flags byte: outline level (bits 0-2), collapsed, hidden, custom
 # height (fUnsynced) and fGhostDirty (the row has a style).
 ROW_FLAGS = 11
 _PROTECTION_FIELDS = (
-    "sheet", "objects", "scenarios", "formatCells", "formatColumns", "formatRows",
-    "insertColumns", "insertRows", "insertHyperlinks", "deleteColumns", "deleteRows",
-    "selectLockedCells", "sort", "autoFilter", "pivotTables", "selectUnlockedCells",
+    "sheet",
+    "objects",
+    "scenarios",
+    "formatCells",
+    "formatColumns",
+    "formatRows",
+    "insertColumns",
+    "insertRows",
+    "insertHyperlinks",
+    "deleteColumns",
+    "deleteRows",
+    "selectLockedCells",
+    "sort",
+    "autoFilter",
+    "pivotTables",
+    "selectUnlockedCells",
 )
 _VIEWS = {1: "pageBreakPreview", 2: "pageLayout"}
 _PANES = {0: "bottomRight", 1: "topRight", 2: "bottomLeft"}
 _HEADER_FOOTER_PARTS = (
-    "oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter",
+    "oddHeader",
+    "oddFooter",
+    "evenHeader",
+    "evenFooter",
+    "firstHeader",
+    "firstFooter",
 )
 
 
@@ -123,9 +163,10 @@ def _pane(sheet, payload: bytes) -> None:
         return
     cell = f"{column_label(left)}{top + 1}"
     sheet._sheet_view.pane = Pane(
-        xSplit=x_split or None, ySplit=y_split or None, topLeftCell=cell,
-        activePane="bottomRight" if x_split and y_split
-        else "topRight" if x_split else "bottomLeft",
+        xSplit=x_split or None,
+        ySplit=y_split or None,
+        topLeftCell=cell,
+        activePane="bottomRight" if x_split and y_split else "topRight" if x_split else "bottomLeft",
         state="frozen" if frozen else "split",
     )
     if frozen:
@@ -139,10 +180,14 @@ def _selection(sheet, payload: bytes) -> None:
         r1, r2, c1, c2 = struct.unpack_from("<4I", payload, 20 + index * 16)
         first = f"{column_label(c1)}{r1 + 1}"
         ranges.append(first if (r1, c1) == (r2, c2) else f"{first}:{column_label(c2)}{r2 + 1}")
-    sheet._sheet_view.selection.append(Selection(
-        pane=_PANES.get(pane), activeCell=f"{column_label(column)}{row + 1}",
-        activeCellId=active_id or None, sqref=" ".join(ranges) or "A1",
-    ))
+    sheet._sheet_view.selection.append(
+        Selection(
+            pane=_PANES.get(pane),
+            activeCell=f"{column_label(column)}{row + 1}",
+            activeCellId=active_id or None,
+            sqref=" ".join(ranges) or "A1",
+        )
+    )
 
 
 def _sheet_format(sheet, payload: bytes) -> None:
@@ -191,16 +236,12 @@ def _protection_iso(sheet, payload: bytes) -> None:
         name_size = struct.unpack_from("<I", payload, offset)[0]
         offset += 4
         if offset + 2 * name_size <= len(payload):
-            protection.algorithmName = payload[offset:offset + 2 * name_size].decode(
-                "utf-16-le", "replace"
-            )
+            protection.algorithmName = payload[offset : offset + 2 * name_size].decode("utf-16-le", "replace")
             sheet._protection_iso_algorithm = protection.algorithmName
 
 
 def _read_xlsb_page_setup(sheet, payload: bytes) -> None:
-    paper, scale, _hres, _vres, copies, first_page, width, height, flags = (
-        struct.unpack_from("<8IH", payload, 0)
-    )
+    paper, scale, _hres, _vres, copies, first_page, width, height, flags = struct.unpack_from("<8IH", payload, 0)
     setup = sheet.page_setup
     if not flags & 0x40:
         setup.orientation = "landscape" if flags & 0x02 else "portrait"
@@ -239,9 +280,13 @@ def read_filter_record(auto_filter, record_id: int, payload: bytes) -> None:
     try:
         if record_id == 0xA3:
             column, flags = struct.unpack_from("<IH", payload)
-            auto_filter.filterColumn.append(FilterColumn(
-                colId=column, hiddenButton=bool(flags & 0x01), showButton=not flags & 0x02,
-            ))
+            auto_filter.filterColumn.append(
+                FilterColumn(
+                    colId=column,
+                    hiddenButton=bool(flags & 0x01),
+                    showButton=not flags & 0x02,
+                )
+            )
         elif auto_filter.filterColumn and record_id == 0xA5:
             auto_filter.filterColumn[-1].blank = bool(struct.unpack_from("<I", payload)[0])
         elif auto_filter.filterColumn and record_id == 0xA7:
@@ -251,27 +296,37 @@ def read_filter_record(auto_filter, record_id: int, payload: bytes) -> None:
 
 
 LIST_PART = 0x295
+
+
 def read_table_part(data: bytes) -> Table | None:
     """A ``Table`` from an ``xl/tables/tableN.bin`` part ([MS-XLSB] 2.4.100 BrtBeginList)."""
     part = parse_table_part(data)
     if part is None:
         return None
     table = Table(
-        id=part.id, displayName=part.name, ref=part.ref, name=part.name,
-        comment=part.comment, headerRowCount=part.header_rows, totalsRowCount=part.totals_rows,
+        id=part.id,
+        displayName=part.name,
+        ref=part.ref,
+        name=part.name,
+        comment=part.comment,
+        headerRowCount=part.header_rows,
+        totalsRowCount=part.totals_rows,
     )
     if part.auto_filter_ref is not None:
         table.autoFilter = AutoFilter(part.auto_filter_ref)
     table.tableColumns = [
-        TableColumn(id=column.id, name=column.name, totalsRowFunction=column.totals_function,
-                    totalsRowLabel=column.totals_label)
+        TableColumn(
+            id=column.id, name=column.name, totalsRowFunction=column.totals_function, totalsRowLabel=column.totals_label
+        )
         for column in part.columns
     ]
     if part.style is not None:
         table.tableStyleInfo = TableStyleInfo(
             name=part.style.name,
-            showFirstColumn=part.style.first_column, showLastColumn=part.style.last_column,
-            showRowStripes=part.style.row_stripes, showColumnStripes=part.style.column_stripes,
+            showFirstColumn=part.style.first_column,
+            showLastColumn=part.style.last_column,
+            showRowStripes=part.style.row_stripes,
+            showColumnStripes=part.style.column_stripes,
         )
     return table
 
@@ -306,8 +361,9 @@ def apply_sheet_records(sheet, items) -> None:
                 options.gridLines = True if flags & 0x08 else None
             elif record_id == BRT_MARGINS:
                 margins = sheet.page_margins
-                (margins.left, margins.right, margins.top, margins.bottom,
-                 margins.header, margins.footer) = struct.unpack_from("<6d", payload, 0)
+                (margins.left, margins.right, margins.top, margins.bottom, margins.header, margins.footer) = (
+                    struct.unpack_from("<6d", payload, 0)
+                )
             elif record_id == BRT_PAGE_SETUP:
                 _read_xlsb_page_setup(sheet, payload)
             elif record_id == BRT_BEGIN_HEADER_FOOTER:

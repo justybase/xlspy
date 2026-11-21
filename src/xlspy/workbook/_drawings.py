@@ -38,10 +38,7 @@ def _contains(items, item) -> bool:
 def removed_drawing_objects(sheet) -> list[tuple[str, int, object]]:
     """The loaded charts and images no longer on the sheet."""
     current = _drawing_objects(sheet)
-    return [
-        entry for entry in getattr(sheet, "_drawing_sources", ())
-        if not _contains(current, entry[2])
-    ]
+    return [entry for entry in getattr(sheet, "_drawing_sources", ()) if not _contains(current, entry[2])]
 
 
 def new_drawing_objects(sheet) -> dict[str, list]:
@@ -50,8 +47,7 @@ def new_drawing_objects(sheet) -> dict[str, list]:
     if saved is None:
         saved = [entry[2] for entry in getattr(sheet, "_drawing_sources", ())]
     return {
-        name: [item for item in getattr(sheet, name) if not _contains(saved, item)]
-        for name in ("charts", "images")
+        name: [item for item in getattr(sheet, name) if not _contains(saved, item)] for name in ("charts", "images")
     }
 
 
@@ -117,7 +113,7 @@ def _referenced(package: _Package, part: str, skip: set[str]) -> bool:
         data = package.get(name)
         if not data:
             continue
-        source = name.replace("_rels/", "")[:-len(".rels")]
+        source = name.replace("_rels/", "")[: -len(".rels")]
         try:
             root = safe_fromstring(data)
         except ET.ParseError:
@@ -156,9 +152,7 @@ def remove_drawing_objects(updater, sheet) -> None:
         xml = data.decode("utf-8")
         spans = _top_level_anchors(xml)
         dropped = [spans[index] for index in sorted(positions) if index < len(spans)]
-        references = {
-            rid for start, end in dropped for rid in _REFERENCE.findall(xml[start:end])
-        }
+        references = {rid for start, end in dropped for rid in _REFERENCE.findall(xml[start:end])}
         for start, end in reversed(dropped):
             xml = xml[:start] + xml[end:]
         package.set(drawing, xml)
@@ -179,7 +173,8 @@ def remove_drawing_objects(updater, sheet) -> None:
                 continue
             if kind.endswith("/chart"):
                 companions = [
-                    _resolve_part_target(target, node.get("Target", "")) for node in package.rels(target)
+                    _resolve_part_target(target, node.get("Target", ""))
+                    for node in package.rels(target)
                     if node.get("Type", "").endswith(_CHART_COMPANIONS) and node.get("Target")
                 ]
                 _drop_part(package, target)

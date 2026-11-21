@@ -57,33 +57,16 @@ class Translator:
         sheet, reference = cls.strip_ws_name(range_str)
         match = cls.ROW_RANGE_RE.match(reference)
         if match is not None:
-            return (
-                sheet
-                + cls.translate_row(match.group(1), rdelta)
-                + ":"
-                + cls.translate_row(match.group(2), rdelta)
-            )
+            return sheet + cls.translate_row(match.group(1), rdelta) + ":" + cls.translate_row(match.group(2), rdelta)
         match = cls.COL_RANGE_RE.match(reference)
         if match is not None:
-            return (
-                sheet
-                + cls.translate_col(match.group(1), cdelta)
-                + ":"
-                + cls.translate_col(match.group(2), cdelta)
-            )
+            return sheet + cls.translate_col(match.group(1), cdelta) + ":" + cls.translate_col(match.group(2), cdelta)
         if ":" in reference:
-            return sheet + ":".join(
-                cls.translate_range(piece, rdelta, cdelta)
-                for piece in reference.split(":")
-            )
+            return sheet + ":".join(cls.translate_range(piece, rdelta, cdelta) for piece in reference.split(":"))
         match = cls.CELL_REF_RE.match(reference)
         if match is None:
             return range_str
-        return (
-            sheet
-            + cls.translate_col(match.group(1), cdelta)
-            + cls.translate_row(match.group(2), rdelta)
-        )
+        return sheet + cls.translate_col(match.group(1), cdelta) + cls.translate_row(match.group(2), rdelta)
 
     def translate_formula(self, dest=None, row_delta=0, col_delta=0):
         tokens = self.get_tokens()

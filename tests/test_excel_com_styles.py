@@ -16,7 +16,15 @@ from conftest import system_dpi
 pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 from xlspy import (  # noqa: E402
-    Alignment, Border, Font, PatternFill, Side, Style, Workbook, XlsbWriter, XlsxWriter,
+    Alignment,
+    Border,
+    Font,
+    PatternFill,
+    Side,
+    Style,
+    Workbook,
+    XlsbWriter,
+    XlsxWriter,
 )
 
 XL_EDGE_LEFT = 7
@@ -94,12 +102,16 @@ def test_overlapping_ranges_in_excel(tmp_path, open_workbook, writer_cls, ext):
     path = tmp_path / f"overlap.{ext}"
     with writer_cls(path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet(_rows(25), header_style=HEADER, styles={
-            "A1:D20": BOXED,
-            "B2:C20": MONEY,
-            "C2:C10": BOLD,
-            "A5:D6": CENTERED,
-        })
+        writer.write_sheet(
+            _rows(25),
+            header_style=HEADER,
+            styles={
+                "A1:D20": BOXED,
+                "B2:C20": MONEY,
+                "C2:C10": BOLD,
+                "A5:D6": CENTERED,
+            },
+        )
     sheet = open_workbook(path).Worksheets("Data")
 
     header = sheet.Range("A1")
@@ -235,8 +247,7 @@ def test_border_edges_in_excel(tmp_path, open_workbook, writer_cls, ext):
     left-to-right sheet. An unset ``start`` must not hide ``left``."""
     thin = Side(style="thin")
     edges = {"left": 7, "top": 8, "bottom": 9, "right": 10}
-    styles = {f"{letter}2": Style(border=Border(**{edge: thin}))
-              for letter, edge in zip("ABCD", edges)}
+    styles = {f"{letter}2": Style(border=Border(**{edge: thin})) for letter, edge in zip("ABCD", edges)}
     if ext == "xlsx":  # XLSB has no start/end edges
         styles["E2"] = Style(border=Border(start=thin))
     styles["F2"] = Style(border=Border(left=thin, right=thin, top=thin, bottom=thin))
@@ -285,9 +296,14 @@ def test_open_style_ranges_in_excel(tmp_path, open_workbook, writer_cls, ext):
     path = tmp_path / f"open.{ext}"
     with writer_cls(path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet(_rows(500), styles={
-            "B:B": MONEY, "C3:C": BOLD, "1:1": Style(fill="E2EFDA"),
-        })
+        writer.write_sheet(
+            _rows(500),
+            styles={
+                "B:B": MONEY,
+                "C3:C": BOLD,
+                "1:1": Style(fill="E2EFDA"),
+            },
+        )
     sheet = open_workbook(path).Worksheets("Data")
     assert _number_format(sheet.Range("B2"), "#,##0.00")
     assert _number_format(sheet.Range("B500"), "#,##0.00")
@@ -302,6 +318,7 @@ def test_open_style_ranges_in_excel(tmp_path, open_workbook, writer_cls, ext):
 @pytest.mark.parametrize("writer_cls,ext", WRITERS)
 def test_styled_rows_with_heights_hidden_and_groups_in_excel(tmp_path, open_workbook, writer_cls, ext):
     from xlspy import Group
+
     path = tmp_path / f"rows.{ext}"
     with writer_cls(path) as writer:
         writer.add_sheet("Data")
@@ -326,14 +343,42 @@ def test_styled_rows_with_heights_hidden_and_groups_in_excel(tmp_path, open_work
 
 
 WIDTH_ROWS = [
-    ["Order number", "Customer name and address", "Amount", "Share", "Date", "Long date",
-     "Codes", "Mixed", "Flag", "General"],
-    ["ORDER-2024-000123", "Wrocław, ul. Świdnicka 12/4", (1234567.891, "#,##0.00"),
-     (0.4567, "0.00%"), datetime.date(2024, 9, 30), (datetime.date(2024, 9, 30), "dddd, d mmmm yyyy"),
-     "WWWWMMMM@@", "中文字符测试", True, 1 / 3],
-    ["ORD-1", "MAXIMUM WIDTH UPPERCASE TEXT", (98765432.1, '#,##0.00 "zł"'), (1.5, "0%"),
-     datetime.datetime(2024, 12, 31, 23, 59), (datetime.date(2024, 9, 30), "mmmm yyyy"),
-     "QQQQQQQQQQ", "Zażółć gęślą jaźń", False, 1234567890123],
+    [
+        "Order number",
+        "Customer name and address",
+        "Amount",
+        "Share",
+        "Date",
+        "Long date",
+        "Codes",
+        "Mixed",
+        "Flag",
+        "General",
+    ],
+    [
+        "ORDER-2024-000123",
+        "Wrocław, ul. Świdnicka 12/4",
+        (1234567.891, "#,##0.00"),
+        (0.4567, "0.00%"),
+        datetime.date(2024, 9, 30),
+        (datetime.date(2024, 9, 30), "dddd, d mmmm yyyy"),
+        "WWWWMMMM@@",
+        "中文字符测试",
+        True,
+        1 / 3,
+    ],
+    [
+        "ORD-1",
+        "MAXIMUM WIDTH UPPERCASE TEXT",
+        (98765432.1, '#,##0.00 "zł"'),
+        (1.5, "0%"),
+        datetime.datetime(2024, 12, 31, 23, 59),
+        (datetime.date(2024, 9, 30), "mmmm yyyy"),
+        "QQQQQQQQQQ",
+        "Zażółć gęślą jaźń",
+        False,
+        1234567890123,
+    ],
 ]
 
 

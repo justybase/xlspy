@@ -19,14 +19,20 @@ def snapshot(workbook):
         for row, columns in sheet._cells.items():
             for column, cell in columns.items():
                 cells[(row, column)] = (
-                    cell._value, cell._data_type, cell._formula, cell._style_id,
+                    cell._value,
+                    cell._data_type,
+                    cell._formula,
+                    cell._style_id,
                 )
         dimensions = {
             number: (d.height, d.hidden, d.outlineLevel, d.collapsed, d.bestFit, d.style)
             for number, d in sheet.row_dimensions.items()
         }
         result[sheet.title] = (
-            cells, dimensions, sheet._max_row, sheet._max_column,
+            cells,
+            dimensions,
+            sheet._max_row,
+            sheet._max_column,
             sorted(map(str, sheet.merged_cells.ranges)),
         )
     return result
@@ -96,7 +102,7 @@ def test_record_payload_iterator_matches_record_iterator(tmp_path):
     workbook.close()
     with zipfile.ZipFile(path) as archive:
         data = archive.read("xl/worksheets/sheet1.bin")
-    expected = [(r.record_id, data[r.data_start:r.data_end]) for r in iter_records(data)]
+    expected = [(r.record_id, data[r.data_start : r.data_end]) for r in iter_records(data)]
     assert list(iter_record_payloads(data)) == expected
     with pytest.raises(ValueError, match="Truncated"):
         list(iter_record_payloads(b"\x01\x0aabc"))  # claims 10 bytes, has 3
@@ -104,12 +110,23 @@ def test_record_payload_iterator_matches_record_iterator(tmp_path):
 
 def _cell_state(sheet):
     return (
-        sheet._max_row, sheet._max_column, sorted(sheet._dirty_cells),
-        sorted(sheet._dirty_styles), sorted(sheet._dirty_meta), sheet._workbook._styles_dirty,
+        sheet._max_row,
+        sheet._max_column,
+        sorted(sheet._dirty_cells),
+        sorted(sheet._dirty_styles),
+        sorted(sheet._dirty_meta),
+        sheet._workbook._styles_dirty,
         {
-            (row, column): (cell._value, cell._data_type, str(cell._formula),
-                            cell._style_id, cell._hyperlink, cell.number_format)
-            for row, cells in sheet._cells.items() for column, cell in cells.items()
+            (row, column): (
+                cell._value,
+                cell._data_type,
+                str(cell._formula),
+                cell._style_id,
+                cell._hyperlink,
+                cell.number_format,
+            )
+            for row, cells in sheet._cells.items()
+            for column, cell in cells.items()
         },
     )
 
@@ -184,8 +201,10 @@ def _model_snapshot(workbook):
     return {
         sheet.title: sorted(
             (cell.row, cell.column, repr(cell.value), cell.data_type, cell._style_id)
-            for row in sheet._cells.values() for cell in row.values()
-        ) + [("max", sheet.max_row, sheet.max_column)]
+            for row in sheet._cells.values()
+            for cell in row.values()
+        )
+        + [("max", sheet.max_row, sheet.max_column)]
         + sorted((row, dim.height, dim.hidden) for row, dim in sheet.row_dimensions.items())
         for sheet in workbook.worksheets
     }
@@ -204,7 +223,7 @@ def test_native_model_rows_match_python_rows(tmp_path, monkeypatch, data_only):
         pytest.skip("native extension not built")
     source = openpyxl.Workbook()
     sheet = source.active
-    sheet.append(["text", 1, 2.5, True, datetime.datetime(2024, 5, 6, 7, 8), None, "=A1&\"x\""])
+    sheet.append(["text", 1, 2.5, True, datetime.datetime(2024, 5, 6, 7, 8), None, '=A1&"x"'])
     sheet.append(["a & b", -3, 1e300, False, datetime.date(1900, 1, 1), " lead", "#N/A"])
     sheet["A3"] = datetime.time(13, 45, 30)
     sheet["A3"].number_format = "hh:mm:ss"

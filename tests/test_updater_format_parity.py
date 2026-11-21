@@ -42,7 +42,9 @@ def _links(path):
     try:
         return {
             cell.coordinate: cell.hyperlink.target
-            for row in workbook["Data"]._cells.values() for cell in row.values() if cell.hyperlink is not None
+            for row in workbook["Data"]._cells.values()
+            for cell in row.values()
+            if cell.hyperlink is not None
         }
     finally:
         workbook.close()
@@ -191,11 +193,14 @@ def test_a_scoped_name_reports_its_sheet_number_too(tmp_path, ext):
 
 
 @both
-@pytest.mark.parametrize("definition,error", [
-    (DefinedName("Abc", "1", "Nope"), KeyError),
-    (DefinedName("Abc", "1", localSheetId=9), KeyError),
-    (DefinedName("Abc", "1", "Data", localSheetId=1), ValueError),
-])
+@pytest.mark.parametrize(
+    "definition,error",
+    [
+        (DefinedName("Abc", "1", "Nope"), KeyError),
+        (DefinedName("Abc", "1", localSheetId=9), KeyError),
+        (DefinedName("Abc", "1", "Data", localSheetId=1), ValueError),
+    ],
+)
 def test_a_name_on_a_sheet_that_is_not_there_is_refused(tmp_path, ext, definition, error):
     path = _source(tmp_path, ext)
     with pytest.raises(error):
@@ -272,8 +277,11 @@ def test_xlsb_comment_ids_are_reproducible_and_differ_between_notes(tmp_path):
         with XlsbWriter(str(path)) as writer:
             for title in ("A", "B"):
                 writer.add_sheet(title)
-                writer.write_sheet([[1, 2], [3, 4]], auto_filter=False,
-                                   comments={"A1": Comment("same", "Jan"), "B2": Comment("same", "Jan")})
+                writer.write_sheet(
+                    [[1, 2], [3, 4]],
+                    auto_filter=False,
+                    comments={"A1": Comment("same", "Jan"), "B2": Comment("same", "Jan")},
+                )
         parts.append(_comment_part(path))
     assert parts[0] == parts[1]
     guids = [bytes(p)[20:36] for data in parts[0].values() for k, p in iter_record_payloads(data) if k == 0x27B]

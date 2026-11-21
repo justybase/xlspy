@@ -16,6 +16,7 @@ llvm-tools-preview``. Usage::
     python tools/rust_coverage.py tests/test_native_fuzz.py --html
     python tools/rust_coverage.py --no-pytest           # cargo test only
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,8 +36,11 @@ PACKAGE = ROOT / "src" / "xlspy"
 def _cargo_env() -> dict[str, str]:
     """The environment ``cargo llvm-cov`` builds with, on top of ours."""
     out = subprocess.run(
-        ["cargo", "llvm-cov", "show-env"], cwd=CRATE, check=True,
-        capture_output=True, text=True,
+        ["cargo", "llvm-cov", "show-env"],
+        cwd=CRATE,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout
     env = dict(os.environ)
     for line in out.splitlines():
@@ -73,7 +77,8 @@ def _overlay(out: Path, module: Path) -> Path:
     if pkg_root.exists():
         shutil.rmtree(pkg_root)
     shutil.copytree(
-        PACKAGE, pkg_root / "xlspy",
+        PACKAGE,
+        pkg_root / "xlspy",
         ignore=shutil.ignore_patterns("__pycache__", "_rs_core*.pyd", "_rs_core*.so", "*.pdb"),
     )
     suffix = sysconfig.get_config_var("EXT_SUFFIX")
@@ -83,7 +88,12 @@ def _overlay(out: Path, module: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("tests", nargs="*", default=["tests"], help="pytest arguments (default: tests); unknown options go to pytest too")
+    parser.add_argument(
+        "tests",
+        nargs="*",
+        default=["tests"],
+        help="pytest arguments (default: tests); unknown options go to pytest too",
+    )
     parser.add_argument("--out", type=Path, default=ROOT / "build" / "rust-coverage")
     parser.add_argument("--html", action="store_true", help="also write an HTML report to OUT/html")
     parser.add_argument("--lcov", action="store_true", help="also write OUT/lcov.info")
@@ -110,16 +120,32 @@ def main() -> int:
         py_env.pop("XLSPY_ACCEL", None)
         check = subprocess.run(
             [sys.executable, "-c", "import xlspy, xlspy._accel as a; print(xlspy.__file__, a.HAVE_NATIVE)"],
-            cwd=ROOT, env=py_env, check=True, capture_output=True, text=True,
+            cwd=ROOT,
+            env=py_env,
+            check=True,
+            capture_output=True,
+            text=True,
         ).stdout.split()
         if not check[0].startswith(str(pkg_root)) or check[1] != "True":
             raise SystemExit(f"the overlay is not imported: {check}")
         # pyproject.toml puts src/ first (pythonpath = ["src"]): point it at the
         # copy instead, or pytest imports the release module. Failures are
         # reported but do not stop the report.
-        subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
-                        "-o", f"pythonpath={pkg_root}", *args.tests],
-                       cwd=ROOT, env=py_env)
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                "-o",
+                f"pythonpath={pkg_root}",
+                *args.tests,
+            ],
+            cwd=ROOT,
+            env=py_env,
+        )
 
     report = ["llvm-cov", "report", "--release"]
     cargo(*report)

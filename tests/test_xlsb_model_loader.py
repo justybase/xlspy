@@ -8,7 +8,8 @@ from xlspy import Font, Workbook, load_workbook
 from xlspy.workbook import _xlsb_reader
 
 pytestmark = pytest.mark.skipif(
-    _xlsb_reader.xlsb_load_cells is None, reason="native extension not built",
+    _xlsb_reader.xlsb_load_cells is None,
+    reason="native extension not built",
 )
 
 
@@ -16,8 +17,10 @@ def snapshot(workbook):
     return {
         sheet.title: sorted(
             (cell.row, cell.column, repr(cell.value), cell.data_type, cell._style_id)
-            for row in sheet._cells.values() for cell in row.values()
-        ) + [("max", sheet.max_row, sheet.max_column)]
+            for row in sheet._cells.values()
+            for cell in row.values()
+        )
+        + [("max", sheet.max_row, sheet.max_column)]
         for sheet in workbook.worksheets
     }
 
@@ -39,7 +42,7 @@ def both_loaders(path, monkeypatch, **options):
 def test_native_and_python_loaders_match(tmp_path, monkeypatch):
     workbook = Workbook()
     sheet = workbook.active
-    sheet.append(["text", 1, 2.5, True, datetime.datetime(2024, 5, 6, 7, 8), None, "=A1&\"x\""])
+    sheet.append(["text", 1, 2.5, True, datetime.datetime(2024, 5, 6, 7, 8), None, '=A1&"x"'])
     sheet.append(["=SUM(B1:C1)", -3, 1e300, False, datetime.date(1900, 1, 1), "", "#N/A"])
     sheet["A4"].font = Font(bold=True)  # a styled blank cell
     sheet["Z10"] = "far"

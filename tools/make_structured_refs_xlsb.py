@@ -38,7 +38,7 @@ def qualified(text: str, table: str) -> str:
     while index < len(text):
         char = text[index]
         if char == "'" and depth:  # an escaped character inside brackets
-            out.append(text[index:index + 2])
+            out.append(text[index : index + 2])
             index += 2
             continue
         if char == "[":
@@ -103,8 +103,13 @@ def main(path: str) -> None:
                     texts.append(f"Tbl[{parts[0]}]")
                 else:
                     texts.append("Tbl[" + ",".join(f"[{p}]" for p in parts) + "]")
-        texts += ["Tbl[[#This Row],[qty]]", "Tbl[[#This Row],[qty]:[my col]]", "Tbl[#This Row]", "Other[[#Totals],[v]]",
-                  "Other[k]"]
+        texts += [
+            "Tbl[[#This Row],[qty]]",
+            "Tbl[[#This Row],[qty]:[my col]]",
+            "Tbl[#This Row]",
+            "Other[[#Totals],[v]]",
+            "Other[k]",
+        ]
         cells: dict[str, str] = {}
         cell_row = 20
         for text in dict.fromkeys(texts):

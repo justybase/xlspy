@@ -61,9 +61,7 @@ def test_updated_files_open_in_excel_com(tmp_path):
         ("xlsb", XlsbWriter, XlsbUpdater),
     ],
 )
-def test_sheet_structure_updates_open_in_excel_com(
-    tmp_path, open_workbook, suffix, writer_class, updater_class
-):
+def test_sheet_structure_updates_open_in_excel_com(tmp_path, open_workbook, suffix, writer_class, updater_class):
     path = tmp_path / f"structure.{suffix}"
     with writer_class(path) as writer:
         writer.add_sheet("Data")

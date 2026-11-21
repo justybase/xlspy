@@ -8,6 +8,7 @@
   column A. ``DIMENSION_CASES`` holds the dimension Excel writes when it resaves the same data;
   test_excel_com_xlsb_dimension.py checks that against Excel itself.
 """
+
 import io
 import random
 import struct
@@ -16,7 +17,13 @@ import zipfile
 import pytest
 
 from xlspy import (
-    Formula, Group, Style, XlsbUpdater, XlsbWriter, Workbook, load_workbook,
+    Formula,
+    Group,
+    Style,
+    XlsbUpdater,
+    XlsbWriter,
+    Workbook,
+    load_workbook,
 )
 from xlspy.biff_utils import iter_records
 
@@ -107,6 +114,7 @@ def assert_dimension_matches_records(path, part="xl/worksheets/sheet1.bin"):
 
 # Column-info container ------------------------------------------------------------------------
 
+
 def test_column_info_container_uses_the_biff12_ids(tmp_path):
     path = tmp_path / "cols.xlsb"
     _write(path, [["a", "b", "c"], [1, 2, 3]], hidden_columns=["B"], column_widths={"A": 20})
@@ -114,7 +122,7 @@ def test_column_info_container_uses_the_biff12_ids(tmp_path):
     begin, end = ids.index(BRT_BEGIN_COL_INFOS), ids.index(BRT_END_COL_INFOS)
     assert ids.count(BRT_BEGIN_COL_INFOS) == ids.count(BRT_END_COL_INFOS) == 1
     assert begin < end < ids.index(BRT_BEGIN_SHEET_DATA)
-    assert all(record_id == BRT_COL_INFO for record_id in ids[begin + 1:end])
+    assert all(record_id == BRT_COL_INFO for record_id in ids[begin + 1 : end])
     # 0x86 is BrtEndWsViews: once, closing the view block, before the columns.
     assert ids.count(BRT_END_WS_VIEWS) == 1 and ids.index(BRT_END_WS_VIEWS) < begin
 
@@ -135,6 +143,7 @@ def test_column_info_ids_after_a_model_save(tmp_path):
 
 
 # BrtWsDim ------------------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("case", sorted(DIMENSION_CASES))
 def test_dimension_holds_the_used_range(tmp_path, case):
@@ -217,8 +226,7 @@ def test_dimension_matches_records_for_random_sheets(tmp_path):
     values = [None, None, None, 1, 2.5, "s", True, Formula("1+1", value=2), (None, "0.00"), ""]
     for case in range(60):
         rows = [
-            [generator.choice(values) for _ in range(generator.randint(0, 7))]
-            for _ in range(generator.randint(0, 12))
+            [generator.choice(values) for _ in range(generator.randint(0, 7))] for _ in range(generator.randint(0, 12))
         ]
         options = {}
         if generator.random() < 0.3:
@@ -237,6 +245,7 @@ def test_dimension_matches_records_for_random_sheets(tmp_path):
 
 
 # Other write paths -------------------------------------------------------------------------
+
 
 @pytest.fixture
 def written(tmp_path):
@@ -296,6 +305,7 @@ def test_new_workbook_saved_as_xlsb(tmp_path):
 
 # Reading --------------------------------------------------------------------------------------
 
+
 def test_read_only_load_sizes_the_sheet_from_the_dimension(tmp_path):
     path = tmp_path / "sparse.xlsb"
     write_case(path, "sparse")
@@ -317,7 +327,7 @@ def test_read_only_load_of_a_legacy_all_zero_dimension(tmp_path):
             data = source.read(info.filename)
             if info.filename == "xl/worksheets/sheet1.bin":
                 (record,) = [r for r in iter_records(data) if r.record_id == BRT_WS_DIM]
-                data = data[:record.data_start] + bytes(16) + data[record.data_end:]
+                data = data[: record.data_start] + bytes(16) + data[record.data_end :]
             target.writestr(info, data)
     workbook = load_workbook(legacy, read_only=True)
     try:

@@ -101,8 +101,10 @@ def _model(path):
         return "ok", {
             sheet.title: sorted(
                 (cell.row, cell.column, _normal(cell.value), cell.data_type, cell._style_id)
-                for row in sheet._cells.values() for cell in row.values()
-            ) + [("max", sheet.max_row, sheet.max_column)]
+                for row in sheet._cells.values()
+                for cell in row.values()
+            )
+            + [("max", sheet.max_row, sheet.max_column)]
             + sorted((row, dim.height, dim.hidden) for row, dim in sheet.row_dimensions.items())
             for sheet in workbook.worksheets
         }
@@ -194,7 +196,7 @@ def _split_records(data):
                     break
             ids.append(value)
         rec_id, length = ids
-        records.append([rec_id, data[pos:pos + length]])
+        records.append([rec_id, data[pos : pos + length]])
         pos += length
     return records
 
@@ -219,7 +221,7 @@ def _mutate_record(rec, rng):
     elif choice == 1:
         # A short or a long body for the record's type.
         if body and rng.random() < 0.6:
-            del body[rng.randrange(len(body)):]
+            del body[rng.randrange(len(body)) :]
         else:
             body += bytes(rng.randrange(256) for _ in range(rng.randint(1, 12)))
     elif choice == 2 and len(body) >= 4:
@@ -235,8 +237,20 @@ def _mutate_record(rec, rng):
         if rng.random() < 0.5:
             struct.pack_into("<I", body, 8, rng.choice(_EDGE_U32 + [rng.randrange(16)]))
         elif len(body) >= 16:
-            value = rng.choice([math.nan, math.inf, -math.inf, -0.0, 5e-324, 1.7976931348623157e308,
-                                2958465.9999999, 2958466.0, 60.0, -1.0])
+            value = rng.choice(
+                [
+                    math.nan,
+                    math.inf,
+                    -math.inf,
+                    -0.0,
+                    5e-324,
+                    1.7976931348623157e308,
+                    2958465.9999999,
+                    2958466.0,
+                    60.0,
+                    -1.0,
+                ]
+            )
             struct.pack_into("<d", body, 8, value)
     elif len(body) >= 12 and rec_id in (0x06, 0x08):
         # A string's character count past (or inside) its body.
@@ -278,9 +292,34 @@ def _mutate_xlsb_sst(data, rng):
 
 _REFS = ["A1", "B2", "XFD1", "XFE1", "A0", "A1048576", "A1048577", "a1", "1A", "", "AAAA1", "C99999999999"]
 _TYPES = ["s", "str", "inlineStr", "b", "e", "n", "d", "", "x"]
-_VALUES = ["0", "1", "-1", "2", "1e308", "1e999", "nan", "inf", "", "  7 ", "0x10", "#N/A", "TRUE",
-           "99999999", "4294967296", "-0", "1.5E-3", "2024-02-29T13:30:00", "abc", "&amp;", "&#65;",
-           "&#x0;", "&bogus;", "<![CDATA[c]]>", "é", "\U0001F600"]
+_VALUES = [
+    "0",
+    "1",
+    "-1",
+    "2",
+    "1e308",
+    "1e999",
+    "nan",
+    "inf",
+    "",
+    "  7 ",
+    "0x10",
+    "#N/A",
+    "TRUE",
+    "99999999",
+    "4294967296",
+    "-0",
+    "1.5E-3",
+    "2024-02-29T13:30:00",
+    "abc",
+    "&amp;",
+    "&#65;",
+    "&#x0;",
+    "&bogus;",
+    "<![CDATA[c]]>",
+    "é",
+    "\U0001f600",
+]
 
 
 def _mutate_xlsx_cell(cell, rng):
@@ -305,9 +344,16 @@ def _mutate_xlsx_cell(cell, rng):
     elif choice == 4:
         # An inline string, or a value next to one.
         cell = re.sub(r"(<c [^>]*?)/?>.*$", r"\1>", cell, flags=re.S)
-        cell += rng.choice(["<is><t>in</t></is></c>", "<is><r><t>a</t></r><r><t>b</t></r></is></c>",
-                            "<v>1</v><is><t>x</t></is></c>", "<f>1+1</f><v>2</v></c>", "</c>",
-                            "<is><t xml:space=\"preserve\"> s </t></is></c>"])
+        cell += rng.choice(
+            [
+                "<is><t>in</t></is></c>",
+                "<is><r><t>a</t></r><r><t>b</t></r></is></c>",
+                "<v>1</v><is><t>x</t></is></c>",
+                "<f>1+1</f><v>2</v></c>",
+                "</c>",
+                '<is><t xml:space="preserve"> s </t></is></c>',
+            ]
+        )
     else:
         # Cut the cell anywhere: a broken tag.
         cell = cell[: rng.randrange(len(cell) + 1)]
@@ -326,7 +372,7 @@ def _mutate_xlsx_sheet(data, rng):
         rows = list(_ROW.finditer(text))
         if operation <= 2 and cells:
             m = rng.choice(cells)
-            text = text[:m.start()] + _mutate_xlsx_cell(m.group(0), rng) + text[m.end():]
+            text = text[: m.start()] + _mutate_xlsx_cell(m.group(0), rng) + text[m.end() :]
         elif operation == 3 and rows:
             m = rng.choice(rows)
             row = m.group(0)
@@ -337,13 +383,18 @@ def _mutate_xlsx_sheet(data, rng):
                 row = row + row  # a repeated row
             else:
                 row = re.sub(r' spans="[^"]*"', f' spans="{rng.choice(["1:1", "5:2", "x", "1:20000"])}"', row)
-            text = text[:m.start()] + row + text[m.end():]
+            text = text[: m.start()] + row + text[m.end() :]
         elif rows and len(rows) > 1:
             # Rows out of order.
             a, b = rng.sample(rows, 2)
             first, second = sorted((a, b), key=lambda m: m.start())
-            text = (text[:first.start()] + second.group(0) + text[first.end():second.start()]
-                    + first.group(0) + text[second.end():])
+            text = (
+                text[: first.start()]
+                + second.group(0)
+                + text[first.end() : second.start()]
+                + first.group(0)
+                + text[second.end() :]
+            )
     return text.encode("utf-8")
 
 
@@ -358,14 +409,14 @@ def _mutate_xlsx_sst(data, rng):
     if choice == 0:
         new = f"<si><t>{rng.choice(_VALUES)}</t></si>"
     elif choice == 1:
-        new = "<si><r><rPr><b/></rPr><t>bo</t></r><r><t xml:space=\"preserve\"> ld </t></r></si>"
+        new = '<si><r><rPr><b/></rPr><t>bo</t></r><r><t xml:space="preserve"> ld </t></r></si>'
     elif choice == 2:
-        new = "<si><t>base</t><rPh sb=\"0\" eb=\"1\"><t>ph</t></rPh></si>"
+        new = '<si><t>base</t><rPh sb="0" eb="1"><t>ph</t></rPh></si>'
     elif choice == 3:
         new = ""  # one string fewer than the count says
     else:
         new = m.group(0)[: rng.randrange(len(m.group(0)) + 1)]
-    text = text[:m.start()] + new + text[m.end():]
+    text = text[: m.start()] + new + text[m.end() :]
     if rng.random() < 0.3:
         text = re.sub(r' (count|uniqueCount)="\d+"', lambda g: f' {g.group(1)}="{rng.choice([0, 1, 99999999])}"', text)
     return text.encode("utf-8")

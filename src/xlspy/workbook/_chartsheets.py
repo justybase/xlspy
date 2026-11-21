@@ -45,7 +45,7 @@ _DRAWING_XML = (
     '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">'
     '<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" '
     f'xmlns:r="{REL}" r:id="rId1"/></a:graphicData></a:graphic></xdr:graphicFrame>'
-    '<xdr:clientData/></xdr:absoluteAnchor></xdr:wsDr>'
+    "<xdr:clientData/></xdr:absoluteAnchor></xdr:wsDr>"
 )
 
 
@@ -119,14 +119,13 @@ def add_chartsheets(updater, workbook) -> None:
         else:
             entries.append(f'<{tag} xmlns:r="{REL}" name="{name}" sheetId="{sheet_id}"{state} r:id="{rid}"/>')
         sheet._part = part
-    workbook_xml = workbook_xml[:close.start()] + "".join(entries) + workbook_xml[close.start():]
+    workbook_xml = workbook_xml[: close.start()] + "".join(entries) + workbook_xml[close.start() :]
     package.set("xl/workbook.xml", workbook_xml)
     _set_rels(package, "xl/workbook.xml", workbook_rels)
     package.commit()
 
 
 def _set_rels(package, owner, rels) -> None:
-
 
     ET.register_namespace("", PKG_REL)
     package.set(_rels_path(owner), _bytes(rels))

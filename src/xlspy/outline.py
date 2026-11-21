@@ -77,9 +77,7 @@ def _span(item, kind: str) -> tuple[int, int, bool]:
         first, last, *rest = item
         collapsed = rest[0] if rest else False
     else:
-        raise TypeError(
-            f"{kind}_groups entries must be Group objects or (first, last) tuples"
-        )
+        raise TypeError(f"{kind}_groups entries must be Group objects or (first, last) tuples")
     if not isinstance(collapsed, bool):
         raise TypeError(f"{kind}_groups collapsed flags must be bool")
     first_index = _bound(first, kind)
@@ -127,8 +125,7 @@ def build_outline(groups, kind: str) -> OutlineIndex | None:
             if stack and last > stack[-1][1]:
                 outer_first, outer_last, _ = stack[-1]
                 raise ValueError(
-                    f"{kind} groups overlap without nesting: "
-                    f"{outer_first} to {outer_last} and {first} to {last}"
+                    f"{kind} groups overlap without nesting: {outer_first} to {outer_last} and {first} to {last}"
                 )
             stack.append((first, last, collapsed))
             if len(stack) > MAX_LEVEL:
@@ -141,9 +138,7 @@ def build_outline(groups, kind: str) -> OutlineIndex | None:
             hidden.append(is_hidden)
 
     # A group ending on the sheet's last row or column has no summary to flag.
-    summaries = frozenset(
-        last + 1 for _, last, collapsed in spans if collapsed and last + 1 < _LIMITS[kind]
-    )
+    summaries = frozenset(last + 1 for _, last, collapsed in spans if collapsed and last + 1 < _LIMITS[kind])
     return OutlineIndex(starts, levels, hidden, summaries)
 
 

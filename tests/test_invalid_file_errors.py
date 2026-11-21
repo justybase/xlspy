@@ -2,6 +2,7 @@
 load_workbook, the updaters), with the decoder's own error chained as __cause__.
 
 InvalidFileError is a ValueError, so ``except ValueError`` keeps working."""
+
 from __future__ import annotations
 
 import random
@@ -102,9 +103,9 @@ def _cut_sheet_files(tmp_path: Path) -> list[tuple[Path, bool]]:
             cells_end = pos
     assert cells_end
     return [
-        (_replace_part(source, tmp_path / f"cut{cut}.xlsb", "xl/worksheets/sheet1.bin", sheet[:cut]),
-         cut < cells_end)
-        for cut in range(1, len(sheet)) if cut not in boundaries
+        (_replace_part(source, tmp_path / f"cut{cut}.xlsb", "xl/worksheets/sheet1.bin", sheet[:cut]), cut < cells_end)
+        for cut in range(1, len(sheet))
+        if cut not in boundaries
     ]
 
 
@@ -147,7 +148,7 @@ def _mutate(data: bytes, rng: random.Random) -> bytes:
         for _ in range(rng.randint(1, 8)):
             out[rng.randrange(len(out))] = rng.randrange(256)
     elif operation == 1:
-        del out[rng.randrange(len(out) + 1):]
+        del out[rng.randrange(len(out) + 1) :]
     else:
         at = rng.randrange(len(out) + 1)
         out[at:at] = bytes(rng.randrange(256) for _ in range(rng.randint(1, 16)))

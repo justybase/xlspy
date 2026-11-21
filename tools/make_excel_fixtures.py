@@ -100,13 +100,10 @@ def main() -> int:
         },
         "generated": dt.date.today().isoformat(),
         "files": {
-            name: hashlib.sha256((OUT / name).read_bytes()).hexdigest()
-            for name in ("features.xlsx", "features.xlsb")
+            name: hashlib.sha256((OUT / name).read_bytes()).hexdigest() for name in ("features.xlsx", "features.xlsb")
         },
     }
-    (OUT / "manifest.json").write_text(
-        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-    )
+    (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {OUT} with Excel {version} ({build})")
     return 0
 

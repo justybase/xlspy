@@ -28,7 +28,21 @@ from ._print import (
 from ._cell import Cell, MergedCell, NATIVE_CELLS, WriteOnlyCell, _CELL_TYPE_KINDS, _new_cell
 from ._coords import MultiCellRange, _CELL_RE, _coerce_column, _coerce_row, _coordinate, _normalize_range
 from ._dimensions import ColumnDimension, DimensionHolder, RowDimension, _column_key, _row_key
-from ._properties import AutoFilter, ColBreak, Pane, RowBreak, Selection, SheetFormatProperties, SheetProperties, SheetView, SheetViewList, WorksheetProtection, _as_model_page_margins, _as_model_protection, _SheetDefinedNames
+from ._properties import (
+    AutoFilter,
+    ColBreak,
+    Pane,
+    RowBreak,
+    Selection,
+    SheetFormatProperties,
+    SheetProperties,
+    SheetView,
+    SheetViewList,
+    WorksheetProtection,
+    _as_model_page_margins,
+    _as_model_protection,
+    _SheetDefinedNames,
+)
 from ._tables import ConditionalFormattingList, DataValidationList, Table, TableList, _expect
 
 if TYPE_CHECKING:
@@ -44,6 +58,7 @@ class Worksheet:
     Get one from ``wb.active``, ``wb["Name"]`` or ``Workbook.create_sheet``. Address cells
     with ``ws["A1"]``, ``ws["A1:C3"]`` or ``cell``; add rows with ``append``.
     """
+
     ORIENTATION_PORTRAIT = "portrait"
     ORIENTATION_LANDSCAPE = "landscape"
     PAPERSIZE_LETTER = 1
@@ -63,9 +78,7 @@ class Worksheet:
     BREAK_NONE = 0
     BREAK_ROW = 1
     BREAK_COLUMN = 2
-    _MIME_TYPE = (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
-    )
+    _MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
 
     # Set by the XLSB loader (workbook/_xlsb_reader.py) on loaded sheets only.
     _cf_extensions: Any
@@ -281,9 +294,7 @@ class Worksheet:
                 activePane=active,
                 state="frozen",
             )
-            self._sheet_view.selection = [
-                Selection(pane=active, activeCell=value, sqref=value)
-            ]
+            self._sheet_view.selection = [Selection(pane=active, activeCell=value, sqref=value)]
         self._mark_dirty("freeze_panes")
 
     @property
@@ -615,8 +626,15 @@ class Worksheet:
             cell.value = value
         return cell
 
-    def _set_cell_raw(self, row: int, column: int, value: Any = None, style_id: int = 0,
-                      data_type: str = "n", formula_text: str | None = None) -> Cell:
+    def _set_cell_raw(
+        self,
+        row: int,
+        column: int,
+        value: Any = None,
+        style_id: int = 0,
+        data_type: str = "n",
+        formula_text: str | None = None,
+    ) -> Cell:
         # Loader hot path: bounds are checked inline and the cell is filled
         # directly, which is what Cell.__init__ + _load_value would do.
         if not (1 <= row <= 1048576 and 1 <= column <= 16384):
@@ -668,20 +686,33 @@ class Worksheet:
         if not any((min_col, min_row, max_col, max_row)):
             raise IndexError(f"{key!r} is not a valid coordinate or range")
         if min_row is None:
-            columns = tuple(self.iter_cols(
-                min_col, max_col, max_row=max(self._max_row, 1),
-            ))
+            columns = tuple(
+                self.iter_cols(
+                    min_col,
+                    max_col,
+                    max_row=max(self._max_row, 1),
+                )
+            )
             return columns[0] if min_col == max_col else columns
         if min_col is None:
-            rows = tuple(self.iter_rows(
-                min_row=min_row, max_row=max_row, max_col=max(self._max_column, 1),
-            ))
+            rows = tuple(
+                self.iter_rows(
+                    min_row=min_row,
+                    max_row=max_row,
+                    max_col=max(self._max_column, 1),
+                )
+            )
             return rows[0] if min_row == max_row else rows
         if ":" not in key:
             return self.cell(min_row, min_col)
-        return tuple(self.iter_rows(
-            min_row=min_row, min_col=min_col, max_row=max_row, max_col=max_col,
-        ))
+        return tuple(
+            self.iter_rows(
+                min_row=min_row,
+                min_col=min_col,
+                max_row=max_row,
+                max_col=max_col,
+            )
+        )
 
     def __iter__(self) -> Iterator[tuple[Cell, ...]]:
         """Yield the rows of the used range, as ``iter_rows()`` does."""
@@ -692,9 +723,7 @@ class Worksheet:
             c1, r1, c2, r2 = parse_cell_range(key)
             if isinstance(value, (tuple, list)):
                 values = list(value)
-                if len(values) == r2 - r1 + 1 and all(
-                    isinstance(row, (tuple, list)) for row in values
-                ):
+                if len(values) == r2 - r1 + 1 and all(isinstance(row, (tuple, list)) for row in values):
                     for row_offset, row_values in enumerate(values):
                         for col_offset, item in enumerate(row_values):
                             self.cell(r1 + 1 + row_offset, c1 + 1 + col_offset, item)
@@ -740,13 +769,9 @@ class Worksheet:
             return row
         if isinstance(iterable, (str, bytes, bytearray)):
             raise TypeError("a row must be an iterable of cells, not text")
-        values = [
-            value.value if isinstance(value, WriteOnlyCell) else value
-            for value in iterable
-        ]
+        values = [value.value if isinstance(value, WriteOnlyCell) else value for value in iterable]
         row = self._max_row + 1
-        if (values and row <= 1048576 and len(values) <= 16384
-                and not self._merged_cells and row not in self._cells):
+        if values and row <= 1048576 and len(values) <= 16384 and not self._merged_cells and row not in self._cells:
             self._append_new_row(row, values)
             return row
         for column, value in enumerate(values, 1):
@@ -843,24 +868,48 @@ class Worksheet:
             return {}
         cache = styles._number_format_ids
         found = {}
-        for kind, fmt in ((_datetime.datetime, DEFAULT_DATETIME_FORMAT),
-                          (_datetime.date, DEFAULT_DATE_FORMAT)):
+        for kind, fmt in ((_datetime.datetime, DEFAULT_DATETIME_FORMAT), (_datetime.date, DEFAULT_DATE_FORMAT)):
             style_id = cache.get((0, fmt))
             if style_id:
                 found[kind] = style_id
         return found
 
     @overload
-    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | None = None,
-                  max_col: int | None = None, values_only: Literal[False] = False) -> Iterator[tuple[Cell, ...]]: ...
+    def iter_rows(
+        self,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        min_col: int | None = None,
+        max_col: int | None = None,
+        values_only: Literal[False] = False,
+    ) -> Iterator[tuple[Cell, ...]]: ...
     @overload
-    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | None = None,
-                  max_col: int | None = None, *, values_only: Literal[True]) -> Iterator[tuple[Any, ...]]: ...
+    def iter_rows(
+        self,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        min_col: int | None = None,
+        max_col: int | None = None,
+        *,
+        values_only: Literal[True],
+    ) -> Iterator[tuple[Any, ...]]: ...
     @overload
-    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | None = None,
-                  max_col: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]: ...
-    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | None = None,
-                  max_col: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]:
+    def iter_rows(
+        self,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        min_col: int | None = None,
+        max_col: int | None = None,
+        values_only: bool = False,
+    ) -> Iterator[tuple[Any, ...]]: ...
+    def iter_rows(
+        self,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        min_col: int | None = None,
+        max_col: int | None = None,
+        values_only: bool = False,
+    ) -> Iterator[tuple[Any, ...]]:
         """Yield the rows of a range as tuples of cells, or of values with ``values_only``.
 
         Bounds are 1-based and inclusive; each one left out defaults to the used range.
@@ -880,16 +929,41 @@ class Worksheet:
         return None if cell is None else cell.value
 
     @overload
-    def iter_cols(self, min_col: int | None = None, max_col: int | None = None, min_row: int | None = None,
-                  max_row: int | None = None, values_only: Literal[False] = False) -> Iterator[tuple[Cell, ...]]: ...
+    def iter_cols(
+        self,
+        min_col: int | None = None,
+        max_col: int | None = None,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        values_only: Literal[False] = False,
+    ) -> Iterator[tuple[Cell, ...]]: ...
     @overload
-    def iter_cols(self, min_col: int | None = None, max_col: int | None = None, min_row: int | None = None,
-                  max_row: int | None = None, *, values_only: Literal[True]) -> Iterator[tuple[Any, ...]]: ...
+    def iter_cols(
+        self,
+        min_col: int | None = None,
+        max_col: int | None = None,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        *,
+        values_only: Literal[True],
+    ) -> Iterator[tuple[Any, ...]]: ...
     @overload
-    def iter_cols(self, min_col: int | None = None, max_col: int | None = None, min_row: int | None = None,
-                  max_row: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]: ...
-    def iter_cols(self, min_col: int | None = None, max_col: int | None = None, min_row: int | None = None,
-                  max_row: int | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]:
+    def iter_cols(
+        self,
+        min_col: int | None = None,
+        max_col: int | None = None,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        values_only: bool = False,
+    ) -> Iterator[tuple[Any, ...]]: ...
+    def iter_cols(
+        self,
+        min_col: int | None = None,
+        max_col: int | None = None,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        values_only: bool = False,
+    ) -> Iterator[tuple[Any, ...]]:
         """Yield the columns of a range as tuples of cells, or of values with ``values_only``.
 
         Bounds are 1-based and inclusive; each one left out defaults to the used range.
@@ -905,9 +979,14 @@ class Worksheet:
                 yield tuple(self.cell(row, col) for row in range(min_row, max_row + 1))
 
     # -- merges -------------------------------------------------------
-    def merge_cells(self, range_string: str | None = None, start_row: int | None = None,
-                    start_column: int | None = None, end_row: int | None = None,
-                    end_column: int | None = None) -> None:
+    def merge_cells(
+        self,
+        range_string: str | None = None,
+        start_row: int | None = None,
+        start_column: int | None = None,
+        end_row: int | None = None,
+        end_column: int | None = None,
+    ) -> None:
         """Merge a range, given as text such as ``"A1:B2"`` or as four 1-based boundaries."""
         if range_string is None:
             if start_row is None or start_column is None or end_row is None or end_column is None:
@@ -943,9 +1022,14 @@ class Worksheet:
                 self._dirty_hyperlinks.add(hidden.coordinate)
         self._mark_dirty("merges")
 
-    def unmerge_cells(self, range_string: str | None = None, start_row: int | None = None,
-                      start_column: int | None = None, end_row: int | None = None,
-                      end_column: int | None = None) -> None:
+    def unmerge_cells(
+        self,
+        range_string: str | None = None,
+        start_row: int | None = None,
+        start_column: int | None = None,
+        end_row: int | None = None,
+        end_column: int | None = None,
+    ) -> None:
         """Unmerge a range, given as text such as ``"A1:B2"`` or as four 1-based boundaries."""
         if range_string is None:
             if start_row is None or start_column is None or end_row is None or end_column is None:
@@ -989,9 +1073,7 @@ def _write_only_style(cell: WriteOnlyCell) -> Style | None:
     """
     number_format = None if cell.number_format in (None, "General") else cell.number_format
     if all(
-        value is None
-        for value in (cell.font, cell.fill, cell.border, cell.alignment,
-                      cell.protection, number_format)
+        value is None for value in (cell.font, cell.fill, cell.border, cell.alignment, cell.protection, number_format)
     ):
         return None
     return Style(

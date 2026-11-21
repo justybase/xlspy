@@ -22,7 +22,7 @@ EXTERNAL = b"""<?xml version="1.0"?>
 
 def test_plain_part_parses_with_and_without_declaration():
     assert _safe_xml.fromstring(b'<?xml version="1.0"?><a x="1"/>').get("x") == "1"
-    assert _safe_xml.fromstring('<a><b/></a>').find("b") is not None
+    assert _safe_xml.fromstring("<a><b/></a>").find("b") is not None
 
 
 def test_byte_order_mark_and_comments_before_root_are_allowed():

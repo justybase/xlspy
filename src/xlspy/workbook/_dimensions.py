@@ -11,6 +11,7 @@ class Dimension:
     """The size, visibility and outline settings of a row or column, with openpyxl's
     attribute names.
     """
+
     def __init__(self, index: str | int) -> None:
         self.index = index
         self.min: int | None = None
@@ -81,8 +82,9 @@ class DimensionHolder(dict[Any, Any]):
     def __contains__(self, key: object) -> bool:
         return super().__contains__(self._transform(key))
 
-    def group(self, start: int | str, end: int | str | None = None, outline_level: int = 1,
-              hidden: bool = False) -> None:
+    def group(
+        self, start: int | str, end: int | str | None = None, outline_level: int = 1, hidden: bool = False
+    ) -> None:
         """Group consecutive rows or columns, as openpyxl does."""
         if end is None:
             end = start

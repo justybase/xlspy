@@ -1,4 +1,5 @@
 """XlsbWriter package methods: content types, relationships, workbook, shared strings, tables, CF."""
+
 from __future__ import annotations
 
 import struct
@@ -16,17 +17,45 @@ from .biff_utils import build_record, iter_records
 from ._xlsb_cf import FORMULA_RULES, dxf_payload, rule_bin
 from ._text import check_cell_text
 from ._xlsb_slicers import (
-    CT_SLICER_BIN, CT_SLICER_CACHE_BIN, slicer_cache_bin, slicers_part_bin,
+    CT_SLICER_BIN,
+    CT_SLICER_CACHE_BIN,
+    slicer_cache_bin,
+    slicers_part_bin,
     workbook_slicer_caches_bin,
 )
 from ._xlsb_pivots import (
-    CT_PIVOT_CACHE_BIN, CT_PIVOT_TABLE_BIN, pivot_cache_bin, pivot_table_bin,
+    CT_PIVOT_CACHE_BIN,
+    CT_PIVOT_TABLE_BIN,
+    pivot_cache_bin,
+    pivot_table_bin,
     workbook_pivot_caches_bin,
 )
 from .pivots import (
     pivot_table_rels_xml,
 )
-from ._xlsb_writer_consts import _ACUID_NAMESPACE, _BRT_AC_BEGIN, _BRT_AC_END, _BRT_BEGIN_AUTOFILTER, _BRT_BEGIN_CF, _BRT_BEGIN_LIST, _BRT_BEGIN_LIST_COL, _BRT_BEGIN_LIST_COLS, _BRT_BEGIN_LIST_PARTS, _BRT_END_AUTOFILTER, _BRT_END_CF, _BRT_END_LIST, _BRT_END_LIST_COL, _BRT_END_LIST_COLS, _BRT_END_LIST_PARTS, _BRT_FRT_BEGIN, _BRT_LIST_PART, _BRT_LIST_TR_FMLA, _BRT_TABLE_STYLE_CLIENT, _REL_PIVOT_CACHE, _REL_PIVOT_TABLE
+from ._xlsb_writer_consts import (
+    _ACUID_NAMESPACE,
+    _BRT_AC_BEGIN,
+    _BRT_AC_END,
+    _BRT_BEGIN_AUTOFILTER,
+    _BRT_BEGIN_CF,
+    _BRT_BEGIN_LIST,
+    _BRT_BEGIN_LIST_COL,
+    _BRT_BEGIN_LIST_COLS,
+    _BRT_BEGIN_LIST_PARTS,
+    _BRT_END_AUTOFILTER,
+    _BRT_END_CF,
+    _BRT_END_LIST,
+    _BRT_END_LIST_COL,
+    _BRT_END_LIST_COLS,
+    _BRT_END_LIST_PARTS,
+    _BRT_FRT_BEGIN,
+    _BRT_LIST_PART,
+    _BRT_LIST_TR_FMLA,
+    _BRT_TABLE_STYLE_CLIENT,
+    _REL_PIVOT_CACHE,
+    _REL_PIVOT_TABLE,
+)
 from ._metadata_part import METADATA_BIN
 from ._xlsb_writer_host import _XlsbWriterHost
 from .styles import ColorScaleRule, DataBarRule, DifferentialStyle, IconSetRule
@@ -46,11 +75,10 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         for rule in conditional_formats:
             self._check_unknown_cf_rule(rule)
             if not isinstance(
-                rule, FORMULA_RULES + (ColorScaleRule, DataBarRule, IconSetRule),
+                rule,
+                FORMULA_RULES + (ColorScaleRule, DataBarRule, IconSetRule),
             ):
-                raise TypeError(
-                    f"unsupported conditional formatting rule {type(rule).__name__}"
-                )
+                raise TypeError(f"unsupported conditional formatting rule {type(rule).__name__}")
             rule_dxf = getattr(rule, "dxf", None)
             if rule_dxf is not None and not isinstance(rule_dxf, DifferentialStyle):
                 raise TypeError("dxf must be a DifferentialStyle or None")
@@ -67,8 +95,7 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         return struct.pack("<I", len(value)) + encoded
 
     @staticmethod
-    def _encode_rfx(first_col: int, first_row: int,
-                    last_col: int, last_row: int) -> bytes:
+    def _encode_rfx(first_col: int, first_row: int, last_col: int, last_row: int) -> bytes:
         return struct.pack("<IIII", first_row, last_row, first_col, last_col)
 
     @staticmethod
@@ -83,8 +110,9 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         out += build_record(_BRT_AC_END, b"")
         return out
 
-    def _table_bin(self, table, table_id: int, names: list[str], totals_cells=None,
-                   formula_context=None, sheet_name=None) -> bytes:
+    def _table_bin(
+        self, table, table_id: int, names: list[str], totals_cells=None, formula_context=None, sheet_name=None
+    ) -> bytes:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
         totals_row = bool(table.totals_row)
         out = bytearray()
@@ -115,18 +143,25 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         # A table without a header row has no filter.
         if table.header_row:
             filter_last_row = last_row - 1 if totals_row else last_row
-            out.extend(build_record(
-                _BRT_BEGIN_AUTOFILTER,
-                self._encode_rfx(first_col, first_row, last_col, filter_last_row),
-            ))
+            out.extend(
+                build_record(
+                    _BRT_BEGIN_AUTOFILTER,
+                    self._encode_rfx(first_col, first_row, last_col, filter_last_row),
+                )
+            )
             out.extend(build_record(_BRT_END_AUTOFILTER, b""))
         # ListCols
-        out.extend(build_record(
-            _BRT_BEGIN_LIST_COLS, struct.pack("<I", len(names)),
-        ))
+        out.extend(
+            build_record(
+                _BRT_BEGIN_LIST_COLS,
+                struct.pack("<I", len(names)),
+            )
+        )
         explicit = getattr(table, "totals_row_functions", None)
         for idx, col_name in enumerate(names, start=1):
-            cell = totals_cells[idx - 1] if totals_row and totals_cells is not None and idx <= len(totals_cells) else None
+            cell = (
+                totals_cells[idx - 1] if totals_row and totals_cells is not None and idx <= len(totals_cells) else None
+            )
             chosen = explicit[idx - 1] if explicit is not None and idx <= len(explicit) else None
             function, label, formula = totals_choice(cell, chosen)
             ilta = ILTA_BY_NAME.get(function, 0)
@@ -145,10 +180,11 @@ class _XlsbPartsMixin(_XlsbWriterHost):
             out.extend(build_record(_BRT_BEGIN_LIST_COL, bytes(col_payload)))
             if ilta == ILTA_CUSTOM:
                 if formula is None or formula_context is None:
-                    raise ValueError(
-                        f"table {table.display_name!r}: the totals formula needs a formula context")
+                    raise ValueError(f"table {table.display_name!r}: the totals formula needs a formula context")
                 parsed = compile_formula(
-                    formula, formula_context, sheet=sheet_name,
+                    formula,
+                    formula_context,
+                    sheet=sheet_name,
                     origin=(first_col + idx - 1, last_row),
                 )
                 out.extend(build_record(_BRT_LIST_TR_FMLA, b"\x00" + parsed))
@@ -172,15 +208,20 @@ class _XlsbPartsMixin(_XlsbWriterHost):
 
     def _list_parts_bin(self, rel_ids: list[str]) -> bytes:
         out = bytearray()
-        out.extend(build_record(
-            _BRT_BEGIN_LIST_PARTS, struct.pack("<I", len(rel_ids)),
-        ))
+        out.extend(
+            build_record(
+                _BRT_BEGIN_LIST_PARTS,
+                struct.pack("<I", len(rel_ids)),
+            )
+        )
         for rel_id in rel_ids:
             encoded = rel_id.encode("utf-16-le")
-            out.extend(build_record(
-                _BRT_LIST_PART,
-                struct.pack("<I", len(rel_id)) + encoded,
-            ))
+            out.extend(
+                build_record(
+                    _BRT_LIST_PART,
+                    struct.pack("<I", len(rel_id)) + encoded,
+                )
+            )
         out.extend(build_record(_BRT_END_LIST_PARTS, b""))
         return bytes(out)
 
@@ -192,8 +233,9 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         return self._dxf_index.setdefault(payload, len(self._dxf_index))
 
     def _cf_bin_for_rule(self, rule, priority: int) -> bytes:
-        return rule_bin(rule, priority, self._register_dxf(getattr(rule, "dxf", None)),
-                        self._formula_context(), self._letters)
+        return rule_bin(
+            rule, priority, self._register_dxf(getattr(rule, "dxf", None)), self._formula_context(), self._letters
+        )
 
     def _cf_bin_grouped(self, rules) -> bytes:
         # Group by sqref like XLSX, claim priorities in order.
@@ -228,10 +270,12 @@ class _XlsbPartsMixin(_XlsbWriterHost):
                 for spec in render.pivot.value_specs
             ]
             self._zf.writestr(
-                f"xl/pivotCache/pivotCacheDefinition{render.cache_id}.bin", pivot_cache_bin(render),
+                f"xl/pivotCache/pivotCacheDefinition{render.cache_id}.bin",
+                pivot_cache_bin(render),
             )
             self._zf.writestr(
-                f"xl/pivotTables/pivotTable{render.pivot_id}.bin", pivot_table_bin(render, numfmts),
+                f"xl/pivotTables/pivotTable{render.pivot_id}.bin",
+                pivot_table_bin(render, numfmts),
             )
             self._zf.writestr(
                 f"xl/pivotTables/_rels/pivotTable{render.pivot_id}.bin.rels",
@@ -251,9 +295,9 @@ class _XlsbPartsMixin(_XlsbWriterHost):
                 self._write_empty_sheet(sheet_index)
         if self._sheet_comments:
             for sheet_id, comments in self._sheet_comments.items():
-                part = f'xl/comments/comment{sheet_id}.bin'
+                part = f"xl/comments/comment{sheet_id}.bin"
                 self._zf.writestr(part, comments_bin(comments, part=part))
-                self._zf.writestr(f'xl/drawings/commentsDrawing{sheet_id}.vml', vml_xml(comments))
+                self._zf.writestr(f"xl/drawings/commentsDrawing{sheet_id}.vml", vml_xml(comments))
         for sheet_id in sorted(self._sheet_drawings):
             if sheet_id in self._sheet_chart_ids:
                 continue
@@ -268,16 +312,23 @@ class _XlsbPartsMixin(_XlsbWriterHost):
                 self._zf.writestr(
                     f"xl/charts/chart{chart_id}.xml",
                     chart_parts.chart_xml(
-                        self._letters, chart, sheet_name,
-                        cells=cells, xlsb=True,
+                        self._letters,
+                        chart,
+                        sheet_name,
+                        cells=cells,
+                        xlsb=True,
                     ),
                 )
             self._sheet_chart_ids[sheet_id] = chart_ids
             self._zf.writestr(
                 f"xl/drawings/drawing{sheet_id}.xml",
-                chart_parts.drawing_xml(charts, chart_ids, images=self._sheet_images.get(sheet_id, []),
-                                        shapes=self._sheet_shapes.get(sheet_id, []),
-                                        slicers=self._sheet_slicers.get(sheet_id, [])),
+                chart_parts.drawing_xml(
+                    charts,
+                    chart_ids,
+                    images=self._sheet_images.get(sheet_id, []),
+                    shapes=self._sheet_shapes.get(sheet_id, []),
+                    slicers=self._sheet_slicers.get(sheet_id, []),
+                ),
             )
             self._zf.writestr(
                 f"xl/drawings/_rels/drawing{sheet_id}.xml.rels",
@@ -326,20 +377,22 @@ class _XlsbPartsMixin(_XlsbWriterHost):
             f'<Override PartName="/xl/charts/chart{chart_id}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'
             for chart_id in range(1, self._next_chart_id)
         )
-        comment_parts = ''.join(
+        comment_parts = "".join(
             f'<Override PartName="/xl/comments/comment{sheet_id}.bin" ContentType="application/vnd.ms-excel.comments"/>'
             for sheet_id in self._sheet_comments
         )
         if self._sheet_comments:
-            comment_parts += '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
-        comment_parts += ''.join(
+            comment_parts += (
+                '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
+            )
+        comment_parts += "".join(
             f'<Override PartName="/xl/slicers/slicer{part_no}.bin" ContentType="{CT_SLICER_BIN}"/>'
             for part_no, _rel_id in self._sheet_slicer_parts.values()
-        ) + ''.join(
+        ) + "".join(
             f'<Override PartName="/xl/slicerCaches/slicerCache{index + 1}.bin" ContentType="{CT_SLICER_CACHE_BIN}"/>'
             for index in range(len(self._slicer_cache_names))
         )
-        comment_parts += ''.join(
+        comment_parts += "".join(
             f'<Override PartName="/xl/pivotTables/pivotTable{render.pivot_id}.bin" ContentType="{CT_PIVOT_TABLE_BIN}"/>'
             f'<Override PartName="/xl/pivotCache/pivotCacheDefinition{render.cache_id}.bin" ContentType="{CT_PIVOT_CACHE_BIN}"/>'
             for render in self._pivot_renders
@@ -347,10 +400,11 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
         metadata_part = (
             '<Override PartName="/xl/metadata.bin" ContentType="application/vnd.ms-excel.sheetMetadata"/>'
-            if self._has_dynamic else ""
+            if self._has_dynamic
+            else ""
         )
 
-        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="bin" ContentType="application/vnd.ms-excel.sheet.binary.macroEnabled.main"/>
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -366,14 +420,14 @@ class _XlsbPartsMixin(_XlsbWriterHost):
 <Override PartName="/xl/styles.bin" ContentType="application/vnd.ms-excel.styles"/>
 <Override PartName="/xl/sharedStrings.bin" ContentType="application/vnd.ms-excel.sharedStrings"/>
 {self._doc_props_content_types()}
-</Types>'''
+</Types>"""
 
     def _create_root_rels(self) -> str:
-        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.bin"/>
 {self._doc_props_root_rels()}
-</Relationships>'''
+</Relationships>"""
 
     def _slicer_cache_rel_ids(self) -> list[str]:
         """Workbook relationship ids of the slicer caches, after sheets, styles, strings and theme."""
@@ -384,13 +438,19 @@ class _XlsbPartsMixin(_XlsbWriterHost):
             f'<Relationship Id="rId{i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i + 1}.bin"/>'
             for i in range(self._sheet_count)
         ]
-        
+
         style_rid = self._sheet_count + 1
         shared_strings_rid = self._sheet_count + 2
-        relationships.append(f'<Relationship Id="rId{style_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.bin"/>')
-        relationships.append(f'<Relationship Id="rId{shared_strings_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.bin"/>')
+        relationships.append(
+            f'<Relationship Id="rId{style_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.bin"/>'
+        )
+        relationships.append(
+            f'<Relationship Id="rId{shared_strings_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.bin"/>'
+        )
         theme_rid = self._sheet_count + 3
-        relationships.append(f'<Relationship Id="rId{theme_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>')
+        relationships.append(
+            f'<Relationship Id="rId{theme_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>'
+        )
         relationships.extend(
             f'<Relationship Id="{rel_id}" Type="{REL_SLICER_CACHE}" Target="slicerCaches/slicerCache{index + 1}.bin"/>'
             for index, rel_id in enumerate(self._slicer_cache_rel_ids())
@@ -407,10 +467,10 @@ class _XlsbPartsMixin(_XlsbWriterHost):
                 'Target="metadata.bin"/>'
             )
 
-        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 {"".join(relationships)}
-</Relationships>'''
+</Relationships>"""
 
     def _write_slicer_parts(self, sheet_id, rel_id, slicers, table_columns) -> None:
         """Write the sheet's slicer part and one cache part per slicer.
@@ -420,15 +480,16 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         for slicer in slicers:
             table_id, names = table_columns[slicer.table.casefold()]
             column_id = next(
-                (index for index, name in enumerate(names, start=1)
-                 if name.casefold() == slicer.column.casefold()),
+                (index for index, name in enumerate(names, start=1) if name.casefold() == slicer.column.casefold()),
                 None,
             )
             if column_id is None:
                 raise ValueError(f"slicer column {slicer.column!r} is not a column of table {slicer.table!r}")
             self._slicer_cache_names.append(slicer.cache_name)
-            self._zf.writestr(f"xl/slicerCaches/slicerCache{len(self._slicer_cache_names)}.bin",
-                              slicer_cache_bin(slicer, table_id, column_id))
+            self._zf.writestr(
+                f"xl/slicerCaches/slicerCache{len(self._slicer_cache_names)}.bin",
+                slicer_cache_bin(slicer, table_id, column_id),
+            )
         part_no = len(self._sheet_slicer_parts) + 1
         self._sheet_slicer_parts[sheet_id] = (part_no, rel_id)
         self._zf.writestr(f"xl/slicers/slicer{part_no}.bin", slicers_part_bin(slicers))
@@ -474,33 +535,33 @@ class _XlsbPartsMixin(_XlsbWriterHost):
                 f'<Relationship Id="rId{next_id + offset}" Type="{_REL_PIVOT_TABLE}" '
                 f'Target="../pivotTables/pivotTable{render.pivot_id}.bin"/>'
             )
-        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 {rels}
-</Relationships>'''
+</Relationships>"""
 
     def _create_workbook_bin(self) -> bytes:
         data = bytearray(self._workbookBinStart)
         for i, (sheet_name, _, hidden) in enumerate(self._worksheet_data):
             sheet_id = i + 1
             r_id = f"rId{sheet_id}"
-            
-            sheet_name_utf16 = sheet_name.encode('utf-16-le')
-            r_id_utf16 = r_id.encode('utf-16-le')
-            record_length = 4 + 3 * 4 + len(sheet_name_utf16) + len(r_id_utf16)
-            
-            data.extend(b'\x9C\x01')
-            data.extend(self._write_custom_variable_int(record_length))
-            
-            if hidden:
-                data.extend(struct.pack('<I', 1))
-            else:
-                data.extend(struct.pack('<I', 0)) 
 
-            data.extend(struct.pack('<I', sheet_id))
-            data.extend(struct.pack('<I', len(r_id_utf16) // 2))
+            sheet_name_utf16 = sheet_name.encode("utf-16-le")
+            r_id_utf16 = r_id.encode("utf-16-le")
+            record_length = 4 + 3 * 4 + len(sheet_name_utf16) + len(r_id_utf16)
+
+            data.extend(b"\x9c\x01")
+            data.extend(self._write_custom_variable_int(record_length))
+
+            if hidden:
+                data.extend(struct.pack("<I", 1))
+            else:
+                data.extend(struct.pack("<I", 0))
+
+            data.extend(struct.pack("<I", sheet_id))
+            data.extend(struct.pack("<I", len(r_id_utf16) // 2))
             data.extend(r_id_utf16)
-            data.extend(struct.pack('<I', len(sheet_name_utf16) // 2))
+            data.extend(struct.pack("<I", len(sheet_name_utf16) // 2))
             data.extend(sheet_name_utf16)
 
         data.extend(self._workbookBinMiddle)
@@ -514,10 +575,9 @@ class _XlsbPartsMixin(_XlsbWriterHost):
             self._register_print_names()
             self._register_slicer_names()
         end = self._workbookBinEnd
-        pivot_caches = workbook_pivot_caches_bin([
-            (render.cache_id, rel_id)
-            for render, rel_id in zip(self._pivot_renders, self._pivot_cache_rel_ids())
-        ])
+        pivot_caches = workbook_pivot_caches_bin(
+            [(render.cache_id, rel_id) for render, rel_id in zip(self._pivot_renders, self._pivot_cache_rel_ids())]
+        )
         if pivot_caches:
             # The pivot cache list sits between BrtCalcProp and BrtFileRecover.
             split = next(record.header_start for record in iter_records(end) if record.record_id == 0x9B)
@@ -535,7 +595,7 @@ class _XlsbPartsMixin(_XlsbWriterHost):
     def _write_custom_variable_int(self, value: int) -> bytes:
         if value < 0:
             raise ValueError("Value must be non-negative")
-        
+
         buffer = bytearray()
         temp_val = value
         while True:
@@ -550,20 +610,22 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         return bytes(buffer)
 
     def _write_shared_strings_bin(self, sst_file: io.BufferedWriter):
-        c_sst = None if self._sst_has_rich else accel_encode_xlsb_sst(
-            self._shared_strings, self._sst_all_count, self._sst_unique_count
+        c_sst = (
+            None
+            if self._sst_has_rich
+            else accel_encode_xlsb_sst(self._shared_strings, self._sst_all_count, self._sst_unique_count)
         )
         if c_sst is not None:
             view = memoryview(c_sst)
             for offset in range(0, len(view), 65536):
-                sst_file.write(view[offset:offset + 65536])
+                sst_file.write(view[offset : offset + 65536])
             return
         buffer = io.BytesIO()
         BUFFER_SIZE = 65536
 
-        buffer.write(b'\x9F\x01\x08')
-        buffer.write(struct.pack('<II', self._sst_all_count, self._sst_unique_count))
-        
+        buffer.write(b"\x9f\x01\x08")
+        buffer.write(struct.pack("<II", self._sst_all_count, self._sst_unique_count))
+
         for s in self._shared_strings:
             if isinstance(s, tuple):  # ("rich", text, runs) from _write_rich_str
                 buffer.write(build_record(0x13, self._rich_str_payload(s[1], s[2])))
@@ -575,23 +637,23 @@ class _XlsbPartsMixin(_XlsbWriterHost):
             # An over-limit string is an error, never a cut: the cell writers
             # check every value before it reaches this table.
             check_cell_text(s)
-            encoded = s.encode('utf-16-le')
+            encoded = s.encode("utf-16-le")
             str_len = len(encoded) // 2
 
             record_length = 1 + 4 + 2 * str_len
-            
-            buffer.write(b'\x13')
+
+            buffer.write(b"\x13")
             buffer.write(self._write_custom_variable_int(record_length))
-            buffer.write(b'\x00')
-            buffer.write(struct.pack('<I', str_len))
+            buffer.write(b"\x00")
+            buffer.write(struct.pack("<I", str_len))
             buffer.write(encoded)
 
             if buffer.tell() > BUFFER_SIZE:
                 sst_file.write(buffer.getvalue())
                 buffer.seek(0)
                 buffer.truncate()
-            
-        buffer.write(b'\xA0\x01\x00')
-        
+
+        buffer.write(b"\xa0\x01\x00")
+
         if buffer.tell() > 0:
             sst_file.write(buffer.getvalue())

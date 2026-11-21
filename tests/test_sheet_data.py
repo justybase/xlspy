@@ -1,5 +1,6 @@
 """The shared worksheet-part edits (xlspy._sheet_data): the one <sheetData> locator used by
 the updater, the cell editor and the loader, the row and cell walks, and the dimension ref."""
+
 from __future__ import annotations
 
 import pytest
@@ -24,8 +25,8 @@ def test_tag_prefix_plain_and_prefixed():
 
 
 def test_match_reports_prefix_for_empty_and_filled_elements():
-    empty = sheet_data_match('<x:worksheet><x:sheetData/></x:worksheet>')
-    filled = sheet_data_match("<worksheet><sheetData><row r=\"1\"/></sheetData></worksheet>")
+    empty = sheet_data_match("<x:worksheet><x:sheetData/></x:worksheet>")
+    filled = sheet_data_match('<worksheet><sheetData><row r="1"/></sheetData></worksheet>')
     assert empty["prefix"] == "x:" and empty[0] == "<x:sheetData/>"
     assert filled["prefix"] is None and filled[0] == '<sheetData><row r="1"/></sheetData>'
 
@@ -99,7 +100,7 @@ def test_set_dimension_ref_keeps_the_existing_element() -> None:
 
 
 def test_set_dimension_ref_adds_a_missing_element_in_schema_order() -> None:
-    xml = f'<x:worksheet {NS}><x:sheetPr/><x:sheetViews/><x:sheetData/></x:worksheet>'
+    xml = f"<x:worksheet {NS}><x:sheetPr/><x:sheetViews/><x:sheetData/></x:worksheet>"
     assert set_dimension_ref(xml, "B2:D4") == (
         f'<x:worksheet {NS}><x:sheetPr/><x:dimension ref="B2:D4"/><x:sheetViews/><x:sheetData/></x:worksheet>'
     )

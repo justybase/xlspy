@@ -11,7 +11,11 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from xlspy._xlsb_formulas import (
-    FormulaContext, compile_formula, decode_formula, read_parsed, structured_reference,
+    FormulaContext,
+    compile_formula,
+    decode_formula,
+    read_parsed,
+    structured_reference,
 )
 
 SMOKE = settings(max_examples=150, deadline=None, derandomize=True)
@@ -78,15 +82,18 @@ def test_the_name_of_the_table_and_its_columns_are_case_insensitive(reference):
     assert decode_formula(compiled, context, sheet="Data").casefold() == text.casefold()
 
 
-@pytest.mark.parametrize(("keywords", "flags"), [
-    (("#Headers",), 0x0008),
-    (("#Data",), 0x0010),
-    (("#Totals",), 0x0020),
-    (("#Headers", "#Data"), 0x0018),
-    (("#Data", "#Totals"), 0x0030),
-    (("#All",), 0x0004),
-    (("#This Row",), 0x0040),
-])
+@pytest.mark.parametrize(
+    ("keywords", "flags"),
+    [
+        (("#Headers",), 0x0008),
+        (("#Data",), 0x0010),
+        (("#Totals",), 0x0020),
+        (("#Headers", "#Data"), 0x0018),
+        (("#Data", "#Totals"), 0x0030),
+        (("#All",), 0x0004),
+        (("#This Row",), 0x0040),
+    ],
+)
 def test_the_keyword_sets_excel_accepts_are_written_and_read(keywords, flags):
     text = structured_reference("Tbl", ["qty"], flags, 0, 0)
     context = _context("Tbl", ["qty"])

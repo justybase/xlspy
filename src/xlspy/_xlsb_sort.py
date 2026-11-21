@@ -27,10 +27,7 @@ _SORT_ON = {"value": 0, "cellColor": 1, "fontColor": 2, "icon": 3}
 def range_ref(bounds: tuple[int, int, int, int]) -> str:
     """The A1 label of a ``(first_col, first_row, last_col, last_row)`` tuple."""
     first_col, first_row, last_col, last_row = bounds
-    return (
-        f"{column_label(first_col)}{first_row + 1}:"
-        f"{column_label(last_col)}{last_row + 1}"
-    )
+    return f"{column_label(first_col)}{first_row + 1}:{column_label(last_col)}{last_row + 1}"
 
 
 def sort_state_records(filter_ref: str | None, sort_state: Any) -> bytes:
@@ -53,9 +50,7 @@ def sort_state_records(filter_ref: str | None, sort_state: Any) -> bytes:
         cc1, cr1, cc2, cr2 = parse_cell_range(condition.ref)
         sort_by = getattr(condition, "sortBy", None) or "value"
         sort_on = _SORT_ON[sort_by]
-        condition_flags = (
-            (0x01 if getattr(condition, "descending", False) else 0) | (sort_on << 1)
-        )
+        condition_flags = (0x01 if getattr(condition, "descending", False) else 0) | (sort_on << 1)
         header = struct.pack("<HIIII", condition_flags, cr1, cr2, cc1, cc2)
         custom = getattr(condition, "customList", None)
         if sort_on == 0:
@@ -75,9 +70,7 @@ def sort_state_records(filter_ref: str | None, sort_state: Any) -> bytes:
         assert isinstance(icon_set, str)
         code = codes.get(icon_set)
         if code is None:
-            raise UnsupportedFeatureError(
-                f"unsupported icon set {icon_set!r} for XLSB sort"
-            )
+            raise UnsupportedFeatureError(f"unsupported icon set {icon_set!r} for XLSB sort")
         icon_id = getattr(condition, "iconId", None)
         assert isinstance(icon_id, int)
         union = struct.pack("<II", code, icon_id)

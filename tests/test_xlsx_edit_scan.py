@@ -32,9 +32,7 @@ CASES = {
     "no_refs": _sheet("<row><c><v>1</v></c><c/><c><v>3</v></c></row><row><c/><c><v>2</v></c></row>"),
     "row_gap": _sheet('<row r="2"><c><v>1</v></c></row><row><c><v>2</v></c></row><row r="9"><c><v>3</v></c></row>'),
     "empty_rows": _sheet('<row r="1"/><row r="2" ht="20" customHeight="1"/><row r="4"><c r="A4"/></row>'),
-    "formulas": _sheet(
-        '<row r="1"><c r="A1"><f>1+1</f><v>2</v></c><c r="B1" t="str"><f>"a"</f><v>a</v></c></row>'
-    ),
+    "formulas": _sheet('<row r="1"><c r="A1"><f>1+1</f><v>2</v></c><c r="B1" t="str"><f>"a"</f><v>a</v></c></row>'),
     "shared": _sheet(
         '<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">B1</f><v>1</v></c></row>'
         '<row r="2"><c r="A2"><f t="shared" si="0"/><v>2</v></c></row>'
@@ -46,13 +44,16 @@ CASES = {
     ),
     "data_table": _sheet('<row r="1"><c r="A1"><f t="dataTable" ref="A1:C3" dt2D="1"/></c></row>'),
     "merged": _sheet(
-        '<row r="1"><c r="A1"><v>1</v></c></row>', tail='<mergeCells count="2"><mergeCell ref="A1:B2"/><mergeCell ref="D4:E4"/></mergeCells>'
+        '<row r="1"><c r="A1"><v>1</v></c></row>',
+        tail='<mergeCells count="2"><mergeCell ref="A1:B2"/><mergeCell ref="D4:E4"/></mergeCells>',
     ),
     "inline": _sheet(
         '<row r="1"><c r="A1" t="inlineStr"><is><t xml:space="preserve"> a </t></is></c>'
         '<c r="B1" t="inlineStr"><is><r><rPr><b/><family val="2"/></rPr><t>x</t></r></is></c></row>'
     ),
-    "styled": _sheet('<row r="1" spans="1:3" s="2" customFormat="1"><c r="A1" s="3"/><c r="B1" s="4" t="n"><v>1</v></c></row>'),
+    "styled": _sheet(
+        '<row r="1" spans="1:3" s="2" customFormat="1"><c r="A1" s="3"/><c r="B1" s="4" t="n"><v>1</v></c></row>'
+    ),
     "unicode": _sheet('<row r="1"><c r="A1" t="inlineStr"><is><t>żółć 😀</t></is></c></row>'),
     "no_dimension": _sheet('<row r="1"><c r="A1"><v>1</v></c></row>', head=""),
     "views_first": _sheet(
@@ -132,15 +133,27 @@ def test_random_sheets_are_scanned_as_the_tree_does():
                 attrs = f' r="{label}{row_number}"' if numbered else ""
                 if rng.random() < 0.3:
                     attrs += rng.choice([' t="s"', ' t="b"', ' t="str"', ' s="2"', ' t="inlineStr"'])
-                content = rng.choice([
-                    "", "<v>1</v>", "<f>1+1</f><v>2</v>", '<f t="shared" ref="A1:A9" si="0">1</f>',
-                    '<f t="shared" si="0"/>', '<f t="shared" si="1"/>', '<f t="array" ref="B2:C3">1</f>',
-                    '<f t="dataTable" ref="A1:B2"/>', "<is><t>x</t></is>",
-                ])
+                content = rng.choice(
+                    [
+                        "",
+                        "<v>1</v>",
+                        "<f>1+1</f><v>2</v>",
+                        '<f t="shared" ref="A1:A9" si="0">1</f>',
+                        '<f t="shared" si="0"/>',
+                        '<f t="shared" si="1"/>',
+                        '<f t="array" ref="B2:C3">1</f>',
+                        '<f t="dataTable" ref="A1:B2"/>',
+                        "<is><t>x</t></is>",
+                    ]
+                )
                 cells.append(f"<c{attrs}/>" if not content else f"<c{attrs}>{content}</c>")
             if not numbered and rng.random() < 0.5:
                 cells = [cell for cell in cells if " r=" not in cell]
-            rows.append(f'<row r="{row_number}">{"".join(cells)}</row>' if rng.random() < 0.8 else f'<row>{"".join(cells)}</row>')
+            rows.append(
+                f'<row r="{row_number}">{"".join(cells)}</row>'
+                if rng.random() < 0.8
+                else f"<row>{''.join(cells)}</row>"
+            )
         tail = rng.choice(["", '<mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>'])
         xml = _sheet("".join(rows), head=rng.choice(["", '<dimension ref="A1:D9"/>']), tail=tail)
         try:
@@ -173,12 +186,15 @@ def _edit(path, edits, out):
         return {name: archive.read(name) for name in archive.namelist() if name != "docProps/core.xml"}
 
 
-@pytest.mark.parametrize("edits", [
-    {"A1": 5},
-    {"B2": "text", "C3": 1.5, "E7": Formula("A1*2")},
-    {"A1": None, "B2": None},
-    {"D4": 1},
-])
+@pytest.mark.parametrize(
+    "edits",
+    [
+        {"A1": 5},
+        {"B2": "text", "C3": 1.5, "E7": Formula("A1*2")},
+        {"A1": None, "B2": None},
+        {"D4": 1},
+    ],
+)
 def test_update_cells_writes_the_same_with_and_without_the_native_scan(tmp_path, monkeypatch, edits):
     path = _book(tmp_path, [[1, "a", 3], [4, "b", 6], ["c", 7, 8]])
     native = _edit(path, edits, tmp_path / "native.xlsx")
@@ -197,11 +213,14 @@ def _sheet_part(path, body):
 
 
 @pytest.mark.parametrize("native", [True, False])
-@pytest.mark.parametrize("name, message", [
-    ("shared", "shared formula"),
-    ("array", "array/data-table"),
-    ("merged", "merged cells"),
-])
+@pytest.mark.parametrize(
+    "name, message",
+    [
+        ("shared", "shared formula"),
+        ("array", "array/data-table"),
+        ("merged", "merged cells"),
+    ],
+)
 def test_edits_into_formula_groups_and_merges_are_refused(tmp_path, monkeypatch, native, name, message):
     if not native:
         monkeypatch.setattr(_accel, "xlsx_edit_scan", None)

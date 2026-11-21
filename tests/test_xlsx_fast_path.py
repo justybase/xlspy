@@ -16,8 +16,13 @@ SHEET = "xl/worksheets/sheet1.xml"
 
 
 def _sheet(body, root=f'<worksheet xmlns="{MAIN_NS}">'):
-    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' + root
-            + "<sheetData>" + body + "</sheetData></worksheet>").encode("utf-8")
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        + root
+        + "<sheetData>"
+        + body
+        + "</sheetData></worksheet>"
+    ).encode("utf-8")
 
 
 def _base_file(tmp_path):
@@ -83,8 +88,8 @@ def _c_items(path):
             probe = _xlsx_read._probe_fast(stream)
             assert probe is not None
             rows = _accel.read_xlsx_worksheet(
-                stream, probe[4], reader._shared_string_array,
-                _xlsx_read._date_style_flags(reader), reader._date_1904)
+                stream, probe[4], reader._shared_string_array, _xlsx_read._date_style_flags(reader), reader._date_1904
+            )
             assert rows is not None
             return list(rows)
 
@@ -99,7 +104,7 @@ class _Trickle:
 
     def read(self, size):
         end = min(len(self._data), self._pos + min(size, self._size))
-        chunk = self._data[self._pos:end]
+        chunk = self._data[self._pos : end]
         self._pos = end
         return chunk
 
@@ -108,27 +113,27 @@ SUPPORTED_BODIES = {
     "shared_strings_attribute_order": '<row r="1"><c t="s" s="0" r="A1"><v>0</v></c></row>',
     "style_then_type": '<row r="1"><c r="A1" s="1"><v>45292</v></c><c r="B1" s="0" t="n"><v>7</v></c></row>',
     "number_formats": '<row r="1"><c r="A1"><v>1E+3</v></c><c r="B1"><v>-0.5</v></c>'
-                      '<c r="C1"><v>12345678901234567890</v></c><c r="D1"><v>1.5e-7</v></c></row>',
+    '<c r="C1"><v>12345678901234567890</v></c><c r="D1"><v>1.5e-7</v></c></row>',
     "extreme_float_values": '<row r="1"><c r="A1"><v>1e309</v></c><c r="B1"><v>1e-400</v></c>'
-                            '<c r="C1"><v>2.2250738585072014e-308</v></c>'
-                            '<c r="D1"><v>1.7976931348623157e308</v></c>'
-                            '<c r="E1"><v>5e-324</v></c>'
-                            '<c r="F1"><v>0.0000000000000001</v></c>'
-                            '<c r="G1"><v>-0.0</v></c></row>',
+    '<c r="C1"><v>2.2250738585072014e-308</v></c>'
+    '<c r="D1"><v>1.7976931348623157e308</v></c>'
+    '<c r="E1"><v>5e-324</v></c>'
+    '<c r="F1"><v>0.0000000000000001</v></c>'
+    '<c r="G1"><v>-0.0</v></c></row>',
     "booleans_and_errors": '<row r="1"><c r="A1" t="b"><v>1</v></c><c r="B1" t="b"><v>0</v></c>'
-                           '<c r="C1" t="e"><v>#DIV/0!</v></c></row>',
+    '<c r="C1" t="e"><v>#DIV/0!</v></c></row>',
     "formula_with_cached_value": '<row r="1"><c r="A1"><f>1+1</f><v>2</v></c>'
-                                 '<c r="B1" t="str"><f>"a"</f><v>a</v></c></row>',
+    '<c r="B1" t="str"><f>"a"</f><v>a</v></c></row>',
     "shared_formula_cells": '<row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">B1*2</f><v>4</v></c></row>'
-                            '<row r="2"><c r="A2"><f t="shared" si="0"/><v>6</v></c></row>',
+    '<row r="2"><c r="A2"><f t="shared" si="0"/><v>6</v></c></row>',
     "self_closing_cells_and_rows": '<row r="1"><c r="A1"/><c r="B1" s="1"/><c r="C1"><v>3</v></c></row>'
-                                   '<row r="3"/><row r="5"><c r="A5"><v>9</v></c></row>',
-    "missing_refs_and_row_numbers": '<row><c><v>1</v></c><c><v>2</v></c></row>'
-                                    '<row><c r="D2"><v>3</v></c><c><v>4</v></c></row>',
+    '<row r="3"/><row r="5"><c r="A5"><v>9</v></c></row>',
+    "missing_refs_and_row_numbers": "<row><c><v>1</v></c><c><v>2</v></c></row>"
+    '<row><c r="D2"><v>3</v></c><c><v>4</v></c></row>',
     "gap_in_columns": '<row r="1"><c r="A1"><v>1</v></c><c r="E1"><v>5</v></c><c><v>6</v></c></row>',
     "empty_value_element": '<row r="1"><c r="A1" t="n"></c><c r="B1"><v></v></c><c r="C1" t="s"><v></v></c></row>',
     "simple_inline_string": '<row r="1"><c r="A1" t="inlineStr"><is><t>plain</t></is></c>'
-                            '<c r="B1" t="inlineStr"><is><t xml:space="preserve"> spaced </t></is></c></row>',
+    '<c r="B1" t="inlineStr"><is><t xml:space="preserve"> spaced </t></is></c></row>',
     "xstring_escape_in_inline": '<row r="1"><c r="A1" t="inlineStr"><is><t>x_x000D_y</t></is></c></row>',
     "rich_inline_string_falls_back": '<row r="1"><c r="A1" t="inlineStr"><is><r><t>a</t></r><r><t>b</t></r></is></c></row>',
     "entities_in_inline_decoded": '<row r="1"><c r="A1" t="inlineStr"><is><t>a &amp; b</t></is></c></row>',
@@ -136,10 +141,11 @@ SUPPORTED_BODIES = {
     "carriage_return_in_str_decoded": '<row r="1"><c r="A1" t="str"><v>a\r\nb</v></c></row>',
     "unknown_child_falls_back": '<row r="1"><c r="A1"><v>1</v><extLst/></c><c r="B1"><v>2</v></c></row>',
     "lowercase_reference_falls_back": '<row r="1"><c r="a1"><v>1</v></c></row>',
-    "whitespace_before_cell_end": '<row r="1"><c /><c r="B1" ><v>1</v></c>'
-                                  '<c r="C1" /><c r="D1" ><v>2</v></c></row>',
+    "whitespace_before_cell_end": '<row r="1"><c /><c r="B1" ><v>1</v></c><c r="C1" /><c r="D1" ><v>2</v></c></row>',
     "non_ascii_attribute_value": '<row note="é" r="1"><c r="A1"><v>1</v></c></row>',
-    "prefixed_cell_falls_back": '<row r="1"><c r="A1"><v>1</v></c><x:c r="B1" xmlns:x="' + MAIN_NS + '"><x:v>2</x:v></x:c></row>',
+    "prefixed_cell_falls_back": '<row r="1"><c r="A1"><v>1</v></c><x:c r="B1" xmlns:x="'
+    + MAIN_NS
+    + '"><x:v>2</x:v></x:c></row>',
 }
 
 PREFIXED_SHEETS = {
@@ -147,7 +153,7 @@ PREFIXED_SHEETS = {
         '<?xml version="1.0" encoding="UTF-8"?>'
         f'<x:worksheet xmlns:x="{MAIN_NS}"><x:sheetData>'
         '<x:row r="1"><x:c r="A1"><x:v>1</x:v></x:c></x:row>'
-        '</x:sheetData></x:worksheet>'
+        "</x:sheetData></x:worksheet>"
     ).encode(),
 }
 
@@ -237,16 +243,19 @@ def test_native_reader_handles_tiny_stream_chunks(tmp_path):
         expected = list(_xlsx_read.iter_xlsx_indexed_rows(reader, "Sheet1"))
         for size in (1, 3, 7, 64):
             rows = _accel.read_xlsx_worksheet(
-                _Trickle(rest, size), probe[4], reader._shared_string_array,
-                _xlsx_read._date_style_flags(reader), reader._date_1904)
+                _Trickle(rest, size),
+                probe[4],
+                reader._shared_string_array,
+                _xlsx_read._date_style_flags(reader),
+                reader._date_1904,
+            )
             got = list(_xlsx_read._native_rows(reader, rows, probe[2], probe[3]))
             _same_typed_rows(got, expected)
 
 
 def test_native_reader_resumes_row_numbers_after_a_fallback(tmp_path, monkeypatch):
     path = _base_file(tmp_path)
-    body = ('<row r="12 "><c r="A12"><v>1</v></c></row>'
-            '<row><c r="B13"><v>2</v></c><c><v>3</v></c></row>')
+    body = '<row r="12 "><c r="A12"><v>1</v></c></row><row><c r="B13"><v>2</v></c><c><v>3</v></c></row>'
     replace_parts(path, {SHEET: _sheet(body)})
     from_c, from_python, from_tree = _all_paths(path, monkeypatch)
     _same_typed_rows(from_c, from_python)
@@ -256,8 +265,10 @@ def test_native_reader_resumes_row_numbers_after_a_fallback(tmp_path, monkeypatc
 
 def test_native_reader_honors_the_1904_date_system(tmp_path, monkeypatch):
     path = _base_file(tmp_path)
-    body = ('<row r="1"><c r="A1" s="1"><v>0</v></c><c r="B1" s="1"><v>59</v></c>'
-            '<c r="C1" s="1"><v>60</v></c><c r="D1" s="1"><v>43000.5</v></c></row>')
+    body = (
+        '<row r="1"><c r="A1" s="1"><v>0</v></c><c r="B1" s="1"><v>59</v></c>'
+        '<c r="C1" s="1"><v>60</v></c><c r="D1" s="1"><v>43000.5</v></c></row>'
+    )
     replace_parts(path, {SHEET: _sheet(body)})
 
     with ExcelReader(str(path)) as reader:
@@ -279,8 +290,7 @@ def test_native_reader_honors_the_1904_date_system(tmp_path, monkeypatch):
 
 def test_native_reader_reads_iso_dates_and_empty_date_cells(tmp_path, monkeypatch):
     path = _base_file(tmp_path)
-    body = ('<row r="1"><c r="A1" t="d"><v>2024-02-29T12:30:00</v></c>'
-            '<c r="B1" t="d"><v></v></c></row>')
+    body = '<row r="1"><c r="A1" t="d"><v>2024-02-29T12:30:00</v></c><c r="B1" t="d"><v></v></c></row>'
     replace_parts(path, {SHEET: _sheet(body)})
     from_c, from_python, from_tree = _all_paths(path, monkeypatch)
     assert from_c == [(1, [(0, datetime.datetime(2024, 2, 29, 12, 30)), (1, None)])]
@@ -303,9 +313,11 @@ def test_native_reader_propagates_number_errors(tmp_path, monkeypatch):
 
 def test_native_reader_propagates_invalid_utf8(tmp_path):
     path = _base_file(tmp_path)
-    xml = (b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-           b'<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>\xff</t></is></c>'
-           b'</row></sheetData></worksheet>')
+    xml = (
+        b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        b'<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>\xff</t></is></c>'
+        b"</row></sheetData></worksheet>"
+    )
     replace_parts(path, {SHEET: xml})
     with pytest.raises(UnicodeDecodeError):
         with ExcelReader(str(path)) as reader:
@@ -314,9 +326,11 @@ def test_native_reader_propagates_invalid_utf8(tmp_path):
 
 def test_native_reader_propagates_truncated_utf8(tmp_path):
     path = _base_file(tmp_path)
-    xml = (b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-           b'<sheetData><row r="1"><c r="A1"><v>1</v></c></row>'
-           b'</sheetData></worksheet>\xe2\x82')
+    xml = (
+        b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        b'<sheetData><row r="1"><c r="A1"><v>1</v></c></row>'
+        b"</sheetData></worksheet>\xe2\x82"
+    )
     replace_parts(path, {SHEET: xml})
     with pytest.raises(UnicodeDecodeError):
         with ExcelReader(str(path)) as reader:
@@ -338,13 +352,15 @@ def test_values_match_across_chunk_boundaries(tmp_path, monkeypatch):
 def test_writer_output_matches_element_tree(tmp_path, monkeypatch):
     path = tmp_path / "mixed.xlsx"
     with XlsxWriter(path) as writer:
-        writer.write_sheet([
-            ["h1", "h2", "h3", "h4"],
-            [None, "a & b < c", "line\nbreak", "_x0041_"],
-            [datetime.datetime(2024, 2, 29, 12, 30), -1, 1.25e20, False],
-            [],
-            [None, None, None, "end"],
-        ])
+        writer.write_sheet(
+            [
+                ["h1", "h2", "h3", "h4"],
+                [None, "a & b < c", "line\nbreak", "_x0041_"],
+                [datetime.datetime(2024, 2, 29, 12, 30), -1, 1.25e20, False],
+                [],
+                [None, None, None, "end"],
+            ]
+        )
     fast, slow = _both_paths(path, monkeypatch)
     assert fast == slow
 
@@ -352,14 +368,28 @@ def test_writer_output_matches_element_tree(tmp_path, monkeypatch):
 # Cell references every read path must treat alike: accepted ones give the same
 # cells, the others raise ValueError (the fast paths hand them to ElementTree).
 CELL_REFS = {
-    "B2": 1, "b2": 1, "$B$2": 1, "A01": 0, "XFD2": 16383, "A1048576": 0, "A2": 0,
-    "A": None, "B": None, "A0": None, "A00": None, "XFE2": None, "A1048577": None,
-    "AAAA2": None, "A\u0661": None, "\u00c12": None,
+    "B2": 1,
+    "b2": 1,
+    "$B$2": 1,
+    "A01": 0,
+    "XFD2": 16383,
+    "A1048576": 0,
+    "A2": 0,
+    "A": None,
+    "B": None,
+    "A0": None,
+    "A00": None,
+    "XFE2": None,
+    "A1048577": None,
+    "AAAA2": None,
+    "A\u0661": None,
+    "\u00c12": None,
 }
 
 
 def _model_cells(path, monkeypatch, native, fast):
     from xlspy.workbook import _reader as model_reader, load_workbook
+
     with monkeypatch.context() as patch:
         if not native:
             patch.setattr(_accel, "_native_read_xlsx_worksheet", None)
@@ -370,8 +400,7 @@ def _model_cells(path, monkeypatch, native, fast):
             return "ValueError"
         try:
             sheet = workbook.worksheets[0]
-            return sorted((cell.row, cell.column, cell.value) for row in sheet._cells.values()
-                          for cell in row.values())
+            return sorted((cell.row, cell.column, cell.value) for row in sheet._cells.values() for cell in row.values())
         finally:
             workbook.close()
 
@@ -380,8 +409,15 @@ def _model_cells(path, monkeypatch, native, fast):
 def test_cell_references_read_alike_on_every_path(tmp_path, monkeypatch, ref):
     path = _base_file(tmp_path)
     # A1 first, so the column letters of the reference may already be cached.
-    replace_parts(path, {SHEET: _sheet(f'<row r="1"><c r="A1"><v>1</v></c></row>'
-                                       f'<row r="2"><c r="A2"><v>2</v></c><c r="{ref}"><v>3</v></c></row>')})
+    replace_parts(
+        path,
+        {
+            SHEET: _sheet(
+                f'<row r="1"><c r="A1"><v>1</v></c></row>'
+                f'<row r="2"><c r="A2"><v>2</v></c><c r="{ref}"><v>3</v></c></row>'
+            )
+        },
+    )
     column = CELL_REFS[ref]
     if column is None:
         for mode in ("native", "python", "tree"):
@@ -395,8 +431,11 @@ def test_cell_references_read_alike_on_every_path(tmp_path, monkeypatch, ref):
     else:
         expected = [(1, [(0, 1)]), (2, [(0, 2), (column, 3)])]
         assert list(_all_paths(path, monkeypatch)) == [expected] * 3
-    models = {(native, fast): _model_cells(path, monkeypatch, native, fast)
-              for native in (True, False) for fast in (True, False)}
+    models = {
+        (native, fast): _model_cells(path, monkeypatch, native, fast)
+        for native in (True, False)
+        for fast in (True, False)
+    }
     assert len(set(map(repr, models.values()))) == 1, models
     if column is None:
         assert models[True, True] == "ValueError"

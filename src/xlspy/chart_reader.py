@@ -35,8 +35,6 @@ _CHART_TAGS = {
 }
 
 
-
-
 def _read_chart_relationships(package, part: str) -> dict[str, tuple[str, str]]:
     path = posixpath.join(posixpath.dirname(part), "_rels", posixpath.basename(part) + ".rels")
     if not package.has(path):
@@ -48,7 +46,8 @@ def _read_chart_relationships(package, part: str) -> dict[str, tuple[str, str]]:
         target = node.get("Target")
         if rid and target:
             resolved = (
-                target[1:] if target.startswith("/")
+                target[1:]
+                if target.startswith("/")
                 else posixpath.normpath(posixpath.join(posixpath.dirname(part), target))
             )
             result[rid] = (resolved, node.get("Type", ""))
@@ -84,9 +83,7 @@ def _chart_facts(xml: bytes) -> tuple[str | None, str | None, int]:
     # The chart's own title, not that of an axis.
     title_node = next((node for node in chart if _local(node.tag) == "title"), None)
     if title_node is not None:
-        title = "".join(
-            node.text or "" for node in title_node.iter() if _local(node.tag) == "t"
-        ) or None
+        title = "".join(node.text or "" for node in title_node.iter() if _local(node.tag) == "t") or None
     series = sum(1 for node in chart.iter() if _local(node.tag) == "ser")
     return chart_type, title, series
 
@@ -114,28 +111,20 @@ def read_drawing(package, sheet, drawing_part: str) -> None:
                     continue
                 chart_xml = package.get(part)
                 chart_type, title, series = _chart_facts(chart_xml)
-                sheet._charts.append(
-                    LoadedChart(chart_type, title, series, cell, part, chart_xml)
-                )
+                sheet._charts.append(LoadedChart(chart_type, title, series, cell, part, chart_xml))
                 sources.append((drawing_part, position, sheet._charts[-1]))
             elif name == "pic":
-                blip = next(
-                    (item for item in node.iter() if _local(item.tag) == "blip"), None
-                )
+                blip = next((item for item in node.iter() if _local(item.tag) == "blip"), None)
                 rid = blip.get(f"{{{_REL}}}embed") if blip is not None else None
                 part = relationships.get(rid, ("", ""))[0] if rid is not None else ""
                 if not part or not package.has(part):
                     continue
                 description = None
-                non_visual = next(
-                    (item for item in node.iter() if _local(item.tag) == "cNvPr"), None
-                )
+                non_visual = next((item for item in node.iter() if _local(item.tag) == "cNvPr"), None)
                 if non_visual is not None:
                     description = non_visual.get("descr")
                 try:
-                    image = Image(
-                        package.get(part), anchor=cell, description=description
-                    )
+                    image = Image(package.get(part), anchor=cell, description=description)
                 except (TypeError, ValueError):
                     continue
                 sheet._images.append(image)
@@ -145,10 +134,7 @@ def read_drawing(package, sheet, drawing_part: str) -> None:
 def read_chartsheet(package, part: str, title: str, chartsheet) -> None:
     relationships = _read_chart_relationships(package, part)
     drawing = next(
-        (
-            target for target, kind in relationships.values()
-            if "drawing" in kind and package.has(target)
-        ),
+        (target for target, kind in relationships.values() if "drawing" in kind and package.has(target)),
         None,
     )
     if drawing is not None:

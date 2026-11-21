@@ -34,7 +34,7 @@ def _records(data):
     while pos < len(data):
         rec_id, pos = _read_vint(data, pos)
         size, pos = _read_vint(data, pos)
-        yield rec_id, data[pos:pos + size]
+        yield rec_id, data[pos : pos + size]
         pos += size
 
 
@@ -48,7 +48,7 @@ def _with_error_cell(payload, *, row, code, record=BRT_CELL_ERROR, length=9):
             current += 1
         elif current == row and not replaced and rec_id in VALUE_CELLS and len(body) >= 8:
             # The cell header (column and style) stays; the error code follows it.
-            rec_id, body = record, body[:8] + bytes([code])[:length - 8]
+            rec_id, body = record, body[:8] + bytes([code])[: length - 8]
             replaced = True
         out.append(build_record(rec_id, body))
     assert replaced, "no value cell to replace in the generated sheet"

@@ -62,12 +62,13 @@ def _is_xlsb_source(source: str | IO[bytes]) -> bool:
     raises the InvalidFileError (or FileNotFoundError) that names the problem.
     A file object is left where the caller had it.
     """
+
     def has_bin(archive: zipfile.ZipFile) -> bool:
-        return 'xl/workbook.bin' in archive.namelist()
+        return "xl/workbook.bin" in archive.namelist()
 
     if isinstance(source, str):
         try:
-            with SafeZipFile(source, 'r') as archive:
+            with SafeZipFile(source, "r") as archive:
                 return has_bin(archive)
         except (OSError, ValueError):
             return False
@@ -77,7 +78,7 @@ def _is_xlsb_source(source: str | IO[bytes]) -> bool:
     except (AttributeError, OSError):
         position = None
     try:
-        with SafeZipFile(source, 'r') as archive:
+        with SafeZipFile(source, "r") as archive:
             return has_bin(archive)
     except (OSError, ValueError):
         return False
@@ -104,33 +105,38 @@ def _parse_shared_strings_fast(content: str) -> list[str] | None:
         parts = _SST_TEXT.findall(item.group(1))
         text = parts[0] if len(parts) == 1 else "".join(parts)
         if "&" in text:
-            text = (text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
-                    .replace("&apos;", "'").replace("&amp;", "&"))
+            text = (
+                text.replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", '"')
+                .replace("&apos;", "'")
+                .replace("&amp;", "&")
+            )
         append(xstring_unescape(text))
     return strings
 
 
 _date_excel_masks: set[str] = {
-    '[$-F800]dddd,\\ mmmm\\ dd,\\ yyyy',
-    'd\\-mm;@',
-    'yy\\-mm\\-dd;@',
-    '[$-415]d\\ mmm;@',
-    '[$-415]d\\ mmm\\ yy;@',
-    '[$-415]dd\\ mmm\\ yy;@',
-    '[$-415]mmm\\ yy;@',
-    '[$-415]mmmm\\ yy;@',
-    '[$-415]d\\ mmmm\\ yyyy;@',
-    'yyyy\\-mm\\-dd\\ hh:mm',
-    'yyyy\\-mm\\-dd\\ hh:mm:ss',
-    'yyyy\\-mm\\-dd;@',
-    'yyyy\\-mm\\-dd',
-    '[$-409]dd\\-mm\\-yy\\ h:mm\\ AM/PM;@',
-    'dd\\-mm\\-yy\\ h:mm;@',
-    '[$-415]mmmmm;@',
-    '[$-415]mmmmm\\.yy;@',
-    '\\-m\\-yyyy;@',
-    '[$-415]d\\-mmm\\-yyyy;@',
-    'd\\-m\\-yyyy;@',
+    "[$-F800]dddd,\\ mmmm\\ dd,\\ yyyy",
+    "d\\-mm;@",
+    "yy\\-mm\\-dd;@",
+    "[$-415]d\\ mmm;@",
+    "[$-415]d\\ mmm\\ yy;@",
+    "[$-415]dd\\ mmm\\ yy;@",
+    "[$-415]mmm\\ yy;@",
+    "[$-415]mmmm\\ yy;@",
+    "[$-415]d\\ mmmm\\ yyyy;@",
+    "yyyy\\-mm\\-dd\\ hh:mm",
+    "yyyy\\-mm\\-dd\\ hh:mm:ss",
+    "yyyy\\-mm\\-dd;@",
+    "yyyy\\-mm\\-dd",
+    "[$-409]dd\\-mm\\-yy\\ h:mm\\ AM/PM;@",
+    "dd\\-mm\\-yy\\ h:mm;@",
+    "[$-415]mmmmm;@",
+    "[$-415]mmmmm\\.yy;@",
+    "\\-m\\-yyyy;@",
+    "[$-415]d\\-mmm\\-yyyy;@",
+    "d\\-m\\-yyyy;@",
 }
 
 
@@ -138,11 +144,11 @@ def _looks_like_date_format(fmt_code: str) -> bool:
     if not fmt_code:
         return False
     fmt_lower = fmt_code.lower()
-    has_y = 'y' in fmt_lower
-    has_m = 'm' in fmt_lower
-    has_d = 'd' in fmt_lower
-    has_h = 'h' in fmt_lower
-    has_s = 's' in fmt_lower
+    has_y = "y" in fmt_lower
+    has_m = "m" in fmt_lower
+    has_d = "d" in fmt_lower
+    has_h = "h" in fmt_lower
+    has_s = "s" in fmt_lower
     date_indicators = sum([has_y, has_m and not has_h and not has_s, has_d])
     return date_indicators >= 2
 
@@ -172,6 +178,7 @@ _default_number_formats_type_dict: dict[int, type] = {
 
 def _get_date_num_fmt_ids(number_formats_type_dict: dict[int, type]) -> set[int]:
     return {k for k, v in number_formats_type_dict.items() if v is datetime.datetime}
+
 
 _letters = [chr(65 + i) for i in range(26)]
 for i in range(26):
@@ -222,6 +229,7 @@ class ExcelReader:
         `load_workbook` when you need coordinates, styles or edits; the
         tutorial page `reading` for a comparison of the three read modes.
     """
+
     _open_xml_info_string = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
     def __init__(
@@ -306,8 +314,9 @@ class ExcelReader:
             self.open(self._path)
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None,
-                 exc_tb: TracebackType | None) -> Literal[False]:
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+    ) -> Literal[False]:
         self.close()
         return False
 
@@ -357,7 +366,9 @@ class ExcelReader:
                 return i
         raise ValueError(f"Sheet '{sheet_name}' not found")
 
-    def get_rows(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> Generator[list[Any], None, None]:
+    def get_rows(
+        self, sheet_name: str, *, data_only: bool = True, streaming: bool = False
+    ) -> Generator[list[Any], None, None]:
         """Yield values or formula text; streaming=True opts into incremental XLSB."""
         if not isinstance(data_only, bool):
             raise TypeError("data_only must be bool")
@@ -368,6 +379,7 @@ class ExcelReader:
         if self._is_xlsb:
             if not data_only or streaming:
                 from ._xlsb_read import read_xlsb_rows
+
                 rows = read_xlsb_rows(self, sheet_name, data_only=data_only)
             else:
                 rows = self._get_rows_xlsb(sheet_name)
@@ -378,10 +390,7 @@ class ExcelReader:
             yield from rows
         else:
             for row in rows:
-                yield [
-                    str(value[6:]) if isinstance(value, CellError) else value
-                    for value in row
-                ]
+                yield [str(value[6:]) if isinstance(value, CellError) else value for value in row]
 
     def read_all(self, sheet_name: str, *, data_only: bool = True, streaming: bool = False) -> list[list[Any]]:
         """Return all rows of a sheet as a list; see ``get_rows``."""
@@ -394,7 +403,7 @@ class ExcelReader:
             return {}
         if self._is_xlsb:
             _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
-            return parse_comments(self._zip().read(parts['comments'][0]))[0] if 'comments' in parts else {}
+            return parse_comments(self._zip().read(parts["comments"][0]))[0] if "comments" in parts else {}
         _, _, parts = find_comment_parts(self._zip().read, self._zip().namelist(), path)
         return read_comments(self._zip().read(parts["comments"][0])) if "comments" in parts else {}
 
@@ -402,19 +411,21 @@ class ExcelReader:
         """Return global and worksheet-local user names (not built-in names)."""
         if self._is_xlsb:
             return FormulaContext(
-                self.get_sheet_names(), self._zip().read('xl/workbook.bin'), self.read_part,
+                self.get_sheet_names(),
+                self._zip().read("xl/workbook.bin"),
+                self.read_part,
                 tables=lambda: table_catalog(self._zip().namelist(), self.read_part),
             ).defined_names()
         return read_defined_names(self._zip().read("xl/workbook.xml"), self.get_sheet_names())
 
     def _open_xlsx(self, path: str | IO[bytes]) -> None:
-        self._archive = SafeZipFile(path, 'r')
+        self._archive = SafeZipFile(path, "r")
 
-        with self._zip().open('xl/workbook.xml') as f:
-            content = f.read().decode('utf-8')
+        with self._zip().open("xl/workbook.xml") as f:
+            content = f.read().decode("utf-8")
             self._parse_workbook_xml(content)
 
-        self._fill_rels('xml')
+        self._fill_rels("xml")
 
         if self._styles_location is not None:
             self._fill_styles()
@@ -423,9 +434,9 @@ class ExcelReader:
             self._fill_shared_strings()
 
     def _open_xlsb(self, path: str | IO[bytes]) -> None:
-        self._archive = SafeZipFile(path, 'r')
+        self._archive = SafeZipFile(path, "r")
 
-        with self._zip().open('xl/workbook.bin') as f:
+        with self._zip().open("xl/workbook.bin") as f:
             raw = f.read()
         for relationship, name in iter_xlsb_sheets(raw):
             # A sheet without a relationship is listed, and has no part to read.
@@ -433,7 +444,7 @@ class ExcelReader:
             self._worksheet_name_to_id[name] = relationship or ""
         self._date_1904 = xlsb_date_1904(raw)
 
-        self._fill_rels('bin')
+        self._fill_rels("bin")
 
         if self._styles_location is not None:
             self._fill_bin_styles()
@@ -446,42 +457,42 @@ class ExcelReader:
         main = namespace_of(root.tag) or MAIN  # Transitional or Strict
         rel = relationship_namespace(main)
         for node in root.findall(f"{{{main}}}sheets/{{{main}}}sheet"):
-            name, rid = node.get('name'), node.get(f'{{{rel}}}id')
+            name, rid = node.get("name"), node.get(f"{{{rel}}}id")
             if name is None or rid is None:
                 raise InvalidFileError("workbook.xml: a <sheet> lacks its name or r:id")
             self._worksheet_id_to_name[rid] = name
             self._worksheet_name_to_id[name] = rid
         properties = root.find(f"{{{main}}}workbookPr")
         if properties is not None:
-            self._date_1904 = properties.get('date1904', '').strip().lower() in {'1', 'true'}
+            self._date_1904 = properties.get("date1904", "").strip().lower() in {"1", "true"}
 
     def _fill_rels(self, ext: str) -> None:
-        rels_path = f'xl/_rels/workbook.{ext}.rels'
+        rels_path = f"xl/_rels/workbook.{ext}.rels"
         if rels_path not in self._zip().namelist():
             return
 
         with self._zip().open(rels_path) as f:
-            content = f.read().decode('utf-8')
+            content = f.read().decode("utf-8")
 
-        parser = harden_expat(ParserCreate(namespace_separator='}'))
+        parser = harden_expat(ParserCreate(namespace_separator="}"))
         parser.StartElementHandler = lambda tag, attrs: self._rels_start_elem(tag, attrs)
         parser.Parse(content, True)
 
     def _rels_start_elem(self, tag: str, attrs: dict[str, str]) -> None:
-        local = tag.rsplit('}', 1)[-1].rsplit(':', 1)[-1]
-        if local == 'Relationship':
-            target = attrs.get('Target', '')
-            rel_type = attrs.get('Type', '')
-            r_id = attrs.get('Id', '')
+        local = tag.rsplit("}", 1)[-1].rsplit(":", 1)[-1]
+        if local == "Relationship":
+            target = attrs.get("Target", "")
+            rel_type = attrs.get("Type", "")
+            r_id = attrs.get("Id", "")
 
             kind = relationship_kind(rel_type)
-            if kind == 'worksheet':
+            if kind == "worksheet":
                 self._worksheet_id_to_location[r_id] = target
-            elif kind in ('chartsheet', 'dialogsheet'):
+            elif kind in ("chartsheet", "dialogsheet"):
                 self._cellless_sheet_ids.add(r_id)
-            elif kind == 'sharedStrings':
+            elif kind == "sharedStrings":
                 self._shared_strings_location = target
-            elif kind == 'styles':
+            elif kind == "styles":
                 self._styles_location = target
 
     def _fill_shared_strings(self) -> None:
@@ -494,7 +505,7 @@ class ExcelReader:
         if native is not None:
             self._shared_string_array = native
             return
-        content = raw.decode('utf-8')
+        content = raw.decode("utf-8")
 
         fast = _parse_shared_strings_fast(content)
         if fast is not None:
@@ -503,7 +514,7 @@ class ExcelReader:
 
         self._shared_string_array = []
 
-        parser = harden_expat(ParserCreate(namespace_separator='}'))
+        parser = harden_expat(ParserCreate(namespace_separator="}"))
         parser.StartElementHandler = lambda tag, attrs: None
         parser.EndElementHandler = lambda tag: None
         parser.CharacterDataHandler = lambda data: None
@@ -516,18 +527,18 @@ class ExcelReader:
                 self.buf = ""
 
             def start(self, tag: str, attrs: dict[str, str]) -> None:
-                local = tag.split('}')[-1] if '}' in tag else tag
-                if local == 'si':
+                local = tag.split("}")[-1] if "}" in tag else tag
+                if local == "si":
                     self.in_si = True
                     self.buf = ""
-                elif local == 't' and self.in_si:
+                elif local == "t" and self.in_si:
                     self.in_t = True
 
             def end(self, tag: str) -> None:
-                local = tag.split('}')[-1] if '}' in tag else tag
-                if local == 't' and self.in_t:
+                local = tag.split("}")[-1] if "}" in tag else tag
+                if local == "t" and self.in_t:
                     self.in_t = False
-                elif local == 'si':
+                elif local == "si":
                     if self.in_si:
                         self.strings.append(xstring_unescape(self.buf))
                         self.in_si = False
@@ -572,7 +583,7 @@ class ExcelReader:
             return
         entry_path = self._resolve_path(self._styles_location)
         with self._zip().open(entry_path) as f:
-            content = f.read().decode('utf-8')
+            content = f.read().decode("utf-8")
 
         self._styles_cell_xfs_array = []
         fmt_types = self._number_formats_type_dict
@@ -584,18 +595,18 @@ class ExcelReader:
                 self.in_num_fmts = False
 
             def start(self, tag: str, attrs: dict[str, str]) -> None:
-                local = tag.split('}')[-1] if '}' in tag else tag
-                if local == 'cellXfs':
+                local = tag.split("}")[-1] if "}" in tag else tag
+                if local == "cellXfs":
                     self.in_cell_xfs = True
-                elif local == 'numFmts':
+                elif local == "numFmts":
                     self.in_num_fmts = True
-                elif local == 'xf' and self.in_cell_xfs:
-                    xf_id = int(attrs.get('xfId', '0'))
-                    num_fmt_id = int(attrs.get('numFmtId', '0'))
-                    self.xfs.append({'xfId': xf_id, 'numFmtId': num_fmt_id})
-                elif local == 'numFmt' and self.in_num_fmts:
-                    num_fmt_id = int(attrs.get('numFmtId', '0'))
-                    fmt_code = attrs.get('formatCode', '')
+                elif local == "xf" and self.in_cell_xfs:
+                    xf_id = int(attrs.get("xfId", "0"))
+                    num_fmt_id = int(attrs.get("numFmtId", "0"))
+                    self.xfs.append({"xfId": xf_id, "numFmtId": num_fmt_id})
+                elif local == "numFmt" and self.in_num_fmts:
+                    num_fmt_id = int(attrs.get("numFmtId", "0"))
+                    fmt_code = attrs.get("formatCode", "")
                     if num_fmt_id not in fmt_types:
                         if fmt_code in _date_excel_masks or _looks_like_date_format(fmt_code):
                             fmt_types[num_fmt_id] = datetime.datetime
@@ -603,17 +614,17 @@ class ExcelReader:
                             fmt_types[num_fmt_id] = str
 
             def end(self, tag: str) -> None:
-                local = tag.split('}')[-1] if '}' in tag else tag
-                if local == 'cellXfs':
+                local = tag.split("}")[-1] if "}" in tag else tag
+                if local == "cellXfs":
                     self.in_cell_xfs = False
-                elif local == 'numFmts':
+                elif local == "numFmts":
                     self.in_num_fmts = False
 
             def chars(self, data: str) -> None:
                 pass
 
         h = StylesHandler(self._styles_cell_xfs_array)
-        parser = harden_expat(ParserCreate(namespace_separator='}'))
+        parser = harden_expat(ParserCreate(namespace_separator="}"))
         parser.StartElementHandler = h.start
         parser.EndElementHandler = h.end
         parser.CharacterDataHandler = h.chars
@@ -640,7 +651,7 @@ class ExcelReader:
                     styles_first_time = False
                 num_fmt_id = reader.number_format_index
                 xf_id = reader.parent_cell_style_xf
-                self._styles_cell_xfs_array.append({'xfId': xf_id, 'numFmtId': num_fmt_id})
+                self._styles_cell_xfs_array.append({"xfId": xf_id, "numFmtId": num_fmt_id})
             elif reader.in_number_format:
                 if format_first_time:
                     reader.read_styles()
@@ -657,14 +668,15 @@ class ExcelReader:
 
     @staticmethod
     def _resolve_path(target: str) -> str:
-        if target.startswith('/'):
-            return target.lstrip('/')
-        if target.startswith('xl/'):
+        if target.startswith("/"):
+            return target.lstrip("/")
+        if target.startswith("xl/"):
             return target
-        return f'xl/{target}'
+        return f"xl/{target}"
 
     def _get_rows_xlsx(self, sheet_name: str, *, data_only: bool = True) -> Generator[list[Any], None, None]:
         from ._xlsx_read import read_xlsx_rows
+
         yield from read_xlsx_rows(self, sheet_name, data_only=data_only)
 
     def _get_rows_xlsb(self, sheet_name: str) -> Generator[list[Any], None, None]:
@@ -735,8 +747,7 @@ class ExcelReader:
             if kind == CellType.doubleVal:
                 number = reader.double_val
                 xf = reader.xf_index
-                if (xf != 0 and xf < len(styles)
-                        and formats.get(styles[xf]['numFmtId'], str) is datetime.datetime):
+                if xf != 0 and xf < len(styles) and formats.get(styles[xf]["numFmtId"], str) is datetime.datetime:
                     return _date_or_number(number, date_1904)
                 return int(number) if number.is_integer() else number
             return None
@@ -788,14 +799,14 @@ class _MemoryStream:
 
     def read(self, size: int = -1) -> bytes:
         if size < 0:
-            result = self._data[self._pos:]
+            result = self._data[self._pos :]
             self._pos = len(self._data)
             return result
         if self._pos + size > len(self._data):
-            result = self._data[self._pos:]
+            result = self._data[self._pos :]
             self._pos = len(self._data)
             return result
-        result = self._data[self._pos:self._pos + size]
+        result = self._data[self._pos : self._pos + size]
         self._pos += size
         return result
 
@@ -805,10 +816,10 @@ class _MemoryStream:
             size = len(self._data) - self._pos
             if size <= 0:
                 return 0
-            buf[:size] = self._data[self._pos:self._pos + size]
+            buf[:size] = self._data[self._pos : self._pos + size]
             self._pos = len(self._data)
             return size
-        buf[:size] = self._data[self._pos:self._pos + size]
+        buf[:size] = self._data[self._pos : self._pos + size]
         self._pos += size
         return size
 

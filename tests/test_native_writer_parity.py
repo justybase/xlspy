@@ -7,8 +7,19 @@ import zipfile
 import pytest
 
 from xlspy import (
-    CellRichText, ExcelReader, Font, Formula, Hyperlink, InlineFont, Style, TextBlock, XlsbWriter, XlsxWriter,
-    _accel, _xlsb_writer_bin, _xlsx_writer_sheet,
+    CellRichText,
+    ExcelReader,
+    Font,
+    Formula,
+    Hyperlink,
+    InlineFont,
+    Style,
+    TextBlock,
+    XlsbWriter,
+    XlsxWriter,
+    _accel,
+    _xlsb_writer_bin,
+    _xlsx_writer_sheet,
 )
 
 pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
@@ -16,20 +27,39 @@ pytestmark = pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension
 
 def _rows():
     rng = random.Random(5)
-    rows = [[0, -0.0, 0.0, 1e16, -1e16, 1e16 - 2, 2**53 + 1, -2**63, 2**64, 10**20, 0.5,
-             5e-324, 1.7976931348623157e308, 123456789.0, True]]
+    rows = [
+        [
+            0,
+            -0.0,
+            0.0,
+            1e16,
+            -1e16,
+            1e16 - 2,
+            2**53 + 1,
+            -(2**63),
+            2**64,
+            10**20,
+            0.5,
+            5e-324,
+            1.7976931348623157e308,
+            123456789.0,
+            True,
+        ]
+    ]
     for _ in range(500):
-        rows.append([
-            rng.randrange(-10**12, 10**12),
-            float(rng.randrange(-10**17, 10**17)),
-            rng.uniform(-1e6, 1e6),
-            dt.date(1900, 1, 1) + dt.timedelta(days=rng.randrange(0, 2_900_000)),
-            # Microseconds exercise the exact serial; years past ~2185 the row fallback.
-            dt.datetime(1900, 1, 1) + dt.timedelta(
-                seconds=rng.randrange(0, 2**37), microseconds=rng.randrange(10**6)),
-            dt.date(1900, rng.choice([1, 2, 3]), rng.randrange(1, 29)),
-            dt.datetime(rng.choice([1899, 1900, 2024, 9999]), 2, 28, 23, 59, 59, 999999),
-        ])
+        rows.append(
+            [
+                rng.randrange(-(10**12), 10**12),
+                float(rng.randrange(-(10**17), 10**17)),
+                rng.uniform(-1e6, 1e6),
+                dt.date(1900, 1, 1) + dt.timedelta(days=rng.randrange(0, 2_900_000)),
+                # Microseconds exercise the exact serial; years past ~2185 the row fallback.
+                dt.datetime(1900, 1, 1)
+                + dt.timedelta(seconds=rng.randrange(0, 2**37), microseconds=rng.randrange(10**6)),
+                dt.date(1900, rng.choice([1, 2, 3]), rng.randrange(1, 29)),
+                dt.datetime(rng.choice([1899, 1900, 2024, 9999]), 2, 28, 23, 59, 59, 999999),
+            ]
+        )
     return rows
 
 
@@ -72,8 +102,10 @@ def _write_both(tmp_path, monkeypatch, cls, rows, shared=True, **options):
                 patch.setattr(_xlsb_writer_bin, "encode_xlsb_row", none)
                 patch.setattr(_xlsb_writer_bin, "encode_xlsb_row_inline", none)
             calls = []
-            for owner, name in ((_xlsb_writer_bin._XlsbBinMixin, "_write_python_row"),
-                                (_xlsx_writer_sheet._XlsxSheetMixin, "_write_row_cells")):
+            for owner, name in (
+                (_xlsb_writer_bin._XlsbBinMixin, "_write_python_row"),
+                (_xlsx_writer_sheet._XlsxSheetMixin, "_write_row_cells"),
+            ):
                 original = getattr(owner, name)
 
                 def counted(self, *args, _original=original, _calls=calls, **kwargs):
@@ -102,8 +134,11 @@ def test_styled_date_columns_stay_on_the_native_encoder(tmp_path, monkeypatch, c
     # sent every such row to the Python encoder (ten times slower).
     styles = {"A:A": Style(font=Font(name="Arial", italic=True)), "B:C": Style(font=Font(bold=True))}
     rows = [["date", "datetime", "mixed"]] + [
-        [dt.date(2024, 1, 1) + dt.timedelta(days=i), dt.datetime(2024, 5, 6, 7, 8, i % 60),
-         (dt.date(2024, 2, 3), "yyyy-mm-dd") if i % 3 == 0 else i]
+        [
+            dt.date(2024, 1, 1) + dt.timedelta(days=i),
+            dt.datetime(2024, 5, 6, 7, 8, i % 60),
+            (dt.date(2024, 2, 3), "yyyy-mm-dd") if i % 3 == 0 else i,
+        ]
         for i in range(300)
     ]
     native, python, python_rows = _write_both(tmp_path, monkeypatch, cls, rows, shared, styles=styles)
@@ -174,13 +209,31 @@ class _Opaque:
 def _other_cells():
     np = pytest.importorskip("numpy")
     cells = [
-        np.int64(-5), np.int32(7), np.uint8(200), np.bool_(True), np.float32(1.5), np.float16(0.25),
-        np.datetime64("2024-01-02"), np.str_("numpy text"),
+        np.int64(-5),
+        np.int32(7),
+        np.uint8(200),
+        np.bool_(True),
+        np.float32(1.5),
+        np.float16(0.25),
+        np.datetime64("2024-01-02"),
+        np.str_("numpy text"),
         # Where the rule for a numpy scalar (integer, unsigned, bool, float16/32) ends.
-        np.uint64(2**63 + 5), np.int8(-3), np.array(7), np.array(2.5, dtype=np.float32),
-        np.array([1, 2]), np.longdouble(1.5), np.complex64(1 + 2j), np.float64(2.5),
-        dt.time(3, 4, 5), dt.timedelta(hours=5), b"bytes", _Opaque(), (1, 2, 3), [4, 5],
-        (None, "0.00"), (np.int64(3), "0.00"),
+        np.uint64(2**63 + 5),
+        np.int8(-3),
+        np.array(7),
+        np.array(2.5, dtype=np.float32),
+        np.array([1, 2]),
+        np.longdouble(1.5),
+        np.complex64(1 + 2j),
+        np.float64(2.5),
+        dt.time(3, 4, 5),
+        dt.timedelta(hours=5),
+        b"bytes",
+        _Opaque(),
+        (1, 2, 3),
+        [4, 5],
+        (None, "0.00"),
+        (np.int64(3), "0.00"),
     ]
     try:
         import pandas as pd
@@ -210,11 +263,17 @@ def test_xlsb_formulas_are_written_natively(tmp_path, monkeypatch, shared, style
     def rows():
         out = [["n", "double", "text", "flag", "formatted"]]
         for i in range(1, 120):
-            out.append([
-                i, Formula(f"A{i + 1}*2", i * 2), Formula(f'"x"&A{i + 1}', f"x{i}"),
-                Formula(f"A{i + 1}>5"), (Formula(f"A{i + 1}/3"), "0.00"),
-            ])
+            out.append(
+                [
+                    i,
+                    Formula(f"A{i + 1}*2", i * 2),
+                    Formula(f'"x"&A{i + 1}', f"x{i}"),
+                    Formula(f"A{i + 1}>5"),
+                    (Formula(f"A{i + 1}/3"), "0.00"),
+                ]
+            )
         return out
+
     styles = {"B:C": Style(font=Font(bold=True))} if styled else {}
     native, python, python_rows = _write_both(tmp_path, monkeypatch, XlsbWriter, rows, shared, styles=styles)
     assert native == python
@@ -244,9 +303,11 @@ def test_links_are_written_natively(tmp_path, monkeypatch, cls, shared, styled):
     def rows():
         out = [["n", "web", "inside", "text"]]
         for i in range(1, 80):
-            out.append([i, Hyperlink(f"https://example.com/{i % 7}", f"site {i}"),
-                        Hyperlink(f"#S!A{i}", f"go {i}"), "t"])
+            out.append(
+                [i, Hyperlink(f"https://example.com/{i % 7}", f"site {i}"), Hyperlink(f"#S!A{i}", f"go {i}"), "t"]
+            )
         return out
+
     styles = {"B:C": Style(font=Font(bold=True))} if styled else {}
     native, python, python_rows = _write_both(tmp_path, monkeypatch, cls, rows, shared, styles=styles)
     # The first link row registers the link style (and its variant for the range style).
@@ -281,12 +342,12 @@ def _rich_rows():
     bold, italic = InlineFont(b=True), InlineFont(i=True, sz=14)
     rich = CellRichText(["plain ", TextBlock(bold, "bold"), " tail"])
     return [
-        ["head", rich, CellRichText(["only plain"])],                # the first row has the header style
+        ["head", rich, CellRichText(["only plain"])],  # the first row has the header style
         [1, CellRichText([TextBlock(italic, "italic")]), "plain"],
-        [2, rich, CellRichText(["only plain"])],                      # the same strings again: one entry each
+        [2, rich, CellRichText(["only plain"])],  # the same strings again: one entry each
         [3, CellRichText(["plain ", TextBlock(bold, "bold"), " tail"]), None],  # equal, not identical
         [4, (rich, "0.00"), (CellRichText(["x", TextBlock(italic, "y")]), Style(font=Font(bold=True)))],
-        [5, "plain ", CellRichText([TextBlock(bold, "")])],           # the text of the rich cell is a plain cell's
+        [5, "plain ", CellRichText([TextBlock(bold, "")])],  # the text of the rich cell is a plain cell's
     ]
 
 

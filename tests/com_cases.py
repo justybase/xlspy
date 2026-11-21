@@ -27,10 +27,16 @@ CASES: list[dict] = [
                 "name": "Values",
                 "rows": [
                     ["Text", "Number", "Float", "Bool", "Date", "DateTime", "Empty"],
-                    ["plain", 42, 3.5, True, dt.date(2024, 1, 31),
-                     dt.datetime(2024, 1, 31, 13, 45, 30), None],
-                    ["zażółć gęślą jaźń", -7, -0.25, False, dt.date(1999, 12, 31),
-                     dt.datetime(1999, 12, 31, 23, 59, 59), None],
+                    ["plain", 42, 3.5, True, dt.date(2024, 1, 31), dt.datetime(2024, 1, 31, 13, 45, 30), None],
+                    [
+                        "zażółć gęślą jaźń",
+                        -7,
+                        -0.25,
+                        False,
+                        dt.date(1999, 12, 31),
+                        dt.datetime(1999, 12, 31, 23, 59, 59),
+                        None,
+                    ],
                     ["with space ", 0, 1e-7, True, None, None, None],
                 ],
             }
@@ -99,7 +105,7 @@ CASES: list[dict] = [
                 "rows": [
                     ["text"],
                     ["zażółć gęślą jaźń"],
-                    ["emoji \U0001F600\U0001F680"],
+                    ["emoji \U0001f600\U0001f680"],
                     ["  leading and trailing  "],
                     ["tab\there"],
                     ["line\nbreak"],

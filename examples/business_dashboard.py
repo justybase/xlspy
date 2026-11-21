@@ -13,6 +13,7 @@ Usage:
 
 An ``.xlsb`` output name writes the same dashboard as XLSB.
 """
+
 import argparse
 import os
 import sys
@@ -21,8 +22,20 @@ from typing import Any
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from xlspy import (  # noqa: E402
-    Chart, ChartAxis, ChartLegend, ChartMarker, ChartSeries, ExcelTable, Font, Formula,
-    Shape, Slicer, SparklineGroup, Style, XlsbWriter, XlsxWriter,
+    Chart,
+    ChartAxis,
+    ChartLegend,
+    ChartMarker,
+    ChartSeries,
+    ExcelTable,
+    Font,
+    Formula,
+    Shape,
+    Slicer,
+    SparklineGroup,
+    Style,
+    XlsbWriter,
+    XlsxWriter,
 )
 
 REGIONS = ["Północ", "Południe", "Zachód", "Wschód"]
@@ -86,8 +99,7 @@ def _totals(rows):
         "month": {m: sum(row[4] for row in rows if row[3] == m) for m in MONTHS},
         "month_margin": {m: sum(row[4] - row[5] for row in rows if row[3] == m) for m in MONTHS},
         "region_month": {
-            (r, m): sum(row[4] for row in rows if row[0] == r and row[3] == m)
-            for r in REGIONS for m in MONTHS
+            (r, m): sum(row[4] for row in rows if row[0] == r and row[3] == m) for r in REGIONS for m in MONTHS
         },
     }
 
@@ -119,15 +131,17 @@ def build_grid(rows, totals):
     _place(grid, "S5", "Sprzedaż")
     _place(grid, "T5", formula(f"SUMIFS({rng('E')},{visible},1)", totals["sales"]))
     _place(grid, "S6", "Marża %")
-    _place(grid, "T6", formula(
-        f"IF(T5=0,0,SUMIFS({rng('G')},{visible},1)/T5)",
-        totals["margin"] / totals["sales"]))
+    _place(grid, "T6", formula(f"IF(T5=0,0,SUMIFS({rng('G')},{visible},1)/T5)", totals["margin"] / totals["sales"]))
     _place(grid, "S7", "Zamówienia")
     _place(grid, "T7", formula(f"COUNTIFS({visible},1)", totals["orders"]))
     _place(grid, "S8", "Udział Online")
-    _place(grid, "T8", formula(
-        f'IF(T5=0,0,SUMIFS({rng("E")},{rng("C")},"Online",{visible},1)/T5)',
-        totals["online"] / totals["sales"]))
+    _place(
+        grid,
+        "T8",
+        formula(
+            f'IF(T5=0,0,SUMIFS({rng("E")},{rng("C")},"Online",{visible},1)/T5)', totals["online"] / totals["sales"]
+        ),
+    )
 
     # Product summary (chart 1).
     _place(grid, "K14", "Sprzedaż wg produktu")
@@ -136,8 +150,9 @@ def build_grid(rows, totals):
     for index, product in enumerate(PRODUCTS):
         row = 16 + index
         _place(grid, f"K{row}", product)
-        _place(grid, f"L{row}", formula(
-            f"SUMIFS({rng('E')},{rng('B')},K{row},{visible},1)", totals["product"][product]))
+        _place(
+            grid, f"L{row}", formula(f"SUMIFS({rng('E')},{rng('B')},K{row},{visible},1)", totals["product"][product])
+        )
 
     # Channel summary (doughnut).
     _place(grid, "K20", "Udział kanałów")
@@ -146,8 +161,9 @@ def build_grid(rows, totals):
     for index, channel in enumerate(CHANNELS):
         row = 22 + index
         _place(grid, f"K{row}", channel)
-        _place(grid, f"L{row}", formula(
-            f"SUMIFS({rng('E')},{rng('C')},K{row},{visible},1)", totals["channel"][channel]))
+        _place(
+            grid, f"L{row}", formula(f"SUMIFS({rng('E')},{rng('C')},K{row},{visible},1)", totals["channel"][channel])
+        )
 
     # Monthly summary (combined chart: sales bars, margin line on the second axis).
     _place(grid, "K26", "Sprzedaż i marża wg miesiąca")
@@ -157,11 +173,11 @@ def build_grid(rows, totals):
     for index, month in enumerate(MONTHS):
         row = 28 + index
         _place(grid, f"K{row}", month)
-        _place(grid, f"L{row}", formula(
-            f"SUMIFS({rng('E')},{rng('D')},K{row},{visible},1)", totals["month"][month]))
+        _place(grid, f"L{row}", formula(f"SUMIFS({rng('E')},{rng('D')},K{row},{visible},1)", totals["month"][month]))
         margin = totals["month_margin"][month] / totals["month"][month]
-        _place(grid, f"M{row}", formula(
-            f"IF(L{row}=0,0,SUMIFS({rng('G')},{rng('D')},K{row},{visible},1)/L{row})", margin))
+        _place(
+            grid, f"M{row}", formula(f"IF(L{row}=0,0,SUMIFS({rng('G')},{rng('D')},K{row},{visible},1)/L{row})", margin)
+        )
 
     # Region trend: one row per region, months across, a sparkline in column R.
     _place(grid, "K35", "Trend wg regionu")
@@ -174,9 +190,14 @@ def build_grid(rows, totals):
         _place(grid, f"K{row}", region)
         for index, month in enumerate(MONTHS):
             column = chr(ord("L") + index)
-            _place(grid, f"{column}{row}", formula(
-                f"SUMIFS({rng('E')},{rng('A')},$K{row},{rng('D')},{column}$36,{visible},1)",
-                totals["region_month"][(region, month)]))
+            _place(
+                grid,
+                f"{column}{row}",
+                formula(
+                    f"SUMIFS({rng('E')},{rng('A')},$K{row},{rng('D')},{column}$36,{visible},1)",
+                    totals["region_month"][(region, month)],
+                ),
+            )
 
     # The source table, Widoczny holding the filter flag.
     _place(grid, f"A{HEADER_ROW - 1}", "Dane źródłowe (tabela Sprzedaz)")
@@ -203,52 +224,150 @@ def build_dashboard(path):
     grid = build_grid(rows, totals)
 
     cards = [
-        Shape(anchor="A5", width=196, height=60, fill=CARD_FILL, line=CARD_LINE, font_size=20,
-              font_color="#1F4E79", bold=True, align="center", valign="center",
-              link_cell="T5", text=_money(totals["sales"]), name="Karta sprzedaży"),
-        Shape(anchor="C5", width=196, height=60, fill=CARD_FILL, line=CARD_LINE, font_size=20,
-              font_color="#1F4E79", bold=True, align="center", valign="center",
-              link_cell="T6", text=_percent(totals["margin"] / totals["sales"]), name="Karta marży"),
-        Shape(anchor="E5", width=196, height=60, fill=CARD_FILL, line=CARD_LINE, font_size=20,
-              font_color="#1F4E79", bold=True, align="center", valign="center",
-              link_cell="T7", text=f"{totals['orders']}", name="Karta zamówień"),
-        Shape(anchor="G5", width=196, height=60, fill=CARD_FILL, line=CARD_LINE, font_size=20,
-              font_color="#1F4E79", bold=True, align="center", valign="center",
-              link_cell="T8", text=_percent(totals["online"] / totals["sales"]), name="Karta Online"),
+        Shape(
+            anchor="A5",
+            width=196,
+            height=60,
+            fill=CARD_FILL,
+            line=CARD_LINE,
+            font_size=20,
+            font_color="#1F4E79",
+            bold=True,
+            align="center",
+            valign="center",
+            link_cell="T5",
+            text=_money(totals["sales"]),
+            name="Karta sprzedaży",
+        ),
+        Shape(
+            anchor="C5",
+            width=196,
+            height=60,
+            fill=CARD_FILL,
+            line=CARD_LINE,
+            font_size=20,
+            font_color="#1F4E79",
+            bold=True,
+            align="center",
+            valign="center",
+            link_cell="T6",
+            text=_percent(totals["margin"] / totals["sales"]),
+            name="Karta marży",
+        ),
+        Shape(
+            anchor="E5",
+            width=196,
+            height=60,
+            fill=CARD_FILL,
+            line=CARD_LINE,
+            font_size=20,
+            font_color="#1F4E79",
+            bold=True,
+            align="center",
+            valign="center",
+            link_cell="T7",
+            text=f"{totals['orders']}",
+            name="Karta zamówień",
+        ),
+        Shape(
+            anchor="G5",
+            width=196,
+            height=60,
+            fill=CARD_FILL,
+            line=CARD_LINE,
+            font_size=20,
+            font_color="#1F4E79",
+            bold=True,
+            align="center",
+            valign="center",
+            link_cell="T8",
+            text=_percent(totals["online"] / totals["sales"]),
+            name="Karta Online",
+        ),
     ]
 
     charts = [
-        Chart("bar", [ChartSeries("L16:L18", categories="K16:K18", title="Sprzedaż",
-                                  color="#2E75B6")],
-              title="Sprzedaż wg produktu", anchor="A9", width=13, height=7, legend=False,
-              show_data_labels=True, gap_width=60, y_axis=ChartAxis(number_format="#,##0"),
-              **FRAME),
-        Chart("doughnut", [ChartSeries("L22:L24", categories="K22:K24")],
-              title="Udział kanałów", anchor="F9", width=8, height=7, hole_size=60,
-              legend=ChartLegend(position="bottom"), show_data_labels=True, **FRAME),
-        Chart("bar", [
-            ChartSeries("L28:L33", categories="K28:K33", title="Sprzedaż", color="#9DC3E6"),
-            ChartSeries("M28:M33", categories="K28:K33", title="Marża %", chart_type="line",
-                        secondary_axis=True, color="#C55A11", marker=ChartMarker()),
-        ], title="Sprzedaż i marża wg miesiąca", anchor="A25", width=21, height=8,
-           gap_width=60, y2_axis=ChartAxis(number_format="0%"), legend=ChartLegend(position="bottom"),
-           **FRAME),
+        Chart(
+            "bar",
+            [ChartSeries("L16:L18", categories="K16:K18", title="Sprzedaż", color="#2E75B6")],
+            title="Sprzedaż wg produktu",
+            anchor="A9",
+            width=13,
+            height=7,
+            legend=False,
+            show_data_labels=True,
+            gap_width=60,
+            y_axis=ChartAxis(number_format="#,##0"),
+            **FRAME,
+        ),
+        Chart(
+            "doughnut",
+            [ChartSeries("L22:L24", categories="K22:K24")],
+            title="Udział kanałów",
+            anchor="F9",
+            width=8,
+            height=7,
+            hole_size=60,
+            legend=ChartLegend(position="bottom"),
+            show_data_labels=True,
+            **FRAME,
+        ),
+        Chart(
+            "bar",
+            [
+                ChartSeries("L28:L33", categories="K28:K33", title="Sprzedaż", color="#9DC3E6"),
+                ChartSeries(
+                    "M28:M33",
+                    categories="K28:K33",
+                    title="Marża %",
+                    chart_type="line",
+                    secondary_axis=True,
+                    color="#C55A11",
+                    marker=ChartMarker(),
+                ),
+            ],
+            title="Sprzedaż i marża wg miesiąca",
+            anchor="A25",
+            width=21,
+            height=8,
+            gap_width=60,
+            y2_axis=ChartAxis(number_format="0%"),
+            legend=ChartLegend(position="bottom"),
+            **FRAME,
+        ),
     ]
 
     widths = dict.fromkeys("ABCDEFGH", 14)
-    widths.update({"I": 3, "J": 3, "K": 20, "L": 14, "M": 12, "N": 12, "O": 12, "P": 12,
-                   "Q": 12, "R": 16, "S": 18, "T": 14})
+    widths.update(
+        {"I": 3, "J": 3, "K": 20, "L": 14, "M": 12, "N": 12, "O": 12, "P": 12, "Q": 12, "R": 16, "S": 18, "T": 14}
+    )
     styles = {
         "A1:H1": TITLE,
         "A2": Style(font_color="#595959", italic=True),
-        "A4": LABEL, "C4": LABEL, "E4": LABEL, "G4": LABEL,
-        "S4": SECTION, "S5:S8": LABEL,
-        "T5": MONEY, "T6": PERCENT, "T7": COUNT, "T8": PERCENT,
-        "K14": SECTION, "K20": SECTION, "K26": SECTION, "K35": SECTION,
+        "A4": LABEL,
+        "C4": LABEL,
+        "E4": LABEL,
+        "G4": LABEL,
+        "S4": SECTION,
+        "S5:S8": LABEL,
+        "T5": MONEY,
+        "T6": PERCENT,
+        "T7": COUNT,
+        "T8": PERCENT,
+        "K14": SECTION,
+        "K20": SECTION,
+        "K26": SECTION,
+        "K35": SECTION,
         "A49": SECTION,
-        "K15:L15": HEADER, "K21:L21": HEADER, "K27:M27": HEADER, "K36:R36": HEADER,
+        "K15:L15": HEADER,
+        "K21:L21": HEADER,
+        "K27:M27": HEADER,
+        "K36:R36": HEADER,
         "A50:H50": HEADER,
-        "L16:L18": MONEY, "L22:L24": MONEY, "L28:L33": MONEY, "M28:M33": PERCENT,
+        "L16:L18": MONEY,
+        "L22:L24": MONEY,
+        "L28:L33": MONEY,
+        "M28:M33": PERCENT,
         "L37:Q40": MONEY,
         f"E{FIRST_DATA_ROW}:G{LAST_DATA_ROW}": PLAIN_MONEY,
     }
@@ -265,12 +384,17 @@ def build_dashboard(path):
         "show_row_col_headers": False,
         "zoom": 90,
         "tab_color": "#1F4E79",
-        "sparklines": [SparklineGroup(
-            data="L37:Q40", location="R37:R40", kind="line", color="#2E75B6", markers=True,
-            last_point=True,
-        )],
-        "slicers": [Slicer(table="Sprzedaz", column="Region", anchor="K4",
-                        width=144, height=180, caption="Region")],
+        "sparklines": [
+            SparklineGroup(
+                data="L37:Q40",
+                location="R37:R40",
+                kind="line",
+                color="#2E75B6",
+                markers=True,
+                last_point=True,
+            )
+        ],
+        "slicers": [Slicer(table="Sprzedaz", column="Region", anchor="K4", width=144, height=180, caption="Region")],
     }
 
     writer_class = XlsxWriter if xlsx else XlsbWriter
@@ -281,8 +405,7 @@ def build_dashboard(path):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n", 1)[0])
-    parser.add_argument("--out", default="business_dashboard.xlsx",
-                        help="output path; a .xlsb name writes XLSB")
+    parser.add_argument("--out", default="business_dashboard.xlsx", help="output path; a .xlsb name writes XLSB")
     args = parser.parse_args(argv)
     build_dashboard(args.out)
     print(f"Wrote {args.out}: cards, slicer, charts, sparklines and table.")

@@ -96,7 +96,9 @@ def test_excel_refuses_a_defined_name_that_refers_to_a_structured_reference(exce
         book.Close(False)
 
 
-def test_excel_calculates_a_formula_that_refers_to_a_table_added_in_the_same_loaded_session(tmp_path, excel, open_workbook):
+def test_excel_calculates_a_formula_that_refers_to_a_table_added_in_the_same_loaded_session(
+    tmp_path, excel, open_workbook
+):
     source = tmp_path / "source.xlsb"
     _sales(source)
     workbook = load_workbook(source)
@@ -147,7 +149,9 @@ def test_excel_reads_every_row_keyword_combination_xlspy_writes(tmp_path, excel,
         assert data.Cells(index, 5).Value2 == expected, formula
 
 
-def test_excel_calculates_a_formula_that_uses_a_table_and_column_renamed_in_the_same_save(tmp_path, excel, open_workbook):
+def test_excel_calculates_a_formula_that_uses_a_table_and_column_renamed_in_the_same_save(
+    tmp_path, excel, open_workbook
+):
     source = tmp_path / "source.xlsb"
     _sales(source)
     workbook = load_workbook(source)
@@ -168,7 +172,9 @@ def test_excel_calculates_a_formula_that_uses_a_table_and_column_renamed_in_the_
     assert "Sales[amount]" in data.Range("E1").Formula
 
 
-def test_excel_calculates_a_formula_on_an_earlier_sheet_that_uses_a_table_added_to_a_later_sheet(tmp_path, excel, open_workbook):
+def test_excel_calculates_a_formula_on_an_earlier_sheet_that_uses_a_table_added_to_a_later_sheet(
+    tmp_path, excel, open_workbook
+):
     source = tmp_path / "source.xlsb"
     _sales(source)
     workbook = load_workbook(source)

@@ -81,9 +81,7 @@ from openpyxl.packaging.custom import (
 )
 
 # A 1x1 transparent PNG; keeps the golden independent of external assets.
-_PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII="
-)
+_PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=")
 
 
 def _metadata_workbook() -> Workbook:
@@ -159,9 +157,7 @@ def _metadata_workbook() -> Workbook:
     ws.sheet_view.rightToLeft = True
     ws.sheet_view.tabSelected = True
     ws.sheet_view.topLeftCell = "B2"
-    ws.sheet_view.pane = Pane(
-        xSplit=1, ySplit=1, topLeftCell="B2", activePane="bottomRight", state="frozen"
-    )
+    ws.sheet_view.pane = Pane(xSplit=1, ySplit=1, topLeftCell="B2", activePane="bottomRight", state="frozen")
     ws.sheet_view.selection = [Selection(pane="bottomRight", activeCell="B2", sqref="B2")]
 
     ws.freeze_panes = "B2"
@@ -706,9 +702,7 @@ def generate(out_dir: Path) -> dict:
         "files": sorted(builders),
         "errors": errors,
     }
-    (out_dir / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return manifest
 
 
@@ -722,10 +716,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     manifest = generate(args.out)
-    print(
-        f"generated {len(manifest['files'])} goldens with openpyxl "
-        f"{manifest['openpyxl_version']} in {args.out}"
-    )
+    print(f"generated {len(manifest['files'])} goldens with openpyxl {manifest['openpyxl_version']} in {args.out}")
     if manifest["errors"]:
         for error in manifest["errors"]:
             print(f"FAILED {error['file']}: {error['error']}")

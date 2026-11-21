@@ -17,7 +17,12 @@ from ..formulas import Formula as Formula
 from ..hyperlinks import Hyperlink as Hyperlink
 from ..images import Image as Image
 from .._metadata import DefinedName as DefinedName
-from ..refs import check_sheet_name as check_sheet_name, column_label as column_label, parse_cell_range as parse_cell_range, quote_sheet_name as quote_sheet_name
+from ..refs import (
+    check_sheet_name as check_sheet_name,
+    column_label as column_label,
+    parse_cell_range as parse_cell_range,
+    quote_sheet_name as quote_sheet_name,
+)
 from ..rich_text import CellRichText as CellRichText
 from ..styles import (
     Alignment as Alignment,
@@ -118,5 +123,3 @@ from ._worksheet import (
 from ._workbook import (
     Workbook as Workbook,
 )
-
-

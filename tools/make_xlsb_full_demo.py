@@ -66,8 +66,11 @@ def _fonts_sheet(writer: XlsbWriter) -> None:
     }
     writer.add_sheet("Fonts")
     writer.write_sheet(
-        data, header_style=HEADER, styles=styles,
-        column_widths={"A": 28, "B": 26, "C": 40}, auto_filter=False,
+        data,
+        header_style=HEADER,
+        styles=styles,
+        column_widths={"A": 28, "B": 26, "C": 40},
+        auto_filter=False,
     )
 
 
@@ -85,17 +88,17 @@ def _fills_sheet(writer: XlsbWriter) -> None:
         "B2": Style(fill=PatternFill("solid", start_color="00B050")),
         "B3": Style(fill=PatternFill("gray125", start_color="1F3864", end_color="FFF2CC")),
         "B4": Style(fill=PatternFill("darkGrid", start_color="C00000", end_color="FFFFFF")),
-        "B5": Style(fill=GradientFill("linear", degree=90,
-                                      stop=[Stop("C00000", 0.0), Stop("0070C0", 1.0)])),
-        "B6": Style(fill=GradientFill("linear", degree=0,
-                                      stop=["008000", "FFFFFF"])),
-        "B7": Style(fill=GradientFill("path", left=0.2, right=0.2, top=0.2,
-                                      bottom=0.2, stop=["FFF2CC", "BF8F00"])),
+        "B5": Style(fill=GradientFill("linear", degree=90, stop=[Stop("C00000", 0.0), Stop("0070C0", 1.0)])),
+        "B6": Style(fill=GradientFill("linear", degree=0, stop=["008000", "FFFFFF"])),
+        "B7": Style(fill=GradientFill("path", left=0.2, right=0.2, top=0.2, bottom=0.2, stop=["FFF2CC", "BF8F00"])),
     }
     writer.add_sheet("Fills")
     writer.write_sheet(
-        data, header_style=HEADER, styles=styles,
-        column_widths={"A": 28, "B": 26, "C": 40}, auto_filter=False,
+        data,
+        header_style=HEADER,
+        styles=styles,
+        column_widths={"A": 28, "B": 26, "C": 40},
+        auto_filter=False,
     )
 
 
@@ -116,15 +119,16 @@ def _borders_sheet(writer: XlsbWriter) -> None:
         "B3": Style(border=Border(bottom=Side("thick", "C00000"))),
         "B4": Style(border=Border(top=Side("dashed"), left=Side("dotted"))),
         "B5": Style(border=Border(top=Side("double"), bottom=Side("hair"))),
-        "B6": Style(border=Border(diagonal=Side("slantDashDot", "0070C0"),
-                                  diagonal_up=True)),
-        "B7": Style(border=Border(diagonal=Side("thin"),
-                                  diagonal_up=True, diagonal_down=True)),
+        "B6": Style(border=Border(diagonal=Side("slantDashDot", "0070C0"), diagonal_up=True)),
+        "B7": Style(border=Border(diagonal=Side("thin"), diagonal_up=True, diagonal_down=True)),
     }
     writer.add_sheet("Borders")
     writer.write_sheet(
-        data, header_style=HEADER, styles=styles,
-        column_widths={"A": 32, "B": 26, "C": 40}, auto_filter=False,
+        data,
+        header_style=HEADER,
+        styles=styles,
+        column_widths={"A": 32, "B": 26, "C": 40},
+        auto_filter=False,
     )
 
 
@@ -139,20 +143,21 @@ def _alignment_sheet(writer: XlsbWriter) -> None:
         ["justify + justify last", "Justified paragraph stretching across lines", "stretched lines"],
     ]
     styles = {
-        "B2": Style(alignment=Alignment(horizontal="center", vertical="center",
-                                        wrap_text=True)),
+        "B2": Style(alignment=Alignment(horizontal="center", vertical="center", wrap_text=True)),
         "B3": Style(alignment=Alignment(horizontal="left", indent=3)),
         "B4": Style(alignment=Alignment(horizontal="right", shrink_to_fit=True)),
         "B5": Style(alignment=Alignment(text_rotation=45)),
         "B6": Style(alignment=Alignment(text_rotation=255)),
-        "B7": Style(alignment=Alignment(horizontal="justify", wrap_text=True,
-                                        justify_last_line=True)),
+        "B7": Style(alignment=Alignment(horizontal="justify", wrap_text=True, justify_last_line=True)),
     }
     writer.add_sheet("Alignment")
     writer.write_sheet(
-        data, header_style=HEADER, styles=styles,
+        data,
+        header_style=HEADER,
+        styles=styles,
         column_widths={"A": 32, "B": 26, "C": 40},
-        row_heights={1: 30}, auto_filter=False,
+        row_heights={1: 30},
+        auto_filter=False,
     )
 
 
@@ -170,8 +175,11 @@ def _protection_sheet(writer: XlsbWriter) -> None:
     }
     writer.add_sheet("Protection")
     writer.write_sheet(
-        data, header_style=HEADER, styles=styles,
-        column_widths={"A": 32, "B": 20, "C": 58}, auto_filter=False,
+        data,
+        header_style=HEADER,
+        styles=styles,
+        column_widths={"A": 32, "B": 20, "C": 58},
+        auto_filter=False,
     )
 
 
@@ -244,8 +252,7 @@ def _charts_sheet(writer: XlsbWriter) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--out", default=None,
-                        help="output directory (default: tmp/xlspy-test-files)")
+    parser.add_argument("--out", default=None, help="output directory (default: tmp/xlspy-test-files)")
     args = parser.parse_args(argv)
     out_dir = pathlib.Path(args.out) if args.out else ROOT / "tmp" / "xlspy-test-files"
     out_dir.mkdir(parents=True, exist_ok=True)

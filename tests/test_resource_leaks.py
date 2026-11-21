@@ -168,6 +168,7 @@ def test_updater_releases_everything(tmp_path, cls, ext, finish):
 # (whose traceback still references the half-built object) is collected: on
 # Windows an open handle keeps the file locked.
 
+
 def _without_part(source, target, part):
     import zipfile
 

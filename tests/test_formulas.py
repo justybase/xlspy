@@ -1,4 +1,5 @@
 """Formula cells: cached values, names Excel needs a prefix for, value checks."""
+
 from __future__ import annotations
 
 from decimal import Decimal

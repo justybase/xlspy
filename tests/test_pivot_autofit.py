@@ -28,11 +28,15 @@ def _book(writer_cls, **pivot_kwargs):
         writer.write_sheet(
             ROWS,
             tables=[table],
-            pivots=[PivotTable(
-                source=table, rows="Region",
-                values=[PivotValue("Sprzedaż", "sum")],
-                location="A8", **pivot_kwargs,
-            )],
+            pivots=[
+                PivotTable(
+                    source=table,
+                    rows="Region",
+                    values=[PivotValue("Sprzedaż", "sum")],
+                    location="A8",
+                    **pivot_kwargs,
+                )
+            ],
         )
     return buffer.getvalue()
 
@@ -78,5 +82,4 @@ def test_xlsb_prefixes_differ_only_in_the_autofit_bit():
 @pytest.mark.parametrize("value", [1, "yes", None])
 def test_autofit_columns_must_be_a_bool(value):
     with pytest.raises(TypeError, match="autofit_columns"):
-        PivotTable(source="TabelaTest", rows="Region",
-                   values=[PivotValue("Sprzedaż", "sum")], autofit_columns=value)
+        PivotTable(source="TabelaTest", rows="Region", values=[PivotValue("Sprzedaż", "sum")], autofit_columns=value)

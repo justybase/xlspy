@@ -62,8 +62,9 @@ def test_far_cell_file_stays_small(tmp_path, writer_cls, ext):
         writer.write_sheet(rows())
     assert os.path.getsize(path) < 20_000
     with ExcelReader(str(path)) as reader:
-        present = [(i, row) for i, row in enumerate(reader.get_rows("Sheet1"), 1)
-                   if any(value is not None for value in row)]
+        present = [
+            (i, row) for i, row in enumerate(reader.get_rows("Sheet1"), 1) if any(value is not None for value in row)
+        ]
     assert [(i, row[0]) for i, row in present] == [(1, 1), (1048576, 2)]
 
 

@@ -12,6 +12,7 @@ Usage:
 An ``.xlsb`` output name writes XLSB. XLSB has no formula cells, so it gets
 the computed totals; XLSX gets SUM formulas with cached results.
 """
+
 import argparse
 import os
 import sys
@@ -90,14 +91,16 @@ def build_rows(use_formulas):
             for months in block:
                 rows.append(_row(region, label, _with_totals(months), len(rows) + 1, use_formulas))
             sums = [sum(column) for column in zip(*(_with_totals(m) for m in block))]
-            rows.append(_row(region, f"Suma {label}", sums, len(rows) + 1, use_formulas,
-                             sources=[first + 1, first + 2]))
+            rows.append(
+                _row(region, f"Suma {label}", sums, len(rows) + 1, use_formulas, sources=[first + 1, first + 2])
+            )
             row_groups.append(Group(first, first + 1))
             subtotal_rows.append(len(rows) - 1)
             subtotals.append((len(rows), sums))
         total = [a + b for a, b in zip(subtotals[0][1], subtotals[1][1])]
-        rows.append(_row(region, "SUMA REGIONU", total, len(rows) + 1, use_formulas,
-                         sources=[subtotals[0][0], subtotals[1][0]]))
+        rows.append(
+            _row(region, "SUMA REGIONU", total, len(rows) + 1, use_formulas, sources=[subtotals[0][0], subtotals[1][0]])
+        )
         row_groups.append(Group(start, len(rows) - 2))
         region_rows.append(len(rows) - 1)
 

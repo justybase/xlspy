@@ -36,14 +36,28 @@ def count_paths() -> Iterator[Counter[str]]:
     cls = next(v for v in vars(writer_module).values() if isinstance(v, type) and hasattr(v, "_write_python_row"))
     with ExitStack() as stack:
         for name in ("encode_xlsb_row", "encode_xlsb_row_inline"):
-            stack.enter_context(mock.patch.object(writer_module, name, _counting(getattr(writer_module, name), counts, "native", True)))
-        stack.enter_context(mock.patch.object(cls, "_write_python_row", _counting_method(cls._write_python_row, counts, "python_rows")))
-        stack.enter_context(mock.patch.object(writer_module, "native_cell_value", _counting(writer_module.native_cell_value, counts, "scalar_hook")))
-        stack.enter_context(mock.patch.object(writer_module, "formula_cell", _counting(writer_module.formula_cell, counts, "formula_calls")))
+            stack.enter_context(
+                mock.patch.object(writer_module, name, _counting(getattr(writer_module, name), counts, "native", True))
+            )
+        stack.enter_context(
+            mock.patch.object(cls, "_write_python_row", _counting_method(cls._write_python_row, counts, "python_rows"))
+        )
+        stack.enter_context(
+            mock.patch.object(
+                writer_module, "native_cell_value", _counting(writer_module.native_cell_value, counts, "scalar_hook")
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                writer_module, "formula_cell", _counting(writer_module.formula_cell, counts, "formula_calls")
+            )
+        )
         yield counts
 
 
-def _counting(function: Callable[..., Any], counts: Counter[str], key: str, only_results: bool = False) -> Callable[..., Any]:
+def _counting(
+    function: Callable[..., Any], counts: Counter[str], key: str, only_results: bool = False
+) -> Callable[..., Any]:
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         result = function(*args, **kwargs)
         if not only_results or result is not None:
@@ -95,10 +109,15 @@ def _frame(n: int, nullable: bool = False) -> Any:
     import numpy as np
     import pandas as pd
 
-    frame = pd.DataFrame({
-        "i": np.arange(n, dtype="int64"), "f": np.arange(n) / 3, "b": np.arange(n) % 2 == 0,
-        "s": [f"s{k % 50}" for k in range(n)], "d": pd.date_range("2024-01-01", periods=n, freq="min"),
-    })
+    frame = pd.DataFrame(
+        {
+            "i": np.arange(n, dtype="int64"),
+            "f": np.arange(n) / 3,
+            "b": np.arange(n) % 2 == 0,
+            "s": [f"s{k % 50}" for k in range(n)],
+            "d": pd.date_range("2024-01-01", periods=n, freq="min"),
+        }
+    )
     if nullable:
         frame["i"] = frame["i"].astype("Int64")
         frame.loc[::7, "i"] = pd.NA
@@ -109,26 +128,49 @@ def _frame(n: int, nullable: bool = False) -> Any:
 
 SCENARIOS: list[Scenario] = [
     Scenario("plain", lambda n: _rows(n, list("abcd"), lambda i: [f"s{i % 50}", i, i * 0.5, i % 2 == 0])),
-    Scenario("plain, inline strings", lambda n: _rows(n, list("abcd"), lambda i: [f"s{i % 50}", i, i * 0.5, i % 2 == 0]), shared_strings=False),
+    Scenario(
+        "plain, inline strings",
+        lambda n: _rows(n, list("abcd"), lambda i: [f"s{i % 50}", i, i * 0.5, i % 2 == 0]),
+        shared_strings=False,
+    ),
     Scenario(
         "two header rows, column formats",
-        lambda n: _rows(n, ["Wartosc", "Wartosc", "Ilosc", "Nazwa"], lambda i: [i * 1234.5678, i * 0.3333, i, f"opis {i % 100}"]),
+        lambda n: _rows(
+            n, ["Wartosc", "Wartosc", "Ilosc", "Nazwa"], lambda i: [i * 1234.5678, i * 0.3333, i, f"opis {i % 100}"]
+        ),
         {"header_rows": 2, "header_style": HEADER, "styles": {"A:B": MONEY, "C:C": Style(number_format="#,##0")}},
     ),
-    Scenario("(value, format) cells", lambda n: _rows(n, list("xyz"), lambda i: [(i * 0.5, "0.00"), (i, "#,##0"), (i * 2.0, MONEY)]), max_python_rows=3),
+    Scenario(
+        "(value, format) cells",
+        lambda n: _rows(n, list("xyz"), lambda i: [(i * 0.5, "0.00"), (i, "#,##0"), (i * 2.0, MONEY)]),
+        max_python_rows=3,
+    ),
     Scenario("dates", lambda n: _rows(n, ["d", "t"], lambda i: [DATE, DATETIME])),
-    Scenario("dates, styled columns", lambda n: _rows(n, ["d", "t"], lambda i: [DATE, DATETIME]), {"styles": {"A:B": Style(horizontal="center")}}, max_python_rows=2),
+    Scenario(
+        "dates, styled columns",
+        lambda n: _rows(n, ["d", "t"], lambda i: [DATE, DATETIME]),
+        {"styles": {"A:B": Style(horizontal="center")}},
+        max_python_rows=2,
+    ),
     Scenario("Decimal", lambda n: _rows(n, ["x"], lambda i: [Decimal("1.25") + i])),
     Scenario("blanks", lambda n: _rows(n, list("abc"), lambda i: [None, i, None] if i % 2 else [i, None, "x"])),
     Scenario("dataframe", _frame, frame=True),
     Scenario("dataframe with NA and NaT", lambda n: _frame(n, nullable=True), frame=True),
     Scenario("formulas", lambda n: _rows(n, ["x", "f"], lambda i: [i, Formula(f"A{i + 2}*2")]), max_scalar_hook=0),
-    Scenario("hyperlinks", lambda n: _rows(n, ["x", "l"], lambda i: [i, Hyperlink(f"https://example.com/{i % 20}", f"l{i % 20}")]), max_python_rows=2),
+    Scenario(
+        "hyperlinks",
+        lambda n: _rows(n, ["x", "l"], lambda i: [i, Hyperlink(f"https://example.com/{i % 20}", f"l{i % 20}")]),
+        max_python_rows=2,
+    ),
     Scenario("numpy scalars", _numpy_rows),
     Scenario("rich text", lambda n: _rows(n, ["x", "r"], lambda i: [i, _rich(i)])),
     Scenario(
-        "rich text, inline strings", lambda n: _rows(n, ["x", "r"], lambda i: [i, _rich(i)]), shared_strings=False,
-        max_python_rows=1 << 30, max_scalar_hook=None, gap="rich text is a shared string: the row stays in Python",
+        "rich text, inline strings",
+        lambda n: _rows(n, ["x", "r"], lambda i: [i, _rich(i)]),
+        shared_strings=False,
+        max_python_rows=1 << 30,
+        max_scalar_hook=None,
+        gap="rich text is a shared string: the row stays in Python",
     ),
 ]
 

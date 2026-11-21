@@ -46,6 +46,7 @@ def _parse_all(parts):
 
 # --- sparklines ------------------------------------------------------------
 
+
 def test_single_cell_location_draws_one_sparkline_from_all_data():
     expanded = _expand(SparklineGroup(data="B2:D2", location="E2"), "Sheet1")
     assert expanded == [("E2", "'Sheet1'!B2:D2")]
@@ -93,8 +94,7 @@ def test_invalid_sparkline_groups_are_rejected(kwargs, message):
 
 
 def test_sparkline_xml_matches_excel_layout():
-    group = SparklineGroup(data="B2:D2", location="E2", kind="win_loss", negative_points=True,
-                           markers=True)
+    group = SparklineGroup(data="B2:D2", location="E2", kind="win_loss", negative_points=True, markers=True)
     ext = sparklines_ext([group], "Sheet1")
     root = ET.fromstring(
         f'<root xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" '
@@ -109,8 +109,14 @@ def test_sparkline_xml_matches_excel_layout():
     assert spark_group.get("displayEmptyCellsAs") == "gap"
     colors = [child.tag.removeprefix(X14) for child in spark_group if child.tag != f"{X14}sparklines"]
     assert colors == [
-        "colorSeries", "colorNegative", "colorAxis", "colorMarkers",
-        "colorFirst", "colorLast", "colorHigh", "colorLow",
+        "colorSeries",
+        "colorNegative",
+        "colorAxis",
+        "colorMarkers",
+        "colorFirst",
+        "colorLast",
+        "colorHigh",
+        "colorLow",
     ]
     formula = spark_group.find(f".//{{http://schemas.microsoft.com/office/excel/2006/main}}f")
     assert formula.text == "'Sheet1'!B2:D2"
@@ -126,8 +132,9 @@ def test_no_sparklines_gives_empty_ext():
 
 
 def test_sheet_written_with_sparklines_has_extension(tmp_path):
-    path = _write_sample(tmp_path / "spark.xlsx",
-                         sparklines=[SparklineGroup(data="B2:D2", location="E2", kind="column")])
+    path = _write_sample(
+        tmp_path / "spark.xlsx", sparklines=[SparklineGroup(data="B2:D2", location="E2", kind="column")]
+    )
     sheet = _parts(path)["xl/worksheets/sheet1.xml"]
     assert EXT_SPARKLINES in sheet
     assert "<xm:f>'Sheet1'!B2:D2</xm:f>" in sheet
@@ -136,6 +143,7 @@ def test_sheet_written_with_sparklines_has_extension(tmp_path):
 
 
 # --- slicers -----------------------------------------------------------------
+
 
 def _tables():
     return [ExcelTable("Sales", "A1:E4", columns=COLUMNS)]
@@ -216,15 +224,18 @@ def test_sheet_written_with_slicer_has_all_parts(tmp_path):
 
 
 def test_two_slicers_get_separate_parts(tmp_path):
-    path = _write_sample(tmp_path / "two.xlsx", slicers=[
-        Slicer(table="Sales", column="Region", anchor="G2"),
-        Slicer(table="Sales", column="Q1", anchor="G20"),
-    ])
+    path = _write_sample(
+        tmp_path / "two.xlsx",
+        slicers=[
+            Slicer(table="Sales", column="Region", anchor="G2"),
+            Slicer(table="Sales", column="Q1", anchor="G20"),
+        ],
+    )
     parts = _parts(path)
     assert "xl/slicers/slicer2.xml" in parts
     assert "xl/slicerCaches/slicerCache2.xml" in parts
     assert 'tableId="1" column="2"' in parts["xl/slicerCaches/slicerCache2.xml"]
-    assert parts["xl/workbook.xml"].count("<definedName name=\"Slicer_") == 2
+    assert parts["xl/workbook.xml"].count('<definedName name="Slicer_') == 2
     _parse_all(parts)
 
 
@@ -240,6 +251,7 @@ def test_plain_sheet_has_no_slicer_or_sparkline_parts(tmp_path):
 
 
 # --- Excel COM -----------------------------------------------------------------
+
 
 @pytest.mark.com
 def test_excel_reads_sparklines_and_slicer(tmp_path):
@@ -271,6 +283,7 @@ def test_excel_reads_sparklines_and_slicer(tmp_path):
 
 # --- loading and editing an existing file -----------------------------------------
 
+
 def _two_sheet_file(path):
     with XlsxWriter(path) as writer:
         writer.write_sheet([["Note"]])
@@ -287,8 +300,7 @@ def _two_sheet_file(path):
 def test_renaming_a_loaded_sheet_updates_sparkline_formulas(tmp_path):
     from xlspy.workbook import load_workbook
 
-    source = _write_sample(tmp_path / "source.xlsx",
-                           sparklines=[SparklineGroup(data="B2:D2", location="E2")])
+    source = _write_sample(tmp_path / "source.xlsx", sparklines=[SparklineGroup(data="B2:D2", location="E2")])
     workbook = load_workbook(source)
     workbook.worksheets[0].title = "Dashboard"
     out = tmp_path / "renamed.xlsx"

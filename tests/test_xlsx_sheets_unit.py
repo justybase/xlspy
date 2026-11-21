@@ -46,9 +46,7 @@ def test_add_sheet_creates_a_worksheet_part_and_relationships(tmp_path):
         assert b"Three" in package.get("xl/workbook.xml")
         rels = package.get("xl/_rels/workbook.xml.rels").decode("utf-8")
         assert 'Target="worksheets/sheet3.xml"' in rels
-        assert 'PartName="/xl/worksheets/sheet3.xml"' in package.get(
-            "[Content_Types].xml"
-        ).decode("utf-8")
+        assert 'PartName="/xl/worksheets/sheet3.xml"' in package.get("[Content_Types].xml").decode("utf-8")
         assert updater.get_sheet_names() == ["One", "Three", "Two"]
         updater.save(path)
     finally:
@@ -115,7 +113,7 @@ def test_unknown_sheet_state_reads_as_visible(tmp_path):
     try:
         _rewrite_workbook(
             updater,
-            lambda xml: re.sub(r'(<sheet\b[^>]*?)(/?>)', r'\1 state="bogus"\2', xml, count=1),
+            lambda xml: re.sub(r"(<sheet\b[^>]*?)(/?>)", r'\1 state="bogus"\2', xml, count=1),
         )
         assert updater.get_sheet_states()["One"] == "visible"
     finally:
@@ -171,9 +169,9 @@ def test_remove_sheet_drops_its_comments_drawing_and_chart_parts(tmp_path):
     updater = XlsxUpdater(path)
     try:
         owned = {
-            name for name in updater._package.names()
-            if "comments" in name or "vmlDrawing" in name
-            or "/drawings/" in name or "/charts/" in name
+            name
+            for name in updater._package.names()
+            if "comments" in name or "vmlDrawing" in name or "/drawings/" in name or "/charts/" in name
         }
         assert owned
         updater.remove_sheet("Data")

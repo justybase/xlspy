@@ -62,30 +62,22 @@ def _cf_rule_signature(rule):
 
 def _cf_extensions_for_save(sheet) -> dict[int, bytes]:
     """Keep x14 payloads only when their rule and range still match safely."""
-    rules = [
-        (item.sqref, rule)
-        for item in sheet.conditional_formatting
-        for rule in item.rules
-    ]
+    rules = [(item.sqref, rule) for item in sheet.conditional_formatting for rule in item.rules]
     extensions = getattr(sheet, "_cf_extensions", {})
     kept = {}
 
     for extension_rule, _original, payload in extensions.values():
         original_signature = _cf_rule_signature(extension_rule)
-        exact = [
-            (sqref, rule) for sqref, rule in rules if rule is extension_rule
-        ]
+        exact = [(sqref, rule) for sqref, rule in rules if rule is extension_rule]
         if exact:
             sqref, rule = exact[0]
             if sqref != extension_rule.sqref:
                 raise UnsupportedFeatureError(
-                    "changing the range of an XLSB conditional-format rule with "
-                    "an x14 extension is not supported"
+                    "changing the range of an XLSB conditional-format rule with an x14 extension is not supported"
                 )
             if _cf_rule_signature(rule) != original_signature:
                 raise UnsupportedFeatureError(
-                    "changing an XLSB conditional-format rule with an x14 "
-                    "extension is not supported"
+                    "changing an XLSB conditional-format rule with an x14 extension is not supported"
                 )
             kept[id(rule)] = payload
             continue
@@ -102,8 +94,7 @@ def _cf_extensions_for_save(sheet) -> dict[int, bytes]:
             continue
         if len(equivalent) > 1:
             raise UnsupportedFeatureError(
-                "an XLSB conditional-format x14 extension cannot be mapped "
-                "unambiguously after editing"
+                "an XLSB conditional-format x14 extension cannot be mapped unambiguously after editing"
             )
 
         possible_replacements = [
@@ -112,14 +103,12 @@ def _cf_extensions_for_save(sheet) -> dict[int, bytes]:
             if type(rule) is type(extension_rule)
             and (
                 sqref == extension_rule.sqref
-                or getattr(rule, "priority", None)
-                == getattr(extension_rule, "priority", None)
+                or getattr(rule, "priority", None) == getattr(extension_rule, "priority", None)
             )
         ]
         if possible_replacements:
             raise UnsupportedFeatureError(
-                "changing an XLSB conditional-format rule with an x14 "
-                "extension is not supported"
+                "changing an XLSB conditional-format rule with an x14 extension is not supported"
             )
 
     return kept
@@ -131,26 +120,27 @@ def _reject_unsupported_sheet_edits(sheet) -> None:
     check_removals(sheet)
     saved = sheet._saved_object_signatures
     current = object_signatures(sheet)
-    check_unread(sheet, [
-        name for name in ("data_validations", "conditional_formatting")
-        if (
-            current[name] != saved.get(name, ())
-            or (
-                name == "conditional_formatting"
-                and current["conditional_formatting_groups"]
-                != saved.get("conditional_formatting_groups", ())
+    check_unread(
+        sheet,
+        [
+            name
+            for name in ("data_validations", "conditional_formatting")
+            if (
+                current[name] != saved.get(name, ())
+                or (
+                    name == "conditional_formatting"
+                    and current["conditional_formatting_groups"] != saved.get("conditional_formatting_groups", ())
+                )
             )
-        )
-    ])
+        ],
+    )
 
 
 def _reject_unsupported_edits(workbook) -> None:
     """Fail loudly, before anything is written, on edits that cannot be saved yet."""
     styles = workbook._styles
     if workbook._styles_dirty and not hasattr(styles, "to_bin"):
-        raise UnsupportedFeatureError(
-            "style changes are not supported when saving a loaded XLSB workbook"
-        )
+        raise UnsupportedFeatureError("style changes are not supported when saving a loaded XLSB workbook")
     if styles.is_modified() and not getattr(workbook, "_xlsb_styles_path", None):
         raise _unsupported_loaded_feature("style changes (the file has no style sheet)")
     for sheet in workbook._sheets:
@@ -210,9 +200,7 @@ def _save_defined_names(workbook, updater, renamed) -> None:
         return
     handle = PackageHandle(updater)
     valid_scopes = set(handle.sheets)
-    previous_pairs = {
-        (name.casefold(), scope) for name, _f, scope, _h, _c in previous
-    }
+    previous_pairs = {(name.casefold(), scope) for name, _f, scope, _h, _c in previous}
     kept = []
     for item in workbook.defined_names:
         if item.scope is None:
@@ -223,10 +211,7 @@ def _save_defined_names(workbook, updater, renamed) -> None:
             kept.append(replace(item, localSheetId=None))
         elif (item.name.casefold(), item.scope) not in previous_pairs:
             raise KeyError(f"Worksheet not found: {item.scope}")
-    current = {
-        (item.name, item.formula, item.scope, item.hidden, item.comment)
-        for item in kept
-    }
+    current = {(item.name, item.formula, item.scope, item.hidden, item.comment) for item in kept}
     to_remove = []
     for name, _formula, scope, _hidden, _comment in previous - current:
         mapped = renamed.get(scope, scope) if scope is not None else None
@@ -250,7 +235,8 @@ def _save_cells(sheet, updater, everything: bool) -> None:
         cells = [cell for row in sheet._cells.values() for cell in row.values()]
     else:
         cells = [
-            cell for cell in (sheet._existing_cell(row, column) for row, column in sorted(sheet._dirty_cells))
+            cell
+            for cell in (sheet._existing_cell(row, column) for row, column in sorted(sheet._dirty_cells))
             if cell is not None
         ]
     handle = PackageHandle(updater)
@@ -287,18 +273,22 @@ def _save_sheet(sheet, updater) -> None:
             handle.apply_parts({path: patched})
     save_builtin_names(updater, sheet, groups)
     validations_changed = (
-        bool(sheet.data_validations) if new else
-        object_signatures(sheet)["data_validations"]
-        != sheet._saved_object_signatures.get("data_validations", ())
+        bool(sheet.data_validations)
+        if new
+        else object_signatures(sheet)["data_validations"] != sheet._saved_object_signatures.get("data_validations", ())
     )
     if validations_changed:
         updater.set_data_validations(sheet.title, sheet.data_validations)
     current_signatures = object_signatures(sheet)
-    formats_changed = bool(sheet.conditional_formatting) if new else (
-        current_signatures["conditional_formatting"]
-        != sheet._saved_object_signatures.get("conditional_formatting", ())
-        or current_signatures["conditional_formatting_groups"]
-        != sheet._saved_object_signatures.get("conditional_formatting_groups", ())
+    formats_changed = (
+        bool(sheet.conditional_formatting)
+        if new
+        else (
+            current_signatures["conditional_formatting"]
+            != sheet._saved_object_signatures.get("conditional_formatting", ())
+            or current_signatures["conditional_formatting_groups"]
+            != sheet._saved_object_signatures.get("conditional_formatting_groups", ())
+        )
     )
     if formats_changed:
         kept = _cf_extensions_for_save(sheet)
@@ -316,7 +306,8 @@ def _save_sheet(sheet, updater) -> None:
     if new:
         links = {
             cell.coordinate: cell._hyperlink
-            for row in sheet._cells.values() for cell in row.values()
+            for row in sheet._cells.values()
+            for cell in row.values()
             if cell._hyperlink is not None
         }
         if links:
@@ -326,7 +317,8 @@ def _save_sheet(sheet, updater) -> None:
     if new:
         comments = {
             cell.coordinate: cell._comment
-            for row in sheet._cells.values() for cell in row.values()
+            for row in sheet._cells.values()
+            for cell in row.values()
             if cell._comment is not None
         }
     else:

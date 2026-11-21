@@ -2,7 +2,6 @@
 the last row of a two-row header. Set XLSPY_RUN_EXCEL_COM=1 to run.
 """
 
-
 import pytest
 
 pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
@@ -70,8 +69,7 @@ def test_filter_on_a_two_row_header_in_excel(tmp_path, open_workbook, writer_cls
     path = tmp_path / f"header.{ext}"
     with writer_cls(path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet(ROWS, header_rows=2, header_style=HEADER,
-                           merges=["A1:B1", "C1:D1"], freeze_panes="A3")
+        writer.write_sheet(ROWS, header_rows=2, header_style=HEADER, merges=["A1:B1", "C1:D1"], freeze_panes="A3")
     sheet = open_workbook(path).Worksheets("Data")
     assert sheet.AutoFilterMode
     assert sheet.AutoFilter.Range.Address == "$A$2:$D$5"

@@ -71,8 +71,7 @@ def _source(directory: Path, ext: str, *, shared: bool = True, table: bool = Fal
         if table:
             options["tables"] = [ExcelTable("Tbl", "A1:C3")]
         book.write_sheet(
-            [["h1", "h2", "h3"], [1, "a", dt.date(2024, 1, 2)],
-             [2, "b", dt.date(2024, 1, 3)]],
+            [["h1", "h2", "h3"], [1, "a", dt.date(2024, 1, 2)], [2, "b", dt.date(2024, 1, 3)]],
             **options,
         )
         book.add_sheet("Other")
@@ -176,10 +175,7 @@ def snapshot(path: Path) -> dict:
                         _fill_key(cell.fill),
                         cell.comment.text if cell.comment is not None else None,
                         cell.comment.author if cell.comment is not None else None,
-                        (
-                            _name_formula_key(cell.hyperlink.target)
-                            if cell.hyperlink is not None else None
-                        ),
+                        (_name_formula_key(cell.hyperlink.target) if cell.hyperlink is not None else None),
                         cell.hyperlink.tooltip if cell.hyperlink is not None else None,
                     )
             result["sheets_data"][name] = {
@@ -188,13 +184,8 @@ def snapshot(path: Path) -> dict:
                 "max_column": sheet.max_column,
                 "cells": cells,
                 "merged": sorted(str(value) for value in sheet.merged_cells.ranges),
-                "tables": [
-                    (table.displayName, table.ref, table.headerRowCount)
-                    for table in sheet.tables
-                ],
-                "auto_filter": (
-                    sheet.auto_filter.ref if sheet.auto_filter is not None else None
-                ),
+                "tables": [(table.displayName, table.ref, table.headerRowCount) for table in sheet.tables],
+                "auto_filter": (sheet.auto_filter.ref if sheet.auto_filter is not None else None),
                 "state": sheet.sheet_state,
                 "protection": _protection_key(sheet.protection),
                 "validations": [
@@ -202,10 +193,7 @@ def snapshot(path: Path) -> dict:
                         rule.type,
                         str(rule.sqref),
                         _name_formula_key(str(rule.formula1)),
-                        (
-                            None if rule.formula2 is None
-                            else _name_formula_key(str(rule.formula2))
-                        ),
+                        (None if rule.formula2 is None else _name_formula_key(str(rule.formula2))),
                         rule.operator,
                         rule.allow_blank,
                         rule.show_dropdown,
@@ -232,12 +220,8 @@ def _region(path: Path, ext: str) -> tuple[str | None, str | None]:
     with zipfile.ZipFile(path) as archive:
         if ext == "xlsx":
             xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
-            dimension = re.search(
-                r'<(?:\w+:)?dimension\b[^>]*\bref="([^"]*)"', xml
-            )
-            auto_filter = re.search(
-                r'<(?:\w+:)?autoFilter\b[^>]*\bref="([^"]*)"', xml
-            )
+            dimension = re.search(r'<(?:\w+:)?dimension\b[^>]*\bref="([^"]*)"', xml)
+            auto_filter = re.search(r'<(?:\w+:)?autoFilter\b[^>]*\bref="([^"]*)"', xml)
             return (
                 dimension.group(1) if dimension else None,
                 auto_filter.group(1) if auto_filter else None,
@@ -247,21 +231,11 @@ def _region(path: Path, ext: str) -> tuple[str | None, str | None]:
     dimension = auto_filter = None
     for record in iter_records(data):
         if record.record_id == 0x94 and dimension is None and record.length >= 16:
-            first_row, last_row, first_col, last_col = struct.unpack_from(
-                "<iiii", data, record.data_start
-            )
-            dimension = (
-                f"{column_label(first_col)}{first_row + 1}:"
-                f"{column_label(last_col)}{last_row + 1}"
-            )
+            first_row, last_row, first_col, last_col = struct.unpack_from("<iiii", data, record.data_start)
+            dimension = f"{column_label(first_col)}{first_row + 1}:{column_label(last_col)}{last_row + 1}"
         elif record.record_id == 0xA1 and auto_filter is None and record.length >= 16:
-            first_row, last_row, first_col, last_col = struct.unpack_from(
-                "<iiii", data, record.data_start
-            )
-            auto_filter = (
-                f"{column_label(first_col)}{first_row + 1}:"
-                f"{column_label(last_col)}{last_row + 1}"
-            )
+            first_row, last_row, first_col, last_col = struct.unpack_from("<iiii", data, record.data_start)
+            auto_filter = f"{column_label(first_col)}{first_row + 1}:{column_label(last_col)}{last_row + 1}"
     return dimension, auto_filter
 
 
@@ -300,9 +274,7 @@ def _run_both_regions(tmp_path: Path, *changes):
 def test_replacing_data_has_the_same_result(tmp_path, stream, shared, headers):
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: _replace(
-            updater, stream, BASE_ROWS, BASE_HEADERS if headers else None
-        ),
+        lambda updater: _replace(updater, stream, BASE_ROWS, BASE_HEADERS if headers else None),
         shared=shared,
     )
     assert xlsx == xlsb
@@ -312,9 +284,7 @@ def test_replacing_data_has_the_same_result(tmp_path, stream, shared, headers):
 def test_a_none_header_becomes_the_same_empty_cell(tmp_path, stream):
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: _replace(
-            updater, stream, BASE_ROWS, ["a", None, "c", "d", "e"]
-        ),
+        lambda updater: _replace(updater, stream, BASE_ROWS, ["a", None, "c", "d", "e"]),
     )
     assert xlsx == xlsb
     header = xlsx["sheets_data"]["Data"]["cells"]["B1"]
@@ -334,9 +304,7 @@ def test_a_none_header_becomes_the_same_empty_cell(tmp_path, stream):
     ids=["empty", "trailing-rows", "blank-row", "trailing-blanks", "blank-middle"],
 )
 def test_empty_and_blank_rows_have_the_same_result(tmp_path, stream, rows):
-    xlsx, xlsb = _run_both(
-        tmp_path, lambda updater: _replace(updater, stream, rows)
-    )
+    xlsx, xlsb = _run_both(tmp_path, lambda updater: _replace(updater, stream, rows))
     assert xlsx == xlsb
 
 
@@ -351,9 +319,7 @@ def test_table_headers_are_guarded_the_same(tmp_path):
             _apply(
                 path,
                 ext,
-                lambda updater: _replace(
-                    updater, False, rows, ["wrong", "h2", "h3"]
-                ),
+                lambda updater: _replace(updater, False, rows, ["wrong", "h2", "h3"]),
             )
         messages[ext] = str(caught.value)
     assert "table 'Tbl'" in messages["xlsx"]
@@ -371,9 +337,7 @@ def test_scalar_formulas_and_cached_values_match(tmp_path, stream):
     ]
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: _replace(
-            updater, stream, rows, ["n", "double", "text"]
-        ),
+        lambda updater: _replace(updater, stream, rows, ["n", "double", "text"]),
     )
     assert xlsx == xlsb
     with ExcelReader(xlsx_path(tmp_path)) as reader:
@@ -401,14 +365,10 @@ def xlsx_path(tmp_path: Path) -> Path:
     ],
     ids=["spill-one-column", "array-one-column", "array-two-columns", "spill-wide"],
 )
-def test_array_and_spill_ranges_expand_both_regions(
-    tmp_path, stream, formula, expected
-):
+def test_array_and_spill_ranges_expand_both_regions(tmp_path, stream, formula, expected):
     xlsx, xlsb = _run_both_regions(
         tmp_path,
-        lambda updater: _replace(
-            updater, stream, [[formula, 1, 2]], ["a", "b", "c"]
-        ),
+        lambda updater: _replace(updater, stream, [[formula, 1, 2]], ["a", "b", "c"]),
     )
     assert xlsx[0] == xlsb[0] == (expected, expected)
     for _region_value, path in (xlsx, xlsb):
@@ -446,12 +406,8 @@ def test_a_formula_outside_its_top_left_cell_is_refused(tmp_path, stream, formul
 def test_notes_and_links_match_across_formats(tmp_path):
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: updater.set_comments(
-            "Data", {"A1": Comment("note", "Jan")}
-        ),
-        lambda updater: updater.set_hyperlinks(
-            "Data", {"B1": Hyperlink("https://example.com/")}
-        ),
+        lambda updater: updater.set_comments("Data", {"A1": Comment("note", "Jan")}),
+        lambda updater: updater.set_hyperlinks("Data", {"B1": Hyperlink("https://example.com/")}),
     )
     assert xlsx == xlsb
     data = xlsx["sheets_data"]["Data"]["cells"]
@@ -462,12 +418,8 @@ def test_notes_and_links_match_across_formats(tmp_path):
 def test_notes_and_links_can_be_removed_again(tmp_path):
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: updater.set_comments(
-            "Data", {"A1": Comment("note", "Jan")}
-        ),
-        lambda updater: updater.set_hyperlinks(
-            "Data", {"B1": Hyperlink("https://example.com/")}
-        ),
+        lambda updater: updater.set_comments("Data", {"A1": Comment("note", "Jan")}),
+        lambda updater: updater.set_hyperlinks("Data", {"B1": Hyperlink("https://example.com/")}),
         lambda updater: updater.set_comments("Data", {"A1": None}),
         lambda updater: updater.set_hyperlinks("Data", {"B1": None}),
     )
@@ -480,12 +432,8 @@ def test_notes_and_links_can_be_removed_again(tmp_path):
 def test_defined_names_match_across_formats(tmp_path):
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: updater.set_defined_name(
-            DefinedName("Abc", "Data!$A$1", localSheetId=0)
-        ),
-        lambda updater: updater.set_defined_name(
-            DefinedName("Global", "Data!$B$2", hidden=True)
-        ),
+        lambda updater: updater.set_defined_name(DefinedName("Abc", "Data!$A$1", localSheetId=0)),
+        lambda updater: updater.set_defined_name(DefinedName("Global", "Data!$B$2", hidden=True)),
     )
     assert xlsx == xlsb
     assert set(xlsx["names"]) == {
@@ -497,15 +445,9 @@ def test_defined_names_match_across_formats(tmp_path):
 def test_defined_names_can_be_removed_again(tmp_path):
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: updater.set_defined_name(
-            DefinedName("Abc", "Data!$A$1", localSheetId=0)
-        ),
-        lambda updater: updater.set_defined_name(
-            DefinedName("Global", "Data!$B$2")
-        ),
-        lambda updater: updater.remove_defined_names(
-            [("Abc", "Data"), ("Global", None)]
-        ),
+        lambda updater: updater.set_defined_name(DefinedName("Abc", "Data!$A$1", localSheetId=0)),
+        lambda updater: updater.set_defined_name(DefinedName("Global", "Data!$B$2")),
+        lambda updater: updater.remove_defined_names([("Abc", "Data"), ("Global", None)]),
     )
     assert xlsx == xlsb
     assert xlsx["names"] == []
@@ -530,9 +472,7 @@ def test_sheet_and_workbook_protection_match(tmp_path):
                 password="abc",
             ),
         ),
-        lambda updater: updater.set_workbook_protection(
-            WorkbookProtection(password="abc")
-        ),
+        lambda updater: updater.set_workbook_protection(WorkbookProtection(password="abc")),
     )
     assert xlsx == xlsb
     protection = xlsx["sheets_data"]["Data"]["protection"]
@@ -554,9 +494,7 @@ def test_update_cells_values_match(tmp_path):
         "F6": Formula("1+1", 2),
         "Z9": "far",
     }
-    xlsx, xlsb = _run_both(
-        tmp_path, lambda updater: updater.update_cells("Data", cells)
-    )
+    xlsx, xlsb = _run_both(tmp_path, lambda updater: updater.update_cells("Data", cells))
     assert xlsx == xlsb
     data = xlsx["sheets_data"]["Data"]
     assert data["max_row"] == 9 and data["max_column"] == 26
@@ -572,9 +510,7 @@ def test_update_cells_styles_match(tmp_path):
     # XF 7 is the "0.00" style of column A in _source.
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: updater.update_cells(
-            "Data", {"D4": "styled"}, styles={"A2": 7, "D4": 7, "G10": 7}
-        ),
+        lambda updater: updater.update_cells("Data", {"D4": "styled"}, styles={"A2": 7, "D4": 7, "G10": 7}),
     )
     assert xlsx == xlsb
     data = xlsx["sheets_data"]["Data"]
@@ -596,9 +532,7 @@ def test_an_invalid_cell_style_is_refused_in_both_formats(tmp_path):
             _apply(
                 path,
                 ext,
-                lambda updater: updater.update_cells(
-                    "Data", {}, styles={"A1": -1}
-                ),
+                lambda updater: updater.update_cells("Data", {}, styles={"A1": -1}),
             )
 
 
@@ -634,9 +568,7 @@ def test_overlapping_merged_ranges_are_refused_in_both(tmp_path):
             _apply(
                 path,
                 ext,
-                lambda updater: updater.set_merged_cells(
-                    "Data", ["A1:B2", "B2:C3"]
-                ),
+                lambda updater: updater.set_merged_cells("Data", ["A1:B2", "B2:C3"]),
             )
         messages[ext] = str(caught.value)
     assert messages["xlsx"] == messages["xlsb"]
@@ -665,9 +597,7 @@ def test_data_validations_match(tmp_path):
             prompt="Enter a date",
         ),
     ]
-    xlsx, xlsb = _run_both(
-        tmp_path, lambda updater: updater.set_data_validations("Data", rules)
-    )
+    xlsx, xlsb = _run_both(tmp_path, lambda updater: updater.set_data_validations("Data", rules))
     assert xlsx == xlsb
     assert len(xlsx["sheets_data"]["Data"]["validations"]) == 3
 
@@ -693,7 +623,8 @@ def test_data_validations_are_type_checked_in_both(tmp_path):
                 path,
                 ext,
                 lambda updater: updater.set_data_validations(
-                    "Data", [object()]  # type: ignore[list-item]
+                    "Data",
+                    [object()],  # type: ignore[list-item]
                 ),
             )
 
@@ -720,12 +651,8 @@ def test_the_other_sheet_and_package_members_are_preserved(tmp_path, stream):
 def test_repeated_replacements_match(tmp_path):
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: _replace(
-            updater, False, BASE_ROWS, ["a", "b", "c", "d", "e"]
-        ),
-        lambda updater: _replace(
-            updater, True, BASE_ROWS[:1], ["a", "b", "c", "d", "e"]
-        ),
+        lambda updater: _replace(updater, False, BASE_ROWS, ["a", "b", "c", "d", "e"]),
+        lambda updater: _replace(updater, True, BASE_ROWS[:1], ["a", "b", "c", "d", "e"]),
     )
     assert xlsx == xlsb
     data = xlsx["sheets_data"]["Data"]
@@ -775,9 +702,7 @@ def test_a_value_past_column_xfd_is_refused_in_both_formats(tmp_path, stream):
             _apply(
                 path,
                 ext,
-                lambda updater: _replace(
-                    updater, stream, [[None] * 16384 + [1]]
-                ),
+                lambda updater: _replace(updater, stream, [[None] * 16384 + [1]]),
             )
 
 
@@ -823,12 +748,8 @@ def test_remove_the_active_sheet_selects_the_next_visible_one(tmp_path):
 def test_local_names_of_a_removed_sheet_are_dropped(tmp_path):
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: updater.set_defined_name(
-            DefinedName("LocalData", "Data!$A$1", localSheetId=0)
-        ),
-        lambda updater: updater.set_defined_name(
-            DefinedName("LocalOther", "Other!$A$1", localSheetId=1)
-        ),
+        lambda updater: updater.set_defined_name(DefinedName("LocalData", "Data!$A$1", localSheetId=0)),
+        lambda updater: updater.set_defined_name(DefinedName("LocalOther", "Other!$A$1", localSheetId=1)),
         lambda updater: updater.remove_sheet("Data"),
     )
     assert xlsx == xlsb
@@ -857,20 +778,14 @@ def test_remove_sheet_errors_match(tmp_path, change, error):
 def test_renamed_sheet_rewrites_formulas_names_validation_and_links(tmp_path):
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: updater.set_defined_name(
-            DefinedName("RefData", "Data!$A$1")
-        ),
-        lambda updater: updater.update_cells(
-            "Other", {"A2": Formula("Data!A1", value=1)}
-        ),
+        lambda updater: updater.set_defined_name(DefinedName("RefData", "Data!$A$1")),
+        lambda updater: updater.update_cells("Other", {"A2": Formula("Data!A1", value=1)}),
         lambda updater: updater.set_data_validations(
             "Other",
             [DataValidation("list", "B2", formula1="Data!$A$1")],
         ),
         lambda updater: updater.update_cells("Other", {"C2": "link"}),
-        lambda updater: updater.set_hyperlinks(
-            "Other", {"C2": Hyperlink("#Data!A1")}
-        ),
+        lambda updater: updater.set_hyperlinks("Other", {"C2": Hyperlink("#Data!A1")}),
         lambda updater: updater.rename_sheet("Data", "Renamed"),
     )
     assert xlsx == xlsb
@@ -885,17 +800,13 @@ def test_renamed_sheet_rewrites_formulas_names_validation_and_links(tmp_path):
 
 def test_rename_missing_sheet_errors_match(tmp_path):
     for ext in FORMATS:
-        kind, _message = _error(
-            tmp_path, ext, lambda updater: updater.rename_sheet("Nope", "New")
-        )
+        kind, _message = _error(tmp_path, ext, lambda updater: updater.rename_sheet("Nope", "New"))
         assert kind is KeyError
 
 
 def test_rename_to_an_existing_sheet_errors_match(tmp_path):
     for ext in FORMATS:
-        kind, _message = _error(
-            tmp_path, ext, lambda updater: updater.rename_sheet("Data", "Other")
-        )
+        kind, _message = _error(tmp_path, ext, lambda updater: updater.rename_sheet("Data", "Other"))
         assert kind is ValueError
 
 
@@ -965,12 +876,8 @@ def test_reorder_leaves_a_visible_active_sheet(tmp_path):
 def test_local_names_follow_a_reorder(tmp_path):
     xlsx, xlsb = _run_both(
         tmp_path,
-        lambda updater: updater.set_defined_name(
-            DefinedName("LocalData", "Data!$A$1", localSheetId=0)
-        ),
-        lambda updater: updater.set_defined_name(
-            DefinedName("LocalOther", "Other!$A$1", localSheetId=1)
-        ),
+        lambda updater: updater.set_defined_name(DefinedName("LocalData", "Data!$A$1", localSheetId=0)),
+        lambda updater: updater.set_defined_name(DefinedName("LocalOther", "Other!$A$1", localSheetId=1)),
         lambda updater: updater.reorder_sheets(["Other", "Data"]),
     )
     assert xlsx == xlsb

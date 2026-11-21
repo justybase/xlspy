@@ -8,8 +8,19 @@ import openpyxl
 import pytest
 
 from xlspy import (
-    CellIsRule, Chart, ChartSeries, DataValidation, DifferentialStyle, ExcelTable, Font, Image,
-    Hyperlink, PageMargins, PrintSettings, XlsxWriter, load_workbook,
+    CellIsRule,
+    Chart,
+    ChartSeries,
+    DataValidation,
+    DifferentialStyle,
+    ExcelTable,
+    Font,
+    Image,
+    Hyperlink,
+    PageMargins,
+    PrintSettings,
+    XlsxWriter,
+    load_workbook,
 )
 
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -79,8 +90,10 @@ def _check_relationships(parts):
         for target in re.findall(r'Target="([^"]+)"', data.decode()):
             if target.startswith("http"):
                 continue
-            resolved = target.lstrip("/") if target.startswith("/") else "/".join(
-                part for part in (directory + "/" + target).split("/") if part
+            resolved = (
+                target.lstrip("/")
+                if target.startswith("/")
+                else "/".join(part for part in (directory + "/" + target).split("/") if part)
             )
             while "/../" in "/" + resolved:
                 resolved = re.sub(r"[^/]+/\.\./", "", resolved, count=1)
@@ -98,14 +111,29 @@ def test_loaded_workbook_saves_added_objects(tmp_path, load):
 
     parts = _parts(target)
     _check_relationships(parts)
-    assert {"xl/charts/chart1.xml", "xl/charts/chart2.xml", "xl/media/image1.png",
-            "xl/tables/table1.xml", "xl/tables/table2.xml"} <= set(parts)
+    assert {
+        "xl/charts/chart1.xml",
+        "xl/charts/chart2.xml",
+        "xl/media/image1.png",
+        "xl/tables/table1.xml",
+        "xl/tables/table2.xml",
+    } <= set(parts)
     sheet = parts["xl/worksheets/sheet1.xml"].decode()
     # The file's own rule keeps priority 1 and dxf 0; the new one follows.
     assert re.findall(r'priority="(\d+)" dxfId="(\d+)"', sheet) == [("1", "0"), ("2", "1")]
     assert '<tableParts count="2">' in sheet
-    order = [sheet.index(tag) for tag in ("<conditionalFormatting", "<dataValidations", "<pageMargins",
-                                          "<pageSetup", "<headerFooter", "<drawing", "<tableParts")]
+    order = [
+        sheet.index(tag)
+        for tag in (
+            "<conditionalFormatting",
+            "<dataValidations",
+            "<pageMargins",
+            "<pageSetup",
+            "<headerFooter",
+            "<drawing",
+            "<tableParts",
+        )
+    ]
     assert order == sorted(order)
     # The new table gets a free id and the drawing keeps one shape id each.
     assert re.search(r'<table\b[^>]*\bid="2"', parts["xl/tables/table2.xml"].decode())
@@ -114,16 +142,17 @@ def test_loaded_workbook_saves_added_objects(tmp_path, load):
     styles = parts["xl/styles.xml"].decode()
     assert '<dxfs count="2">' in styles
     names = parts["xl/workbook.xml"].decode()
-    assert "_xlnm.Print_Area\" localSheetId=\"0\">'Data'!$A$1:$D$4<" in names
-    assert "_xlnm.Print_Titles\" localSheetId=\"0\">'Data'!$1:$1<" in names
+    assert '_xlnm.Print_Area" localSheetId="0">\'Data\'!$A$1:$D$4<' in names
+    assert '_xlnm.Print_Titles" localSheetId="0">\'Data\'!$1:$1<' in names
 
     reread = openpyxl.load_workbook(target)
     ws = reread["Data"]
     assert sorted(ws.tables) == ["NewTable", "OldTable"]
     # openpyxl reads pictures only with Pillow, which CI does not install.
     assert len(ws._charts) == 2 and drawing.count("<pic>") == 1
-    assert [dv.sqref for dv in ws.data_validations.dataValidation] == ["B2:B4"] or \
-        [str(dv.sqref) for dv in ws.data_validations.dataValidation] == ["B2:B4"]
+    assert [dv.sqref for dv in ws.data_validations.dataValidation] == ["B2:B4"] or [
+        str(dv.sqref) for dv in ws.data_validations.dataValidation
+    ] == ["B2:B4"]
     assert ws.page_setup.orientation == "landscape"
     assert ws.oddHeader.center.text == "Report"
 
@@ -268,9 +297,13 @@ def test_collapsed_summary_row_survives_row_metadata_save(tmp_path, load):
                 # Dense rows carry no r, so the second and third <row> tags are replaced by position.
                 tags = list(re.finditer(rb"<row\b[^>]*>", data))
                 second, third = tags[1], tags[2]
-                data = (data[:second.start()] + b'<row r="2" outlineLevel="1" hidden="1">'
-                        + data[second.end():third.start()] + b'<row r="3" collapsed="1">'
-                        + data[third.end():])
+                data = (
+                    data[: second.start()]
+                    + b'<row r="2" outlineLevel="1" hidden="1">'
+                    + data[second.end() : third.start()]
+                    + b'<row r="3" collapsed="1">'
+                    + data[third.end() :]
+                )
             archive.writestr(name, data)
 
     workbook = load(source)
@@ -362,7 +395,7 @@ def test_partly_cleared_print_settings_keep_the_rest(tmp_path, load):
     sheet = parts["xl/worksheets/sheet1.xml"].decode()
     names = parts["xl/workbook.xml"].decode()
     assert "_xlnm.Print_Area" not in names
-    assert "_xlnm.Print_Titles\" localSheetId=\"0\">'Data'!$1:$1<" in names
+    assert '_xlnm.Print_Titles" localSheetId="0">\'Data\'!$1:$1<' in names
     assert 'orientation="landscape"' in sheet and 'fitToPage="1"' in sheet
     assert "<oddHeader>&amp;CReport</oddHeader>" in sheet and "<oddFooter" not in sheet
 
@@ -384,9 +417,14 @@ def _links(path, sheet="Data"):
     book = openpyxl.load_workbook(path)
     try:
         return {
-            cell.coordinate: (cell.hyperlink.target or "#" + cell.hyperlink.location,
-                              cell.hyperlink.display, cell.hyperlink.tooltip)
-            for row in book[sheet].iter_rows() for cell in row if cell.hyperlink is not None
+            cell.coordinate: (
+                cell.hyperlink.target or "#" + cell.hyperlink.location,
+                cell.hyperlink.display,
+                cell.hyperlink.tooltip,
+            )
+            for row in book[sheet].iter_rows()
+            for cell in row
+            if cell.hyperlink is not None
         }
     finally:
         book.close()

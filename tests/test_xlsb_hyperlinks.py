@@ -41,7 +41,7 @@ def _links(path):
     for record in iter_records(data):
         if record.record_id != BRT_HLINK:
             continue
-        payload = data[record.data_start:record.data_end]
+        payload = data[record.data_start : record.data_end]
         first_row, last_row, first_col, _last_col = struct.unpack_from("<4I", payload, 0)
         assert first_row == last_row
         offset = 16
@@ -63,10 +63,12 @@ def test_external_link_has_relationship_and_tooltip(tmp_path):
     path = tmp_path / "links.xlsb"
     with XlsbWriter(path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet([
-            ["Page"],
-            [Hyperlink("https://example.com/report", text="Report", tooltip="Tooltip")],
-        ])
+        writer.write_sheet(
+            [
+                ["Page"],
+                [Hyperlink("https://example.com/report", text="Report", tooltip="Tooltip")],
+            ]
+        )
 
     (link,) = _links(path)
     assert (link.row, link.col) == (1, 0)
@@ -98,9 +100,11 @@ def test_one_relationship_per_target_and_ids_are_unique(tmp_path):
     with XlsbWriter(path) as writer:
         writer.add_sheet("Data")
         writer.write_sheet(
-            [["a", "b"],
-             [Hyperlink("https://example.com/x"), Hyperlink("https://example.com/x")],
-             [Hyperlink("mailto:someone@example.com"), Hyperlink("#'Data'!A1")]],
+            [
+                ["a", "b"],
+                [Hyperlink("https://example.com/x"), Hyperlink("https://example.com/x")],
+                [Hyperlink("mailto:someone@example.com"), Hyperlink("#'Data'!A1")],
+            ],
             charts=[Chart("bar", [ChartSeries("A2:A3")], anchor="E2")],
             comments={"B1": Comment("note", "Author")},
         )
@@ -126,10 +130,12 @@ def test_link_text_reads_back(tmp_path):
     path = tmp_path / "styled.xlsb"
     with XlsbWriter(path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet([
-            [Hyperlink("https://example.com", text="Plain")],
-            [(Hyperlink("https://example.com/own", text="Own"), Style(bold=True))],
-        ])
+        writer.write_sheet(
+            [
+                [Hyperlink("https://example.com", text="Plain")],
+                [(Hyperlink("https://example.com/own", text="Own"), Style(bold=True))],
+            ]
+        )
 
     with ExcelReader(str(path)) as reader:
         values = [row[0] for row in reader.get_rows("Data")]

@@ -15,7 +15,11 @@ def _import_accel(**env_overrides: str) -> subprocess.CompletedProcess:
     env.update(env_overrides, PYTHONPATH=SRC)
     return subprocess.run(
         [sys.executable, "-c", "from xlspy import _accel; print(_accel.ACCEL_MODE, _accel.HAVE_NATIVE)"],
-        env=env, capture_output=True, text=True, encoding="utf-8", check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
 
 

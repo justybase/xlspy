@@ -20,69 +20,170 @@ MAX_FORMULA_LENGTH = 8192
 # Functions added after Excel 2007. The file format stores them with an
 # ``_xlfn.`` prefix; without it Excel reports #NAME?. Only the prefix is
 # added, the formula otherwise stays exactly as written.
-_XLFN_FUNCTIONS = frozenset({
-    "AGGREGATE", "BETA.DIST", "BETA.INV", "BINOM.DIST", "BINOM.INV",
-    "CEILING.MATH", "CEILING.PRECISE", "CHISQ.DIST", "CHISQ.DIST.RT",
-    "CHISQ.INV", "CHISQ.INV.RT", "CHISQ.TEST", "CONCAT", "COVARIANCE.P",
-    "COVARIANCE.S", "DAYS", "ERF.PRECISE", "ERFC.PRECISE", "EXPON.DIST",
-    "F.DIST", "F.DIST.RT", "F.INV", "F.INV.RT", "F.TEST", "FILTER",
-    "FLOOR.MATH", "FLOOR.PRECISE", "GAMMA", "GAMMA.DIST", "GAMMA.INV",
-    "GAMMALN.PRECISE", "HYPGEOM.DIST", "IFNA", "IFS", "ISOWEEKNUM",
-    "LOGNORM.DIST", "LOGNORM.INV", "MAXIFS", "MINIFS", "MODE.MULT",
-    "MODE.SNGL", "NEGBINOM.DIST", "NORM.DIST", "NORM.INV", "NORM.S.DIST",
-    "NORM.S.INV", "PERCENTILE.EXC", "PERCENTILE.INC", "PERCENTRANK.EXC",
-    "PERCENTRANK.INC", "POISSON.DIST", "QUARTILE.EXC", "QUARTILE.INC",
-    "RANK.AVG", "RANK.EQ", "SORT", "SORTBY", "STDEV.P", "STDEV.S", "SWITCH",
-    "T.DIST", "T.DIST.2T", "T.DIST.RT", "T.INV", "T.INV.2T", "T.TEST",
-    "TEXTAFTER", "TEXTBEFORE", "TEXTJOIN", "TEXTSPLIT", "UNIQUE", "VAR.P",
-    "VAR.S", "WEIBULL.DIST", "XLOOKUP", "XMATCH", "XOR",
-    "SEQUENCE", "RANDARRAY", "TAKE", "DROP", "CHOOSECOLS", "CHOOSEROWS",
-    "VSTACK", "HSTACK", "TOCOL", "TOROW", "WRAPCOLS", "WRAPROWS", "EXPAND",
-    "ARRAYTOTEXT",
-    "LET",
-    "LAMBDA",
-    "MAP",
-    "REDUCE",
-    "SCAN",
-    "BYROW",
-    "BYCOL",
-    "MAKEARRAY",
-    "BITAND",
-    "BITLSHIFT",
-    "BITOR",
-    "BITRSHIFT",
-    "BITXOR",
-    "ECMA.CEILING",
-    "ENCODEURL",
-    "FILTERXML",
-    "FORECAST.LINEAR",
-    "FORMULATEXT",
-    "GAUSS",
-    "ISFORMULA",
-    "ISO.CEILING",
-    "NETWORKDAYS.INTL",
-    "NUMBERVALUE",
-    "PDURATION",
-    "PHI",
-    "RRI",
-    "SHEET",
-    "SHEETS",
-    "SKEW.P",
-    "UNICHAR",
-    "UNICODE",
-    "VALUETOTEXT",
-    "WEBSERVICE",
-    "WORKDAY.INTL",
-    "Z.TEST",
-    # Missing before: Excel stores these with the prefix too, and without it the
-    # cell shows #NAME?. Names checked against the list XlsxWriter writes (MS-XLSX).
-    "ACOT", "ACOTH", "ARABIC", "BASE", "BINOM.DIST.RANGE", "COMBINA",
-    "CONFIDENCE.NORM", "CONFIDENCE.T", "COT", "COTH", "CSC", "CSCH", "DECIMAL",
-    "FORECAST.ETS", "FORECAST.ETS.CONFINT", "FORECAST.ETS.SEASONALITY",
-    "FORECAST.ETS.STAT", "IMAGE", "IMCOSH", "IMCOT", "IMCSC", "IMCSCH", "IMSEC",
-    "IMSECH", "IMSINH", "IMTAN", "ISOMITTED", "MUNIT", "PERMUTATIONA",
-    "QUERYSTRING", "SEC", "SECH",
-})
+_XLFN_FUNCTIONS = frozenset(
+    {
+        "AGGREGATE",
+        "BETA.DIST",
+        "BETA.INV",
+        "BINOM.DIST",
+        "BINOM.INV",
+        "CEILING.MATH",
+        "CEILING.PRECISE",
+        "CHISQ.DIST",
+        "CHISQ.DIST.RT",
+        "CHISQ.INV",
+        "CHISQ.INV.RT",
+        "CHISQ.TEST",
+        "CONCAT",
+        "COVARIANCE.P",
+        "COVARIANCE.S",
+        "DAYS",
+        "ERF.PRECISE",
+        "ERFC.PRECISE",
+        "EXPON.DIST",
+        "F.DIST",
+        "F.DIST.RT",
+        "F.INV",
+        "F.INV.RT",
+        "F.TEST",
+        "FILTER",
+        "FLOOR.MATH",
+        "FLOOR.PRECISE",
+        "GAMMA",
+        "GAMMA.DIST",
+        "GAMMA.INV",
+        "GAMMALN.PRECISE",
+        "HYPGEOM.DIST",
+        "IFNA",
+        "IFS",
+        "ISOWEEKNUM",
+        "LOGNORM.DIST",
+        "LOGNORM.INV",
+        "MAXIFS",
+        "MINIFS",
+        "MODE.MULT",
+        "MODE.SNGL",
+        "NEGBINOM.DIST",
+        "NORM.DIST",
+        "NORM.INV",
+        "NORM.S.DIST",
+        "NORM.S.INV",
+        "PERCENTILE.EXC",
+        "PERCENTILE.INC",
+        "PERCENTRANK.EXC",
+        "PERCENTRANK.INC",
+        "POISSON.DIST",
+        "QUARTILE.EXC",
+        "QUARTILE.INC",
+        "RANK.AVG",
+        "RANK.EQ",
+        "SORT",
+        "SORTBY",
+        "STDEV.P",
+        "STDEV.S",
+        "SWITCH",
+        "T.DIST",
+        "T.DIST.2T",
+        "T.DIST.RT",
+        "T.INV",
+        "T.INV.2T",
+        "T.TEST",
+        "TEXTAFTER",
+        "TEXTBEFORE",
+        "TEXTJOIN",
+        "TEXTSPLIT",
+        "UNIQUE",
+        "VAR.P",
+        "VAR.S",
+        "WEIBULL.DIST",
+        "XLOOKUP",
+        "XMATCH",
+        "XOR",
+        "SEQUENCE",
+        "RANDARRAY",
+        "TAKE",
+        "DROP",
+        "CHOOSECOLS",
+        "CHOOSEROWS",
+        "VSTACK",
+        "HSTACK",
+        "TOCOL",
+        "TOROW",
+        "WRAPCOLS",
+        "WRAPROWS",
+        "EXPAND",
+        "ARRAYTOTEXT",
+        "LET",
+        "LAMBDA",
+        "MAP",
+        "REDUCE",
+        "SCAN",
+        "BYROW",
+        "BYCOL",
+        "MAKEARRAY",
+        "BITAND",
+        "BITLSHIFT",
+        "BITOR",
+        "BITRSHIFT",
+        "BITXOR",
+        "ECMA.CEILING",
+        "ENCODEURL",
+        "FILTERXML",
+        "FORECAST.LINEAR",
+        "FORMULATEXT",
+        "GAUSS",
+        "ISFORMULA",
+        "ISO.CEILING",
+        "NETWORKDAYS.INTL",
+        "NUMBERVALUE",
+        "PDURATION",
+        "PHI",
+        "RRI",
+        "SHEET",
+        "SHEETS",
+        "SKEW.P",
+        "UNICHAR",
+        "UNICODE",
+        "VALUETOTEXT",
+        "WEBSERVICE",
+        "WORKDAY.INTL",
+        "Z.TEST",
+        # Missing before: Excel stores these with the prefix too, and without it the
+        # cell shows #NAME?. Names checked against the list XlsxWriter writes (MS-XLSX).
+        "ACOT",
+        "ACOTH",
+        "ARABIC",
+        "BASE",
+        "BINOM.DIST.RANGE",
+        "COMBINA",
+        "CONFIDENCE.NORM",
+        "CONFIDENCE.T",
+        "COT",
+        "COTH",
+        "CSC",
+        "CSCH",
+        "DECIMAL",
+        "FORECAST.ETS",
+        "FORECAST.ETS.CONFINT",
+        "FORECAST.ETS.SEASONALITY",
+        "FORECAST.ETS.STAT",
+        "IMAGE",
+        "IMCOSH",
+        "IMCOT",
+        "IMCSC",
+        "IMCSCH",
+        "IMSEC",
+        "IMSECH",
+        "IMSINH",
+        "IMTAN",
+        "ISOMITTED",
+        "MUNIT",
+        "PERMUTATIONA",
+        "QUERYSTRING",
+        "SEC",
+        "SECH",
+    }
+)
 
 # Functions stored in the _xlws namespace: "_xlfn._xlws.SORT", not "_xlfn.SORT".
 _XLWS_FUNCTIONS = frozenset({"FILTER", "SORT"})
@@ -126,7 +227,7 @@ def _scan_tokens(text: str) -> Iterator[tuple[str, str, int, int]]:
                         continue
                     break
                 end += 1
-            yield "literal", text[i:end + 1], i, end + 1
+            yield "literal", text[i : end + 1], i, end + 1
             i = end + 1
             continue
         match = _IDENT_RE.match(text, i) if (char.isalpha() or char == "_") else None
@@ -173,9 +274,7 @@ def _matching_paren(tokens: list[tuple[str, str, int, int]], open_index: int) ->
     return None
 
 
-def _split_arguments(
-    tokens: list[tuple[str, str, int, int]], start: int, end: int
-) -> list[tuple[int, int]]:
+def _split_arguments(tokens: list[tuple[str, str, int, int]], start: int, end: int) -> list[tuple[int, int]]:
     """Token ranges of the top-level arguments between ``start`` and ``end``."""
     ranges = []
     depth = 0
@@ -209,10 +308,7 @@ def _prefix_lambda_parameters(text: str) -> str:
     tokens = list(_scan_tokens(text))
 
     def significant(first: int, last: int) -> list[tuple[str, str, int, int]]:
-        return [
-            token for token in tokens[first:last]
-            if not (token[0] == "char" and token[1].isspace())
-        ]
+        return [token for token in tokens[first:last] if not (token[0] == "char" and token[1].isspace())]
 
     def following_significant(index: int, last: int) -> str:
         for next_index in range(index + 1, last):
@@ -270,7 +366,7 @@ def _prefix_lambda_parameters(text: str) -> str:
                 cursor = token_start
             previous = value
             index += 1
-        pieces.append(text[cursor:tokens[end - 1][3]])
+        pieces.append(text[cursor : tokens[end - 1][3]])
         return "".join(pieces)
 
     def render_call(index: int, close: int, names: frozenset[str]) -> str:
@@ -283,13 +379,13 @@ def _prefix_lambda_parameters(text: str) -> str:
             for argument_index, (first, last_token) in enumerate(arguments):
                 tokens_here = significant(first, last_token)
                 if (
-                    argument_index < last and argument_index % 2 == 0
-                    and len(tokens_here) == 1 and tokens_here[0][0] == "ident"
+                    argument_index < last
+                    and argument_index % 2 == 0
+                    and len(tokens_here) == 1
+                    and tokens_here[0][0] == "ident"
                 ):
                     name = tokens_here[0][1]
-                    rendered.append(
-                        name if name.lower().startswith("_xlpm.") else "_xlpm." + name
-                    )
+                    rendered.append(name if name.lower().startswith("_xlpm.") else "_xlpm." + name)
                     continue
                 rendered.append(render(first, last_token, frozenset(scope)))
                 if argument_index < last and argument_index % 2 == 1:
@@ -303,9 +399,7 @@ def _prefix_lambda_parameters(text: str) -> str:
                 if len(tokens_here) == 1 and tokens_here[0][0] == "ident":
                     name = tokens_here[0][1]
                     bindings.add(name.casefold())
-                    rendered.append(
-                        name if name.lower().startswith("_xlpm.") else "_xlpm." + name
-                    )
+                    rendered.append(name if name.lower().startswith("_xlpm.") else "_xlpm." + name)
                 else:
                     rendered.append(render(first, last_token, names))
             if arguments:
@@ -473,8 +567,7 @@ class Formula:
     def __post_init__(self) -> None:
         object.__setattr__(self, "text", normalize_formula(self.text))
         if self.value is not None and (
-            isinstance(self.value, bool)
-            or not isinstance(self.value, (int, float, str, Decimal))
+            isinstance(self.value, bool) or not isinstance(self.value, (int, float, str, Decimal))
         ):
             raise TypeError("formula cached value must be a number, a string or None (not a bool)")
         # A cached <v> must be a finite xsd:double; NaN and infinities are not.

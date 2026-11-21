@@ -17,10 +17,7 @@ def _sheet_xml(path):
 def _sheet_records(path):
     with zipfile.ZipFile(path) as archive:
         data = archive.read("xl/worksheets/sheet1.bin")
-    return [
-        (record.record_id, data[record.data_start:record.data_end])
-        for record in iter_records(data)
-    ]
+    return [(record.record_id, data[record.data_start : record.data_end]) for record in iter_records(data)]
 
 
 @pytest.fixture
@@ -49,7 +46,8 @@ def test_ignored_errors_are_read(source):
     try:
         items = workbook.active.ignored_errors
         assert [(item.sqref, item.numberStoredAsText, item.formula, item.unlockedFormula) for item in items] == [
-            ("A1:B1", True, None, None), ("B2", None, True, False),
+            ("A1:B1", True, None, None),
+            ("B2", None, True, False),
         ]
     finally:
         workbook.close()
@@ -101,8 +99,20 @@ def test_xlsb_records_match_excels_bytes():
     # Captured from an XLSB saved by Excel 16: flags, one range and its bounds.
     assert ignored_errors_bin(items).hex() == (
         "880500"
-        "890518" "04000000" "01000000" "00000000" "01000000" "00000000" "01000000"
-        "890518" "02000000" "01000000" "00000000" "00000000" "03000000" "03000000"
+        "890518"
+        "04000000"
+        "01000000"
+        "00000000"
+        "01000000"
+        "00000000"
+        "01000000"
+        "890518"
+        "02000000"
+        "01000000"
+        "00000000"
+        "00000000"
+        "03000000"
+        "03000000"
         "8a0500"
     )
 
@@ -120,7 +130,8 @@ def test_xlsb_writer_writes_ignored_errors(tmp_path):
         workbook.close()
     items = ignored_errors_from_records(_sheet_records(path))
     assert [(item.sqref, item.numberStoredAsText, item.formula, item.unlockedFormula) for item in items] == [
-        ("A1:B1", True, None, None), ("B2", None, True, None),
+        ("A1:B1", True, None, None),
+        ("B2", None, True, None),
     ]
 
 
@@ -135,9 +146,7 @@ def test_xlsb_writer_option_writes_ignored_errors(tmp_path):
             ignored_errors=[IgnoredError("A1", numberStoredAsText=True, formulaRange=True)],
         )
     items = ignored_errors_from_records(_sheet_records(path))
-    assert [(item.sqref, item.numberStoredAsText, item.formulaRange) for item in items] == [
-        ("A1", True, True)
-    ]
+    assert [(item.sqref, item.numberStoredAsText, item.formulaRange) for item in items] == [("A1", True, True)]
 
 
 def test_xlsb_ignored_errors_are_read_and_saved(tmp_path):
@@ -154,17 +163,14 @@ def test_xlsb_ignored_errors_are_read_and_saved(tmp_path):
     out = tmp_path / "out.xlsb"
     workbook = load_workbook(source)
     try:
-        assert [
-            (item.sqref, item.numberStoredAsText) for item in workbook.active.ignored_errors
-        ] == [("A1", True)]
+        assert [(item.sqref, item.numberStoredAsText) for item in workbook.active.ignored_errors] == [("A1", True)]
         workbook.active.ignored_errors.append(IgnoredError("B1", formula=True))
         workbook.save(out)
     finally:
         workbook.close()
 
     assert [
-        (item.sqref, item.numberStoredAsText, item.formula)
-        for item in ignored_errors_from_records(_sheet_records(out))
+        (item.sqref, item.numberStoredAsText, item.formula) for item in ignored_errors_from_records(_sheet_records(out))
     ] == [("A1", True, None), ("B1", None, True)]
 
 
@@ -174,9 +180,7 @@ def test_xlsb_ignored_errors_can_be_cleared(tmp_path):
     source = tmp_path / "source.xlsb"
     with XlsbWriter(source) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet(
-            [["12"]], ignored_errors=[IgnoredError("A1", numberStoredAsText=True)]
-        )
+        writer.write_sheet([["12"]], ignored_errors=[IgnoredError("A1", numberStoredAsText=True)])
     out = tmp_path / "none.xlsb"
     workbook = load_workbook(source)
     try:

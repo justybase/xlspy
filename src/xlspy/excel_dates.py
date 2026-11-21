@@ -11,6 +11,7 @@ the reference implementation): serials ``1..59`` are shifted by one day when
 read, serial 60 and 59 both read as 1900-02-28, and dates before 1900-03-01
 are written one serial lower.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -37,11 +38,7 @@ def datetime_to_serial(value: datetime.date, date_1904: bool = False) -> float:
     wall-clock moment, exactly as the writers did before this helper existed.
     """
 
-    moment = (
-        value
-        if isinstance(value, datetime.datetime)
-        else datetime.datetime.combine(value, datetime.time())
-    )
+    moment = value if isinstance(value, datetime.datetime) else datetime.datetime.combine(value, datetime.time())
     naive = moment.replace(tzinfo=None)
     if date_1904:
         epoch = MAC_EPOCH

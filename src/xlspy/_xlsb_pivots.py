@@ -83,8 +83,10 @@ def _view_prefix(autofit_columns: bool) -> bytes:
     else:
         prefix[_AUTOFORMAT_BYTE] &= ~_AUTOFORMAT_MASK & 0xFF
     return bytes(prefix)
+
+
 # BrtBeginSXVD after its axis byte, and BrtBeginPCDField before the name.
-_VD_TAIL = bytes.fromhex("01001000000000" "5fa104000a000000ffffffff")
+_VD_TAIL = bytes.fromhex("010010000000005fa104000a000000ffffffff")
 _FIELD_PREFIX = bytes.fromhex("04000000") + bytes(16)
 _REFRESHED_DATE = 45000.0  # a fixed date: the pivot refreshes when the file opens
 _REFRESHED_BY = "xlspy"
@@ -96,15 +98,18 @@ _STYLE_FLAGS = 0x0033
 # setting lives in them) and after the cache fields.
 _VIEW_TAIL = (
     build_record(_FRT_BEGIN, bytes.fromhex("020e0000"))
-    + build_record(0x426, bytes(9) + b"\xff" * 12) + build_record(0x427)
+    + build_record(0x426, bytes(9) + b"\xff" * 12)
+    + build_record(0x427)
     + build_record(_FRT_END)
     + build_record(_FRT_BEGIN, bytes.fromhex("03110000"))
-    + build_record(0x1388, bytes.fromhex("010100")) + build_record(0x1389)
+    + build_record(0x1388, bytes.fromhex("010100"))
+    + build_record(0x1389)
     + build_record(_FRT_END)
 )
 _CACHE_TAIL = (
     build_record(_FRT_BEGIN, bytes.fromhex("020e0000"))
-    + build_record(0x42A, bytes(9)) + build_record(0x42B)
+    + build_record(0x42A, bytes(9))
+    + build_record(0x42B)
     + build_record(_FRT_END)
     + build_record(_FRT_BEGIN, bytes.fromhex("54000200"))
     + build_record(0x1421, b"\x01")
@@ -126,8 +131,7 @@ def _uid(kind: str, number: int, name: str) -> bytes:
 
 
 def _header(kind: str, number: int, name: str) -> bytes:
-    return (build_record(_AC_BEGIN, _AC_HEADER) + build_record(_UID, _uid(kind, number, name))
-            + build_record(_AC_END))
+    return build_record(_AC_BEGIN, _AC_HEADER) + build_record(_UID, _uid(kind, number, name)) + build_record(_AC_END)
 
 
 def _check(stats: _Stats, field: str) -> None:
@@ -216,9 +220,12 @@ def _items_records(indexes: list[int]) -> bytes:
 
 def _line(repeat: int, kind: int, indexes: list[int], data: int = 0) -> bytes:
     """One BrtBeginSXLI (a row or column item) with its item indexes."""
-    parts = [build_record(
-        _LI, struct.pack("<HHII", repeat, kind, len(indexes), data),
-    )]
+    parts = [
+        build_record(
+            _LI,
+            struct.pack("<HHII", repeat, kind, len(indexes), data),
+        )
+    ]
     if indexes:
         parts.append(build_record(_LI_INDEXES, struct.pack(f"<{len(indexes)}I", *indexes)))
         parts.append(build_record(_END_LI_INDEXES))
@@ -229,8 +236,7 @@ def _line(repeat: int, kind: int, indexes: list[int], data: int = 0) -> bytes:
 def _row_items(render: PivotRender) -> bytes:
     lines = [_line(0, 0, [position]) for position in range(len(render.row_items))]
     lines.append(_line(0, _DISPLAY_GRAND, [0]))
-    return (build_record(_ROW_ITEMS, struct.pack("<I", len(lines))) + b"".join(lines)
-            + build_record(_END_ROW_ITEMS))
+    return build_record(_ROW_ITEMS, struct.pack("<I", len(lines))) + b"".join(lines) + build_record(_END_ROW_ITEMS)
 
 
 def _column_fields_and_items(render: PivotRender) -> bytes:
@@ -255,13 +261,18 @@ def _column_fields_and_items(render: PivotRender) -> bytes:
             lines.extend(_line(1, 0, [index], index) for index in range(1, count))
         lines.append(_line(0, _DISPLAY_GRAND, [0]))
         lines.extend(_line(0, _DISPLAY_GRAND, [0], index) for index in range(1, count))
-    return (fields + build_record(_COL_ITEMS, struct.pack("<I", len(lines))) + b"".join(lines)
-            + build_record(_END_COL_ITEMS))
+    return (
+        fields
+        + build_record(_COL_ITEMS, struct.pack("<I", len(lines)))
+        + b"".join(lines)
+        + build_record(_END_COL_ITEMS)
+    )
 
 
 def _field_list(fields: list[int]) -> bytes:
-    return (build_record(_COL_FIELDS, struct.pack(f"<I{len(fields)}i", len(fields), *fields))
-            + build_record(_END_COL_FIELDS))
+    return build_record(_COL_FIELDS, struct.pack(f"<I{len(fields)}i", len(fields), *fields)) + build_record(
+        _END_COL_FIELDS
+    )
 
 
 def pivot_table_bin(render: PivotRender, data_field_format_ids: list[int | None]) -> bytes:
@@ -270,17 +281,26 @@ def pivot_table_bin(render: PivotRender, data_field_format_ids: list[int | None]
     first_col, first_row, last_col, last_row = parse_cell_range(render.ref)
     pages = len(render.filter_indices)
     location = struct.pack(
-        "<9I", first_row, last_row, first_col, last_col,
-        first_row + render.first_header_row, first_row + render.first_data_row,
-        first_col + 1, pages, 1 if pages else 0,
+        "<9I",
+        first_row,
+        last_row,
+        first_col,
+        last_col,
+        first_row + render.first_header_row,
+        first_row + render.first_data_row,
+        first_col + 1,
+        pages,
+        1 if pages else 0,
     )
     data_fields = set(render.value_indices)
     parts = [
         _header("table", render.pivot_id, render.plan.name),
         build_record(
             _VIEW,
-            _view_prefix(pivot.autofit_columns) + struct.pack("<I", render.cache_id)
-            + wide_string(render.plan.name) + wide_string(pivot.data_caption),
+            _view_prefix(pivot.autofit_columns)
+            + struct.pack("<I", render.cache_id)
+            + wide_string(render.plan.name)
+            + wide_string(pivot.data_caption),
         ),
         build_record(_LOCATION, location),
         build_record(_END_LOCATION),
@@ -300,8 +320,10 @@ def pivot_table_bin(render: PivotRender, data_field_format_ids: list[int | None]
         values = render.shared_items.get(index)
         if values is not None:
             display = (
-                render.row_display if index == render.row_field
-                else render.col_display if index == render.col_field
+                render.row_display
+                if index == render.row_field
+                else render.col_display
+                if index == render.col_field
                 else sorted(values, key=_sort_key)
             )
             positions = {value: position for position, value in enumerate(values)}
@@ -320,9 +342,19 @@ def pivot_table_bin(render: PivotRender, data_field_format_ids: list[int | None]
         parts.append(build_record(_END_PIS))
     parts.append(build_record(_DIS, struct.pack("<I", len(render.value_captions))))
     for column, spec, numfmt in zip(render.value_indices, pivot.value_specs, data_field_format_ids):
-        payload = struct.pack(
-            "<6I", column, _XLSB_SUBTOTAL_CODES[spec.function], 0, 0, 0, numfmt or 0,
-        ) + b"\x01" + wide_string(spec.caption)
+        payload = (
+            struct.pack(
+                "<6I",
+                column,
+                _XLSB_SUBTOTAL_CODES[spec.function],
+                0,
+                0,
+                0,
+                numfmt or 0,
+            )
+            + b"\x01"
+            + wide_string(spec.caption)
+        )
         parts.append(build_record(_DI, payload))
         parts.append(build_record(_END_DI))
     parts.append(build_record(_END_DIS))
@@ -337,8 +369,7 @@ def workbook_pivot_caches_bin(cache_ids: list[tuple[int, str]]) -> bytes:
     if not cache_ids:
         return b""
     body = b"".join(
-        build_record(_CACHE_ID, struct.pack("<I", cache_id) + wide_string(rel_id))
-        + build_record(_END_CACHE_ID)
+        build_record(_CACHE_ID, struct.pack("<I", cache_id) + wide_string(rel_id)) + build_record(_END_CACHE_ID)
         for cache_id, rel_id in cache_ids
     )
     return build_record(_CACHE_IDS) + body + build_record(_END_CACHE_IDS)

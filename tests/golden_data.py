@@ -16,11 +16,61 @@ from xlspy import F
 HEADER = ["text", "int", "float", "bool", "date_iso", "date_short", "datetime", "hole", "tail"]
 
 ROWS = [
-    ["plain", 0, 0.0, True, dt.date(2024, 1, 15), dt.date(2023, 6, 1), dt.datetime(2024, 1, 15, 10, 30, 0), None, "end"],
-    ["  padded  ", -1, -0.001, False, dt.date(1900, 1, 1), dt.date(1999, 9, 9), dt.datetime(1999, 9, 9, 9, 9, 9), None, "end"],
-    ["<tag> & \"quotes\" 'x'", 2147483647, 1e10, True, dt.date(2173, 10, 14), dt.date(2100, 12, 31), dt.datetime(2024, 2, 29, 23, 59, 59), "mid", "end"],
-    ["zażółć gęślą jaźń ⚡", -2147483648, 1.23456789e-8, False, dt.date(2000, 2, 29), dt.date(2020, 12, 31), dt.datetime(2020, 12, 31, 0, 0, 0), None, "end"],
-    ["line\nbreak\ttab", 123456789, 0.30000000000000004, False, dt.date(1970, 1, 1), dt.date(2024, 2, 29), dt.datetime(1970, 1, 1, 0, 0, 0), None, "end"],
+    [
+        "plain",
+        0,
+        0.0,
+        True,
+        dt.date(2024, 1, 15),
+        dt.date(2023, 6, 1),
+        dt.datetime(2024, 1, 15, 10, 30, 0),
+        None,
+        "end",
+    ],
+    [
+        "  padded  ",
+        -1,
+        -0.001,
+        False,
+        dt.date(1900, 1, 1),
+        dt.date(1999, 9, 9),
+        dt.datetime(1999, 9, 9, 9, 9, 9),
+        None,
+        "end",
+    ],
+    [
+        "<tag> & \"quotes\" 'x'",
+        2147483647,
+        1e10,
+        True,
+        dt.date(2173, 10, 14),
+        dt.date(2100, 12, 31),
+        dt.datetime(2024, 2, 29, 23, 59, 59),
+        "mid",
+        "end",
+    ],
+    [
+        "zażółć gęślą jaźń ⚡",
+        -2147483648,
+        1.23456789e-8,
+        False,
+        dt.date(2000, 2, 29),
+        dt.date(2020, 12, 31),
+        dt.datetime(2020, 12, 31, 0, 0, 0),
+        None,
+        "end",
+    ],
+    [
+        "line\nbreak\ttab",
+        123456789,
+        0.30000000000000004,
+        False,
+        dt.date(1970, 1, 1),
+        dt.date(2024, 2, 29),
+        dt.datetime(1970, 1, 1, 0, 0, 0),
+        None,
+        "end",
+    ],
 ]
 
 SHEETS = {
@@ -43,9 +93,9 @@ def sheets_1904():
     """``SHEETS`` adjusted for a workbook using the 1904 date system."""
 
     return {
-        name: [[_MAC_SUBSTITUTIONS.get(cell, cell) for cell in row] for row in rows]
-        for name, rows in SHEETS.items()
+        name: [[_MAC_SUBSTITUTIONS.get(cell, cell) for cell in row] for row in rows] for name, rows in SHEETS.items()
     }
+
 
 COLUMN_FORMATS = {
     "date_iso": F.DATE_ISO,
@@ -88,11 +138,7 @@ def encoded_sheets(sheets=None, *, overrides=True):
         for row_index, row in enumerate(rows):
             encoded[name].append(
                 [
-                    encode_cell(
-                        EXPECTED_OVERRIDES.get((name, row_index, column_index), cell)
-                        if overrides
-                        else cell
-                    )
+                    encode_cell(EXPECTED_OVERRIDES.get((name, row_index, column_index), cell) if overrides else cell)
                     for column_index, cell in enumerate(row)
                 ]
             )
@@ -111,9 +157,7 @@ def writer_rows():
     for row in rows:
         converted.append(
             [
-                (value, COLUMN_FORMATS[column])
-                if column in COLUMN_FORMATS and value is not None
-                else value
+                (value, COLUMN_FORMATS[column]) if column in COLUMN_FORMATS and value is not None else value
                 for column, value in zip(header, row)
             ]
         )

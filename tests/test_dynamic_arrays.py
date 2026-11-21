@@ -5,8 +5,14 @@ import zipfile
 import pytest
 
 from xlspy import (
-    ExcelReader, Formula, UnsupportedFeatureError, XlsbUpdater, XlsbWriter,
-    XlsxUpdater, XlsxWriter, load_workbook,
+    ExcelReader,
+    Formula,
+    UnsupportedFeatureError,
+    XlsbUpdater,
+    XlsbWriter,
+    XlsxUpdater,
+    XlsxWriter,
+    load_workbook,
 )
 
 
@@ -24,23 +30,15 @@ def test_let_and_lambda_text_is_normalized():
     assert Formula("LET(x,1,x+1)").text == "_xlfn.LET(_xlpm.x,1,_xlpm.x+1)"
     assert Formula("LET(x,1,y,2,x+y)").text == "_xlfn.LET(_xlpm.x,1,_xlpm.y,2,_xlpm.x+_xlpm.y)"
     assert Formula("LAMBDA(x,x*2)(3)").text == "_xlfn.LAMBDA(_xlpm.x,_xlpm.x*2)(3)"
-    assert Formula("MAP(A1:A3,LAMBDA(v,v*2))").text == (
-        "_xlfn.MAP(A1:A3,_xlfn.LAMBDA(_xlpm.v,_xlpm.v*2))"
-    )
-    assert Formula("LET(x,LET(y,1,y+1),x+y)").text == (
-        "_xlfn.LET(_xlpm.x,_xlfn.LET(_xlpm.y,1,_xlpm.y+1),_xlpm.x+y)"
-    )
+    assert Formula("MAP(A1:A3,LAMBDA(v,v*2))").text == ("_xlfn.MAP(A1:A3,_xlfn.LAMBDA(_xlpm.v,_xlpm.v*2))")
+    assert Formula("LET(x,LET(y,1,y+1),x+y)").text == ("_xlfn.LET(_xlpm.x,_xlfn.LET(_xlpm.y,1,_xlpm.y+1),_xlpm.x+y)")
 
 
 def test_structured_references_are_not_lambda_parameters():
     assert Formula("LAMBDA(x,Table1[x])").text == "_xlfn.LAMBDA(_xlpm.x,Table1[x])"
-    assert Formula("LET(a,1,Table1[[#This Row],[a]])").text == (
-        "_xlfn.LET(_xlpm.a,1,Table1[[#This Row],[a]])"
-    )
+    assert Formula("LET(a,1,Table1[[#This Row],[a]])").text == ("_xlfn.LET(_xlpm.a,1,Table1[[#This Row],[a]])")
     assert Formula("LAMBDA(x,Sheet1!x)").text == "_xlfn.LAMBDA(_xlpm.x,Sheet1!x)"
-    assert Formula("LET(x,1,Sheet1!x+x)").text == (
-        "_xlfn.LET(_xlpm.x,1,Sheet1!x+_xlpm.x)"
-    )
+    assert Formula("LET(x,1,Sheet1!x+x)").text == ("_xlfn.LET(_xlpm.x,1,Sheet1!x+_xlpm.x)")
 
 
 def test_spill_ref_and_array_ref_are_exclusive():
@@ -85,11 +83,18 @@ def test_let_and_lambda_read_back(tmp_path, writer_class, suffix):
     path = tmp_path / f"let.{suffix}"
     with writer_class(path) as writer:
         writer.add_sheet("S")
-        writer.write_sheet([[
-            Formula("LET(x,1,x+1)"),
-            None,
-            Formula("MAP(B1:B3,LAMBDA(v,v*2))", spill_ref="C1:C3"),
-        ], [1], [2], [3]])
+        writer.write_sheet(
+            [
+                [
+                    Formula("LET(x,1,x+1)"),
+                    None,
+                    Formula("MAP(B1:B3,LAMBDA(v,v*2))", spill_ref="C1:C3"),
+                ],
+                [1],
+                [2],
+                [3],
+            ]
+        )
     rows = _formula_text(path, suffix)
     assert rows[0][0] == "=_xlfn.LET(_xlpm.x,1,_xlpm.x+1)"
     assert rows[0][2] == "=_xlfn.MAP(B1:B3,_xlfn.LAMBDA(_xlpm.v,_xlpm.v*2))"
@@ -107,9 +112,7 @@ def test_let_and_lambda_read_back(tmp_path, writer_class, suffix):
     "writer_class, updater_class, suffix",
     [(XlsxWriter, XlsxUpdater, "xlsx"), (XlsbWriter, XlsbUpdater, "xlsb")],
 )
-def test_updaters_refuse_new_spill_formulas(
-    tmp_path, writer_class, updater_class, suffix
-):
+def test_updaters_refuse_new_spill_formulas(tmp_path, writer_class, updater_class, suffix):
     source = tmp_path / f"plain.{suffix}"
     with writer_class(source) as writer:
         writer.add_sheet("S")
@@ -117,9 +120,7 @@ def test_updaters_refuse_new_spill_formulas(
     updater = updater_class(source)
     try:
         with pytest.raises(UnsupportedFeatureError, match="dynamic"):
-            updater.update_cells(
-                "S", {"A2": Formula("SEQUENCE(3)", spill_ref="A2:A4")}
-            )
+            updater.update_cells("S", {"A2": Formula("SEQUENCE(3)", spill_ref="A2:A4")})
     finally:
         updater.close()
 
@@ -187,18 +188,14 @@ def test_xlsb_replace_sheet_data_writes_spill_rows_past_the_data(tmp_path, strea
     "writer_class, updater_class, suffix",
     [(XlsxWriter, XlsxUpdater, "xlsx"), (XlsbWriter, XlsbUpdater, "xlsb")],
 )
-def test_replace_sheet_data_writes_spill_formulas(
-    tmp_path, writer_class, updater_class, suffix
-):
+def test_replace_sheet_data_writes_spill_formulas(tmp_path, writer_class, updater_class, suffix):
     source = tmp_path / f"plain.{suffix}"
     with writer_class(source) as writer:
         writer.add_sheet("S")
         writer.write_sheet([["x"], [1]])
     updater = updater_class(source)
     try:
-        updater.replace_sheet_data(
-            "S", [[Formula("SEQUENCE(3)", spill_ref="A2:A4")]], headers=["x"]
-        )
+        updater.replace_sheet_data("S", [[Formula("SEQUENCE(3)", spill_ref="A2:A4")]], headers=["x"])
         updater.save(source)
     finally:
         updater.close()
@@ -213,9 +210,7 @@ def test_replace_sheet_data_writes_spill_formulas(
     "writer_class, updater_class, suffix",
     [(XlsxWriter, XlsxUpdater, "xlsx"), (XlsbWriter, XlsbUpdater, "xlsb")],
 )
-def test_updater_edits_beside_a_spill_and_refuses_inside(
-    tmp_path, writer_class, updater_class, suffix
-):
+def test_updater_edits_beside_a_spill_and_refuses_inside(tmp_path, writer_class, updater_class, suffix):
     source = tmp_path / f"spill.{suffix}"
     with writer_class(source) as writer:
         writer.add_sheet("S")

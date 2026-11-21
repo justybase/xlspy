@@ -122,8 +122,7 @@ def test_chart_caches_come_from_streamed_rows(tmp_path):
         writer.add_sheet("Data")
         writer.write_sheet(
             source,
-            charts=[Chart("line", [ChartSeries("B2:B4001", categories="A2:A4001", title_cell="B1")],
-                          anchor="F2")],
+            charts=[Chart("line", [ChartSeries("B2:B4001", categories="A2:A4001", title_cell="B1")], anchor="F2")],
         )
     assert source.passes == 1
     with zipfile.ZipFile(path) as archive:
@@ -299,8 +298,10 @@ def test_xlsb_original_chart_forms_still_write(tmp_path):
         writer.add_sheet("Data")
         writer.write_sheet(
             [["Q", "A"], ["Q1", 10], ["Q2", 20]],
-            charts=[Chart("bar", [ChartSeries("B2:B3", categories="A2:A3", title="A")], anchor="D2"),
-                    Chart("pie", [ChartSeries("B2:B3", title="A")], anchor="D20")],
+            charts=[
+                Chart("bar", [ChartSeries("B2:B3", categories="A2:A3", title="A")], anchor="D2"),
+                Chart("pie", [ChartSeries("B2:B3", title="A")], anchor="D20"),
+            ],
         )
     with ExcelReader(str(path)) as reader:
         assert list(reader.get_rows("Data"))[1] == ["Q1", 10]
@@ -315,7 +316,7 @@ def _biff_records(data):
     while pos < len(data):
         rec_type, pos = _biff_varint(data, pos)
         size, pos = _biff_varint(data, pos)
-        yield rec_type, data[pos:pos + size]
+        yield rec_type, data[pos : pos + size]
         pos += size
 
 
@@ -334,7 +335,7 @@ def test_xlsb_inline_counts_supplementary_characters_as_two_units(tmp_path):
     # BrtCellSt stores cch in UTF-16 code units; each astral character is two.
     # xlspy's own reader ignores cch, so the raw record is checked directly:
     # a count in code points would still round-trip here but corrupt the cell in Excel.
-    text = "\U0001D11E" + "x" * 3
+    text = "\U0001d11e" + "x" * 3
     path = tmp_path / "astral.xlsb"
     with XlsbWriter(path, use_shared_strings=False) as writer:
         writer.add_sheet("Data")
@@ -353,7 +354,7 @@ def test_xlsb_inline_counts_supplementary_characters_as_two_units(tmp_path):
 
 def test_xlsb_inline_text_limit_counts_utf16_units(tmp_path):
     # 16383 astral characters are 32766 units (allowed); 16384 are 32768 (refused).
-    ok = "\U0001D11E" * 16383
+    ok = "\U0001d11e" * 16383
     path = tmp_path / "limit_ok.xlsb"
     with XlsbWriter(path, use_shared_strings=False) as writer:
         writer.add_sheet("Data")
@@ -363,7 +364,7 @@ def test_xlsb_inline_text_limit_counts_utf16_units(tmp_path):
     with pytest.raises(ValueError, match="32767"):
         with XlsbWriter(tmp_path / "limit_bad.xlsb", use_shared_strings=False) as writer:
             writer.add_sheet("Data")
-            writer.write_sheet([["\U0001D11E" * 16384]])
+            writer.write_sheet([["\U0001d11e" * 16384]])
 
 
 def test_xlsb_inline_lone_surrogate_is_refused(tmp_path):
@@ -381,7 +382,7 @@ def _accel_available():
     return _accel.HAVE_NATIVE
 
 
-_PARITY_SCRIPT = r'''
+_PARITY_SCRIPT = r"""
 import datetime
 import decimal
 import sys
@@ -406,7 +407,7 @@ print("native_row=" + str(_accel.encode_xlsb_row_inline(["a"], 0) is not None))
 with XlsbWriter(sys.argv[1], use_shared_strings=False) as writer:
     writer.add_sheet("Data")
     writer.write_sheet(rows)
-'''
+"""
 
 
 @pytest.mark.skipif(not _accel_available(), reason="native extension not built")
@@ -426,7 +427,11 @@ def test_xlsb_inline_native_and_python_encoders_write_identical_bytes(tmp_path):
         env = dict(os.environ, PYTHONPATH=src_dir, XLSPY_ACCEL=accel)
         proc = subprocess.run(
             [sys.executable, str(script), str(out)],
-            env=env, capture_output=True, text=True, encoding="utf-8", check=False,
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
         )
         assert proc.returncode == 0, proc.stderr
         expected = "native_row=True" if accel == "auto" else "native_row=False"

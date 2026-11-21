@@ -1,4 +1,5 @@
 """XlsbWriter sheet-view records: row headers, panes, selections, column widths."""
+
 from __future__ import annotations
 
 import struct
@@ -23,8 +24,12 @@ class _XlsbViewsMixin(_XlsbWriterHost):
 
     @staticmethod
     def _row_header_record(
-        row_idx: int, last_col: int, height_twips: int | None = None,
-        hidden: bool = False, outline_level: int = 0, collapsed: bool = False,
+        row_idx: int,
+        last_col: int,
+        height_twips: int | None = None,
+        hidden: bool = False,
+        outline_level: int = 0,
+        collapsed: bool = False,
     ) -> bytes:
         """Build a BrtRowHdr record ([MS-XLSB] 2.4.761).
 
@@ -35,14 +40,16 @@ class _XlsbViewsMixin(_XlsbWriterHost):
         this layout.
         """
         flags = (
-            (0x20 if height_twips is not None else 0) | (0x10 if hidden else 0)
-            | (0x08 if collapsed else 0) | outline_level
+            (0x20 if height_twips is not None else 0)
+            | (0x10 if hidden else 0)
+            | (0x08 if collapsed else 0)
+            | outline_level
         )
-        payload = struct.pack('<II', row_idx, 0)  # rw, ixfe
-        payload += struct.pack('<H', 300 if height_twips is None else height_twips)
+        payload = struct.pack("<II", row_idx, 0)  # rw, ixfe
+        payload += struct.pack("<H", 300 if height_twips is None else height_twips)
         payload += bytes((0, flags, 0))  # fExtraAsc/fExtraDsc, outline+collapsed+hidden+unsynced, phonetic
-        payload += struct.pack('<I', 1)  # ccolspan
-        payload += struct.pack('<II', 0, last_col)
+        payload += struct.pack("<I", 1)  # ccolspan
+        payload += struct.pack("<II", 0, last_col)
         return build_record(_BRT_ROW_HDR, payload)
 
     def _pane_record(self, freeze_panes: str | None) -> bytes:
@@ -86,13 +93,17 @@ class _XlsbViewsMixin(_XlsbWriterHost):
         return selection_record(active, split_row, split_col, 0, [(split_row, split_row, split_col, split_col)])
 
     def _write_cols_width(
-        self, buffer: io.BytesIO, start_col: int, end_col: int,
-        col_widths_array: list[float], widths: dict | None = None,
+        self,
+        buffer: io.BytesIO,
+        start_col: int,
+        end_col: int,
+        col_widths_array: list[float],
+        widths: dict | None = None,
         hidden_cols: set | frozenset = frozenset(),
         col_outline: Any = None,
     ) -> None:
         widths = widths or {}
-        buffer.write(build_record(_BRT_BEGIN_COL_INFOS, b''))
+        buffer.write(build_record(_BRT_BEGIN_COL_INFOS, b""))
 
         # Explicit widths and hidden columns past the sampled width still need a
         # BrtColInfo; dropping them silently lost the caller's settings.
@@ -115,8 +126,11 @@ class _XlsbViewsMixin(_XlsbWriterHost):
                 flags |= col_outline.state_at(i)[0] << 8
                 if col_outline.collapsed_at(i):
                     flags |= 0x1000
-            buffer.write(build_record(
-                _BRT_COL_INFO, struct.pack('<IIIIH', i, i, coldx, 0, flags),
-            ))
+            buffer.write(
+                build_record(
+                    _BRT_COL_INFO,
+                    struct.pack("<IIIIH", i, i, coldx, 0, flags),
+                )
+            )
 
-        buffer.write(build_record(_BRT_END_COL_INFOS, b''))
+        buffer.write(build_record(_BRT_END_COL_INFOS, b""))

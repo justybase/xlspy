@@ -1,5 +1,6 @@
 """ExcelReader and read-only load_workbook on workbooks with chartsheets: a chartsheet
 is listed with the sheets but has no cells, and is not an error."""
+
 import re
 import zipfile
 from pathlib import Path
@@ -62,7 +63,7 @@ def test_worksheet_without_its_part_is_still_a_damaged_file(tmp_path, drop):
                 if drop == "part" and info.filename == sheet_part:
                     continue
                 if drop == "relationship" and info.filename == "xl/_rels/workbook.bin.rels":
-                    data = re.sub(rb'<Relationship [^>]*worksheets/sheet[^>]*/>', b"", data)
+                    data = re.sub(rb"<Relationship [^>]*worksheets/sheet[^>]*/>", b"", data)
                 target.writestr(info, data)
     with ExcelReader(str(damaged)) as reader:
         with pytest.raises(InvalidFileError):

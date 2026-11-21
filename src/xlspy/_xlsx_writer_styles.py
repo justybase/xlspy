@@ -1,4 +1,5 @@
 """XlsxWriter style methods: fonts, fills, borders, styles.xml, conditional-format XML."""
+
 from __future__ import annotations
 
 import xml.sax.saxutils as saxutils
@@ -99,31 +100,22 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             else:
                 border_id = len(self._dxf_border_registry)
                 self._dxf_border_registry[border_key] = border_id
-        align_key = (
-            _alignment_key_from(dxf.alignment)
-            if dxf.alignment is not None else None
-        )
-        if align_key is not None and not any(
-            value is not None for value in align_key
-        ):
+        align_key = _alignment_key_from(dxf.alignment) if dxf.alignment is not None else None
+        if align_key is not None and not any(value is not None for value in align_key):
             align_key = None
-        prot_key = (
-            _protection_key_from(dxf.protection)
-            if dxf.protection is not None else None
-        )
-        if prot_key is not None and not any(
-            value is not None for value in prot_key
-        ):
+        prot_key = _protection_key_from(dxf.protection) if dxf.protection is not None else None
+        if prot_key is not None and not any(value is not None for value in prot_key):
             prot_key = None
-        if (
-            dxf.number_format is not None
-            and dxf.number_format not in self._format_registry
-        ):
+        if dxf.number_format is not None and dxf.number_format not in self._format_registry:
             self._format_registry[dxf.number_format] = self._next_numfmt_id
             self._next_numfmt_id += 1
         dxf_entry = (
-            font_id, fill_id, border_id, dxf.number_format,
-            align_key, prot_key,
+            font_id,
+            fill_id,
+            border_id,
+            dxf.number_format,
+            align_key,
+            prot_key,
         )
         existing = self._dxf_index.get(dxf_entry)
         if existing is not None:
@@ -151,7 +143,12 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         self._style_xf_map[style] = xf_index
         self._xf_styles[xf_index] = style
         self._style_components[xf_index] = (
-            font_id, fill_id, border_id, numfmt_id, _align, _prot,
+            font_id,
+            fill_id,
+            border_id,
+            numfmt_id,
+            _align,
+            _prot,
         )
         return xf_index
 
@@ -162,7 +159,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
     def _color_xml(self, color_key) -> str:
         if color_key is None:
             return '<color theme="1"/>'
-        return f'<color {self._color_attrs(color_key)}/>'
+        return f"<color {self._color_attrs(color_key)}/>"
 
     def _font_xml(self, font_key, *, for_dxf: bool = False) -> str:
         name = font_key.name
@@ -176,7 +173,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             if font_key.color is not None:
                 parts.append(self._color_xml(font_key.color))
             if name is not None:
-                label = saxutils.escape(name, {'"': '&quot;'})
+                label = saxutils.escape(name, {'"': "&quot;"})
                 parts.append(f'<name val="{label}"/>')
             if font_key.family is not None:
                 parts.append(f'<family val="{font_key.family}"/>')
@@ -184,7 +181,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
                 parts.append(f'<scheme val="{font_key.scheme}"/>')
         else:
             parts.append(self._color_xml(font_key.color))
-            label = saxutils.escape(name, {'"': '&quot;'}) if name is not None else "Calibri"
+            label = saxutils.escape(name, {'"': "&quot;"}) if name is not None else "Calibri"
             parts.append(f'<name val="{label}"/>')
             if font_key.family is not None:
                 parts.append(f'<family val="{font_key.family}"/>')
@@ -200,66 +197,71 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         if font_key.charset is not None:
             parts.append(f'<charset val="{font_key.charset}"/>')
         if font_key.bold:
-            parts.append('<b/>')
+            parts.append("<b/>")
         if font_key.italic:
-            parts.append('<i/>')
+            parts.append("<i/>")
         if font_key.underline is not None:
             if font_key.underline == "single":
-                parts.append('<u/>')
+                parts.append("<u/>")
             else:
                 parts.append(f'<u val="{font_key.underline}"/>')
         if font_key.strike:
-            parts.append('<strike/>')
+            parts.append("<strike/>")
         if font_key.vert_align is not None:
             parts.append(f'<vertAlign val="{font_key.vert_align}"/>')
         if font_key.outline:
-            parts.append('<outline/>')
+            parts.append("<outline/>")
         if font_key.shadow:
-            parts.append('<shadow/>')
+            parts.append("<shadow/>")
         if font_key.condense:
-            parts.append('<condense/>')
+            parts.append("<condense/>")
         if font_key.extend:
-            parts.append('<extend/>')
+            parts.append("<extend/>")
         return f"<font>{''.join(parts)}</font>"
 
     def _fill_xml(self, fill_key, *, for_dxf: bool = False) -> str:
         if fill_key[0] == "gradient":
             (
-                _, fill_type, degree, left, right, top, bottom, stops,
+                _,
+                fill_type,
+                degree,
+                left,
+                right,
+                top,
+                bottom,
+                stops,
             ) = fill_key
             attrs = [f'type="{fill_type}"']
             if degree is not None:
                 attrs.append(f'degree="{_format_number(degree)}"')
             for name, value in (
-                ("left", left), ("right", right), ("top", top),
+                ("left", left),
+                ("right", right),
+                ("top", top),
                 ("bottom", bottom),
             ):
                 if value is not None:
                     attrs.append(f'{name}="{_format_number(value)}"')
             stop_xml = "".join(
-                f'<stop position="{_format_number(position)}">'
-                f'<color {self._color_attrs(color_key)}/></stop>'
+                f'<stop position="{_format_number(position)}"><color {self._color_attrs(color_key)}/></stop>'
                 for color_key, position in stops
             )
-            return (
-                f'<fill><gradientFill {" ".join(attrs)}>'
-                f"{stop_xml}</gradientFill></fill>"
-            )
+            return f"<fill><gradientFill {' '.join(attrs)}>{stop_xml}</gradientFill></fill>"
         _, pattern, fg_key, bg_key = fill_key
         pattern_type = pattern if pattern is not None else "none"
         if pattern_type == "solid":
-            fg_xml = f'<fgColor {self._color_attrs(fg_key)}/>' if fg_key is not None else ""
+            fg_xml = f"<fgColor {self._color_attrs(fg_key)}/>" if fg_key is not None else ""
             if bg_key is not None:
-                bg_xml = f'<bgColor {self._color_attrs(bg_key)}/>'
+                bg_xml = f"<bgColor {self._color_attrs(bg_key)}/>"
             elif for_dxf:
                 # A conditional format paints a solid fill with its background
                 # color, so a fill given only start_color would not show.
-                bg_xml = f'<bgColor {self._color_attrs(fg_key)}/>' if fg_key is not None else ""
+                bg_xml = f"<bgColor {self._color_attrs(fg_key)}/>" if fg_key is not None else ""
             else:
                 bg_xml = '<bgColor indexed="64"/>'
         else:
-            fg_xml = f'<fgColor {self._color_attrs(fg_key)}/>' if fg_key is not None else ""
-            bg_xml = f'<bgColor {self._color_attrs(bg_key)}/>' if bg_key is not None else ""
+            fg_xml = f"<fgColor {self._color_attrs(fg_key)}/>" if fg_key is not None else ""
+            bg_xml = f"<bgColor {self._color_attrs(bg_key)}/>" if bg_key is not None else ""
         return f'<fill><patternFill patternType="{pattern_type}">{fg_xml}{bg_xml}</patternFill></fill>'
 
     def _border_xml(self, border_key) -> str:
@@ -273,7 +275,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         if numfmt_count > 0:
             numfmts_parts = []
             for fmt_string, numfmt_id in self._format_registry.items():
-                escaped_fmt = saxutils.escape(fmt_string, {'"': '&quot;'})
+                escaped_fmt = saxutils.escape(fmt_string, {'"': "&quot;"})
                 numfmts_parts.append(f'<numFmt numFmtId="{numfmt_id}" formatCode="{escaped_fmt}"/>')
             numfmts = f'<numFmts count="{numfmt_count}">{"".join(numfmts_parts)}</numFmts>'
 
@@ -287,13 +289,18 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         # references through its s= attribute.
         custom_xfs = {
             xf_index: f'<xf numFmtId="{self._format_registry[fmt_string]}" fontId="0" '
-                      f'fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+            f'fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
             for fmt_string, xf_index in self._format_xf_map.items()
         }
         for xf_index, components in self._style_components.items():
             font_id, fill_id, border_id, numfmt_id, align, prot = components
-            attrs = [f'numFmtId="{numfmt_id}"', f'fontId="{font_id}"',
-                     f'fillId="{fill_id}"', f'borderId="{border_id}"', 'xfId="0"']
+            attrs = [
+                f'numFmtId="{numfmt_id}"',
+                f'fontId="{font_id}"',
+                f'fillId="{fill_id}"',
+                f'borderId="{border_id}"',
+                'xfId="0"',
+            ]
             if numfmt_id != 0:
                 attrs.append('applyNumberFormat="1"')
             if font_id != 0:
@@ -308,7 +315,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             prot_xml = _protection_xml(prot)
             if prot_xml:
                 attrs.append('applyProtection="1"')
-            custom_xfs[xf_index] = f'<xf {" ".join(attrs)}>{align_xml}{prot_xml}</xf>'
+            custom_xfs[xf_index] = f"<xf {' '.join(attrs)}>{align_xml}{prot_xml}</xf>"
 
         for xf_index in sorted(custom_xfs):
             xf_entries.append(custom_xfs[xf_index])
@@ -328,15 +335,13 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             '<fill><patternFill patternType="gray125"/></fill>',
         ]
         fills.extend(
-            self._fill_xml(key)
-            for key, _fill_id in sorted(self._fill_registry.items(), key=lambda item: item[1])
+            self._fill_xml(key) for key, _fill_id in sorted(self._fill_registry.items(), key=lambda item: item[1])
         )
         borders = [
-            '<border><left/><right/><top/><bottom/><diagonal/></border>',
+            "<border><left/><right/><top/><bottom/><diagonal/></border>",
         ]
         borders.extend(
-            self._border_xml(key)
-            for key, _border_id in sorted(self._border_registry.items(), key=lambda item: item[1])
+            self._border_xml(key) for key, _border_id in sorted(self._border_registry.items(), key=lambda item: item[1])
         )
 
         dxf_fonts: list = [None] * len(self._dxf_font_registry)
@@ -354,12 +359,9 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             if font_id is not None:
                 inner += self._font_xml(dxf_fonts[font_id], for_dxf=True)
             if numfmt is not None:
-                escaped_fmt = saxutils.escape(numfmt, {'"': '&quot;'})
+                escaped_fmt = saxutils.escape(numfmt, {'"': "&quot;"})
                 numfmt_id = self._format_registry[numfmt]
-                inner += (
-                    f'<numFmt numFmtId="{numfmt_id}" '
-                    f'formatCode="{escaped_fmt}"/>'
-                )
+                inner += f'<numFmt numFmtId="{numfmt_id}" formatCode="{escaped_fmt}"/>'
             if fill_id is not None:
                 inner += self._fill_xml(dxf_fills[fill_id], for_dxf=True)
             if align is not None:
@@ -425,10 +427,7 @@ class _XlsxStylesMixin(_XlsxWriterHost):
         if isinstance(rule, TextRule):
             kind, operator, template = CF_TEXT_RULES[rule.operator]
             quoted = '"' + rule.text.replace('"', '""') + '"'
-            attrs = (
-                f'type="{kind}" operator="{operator}" '
-                f'text="{saxutils.escape(rule.text, {chr(34): "&quot;"})}"'
-            )
+            attrs = f'type="{kind}" operator="{operator}" text="{saxutils.escape(rule.text, {chr(34): "&quot;"})}"'
             return attrs, template.format(t=quoted, c=corner)
         if isinstance(rule, TimePeriodRule):
             return (
@@ -450,29 +449,19 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             dxf_index = self._register_dxf_style(dxf)
             dxf_part = f' dxfId="{dxf_index}"'
         if isinstance(rule, CellIsRule):
-            formulas = "".join(
-                f"<formula>{saxutils.escape(text)}</formula>"
-                for text in rule.formula
-            )
+            formulas = "".join(f"<formula>{saxutils.escape(text)}</formula>" for text in rule.formula)
             return (
                 f'<cfRule type="cellIs" operator="{rule.operator}" '
                 f'priority="{priority}"{dxf_part}{stop}>{formulas}</cfRule>'
             )
         if isinstance(rule, FormulaRule):
-            formulas = "".join(
-                f"<formula>{saxutils.escape(text)}</formula>"
-                for text in rule.formula
-            )
-            return (
-                f'<cfRule type="expression" priority="{priority}"'
-                f'{dxf_part}{stop}>{formulas}</cfRule>'
-            )
+            formulas = "".join(f"<formula>{saxutils.escape(text)}</formula>" for text in rule.formula)
+            return f'<cfRule type="expression" priority="{priority}"{dxf_part}{stop}>{formulas}</cfRule>'
         if isinstance(rule, EXTRA_CF_RULES):
             attrs, formula = self._extra_cf_rule_parts(rule)
             formula_xml = f"<formula>{saxutils.escape(formula)}</formula>" if formula else ""
-            return (
-                f'<cfRule {attrs} priority="{priority}"{dxf_part}{stop}'
-                + (f">{formula_xml}</cfRule>" if formula_xml else "/>")
+            return f'<cfRule {attrs} priority="{priority}"{dxf_part}{stop}' + (
+                f">{formula_xml}</cfRule>" if formula_xml else "/>"
             )
         if isinstance(rule, ColorScaleRule):
             cfvos: tuple[FormatObject | None, ...]
@@ -481,14 +470,14 @@ class _XlsxStylesMixin(_XlsxWriterHost):
             else:
                 cfvos = (rule.minimum, rule.midpoint, rule.maximum)
             inner = "".join(
-                self._format_object_xml(cfvo) if cfvo is not None
-                else '<cfvo type="min"/>' if i == 0 else '<cfvo type="max"/>'
+                self._format_object_xml(cfvo)
+                if cfvo is not None
+                else '<cfvo type="min"/>'
+                if i == 0
+                else '<cfvo type="max"/>'
                 for i, cfvo in enumerate(cfvos)
             )
-            colors = "".join(
-                f'<color rgb="{self._dxf_color_argb(color)}"/>'
-                for color in rule.colors
-            )
+            colors = "".join(f'<color rgb="{self._dxf_color_argb(color)}"/>' for color in rule.colors)
             return (
                 f'<cfRule type="colorScale" priority="{priority}"{stop}>'
                 f"<colorScale>{inner}{colors}</colorScale></cfRule>"
@@ -501,31 +490,18 @@ class _XlsxStylesMixin(_XlsxWriterHost):
                 icon_attrs.append(f'percent="{1 if rule.percent else 0}"')
             if rule.reverse is not None:
                 icon_attrs.append(f'reverse="{1 if rule.reverse else 0}"')
-            cfvo_xml = "".join(
-                self._format_object_xml(FormatObject(rule.cfvo_type, value))
-                for value in rule.values
-            )
+            cfvo_xml = "".join(self._format_object_xml(FormatObject(rule.cfvo_type, value)) for value in rule.values)
             return (
                 f'<cfRule type="iconSet" priority="{priority}"{stop}>'
-                f'<iconSet {" ".join(icon_attrs)}>{cfvo_xml}</iconSet></cfRule>'
+                f"<iconSet {' '.join(icon_attrs)}>{cfvo_xml}</iconSet></cfRule>"
             )
         # DataBarRule
-        min_xml = (
-            self._format_object_xml(rule.minimum)
-            if rule.minimum is not None else '<cfvo type="min"/>'
-        )
-        max_xml = (
-            self._format_object_xml(rule.maximum)
-            if rule.maximum is not None else '<cfvo type="max"/>'
-        )
-        show = "" if rule.show_value is None else (
-            ' showValue="1"' if rule.show_value else ' showValue="0"'
-        )
+        min_xml = self._format_object_xml(rule.minimum) if rule.minimum is not None else '<cfvo type="min"/>'
+        max_xml = self._format_object_xml(rule.maximum) if rule.maximum is not None else '<cfvo type="max"/>'
+        show = "" if rule.show_value is None else (' showValue="1"' if rule.show_value else ' showValue="0"')
         min_len = "" if rule.min_length is None else f' minLength="{rule.min_length}"'
         max_len = "" if rule.max_length is None else f' maxLength="{rule.max_length}"'
-        color = (
-            f'<color rgb="{self._dxf_color_argb(rule.color)}"/>'
-        )
+        color = f'<color rgb="{self._dxf_color_argb(rule.color)}"/>'
         return (
             f'<cfRule type="dataBar" priority="{priority}"{stop}>'
             f"<dataBar{min_len}{max_len}{show}>{min_xml}{max_xml}{color}</dataBar>"

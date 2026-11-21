@@ -1,4 +1,5 @@
 """Data validations: list sources, dynamic formulas, round trips."""
+
 from __future__ import annotations
 
 import pytest

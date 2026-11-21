@@ -40,7 +40,7 @@ def read_wide(data, offset=0, *, nullable=False):
 
 def records(data: bytes) -> Iterator[tuple[Biff12Record, bytes]]:
     for record in iter_records(data):
-        yield record, data[record.data_start:record.data_end]
+        yield record, data[record.data_start : record.data_end]
 
 
 def replace_records(data, record_ids, replacement=b"", *, before=(0x82,)):
@@ -56,7 +56,7 @@ def replace_records(data, record_ids, replacement=b"", *, before=(0x82,)):
             if not inserted and record.record_id in before:
                 chunks.append(replacement)
                 inserted = True
-            chunks.append(data[record.header_start:record.data_end])
+            chunks.append(data[record.header_start : record.data_end])
     if not inserted:
         raise ValueError("BIFF12 insertion point was not found")
     return b"".join(chunks)
@@ -99,7 +99,7 @@ def parse_comments(data):
                 raise ValueError("XLSB comment end without header")
             ref, author, text = current
             notes[ref] = Comment(text, author)
-            blocks[ref] = (start, data[start:record.data_end])
+            blocks[ref] = (start, data[start : record.data_end])
             current = None
     if current is not None:
         raise ValueError("Unterminated XLSB comment")
@@ -113,8 +113,10 @@ _COMMENT_NAMESPACE = uuid.UUID("c1f3a9d2-5e47-4b8c-a6d1-7f20e94b3c58")
 
 def comments_bin(changes, existing=None, *, part=""):
     if existing is None:
-        existing = b"".join(build_record(kind) for kind in
-                            (BEGIN_COMMENTS, BEGIN_AUTHORS, END_AUTHORS, BEGIN_LIST, END_LIST, END_COMMENTS))
+        existing = b"".join(
+            build_record(kind)
+            for kind in (BEGIN_COMMENTS, BEGIN_AUTHORS, END_AUTHORS, BEGIN_LIST, END_LIST, END_COMMENTS)
+        )
     notes, authors, blocks = parse_comments(existing)
     additions = []
     for comment in changes.values():
@@ -130,9 +132,11 @@ def comments_bin(changes, existing=None, *, part=""):
         guid = uuid.uuid5(_COMMENT_NAMESPACE, f"{part}:{ref}")
         header = struct.pack("<iIIII", authors.index(comment.author), row, row, col, col) + guid.bytes_le
         # RichStr: no formatting runs and no phonetic information.
-        replacement_blocks[ref] = (build_record(BEGIN_COMMENT, header)
-                                   + build_record(TEXT, b"\0" + wide_string(comment.text))
-                                   + build_record(END_COMMENT))
+        replacement_blocks[ref] = (
+            build_record(BEGIN_COMMENT, header)
+            + build_record(TEXT, b"\0" + wide_string(comment.text))
+            + build_record(END_COMMENT)
+        )
     output = []
     skip_end = -1
     block_starts = {start: (ref, block) for ref, (start, block) in blocks.items()}
@@ -149,7 +153,7 @@ def comments_bin(changes, existing=None, *, part=""):
             output.extend(additions)
         if record.record_id == END_LIST:
             output.extend(replacement_blocks.values())
-        output.append(existing[record.header_start:record.data_end])
+        output.append(existing[record.header_start : record.data_end])
     return b"".join(output)
 
 
@@ -162,8 +166,24 @@ def sheet_protection_record(password: int, flags: Sequence[int]) -> bytes:
 def sheet_protection_bin(protection):
     if not protection.enabled:
         return b""
-    flags = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-             int(protection.select_locked_cells), 0, 0, 0, int(protection.select_unlocked_cells)]
+    flags = [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        int(protection.select_locked_cells),
+        0,
+        0,
+        0,
+        int(protection.select_unlocked_cells),
+    ]
     password = 0 if protection.password_hash is None else int(protection.password_hash, 16)
     return sheet_protection_record(password, flags)
 
@@ -202,13 +222,13 @@ def request_recalculation(data: bytes) -> bytes:
             if len(payload) != 26:
                 raise ValueError("invalid XLSB calculation properties")
             value = bytearray(payload)
-            struct.pack_into('<II', value, 0, 0, 1)
-            flags = struct.unpack_from('<H', value, 24)[0]
-            struct.pack_into('<H', value, 24, flags | 1 | 0x10)
+            struct.pack_into("<II", value, 0, 0, 1)
+            flags = struct.unpack_from("<H", value, 24)[0]
+            struct.pack_into("<H", value, 24, flags | 1 | 0x10)
             chunks.append(build_record(0x9D, value))
         else:
-            chunks.append(data[record.header_start:record.data_end])
-    return b''.join(chunks)
+            chunks.append(data[record.header_start : record.data_end])
+    return b"".join(chunks)
 
 
 BRT_PANE, BRT_SEL = 0x97, 0x98
@@ -217,13 +237,18 @@ BRT_PANE, BRT_SEL = 0x97, 0x98
 def pane_record(x_split: float, y_split: float, top_row: int, left_column: int, active_pane: int, flags: int) -> bytes:
     """BrtPane ([MS-XLSB] 2.4.716): the split, the first visible cell of the bottom-right
     pane, the active pane and the frozen flags."""
-    return build_record(BRT_PANE, struct.pack("<ddIII", x_split, y_split, top_row, left_column, active_pane)
-                        + bytes((flags,)))
+    return build_record(
+        BRT_PANE, struct.pack("<ddIII", x_split, y_split, top_row, left_column, active_pane) + bytes((flags,))
+    )
 
 
-def selection_record(pane: int, row: int, column: int, cell_id: int,
-                     ranges: Sequence[tuple[int, int, int, int]]) -> bytes:
+def selection_record(
+    pane: int, row: int, column: int, cell_id: int, ranges: Sequence[tuple[int, int, int, int]]
+) -> bytes:
     """BrtSel ([MS-XLSB] 2.4.781): the pane, the active cell and the selected
     ranges as ``(first row, last row, first column, last column)``."""
-    return build_record(BRT_SEL, struct.pack("<IIIII", pane, row, column, cell_id, len(ranges))
-                        + b"".join(struct.pack("<IIII", *item) for item in ranges))
+    return build_record(
+        BRT_SEL,
+        struct.pack("<IIIII", pane, row, column, cell_id, len(ranges))
+        + b"".join(struct.pack("<IIII", *item) for item in ranges),
+    )

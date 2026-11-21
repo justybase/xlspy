@@ -34,22 +34,29 @@ COLS = 12
 def _rows(n):
     base = datetime.date(2024, 1, 1)
     return [
-        [f"item-{r}", r, r * 1.5, base + datetime.timedelta(days=r % 3650)]
-        + [r * c for c in range(4, COLS)]
+        [f"item-{r}", r, r * 1.5, base + datetime.timedelta(days=r % 3650)] + [r * c for c in range(4, COLS)]
         for r in range(n)
     ]
 
 
 def _letter(col):
     from xlspy.refs import column_label
+
     return column_label(col)
 
 
 def _scenarios():
     """name -> builder(rows_count) returning (kind, payload)."""
     from xlspy import (
-        Alignment, Border, Font, Group, PatternFill, Side, Style,
+        Alignment,
+        Border,
+        Font,
+        Group,
+        PatternFill,
+        Side,
+        Style,
     )
+
     header = Style(fill="1F4E78", font_color="FFFFFF", bold=True)
     bold = Style(font=Font(bold=True))
     boxed = Style(border=Border(left=Side(style="thin"), right=Side(style="thin")))
@@ -64,27 +71,29 @@ def _scenarios():
         return "sheet", (_rows(n), {"header_style": header})
 
     def column_range(n):
-        return "sheet", (_rows(n), {"header_style": header,
-                                    "styles": {f"B2:C{n}": money}})
+        return "sheet", (_rows(n), {"header_style": header, "styles": {f"B2:C{n}": money}})
 
     def overlapping(n):
-        return "sheet", (_rows(n), {"header_style": header, "styles": {
-            f"A1:L{n}": boxed,
-            f"B2:D{n}": money,
-            f"C2:C{n // 2}": bold,
-            f"A{n // 4}:L{n // 4 + 50}": centered,
-        }})
+        return "sheet", (
+            _rows(n),
+            {
+                "header_style": header,
+                "styles": {
+                    f"A1:L{n}": boxed,
+                    f"B2:D{n}": money,
+                    f"C2:C{n // 2}": bold,
+                    f"A{n // 4}:L{n // 4 + 50}": centered,
+                },
+            },
+        )
 
     def fmt_tuples(n):
-        rows = [[r[0]] + [(v, "#,##0.00") for v in r[1:3]] + [(r[3], "yyyy-mm-dd")] + r[4:]
-                for r in _rows(n)]
+        rows = [[r[0]] + [(v, "#,##0.00") for v in r[1:3]] + [(r[3], "yyyy-mm-dd")] + r[4:] for r in _rows(n)]
         return "sheet", (rows, {})
 
     def fmt_and_range(n):
-        rows = [[r[0]] + [(v, "#,##0.00") for v in r[1:3]] + [(r[3], "yyyy-mm-dd")] + r[4:]
-                for r in _rows(n)]
-        return "sheet", (rows, {"header_style": header,
-                                "styles": {f"A1:L{n}": boxed}})
+        rows = [[r[0]] + [(v, "#,##0.00") for v in r[1:3]] + [(r[3], "yyyy-mm-dd")] + r[4:] for r in _rows(n)]
+        return "sheet", (rows, {"header_style": header, "styles": {f"A1:L{n}": boxed}})
 
     def per_cell(n):
         styles = {}
@@ -95,8 +104,10 @@ def _scenarios():
 
     def per_cell_tuples(n):
         # per_cell written with (value, Style) cells instead of 6 ranges per row.
-        rows = [[(v, bold if r % 2 else boxed) if c % 2 == 0 else v
-                 for c, v in enumerate(row)] for r, row in enumerate(_rows(n))]
+        rows = [
+            [(v, bold if r % 2 else boxed) if c % 2 == 0 else v for c, v in enumerate(row)]
+            for r, row in enumerate(_rows(n))
+        ]
         return "sheet", (rows, {})
 
     def column_open(n):
@@ -108,18 +119,20 @@ def _scenarios():
         return "sheet", (_rows(n), {"header_style": header, "styles": styles})
 
     def range_heights(n):
-        return "sheet", (_rows(n), {
-            "header_style": header,
-            "styles": {f"A1:L{n}": boxed},
-            "row_heights": dict.fromkeys(range(0, n, 3), 18),
-            "row_groups": [Group(r, r + 4) for r in range(10, n - 10, 20)],
-        })
+        return "sheet", (
+            _rows(n),
+            {
+                "header_style": header,
+                "styles": {f"A1:L{n}": boxed},
+                "row_heights": dict.fromkeys(range(0, n, 3), 18),
+                "row_groups": [Group(r, r + 4) for r in range(10, n - 10, 20)],
+            },
+        )
 
     def heatmap(n):
         # Up to 4096 distinct fills: one style per (r, c) colour bucket.
         styles = {}
-        palette = [Style(fill=f"{(i * 37) % 256:02X}{(i * 91) % 256:02X}{(i * 13) % 256:02X}")
-                   for i in range(4096)]
+        palette = [Style(fill=f"{(i * 37) % 256:02X}{(i * 91) % 256:02X}{(i * 13) % 256:02X}") for i in range(4096)]
         for r in range(min(n, 1000)):
             for c in range(COLS):
                 styles[f"{_letter(c)}{r + 1}"] = palette[(r * COLS + c) % len(palette)]
@@ -127,6 +140,7 @@ def _scenarios():
 
     def workbook_cells(n):
         from xlspy.workbook import Workbook
+
         wb = Workbook()
         ws = wb.active
         for row in _rows(n):
@@ -142,9 +156,9 @@ def _scenarios():
 
     def dataframe_formats(n):
         import pandas as pd
+
         df = pd.DataFrame(_rows(n), columns=[f"c{i}" for i in range(COLS)])
-        return "dataframe", (df, {"formats": {"c1": "#,##0", "c2": "#,##0.00"},
-                                  "header_style": header})
+        return "dataframe", (df, {"formats": {"c1": "#,##0", "c2": "#,##0.00"}, "header_style": header})
 
     return {
         "plain": plain,
@@ -182,6 +196,7 @@ def worker(args):
     import tracemalloc
     from xlspy import XlsbWriter, XlsxWriter
     from xlspy import _accel
+
     writer_cls = XlsxWriter if args.format == "xlsx" else XlsbWriter
     kind, payload = _scenarios()[args.scenario](args.rows)
     out_dir = args.keep or tempfile.mkdtemp(prefix="xlspy-bench-")
@@ -208,8 +223,17 @@ def _run_worker(args, scenario, fmt, native, trace=False, keep=None):
     env = os.environ.copy()
     env["PYTHONPATH"] = args.src + os.pathsep + env.get("PYTHONPATH", "")
     env["XLSPY_ACCEL"] = "auto" if native else "python"
-    cmd = [sys.executable, os.path.abspath(__file__), "--worker",
-           "--scenario", scenario, "--format", fmt, "--rows", str(args.rows)]
+    cmd = [
+        sys.executable,
+        os.path.abspath(__file__),
+        "--worker",
+        "--scenario",
+        scenario,
+        "--format",
+        fmt,
+        "--rows",
+        str(args.rows),
+    ]
     if trace:
         cmd.append("--trace")
     if keep:
@@ -272,8 +296,10 @@ def orchestrate(args):
         else:
             mem = value.get("tracemalloc_mb")
             mem_text = f"  {mem:7.1f} MB" if mem is not None else ""
-            print(f"{key:36s} {value['median_s']:8.4f}s (min {value['min_s']:.4f})"
-                  f"  {value['file_bytes']:>10,d} B{mem_text}")
+            print(
+                f"{key:36s} {value['median_s']:8.4f}s (min {value['min_s']:.4f})"
+                f"  {value['file_bytes']:>10,d} B{mem_text}"
+            )
     if args.output:
         os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
         with open(args.output, "w", encoding="utf-8") as handle:
@@ -298,8 +324,10 @@ def compare(before_path, after_path):
             continue
         delta = (a["median_s"] - b["median_s"]) / b["median_s"] * 100
         size = "same" if a["file_bytes"] == b["file_bytes"] else f"{a['file_bytes'] - b['file_bytes']:+,d} B"
-        print(f"{key:36s} {b['median_s']:9.4f} {a['median_s']:9.4f} {delta:+7.1f}% "
-              f"{b['median_s'] / a['median_s']:7.2f}x  {size}")
+        print(
+            f"{key:36s} {b['median_s']:9.4f} {a['median_s']:9.4f} {delta:+7.1f}% "
+            f"{b['median_s'] / a['median_s']:7.2f}x  {size}"
+        )
 
 
 def main():
@@ -312,8 +340,12 @@ def main():
     parser.add_argument("--iterations", type=int, default=5)
     parser.add_argument("--scenarios", help="comma-separated subset")
     parser.add_argument("--formats", default="xlsx,xlsb")
-    parser.add_argument("--native", choices=("on", "off", "both"), default="on",
-                        help="the native (Rust) module on, off (XLSPY_ACCEL=python) or both")
+    parser.add_argument(
+        "--native",
+        choices=("on", "off", "both"),
+        default="on",
+        help="the native (Rust) module on, off (XLSPY_ACCEL=python) or both",
+    )
     parser.add_argument("--tracemalloc", action="store_true")
     parser.add_argument("--keep", help="directory for one output file per scenario")
     parser.add_argument("--label", default="")

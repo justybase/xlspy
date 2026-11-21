@@ -160,7 +160,11 @@ def _border(payload: bytes) -> Border:
         sides.append(Side(style=style, color=color) if style else None)
     top, bottom, left, right, diagonal_side = sides
     return Border(
-        left=left, right=right, top=top, bottom=bottom, diagonal=diagonal_side,
+        left=left,
+        right=right,
+        top=top,
+        bottom=bottom,
+        diagonal=diagonal_side,
         diagonal_up=True if diagonal & 0x02 else None,
         diagonal_down=True if diagonal & 0x01 else None,
     )
@@ -173,8 +177,7 @@ def _xf(payload: bytes) -> tuple[int, _Xf]:
     vertical = _BIFF_VERTICAL_NAMES.get((align >> 3) & 0x07)
     reading_order = (flags >> 2) & 0x03
     alignment = None
-    if (horizontal or vertical or align & 0xC0 or flags & 0x01 or rotation or indent
-            or reading_order):
+    if horizontal or vertical or align & 0xC0 or flags & 0x01 or rotation or indent or reading_order:
         alignment = Alignment(
             horizontal=horizontal,
             vertical=vertical,
@@ -192,8 +195,12 @@ def _xf(payload: bytes) -> tuple[int, _Xf]:
             hidden=True if flags & 0x20 else None,
         )
     return parent, _Xf(
-        font_id=font, fill_id=fill, border_id=border, num_fmt_id=ifmt,
-        alignment=alignment, protection=protection,
+        font_id=font,
+        fill_id=fill,
+        border_id=border,
+        num_fmt_id=ifmt,
+        alignment=alignment,
+        protection=protection,
     )
 
 
@@ -223,7 +230,10 @@ class XlsbStyleTable(XlsxStyleTable):
         if not table.xfs:
             table._add_default_components()
         table._saved_counts = (
-            len(table.fonts), len(table.fills), len(table.borders), len(table.xfs),
+            len(table.fonts),
+            len(table.fills),
+            len(table.borders),
+            len(table.xfs),
         )
         table._saved_formats = set(table.custom_num_formats)
         table._saved_dxfs = len(table.dxfs)
@@ -239,7 +249,7 @@ class XlsbStyleTable(XlsxStyleTable):
         block = None
         for record in iter_records(data):
             kind = record.record_id
-            payload = data[record.data_start:record.data_end]
+            payload = data[record.data_start : record.data_end]
             if kind in (_BEGIN_STYLE_XFS, _BEGIN_CELL_XFS):
                 block = kind
             elif kind in (_END_STYLE_XFS, _END_CELL_XFS):
@@ -273,7 +283,6 @@ class XlsbStyleTable(XlsxStyleTable):
                 elif block == _BEGIN_STYLE_XFS:
                     style_xfs.append(_xf(payload))
             elif kind == _DXF:
-
                 try:
                     self.dxfs.append(dxf_from_payload(payload))
                 except (struct.error, IndexError, TypeError, ValueError):
@@ -294,9 +303,15 @@ class XlsbStyleTable(XlsxStyleTable):
             if 0 <= ixf < len(self.cell_style_xfs):
                 base = self.cell_style_xfs[ixf]
                 self.named_style_defs[name] = NamedStyle(
-                    name=name, font=base.font, fill=base.fill, border=base.border,
-                    number_format=base.number_format, alignment=base.alignment,
-                    protection=base.protection, builtinId=builtin, hidden=hidden,
+                    name=name,
+                    font=base.font,
+                    fill=base.fill,
+                    border=base.border,
+                    number_format=base.number_format,
+                    alignment=base.alignment,
+                    protection=base.protection,
+                    builtinId=builtin,
+                    hidden=hidden,
                 )
         if self.fonts:
             self._rebuild_indexes()
@@ -328,8 +343,11 @@ class XlsbStyleTable(XlsxStyleTable):
         if style.name in self.named_styles:
             raise ValueError(f"a named style {style.name!r} already exists")
         base = Style(
-            font=style.font, fill=style.fill, border=style.border,
-            number_format=style.number_format, alignment=style.alignment,
+            font=style.font,
+            fill=style.fill,
+            border=style.border,
+            number_format=style.number_format,
+            alignment=style.alignment,
             protection=style.protection,
         )
         number_format = base.number_format
@@ -338,7 +356,8 @@ class XlsbStyleTable(XlsxStyleTable):
             font_id=self._intern_font(_font_key_from(base.font)) if base.font else 0,
             fill_id=self._intern_fill(fill_key_for(base.fill)) if base.fill else 0,
             border_id=self._intern_border(_border_key(base.border)) if base.border else 0,
-            alignment=base.alignment, protection=base.protection,
+            alignment=base.alignment,
+            protection=base.protection,
         )
         xf_index = len(self.cell_style_xfs)
         record = bytearray(self._xf_record(xf))
@@ -347,9 +366,20 @@ class XlsbStyleTable(XlsxStyleTable):
         self.cell_style_xfs.append(base)
         grbit = (0x01 if style.builtinId is not None else 0) | (0x02 if style.hidden else 0)
         name = style.name.encode("utf-16-le")
-        self._new_cell_styles.append(build_record(_STYLE, struct.pack(
-            "<IHBBI", xf_index, grbit, style.builtinId or 0, 0xFF, len(style.name),
-        ) + name))
+        self._new_cell_styles.append(
+            build_record(
+                _STYLE,
+                struct.pack(
+                    "<IHBBI",
+                    xf_index,
+                    grbit,
+                    style.builtinId or 0,
+                    0xFF,
+                    len(style.name),
+                )
+                + name,
+            )
+        )
         self._cell_style_count += 1
         self.named_styles.append(style.name)
         self.named_style_defs[style.name] = style
@@ -392,7 +422,10 @@ class XlsbStyleTable(XlsxStyleTable):
         """The current components are now the file's own."""
         self._source_bin = self.to_bin()
         self._saved_counts = (
-            len(self.fonts), len(self.fills), len(self.borders), len(self.xfs),
+            len(self.fonts),
+            len(self.fills),
+            len(self.borders),
+            len(self.xfs),
         )
         self._saved_formats = set(self.custom_num_formats)
         self._saved_dxfs = len(self.dxfs)
@@ -402,8 +435,12 @@ class XlsbStyleTable(XlsxStyleTable):
 
     def is_modified(self) -> bool:
         counts = (len(self.fonts), len(self.fills), len(self.borders), len(self.xfs))
-        return (counts != self._saved_counts or self.custom_num_formats != self._saved_formats
-                or bool(self._new_dxfs) or bool(self._new_cell_styles))
+        return (
+            counts != self._saved_counts
+            or self.custom_num_formats != self._saved_formats
+            or bool(self._new_dxfs)
+            or bool(self._new_cell_styles)
+        )
 
     def to_bin(self) -> bytes:
         """The original ``styles.bin`` with the components added since loading."""
@@ -435,15 +472,13 @@ class XlsbStyleTable(XlsxStyleTable):
         }
         data = self._source_bin
         missing = {end for end, records in additions.items() if records}
-        if _END_DXFS in missing and not any(
-            record.record_id == _BEGIN_DXFS for record in iter_records(data)
-        ):
+        if _END_DXFS in missing and not any(record.record_id == _BEGIN_DXFS for record in iter_records(data)):
             data = self._with_dxfs_block(data)
         chunks: list[bytes] = []
         in_fonts = False
         for record in iter_records(data):
             kind = record.record_id
-            whole = data[record.header_start:record.data_end]
+            whole = data[record.header_start : record.data_end]
             if kind in counts:
                 chunks.append(build_record(kind, struct.pack("<I", counts[kind][1])))
                 in_fonts = kind == _BEGIN_FONTS
@@ -460,8 +495,7 @@ class XlsbStyleTable(XlsxStyleTable):
             chunks.append(whole)
         if missing:
             raise UnsupportedFeatureError(
-                "the XLSB style sheet has no block for the new styles "
-                f"(record ids {sorted(missing)})"
+                f"the XLSB style sheet has no block for the new styles (record ids {sorted(missing)})"
             )
         return b"".join(chunks)
 
@@ -471,13 +505,11 @@ class XlsbStyleTable(XlsxStyleTable):
         block = build_record(_BEGIN_DXFS, struct.pack("<I", 0)) + build_record(_END_DXFS)
         chunks, inserted, after_styles = [], False, False
         for record in iter_records(data):
-            if not inserted and (after_styles or record.record_id == 0x117) and (
-                record.record_id in _AFTER_DXFS
-            ):
+            if not inserted and (after_styles or record.record_id == 0x117) and (record.record_id in _AFTER_DXFS):
                 chunks.append(block)
                 inserted = True
             after_styles = after_styles or record.record_id == _END_STYLES
-            chunks.append(data[record.header_start:record.data_end])
+            chunks.append(data[record.header_start : record.data_end])
         if not inserted:
             raise UnsupportedFeatureError("the XLSB style sheet has no place for conditional format styles")
         return b"".join(chunks)
@@ -490,7 +522,11 @@ class XlsbStyleTable(XlsxStyleTable):
         if protection is not None and all(value is None for value in protection):
             protection = None
         return xf_record(
-            xf.num_fmt_id, font_id=xf.font_id, fill_id=xf.fill_id,
-            border_id=xf.border_id, alignment=alignment, protection=protection,
+            xf.num_fmt_id,
+            font_id=xf.font_id,
+            fill_id=xf.fill_id,
+            border_id=xf.border_id,
+            alignment=alignment,
+            protection=protection,
             apply_flags=True,
         )

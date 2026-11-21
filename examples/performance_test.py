@@ -21,6 +21,7 @@ Read (each library reads back its own output file):
 Usage:
     python examples/performance_test.py [--rows N] [--cols N] [--no-cleanup]
 """
+
 import argparse
 import os
 import platform
@@ -29,11 +30,12 @@ import sys
 import time
 
 import xlsxwriter
+
 try:
     from memory_profiler import profile
 except ImportError:
     profile = None
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 from xlspy import XlsbWriter
 from xlspy import XlsxWriter
 from xlspy import ExcelReader
@@ -87,7 +89,6 @@ def run_my_xlsb_writer(data, filename="test_xlspy.xlsb"):
         writer.add_sheet(SHEET_NAME)
         writer.write_sheet(data)
 
-
     end_time = time.time()
     elapsed = end_time - start_time
 
@@ -108,7 +109,6 @@ def run_my_xlsx_writer(data, filename="test_xlspy.xlsx"):
         writer.add_sheet(SHEET_NAME)
         writer.write_sheet(data)
 
-
     end_time = time.time()
     elapsed = end_time - start_time
 
@@ -126,7 +126,7 @@ def run_xlsx_writer(data, filename="test_xlsxwriter.xlsx"):
     start_time = time.time()
 
     # Use constant_memory mode for performance with large datasets
-    workbook = xlsxwriter.Workbook(filename, {'constant_memory': True})
+    workbook = xlsxwriter.Workbook(filename, {"constant_memory": True})
     worksheet = workbook.add_worksheet(SHEET_NAME)
 
     for row_idx, row_data in enumerate(data):
@@ -147,6 +147,7 @@ def run_xlsx_writer(data, filename="test_xlsxwriter.xlsx"):
 def run_openpyxl_writer(data, filename="test_openpyxl.xlsx"):
     """Tests the performance of openpyxl in streaming (write-only) mode."""
     import openpyxl
+
     print("\n--- Testing openpyxl (write_only=True) ---")
     start_time = time.time()
 
@@ -186,6 +187,7 @@ def run_read_xlspy(filename, sheet=SHEET_NAME):
 def run_read_openpyxl(filename):
     """Reads a file back with openpyxl in read-only mode."""
     import openpyxl
+
     print(f"\n--- Reading {filename} with openpyxl (read_only=True) ---")
     start_time = time.time()
 
@@ -210,9 +212,7 @@ def _worker_write_xlsb_python(filename, rows, cols):
     evaluated at import time, so it cannot be toggled in-process).
     Prints `RESULT seconds=<t> size_mb=<s>` for the parent to parse.
     """
-    elapsed, filesize = run_my_xlsb_writer(
-        generate_large_data(rows, cols), filename
-    )
+    elapsed, filesize = run_my_xlsb_writer(generate_large_data(rows, cols), filename)
     print(f"RESULT seconds={elapsed:.4f} size_mb={filesize:.4f}", flush=True)
 
 
@@ -225,8 +225,7 @@ def _worker_read_xlsb_python(filename):
 def _run_python_fallback_worker(worker, *args):
     """Runs this script as a subprocess with the native module disabled."""
     env = dict(os.environ, XLSPY_ACCEL="python")
-    cmd = [sys.executable, os.path.abspath(__file__), "--worker", worker,
-           *args]
+    cmd = [sys.executable, os.path.abspath(__file__), "--worker", worker, *args]
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     print(proc.stdout, end="")
     if proc.returncode != 0:
@@ -249,6 +248,7 @@ def _run_python_fallback_worker(worker, *args):
 
 def _versions():
     import xlspy
+
     versions = {"python": platform.python_version()}
     try:
         versions["xlspy"] = xlspy.__version__
@@ -267,10 +267,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="xlspy write/read benchmark")
     parser.add_argument("--rows", type=int, default=50000)
     parser.add_argument("--cols", type=int, default=50)
-    parser.add_argument("--no-cleanup", action="store_true",
-                        help="keep the generated benchmark files")
-    parser.add_argument("--worker", choices=("write-xlsb-python", "read-xlsb-python"),
-                        help=argparse.SUPPRESS)
+    parser.add_argument("--no-cleanup", action="store_true", help="keep the generated benchmark files")
+    parser.add_argument("--worker", choices=("write-xlsb-python", "read-xlsb-python"), help=argparse.SUPPRESS)
     parser.add_argument("--out", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
@@ -294,8 +292,8 @@ if __name__ == "__main__":
 
     print("\n--- Testing (my) XlsbWriter (pure Python fallback, subprocess) ---")
     w_xlsb_py, extra = _run_python_fallback_worker(
-        "write-xlsb-python", "--rows", str(NUM_ROWS), "--cols", str(NUM_COLS),
-        "--out", "test_xlspy_py.xlsb")
+        "write-xlsb-python", "--rows", str(NUM_ROWS), "--cols", str(NUM_COLS), "--out", "test_xlspy_py.xlsb"
+    )
     s_xlsb_py = extra["size_mb"]
     print(f"XlsbWriter (Python) finished in: {w_xlsb_py:.2f} seconds")
     print(f"File size: {s_xlsb_py:.2f} MB")
@@ -326,12 +324,14 @@ if __name__ == "__main__":
     # ---- Markdown-ready summary ----
     ver = _versions()
     print("\n================ SUMMARY ================")
-    print(f"Dataset: {NUM_ROWS} x {NUM_COLS} "
-          f"({NUM_ROWS * NUM_COLS / 1e6:.1f}M cells); "
-          f"{platform.system()} {platform.machine()} "
-          f"(Python {ver['python']}); "
-          f"xlspy {ver['xlspy']}, openpyxl {ver['openpyxl']}, "
-          f"xlsxwriter {ver['xlsxwriter']}")
+    print(
+        f"Dataset: {NUM_ROWS} x {NUM_COLS} "
+        f"({NUM_ROWS * NUM_COLS / 1e6:.1f}M cells); "
+        f"{platform.system()} {platform.machine()} "
+        f"(Python {ver['python']}); "
+        f"xlspy {ver['xlspy']}, openpyxl {ver['openpyxl']}, "
+        f"xlsxwriter {ver['xlsxwriter']}"
+    )
     print("\n### Write\n")
     print("| Library | Format | Time | Size |")
     print("|---------|--------|------|------|")

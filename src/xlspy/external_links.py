@@ -40,7 +40,8 @@ def _read_link_relationships(package, part: str) -> dict[str, tuple[str, str]]:
         return {}
     return {
         node.get("Id") or "": (node.get("Target") or "", node.get("Type") or "")
-        for node in root.iter(_PKG_REL) if node.get("Id")
+        for node in root.iter(_PKG_REL)
+        if node.get("Id")
     }
 
 
@@ -65,7 +66,6 @@ def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
     relationships = _read_link_relationships(package, book)
     order: list[str] = []
     if binary:
-
         for record, payload in records(package.get(book)):
             if record.record_id == 0x163:
                 order.append(read_wide(payload, 0)[0])
@@ -74,10 +74,7 @@ def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
             root = safe_fromstring(package.get(book))
         except ET.ParseError:
             return []
-        order = [
-            node.get(f"{{{_REL}}}id") or ""
-            for node in root.iter(f"{{{_MAIN}}}externalReference")
-        ]
+        order = [node.get(f"{{{_REL}}}id") or "" for node in root.iter(f"{{{_MAIN}}}externalReference")]
     links: list[ExternalLink] = []
     for position, rid in enumerate(order, start=1):
         target = relationships.get(rid)
@@ -96,7 +93,6 @@ def read_external_links(package, *, binary: bool) -> list[ExternalLink]:
 def _target_rid(package, part: str, binary: bool) -> str | None:
     data = package.get(part)
     if binary:
-
         for record, payload in records(data):
             if record.record_id == 0x168:  # BrtSupBookSrc of the part
                 return read_wide(payload, 2)[0] or None
@@ -112,7 +108,6 @@ def _target_rid(package, part: str, binary: bool) -> str | None:
 def _sheet_names(package, part: str, binary: bool) -> list[str]:
     data = package.get(part)
     if binary:
-
         return external_sheet_names(data)
     try:
         root = safe_fromstring(data)

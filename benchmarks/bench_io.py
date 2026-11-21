@@ -14,6 +14,7 @@ Each case runs in a fresh subprocess so peak memory and import state are isolate
 Timed cases report the median of ``--repeat`` runs and the interquartile range
 (IQR) of those runs, so the noise of a run is visible next to its result.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,15 +33,25 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 CASES = [
-    "write_xlsx", "write_xlsb",
-    "read_xlsx", "read_xlsb",
-    "load_xlsx", "load_xlsb",
-    "load_xlsx_styled", "load_xlsb_styled", "save_loaded_xlsx_styled", "save_loaded_xlsb_styled",
-    "write_model_xlsx", "write_model_xlsb",
+    "write_xlsx",
+    "write_xlsb",
+    "read_xlsx",
+    "read_xlsb",
+    "load_xlsx",
+    "load_xlsb",
+    "load_xlsx_styled",
+    "load_xlsb_styled",
+    "save_loaded_xlsx_styled",
+    "save_loaded_xlsb_styled",
+    "write_model_xlsx",
+    "write_model_xlsb",
     "write_formula_hyperlink_xlsx",
-    "read_xlsx_entities", "load_xlsx_entities",
-    "xlsx_fallback_rate", "xlsx_fallback_rate_model",
-    "xlsx_entities_fallback_rate", "xlsx_entities_fallback_rate_model",
+    "read_xlsx_entities",
+    "load_xlsx_entities",
+    "xlsx_fallback_rate",
+    "xlsx_fallback_rate_model",
+    "xlsx_entities_fallback_rate",
+    "xlsx_entities_fallback_rate_model",
 ]
 
 MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -70,6 +81,7 @@ def rows(count, cols):
 def formula_hyperlink_rows(count, cols):
     """Every fourth cell is a Formula, every fourth a Hyperlink; the rest are numbers and text."""
     from xlspy import Formula, Hyperlink
+
     yield [f"Header_{j}" for j in range(cols)]
     for i in range(1, count):
         out = []
@@ -115,13 +127,8 @@ def write_entity_xlsx(path, count, cols):
         writer.add_sheet("S")
         writer.write_sheet([["x"]])
     labels = [column_label(j) for j in range(cols)]
-    parts = [
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        f'<worksheet xmlns="{MAIN_NS}"><sheetData>'
-    ]
-    header = "".join(
-        f'<c r="{labels[j]}1" t="inlineStr"><is><t>Header &amp; {j}</t></is></c>' for j in range(cols)
-    )
+    parts = [f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="{MAIN_NS}"><sheetData>']
+    header = "".join(f'<c r="{labels[j]}1" t="inlineStr"><is><t>Header &amp; {j}</t></is></c>' for j in range(cols))
     parts.append(f'<row r="1">{header}</row>')
     for i in range(2, count + 1):
         cells = "".join(_entity_cell(f"{labels[j]}{i}", j, i) for j in range(cols))
@@ -137,11 +144,13 @@ def write_entity_xlsx(path, count, cols):
 
 def rss_mb():
     import psutil
+
     return psutil.Process().memory_info().rss / (1024 * 1024)
 
 
 def accel_info():
     from xlspy import _accel
+
     return {
         "mode": _accel.ACCEL_MODE,
         "have_native": _accel.HAVE_NATIVE,
@@ -151,6 +160,7 @@ def accel_info():
 
 def _write_rows(path, kind, data, level=None):
     from xlspy import XlsbWriter, XlsxWriter
+
     start = time.perf_counter()
     if kind == "xlsx":
         kwargs = {} if level is None else {"compression_level": level}
@@ -170,6 +180,7 @@ def _write(path, kind, count, cols, level=None):
 
 def _model_write(path, count, cols):
     from xlspy import Workbook
+
     start = time.perf_counter()
     workbook = Workbook()
     sheet = workbook.active
@@ -181,6 +192,7 @@ def _model_write(path, count, cols):
 
 def _styled(path, count, cols):
     from xlspy import Font, Workbook
+
     workbook = Workbook()
     sheet = workbook.active
     bold = Font(bold=True)
@@ -225,17 +237,18 @@ def _fallback_rate(path, model):
                     total += 1
     finally:
         setattr(module, name, original)
-    return {"rows": total, "fallback_rows": calls["n"],
-            "fallback_pct": 100.0 * calls["n"] / max(total, 1)}
+    return {"rows": total, "fallback_rows": calls["n"], "fallback_pct": 100.0 * calls["n"] / max(total, 1)}
 
 
 def _timed_read(path, reader_kind):
     """Time a full pass over the rows; the cell count is taken in an untimed pass."""
     if reader_kind == "reader":
         from xlspy import ExcelReader
+
         opened = ExcelReader
     else:
         from xlspy import load_workbook
+
         opened = load_workbook
     before = rss_mb()
     start = time.perf_counter()
@@ -281,6 +294,7 @@ def run_case(case, path, count, cols):
     elif case == "load_xlsx_entities":
         # Load only, as load_xlsx does, so the two cases are comparable.
         from xlspy import load_workbook
+
         write_entity_xlsx(path, count, cols)
         before = rss_mb()
         start = time.perf_counter()
@@ -290,6 +304,7 @@ def run_case(case, path, count, cols):
     elif case in ("save_loaded_xlsx_styled", "save_loaded_xlsb_styled"):
         # Restyle every 50th row of a loaded styled workbook, then time the in-place save.
         from xlspy import Font, load_workbook
+
         _styled(path, count, cols)
         workbook = load_workbook(path)
         italic = Font(italic=True)
@@ -304,6 +319,7 @@ def run_case(case, path, count, cols):
         workbook.close()
     elif case in ("load_xlsx", "load_xlsb", "load_xlsx_styled", "load_xlsb_styled"):
         from xlspy import load_workbook
+
         if case.endswith("_styled"):
             _styled(path, count, cols)
         else:
@@ -313,8 +329,12 @@ def run_case(case, path, count, cols):
         workbook = load_workbook(path)
         result["seconds"] = time.perf_counter() - start
         workbook.close()
-    elif case in ("xlsx_fallback_rate", "xlsx_fallback_rate_model",
-                  "xlsx_entities_fallback_rate", "xlsx_entities_fallback_rate_model"):
+    elif case in (
+        "xlsx_fallback_rate",
+        "xlsx_fallback_rate_model",
+        "xlsx_entities_fallback_rate",
+        "xlsx_entities_fallback_rate_model",
+    ):
         if case.startswith("xlsx_entities"):
             write_entity_xlsx(path, count, cols)
         else:
@@ -354,9 +374,21 @@ def parent(args):
             for _ in range(1 if is_rate else args.repeat):
                 path = os.path.join(directory, case + (".xlsb" if "xlsb" in case else ".xlsx"))
                 completed = subprocess.run(
-                    [sys.executable, os.path.abspath(__file__), "--child", case,
-                     "--path", path, "--rows", str(args.rows), "--cols", str(args.cols)],
-                    capture_output=True, text=True, env=dict(os.environ),
+                    [
+                        sys.executable,
+                        os.path.abspath(__file__),
+                        "--child",
+                        case,
+                        "--path",
+                        path,
+                        "--rows",
+                        str(args.rows),
+                        "--cols",
+                        str(args.cols),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    env=dict(os.environ),
                 )
                 if completed.returncode:
                     runs.append({"error": completed.stderr.strip().splitlines()[-1:]})
@@ -377,7 +409,9 @@ def parent(args):
     document = {
         "python": sys.version.split()[0],
         "platform": platform.platform(),
-        "rows": args.rows, "cols": args.cols, "repeat": args.repeat,
+        "rows": args.rows,
+        "cols": args.cols,
+        "repeat": args.repeat,
         "accel": accel_info(),
         "results": results,
     }

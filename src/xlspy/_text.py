@@ -10,6 +10,7 @@ would turn into line feeds) and U+FFFE/U+FFFF are written that way, and the
 underscore of literal text that already looks like ``_xHHHH_`` is written as
 ``_x005F_``, so Excel reads back exactly the original text.
 """
+
 from __future__ import annotations
 
 import re
@@ -20,6 +21,7 @@ def _attr(value: object) -> str:
     """A value for a double-quoted XML attribute. Newlines become ``&#10;``, so
     a parser does not turn them into spaces."""
     return saxutils.escape(str(value), {'"': "&quot;", "\n": "&#10;"})
+
 
 MAX_CELL_TEXT_UNITS = 32767
 # Each code point is one or two UTF-16 units, so text this short always fits.
@@ -40,15 +42,12 @@ def check_cell_text(text: str) -> None:
         units = utf16_units(text)
         if units > MAX_CELL_TEXT_UNITS:
             raise ValueError(
-                f"cell text exceeds Excel's {MAX_CELL_TEXT_UNITS}-character limit "
-                f"({units} UTF-16 code units)"
+                f"cell text exceeds Excel's {MAX_CELL_TEXT_UNITS}-character limit ({units} UTF-16 code units)"
             )
 
 
 # Characters XML 1.0 cannot carry at all (tab, line feed and carriage return are fine).
-_XML_FORBIDDEN = re.compile(
-    "[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff" + chr(0xFFFE) + chr(0xFFFF) + "]"
-)
+_XML_FORBIDDEN = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff" + chr(0xFFFE) + chr(0xFFFF) + "]")
 
 
 def check_xml_text(value: str, what: str) -> None:
@@ -95,9 +94,5 @@ def xml_space_attribute(value: str) -> str:
     """The xml:space attribute a text node needs: Excel drops the spaces at the
     ends of a text without it, so a text that starts or ends with a space (as
     str.isspace has it) or holds a tab or a line break gets it."""
-    preserve = (
-        value[:1].isspace()
-        or value[-1:].isspace()
-        or any(character in value for character in "\t\n\r")
-    )
+    preserve = value[:1].isspace() or value[-1:].isspace() or any(character in value for character in "\t\n\r")
     return ' xml:space="preserve"' if preserve else ""

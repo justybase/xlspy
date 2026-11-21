@@ -32,9 +32,7 @@ def _roundtrip_and_update(directory, suffix, writer_cls, updater_cls):
 
     updater = updater_cls(path)
     try:
-        updater.replace_sheet_data(
-            "Sheet1", [["beta", 7]], headers=["name", "value"]
-        )
+        updater.replace_sheet_data("Sheet1", [["beta", 7]], headers=["name", "value"])
         updater.save()
     finally:
         updater.close()

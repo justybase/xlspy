@@ -5,6 +5,7 @@ Writers, readers and updaters are the lower layer; the object model
 inside functions are kept for real reasons (optional or lazy parts, the model's
 own cycles) and are counted so new ones are a deliberate choice.
 """
+
 from __future__ import annotations
 
 import ast

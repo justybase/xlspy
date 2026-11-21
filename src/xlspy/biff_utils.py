@@ -73,8 +73,7 @@ def iter_records(data: bytes) -> Iterator[Biff12Record]:
         data_end = data_start + length
         if data_end > size:
             raise InvalidFileError(
-                f"Truncated BIFF12 record 0x{record_id:x}: "
-                f"expected {length} bytes, only {size - data_start} available"
+                f"Truncated BIFF12 record 0x{record_id:x}: expected {length} bytes, only {size - data_start} available"
             )
         yield Biff12Record(header_start, data_start, data_end, record_id, length)
         offset = data_end
@@ -110,8 +109,7 @@ def iter_record_payloads(data: bytes) -> Iterator[tuple[int, bytes]]:
         end = offset + length
         if end > size:
             raise InvalidFileError(
-                f"Truncated BIFF12 record 0x{record_id:x}: "
-                f"expected {length} bytes, only {size - offset} available"
+                f"Truncated BIFF12 record 0x{record_id:x}: expected {length} bytes, only {size - offset} available"
             )
         yield record_id, data[offset:end]
         offset = end
@@ -161,8 +159,7 @@ def iter_records_stream(stream: IO[bytes], start: int = 0) -> Iterator[tuple[Bif
         payload = stream.read(length)
         if len(payload) != length:
             raise InvalidFileError(
-                f"Truncated BIFF12 record 0x{record_id:x}: "
-                f"expected {length} bytes, only {len(payload)} available"
+                f"Truncated BIFF12 record 0x{record_id:x}: expected {length} bytes, only {len(payload)} available"
             )
         data_end = data_start + length
         yield (
@@ -194,7 +191,7 @@ def iter_xlsb_sheets(workbook_bin: bytes) -> Iterator[tuple[str | None, str]]:
     for record in iter_records(workbook_bin):
         if record.record_id != 0x9C:
             continue
-        payload = workbook_bin[record.data_start:record.data_end]
+        payload = workbook_bin[record.data_start : record.data_end]
         if len(payload) < 12:
             raise InvalidFileError("Malformed BrtBundleSh record")
         relationship: str | None = None

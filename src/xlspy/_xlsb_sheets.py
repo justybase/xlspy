@@ -46,22 +46,24 @@ _DELETED = 1  # flag of a name slot left behind by FormulaContext.remove_name
 
 # A worksheet as Excel writes an empty sheet: properties, dimension, one
 # view, the default format, empty sheet data, print options and margins.
-_EMPTY_SHEET = b"".join((
-    build_record(0x81),
-    build_record(0x93, bytes.fromhex("c904020040000000000000ffffffffffffffff00000000")),
-    build_record(0x94, bytes(16)),
-    build_record(0x85),
-    build_record(0x89, bytes.fromhex("dc0300000000000000000000000040000000640000000000000000000000")),
-    build_record(0x98, struct.pack("<9I", 3, 0, 0, 0, 1, 0, 0, 0, 0)),
-    build_record(0x8A),
-    build_record(0x86),
-    build_record(0x1E5, struct.pack("<iHHHBB", -1, 8, 300, 0, 0, 0)),
-    build_record(0x91),
-    build_record(0x92),
-    build_record(0x1DD, struct.pack("<H", 0x10)),
-    build_record(0x1DC, struct.pack("<6d", 0.7, 0.7, 0.75, 0.75, 0.3, 0.3)),
-    build_record(0x82),
-))
+_EMPTY_SHEET = b"".join(
+    (
+        build_record(0x81),
+        build_record(0x93, bytes.fromhex("c904020040000000000000ffffffffffffffff00000000")),
+        build_record(0x94, bytes(16)),
+        build_record(0x85),
+        build_record(0x89, bytes.fromhex("dc0300000000000000000000000040000000640000000000000000000000")),
+        build_record(0x98, struct.pack("<9I", 3, 0, 0, 0, 1, 0, 0, 0, 0)),
+        build_record(0x8A),
+        build_record(0x86),
+        build_record(0x1E5, struct.pack("<iHHHBB", -1, 8, 300, 0, 0, 0)),
+        build_record(0x91),
+        build_record(0x92),
+        build_record(0x1DD, struct.pack("<H", 0x10)),
+        build_record(0x1DC, struct.pack("<6d", 0.7, 0.7, 0.75, 0.75, 0.3, 0.3)),
+        build_record(0x82),
+    )
+)
 
 
 class _Entry:
@@ -141,10 +143,15 @@ class XlsbSheetsMixin:
         rels_path = "xl/_rels/workbook.bin.rels"
         rels = safe_fromstring(self._package.get(rels_path))
         rid = _next_id({node.get("Id") for node in rels}, "rId")
-        ET.SubElement(rels, f"{{{PKG_REL}}}Relationship", {
-            "Id": rid, "Type": REL + "/worksheet",
-            "Target": posixpath.relpath(path, "xl"),
-        })
+        ET.SubElement(
+            rels,
+            f"{{{PKG_REL}}}Relationship",
+            {
+                "Id": rid,
+                "Type": REL + "/worksheet",
+                "Target": posixpath.relpath(path, "xl"),
+            },
+        )
         types = safe_fromstring(self._package.get("[Content_Types].xml"))
         ET.SubElement(types, f"{{{CT}}}Override", {"PartName": "/" + path, "ContentType": WORKSHEET_TYPE})
 
@@ -296,7 +303,7 @@ class XlsbSheetsMixin:
                     output.extend(build_record(BUNDLE_SH, entry.payload()) for entry in entries)
                     wrote = True
                 continue
-            output.append(workbook[record.header_start:record.data_end])
+            output.append(workbook[record.header_start : record.data_end])
         workbook = b"".join(output)
         if not identity:
             count = len(entries)
@@ -322,7 +329,7 @@ def _rename_hyperlink_locations(data: bytes, old: str, new: str) -> bytes:
             changed = changed or updated != payload
             output.append(build_record(0x1EE, updated))
         else:
-            output.append(data[record.header_start:record.data_end])
+            output.append(data[record.header_start : record.data_end])
     return b"".join(output) if changed else data
 
 
@@ -338,9 +345,7 @@ def _rename_hlink_payload(payload: bytes, old: str, new: str) -> bytes:
         return payload
     renamed_location = rename_formula_sheet_references(location, old, new)
     renamed_display = (
-        rename_formula_sheet_references(display, old, new)
-        if not relationship and display == location
-        else display
+        rename_formula_sheet_references(display, old, new) if not relationship and display == location else display
     )
     if renamed_location == location and renamed_display == display:
         return payload
@@ -379,8 +384,10 @@ def _remap_context(context: FormulaContext, mapping: dict[int, int]) -> None:
             placeholder = f"_xlspy_deleted_{index}_{len(context.names)}"
             name.name, name.flags, name.scope, name.definition = placeholder, _DELETED, None, None
             name.raw = (
-                struct.pack("<IBI", _DELETED, 0, 0xFFFFFFFF) + wide_string(placeholder)
-                + parsed_formula(b"\x1c\x1d") + b"\xff" * 4
+                struct.pack("<IBI", _DELETED, 0, 0xFFFFFFFF)
+                + wide_string(placeholder)
+                + parsed_formula(b"\x1c\x1d")
+                + b"\xff" * 4
             )
             continue
         name.scope = new_scope
@@ -400,6 +407,5 @@ def _patch_book_views(workbook: bytes, change: Callable[[int, int], tuple[int, i
             struct.pack_into("<II", value, 20, first, current)
             output.append(build_record(BOOK_VIEW, bytes(value)))
         else:
-            output.append(workbook[record.header_start:record.data_end])
+            output.append(workbook[record.header_start : record.data_end])
     return b"".join(output)
-

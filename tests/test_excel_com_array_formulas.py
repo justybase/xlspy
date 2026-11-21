@@ -19,12 +19,14 @@ XL_FILE_XLSX = 51
 def _array_workbook(path, writer_class):
     with writer_class(path) as writer:
         writer.add_sheet("S")
-        writer.write_sheet([
-            ["input", "array"],
-            [1, ArrayFormula("B2:B4", "A2:A4*2")],
-            [2, None],
-            [3, None],
-        ])
+        writer.write_sheet(
+            [
+                ["input", "array"],
+                [1, ArrayFormula("B2:B4", "A2:A4*2")],
+                [2, None],
+                [3, None],
+            ]
+        )
 
 
 @pytest.mark.parametrize("writer_class, suffix", WRITERS)
@@ -42,12 +44,14 @@ def test_excel_calculates_an_array_formula(tmp_path, open_workbook, writer_class
 def _data_table_workbook(path):
     with XlsxWriter(path) as writer:
         writer.add_sheet("S")
-        writer.write_sheet([
-            [None, 1, 2, None],
-            [10, DataTableFormula("B2:C4", dt2D=True, r1="D1", r2="D2"), None, 5],
-            [20, None, None, None],
-            [30, None, None, None],
-        ])
+        writer.write_sheet(
+            [
+                [None, 1, 2, None],
+                [10, DataTableFormula("B2:C4", dt2D=True, r1="D1", r2="D2"), None, 5],
+                [20, None, None, None],
+                [30, None, None, None],
+            ]
+        )
 
 
 def test_excel_opens_a_data_table_formula(tmp_path, open_workbook):
@@ -60,10 +64,7 @@ def test_excel_opens_a_data_table_formula(tmp_path, open_workbook):
     # Excel localises the TABLE function name but keeps the input cells.
     formula = sheet.Range("B2").FormulaArray
     assert "D1" in formula and "D2" in formula
-    assert all(
-        sheet.Cells(row, column).HasArray
-        for row in (2, 3, 4) for column in (2, 3)
-    )
+    assert all(sheet.Cells(row, column).HasArray for row in (2, 3, 4) for column in (2, 3))
 
 
 def test_xlspy_reads_a_data_table_resaved_by_excel(tmp_path, excel):

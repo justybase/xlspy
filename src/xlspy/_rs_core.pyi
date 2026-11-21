@@ -57,6 +57,7 @@ def encode_xlsb_sst(ss_list: list[str], sst_all: int, sst_unique: int) -> bytes:
 def read_xlsb_shared_strings(data: ReadableBuffer) -> list[str]: ...
 def read_xlsx_shared_strings(data: ReadableBuffer) -> list[str] | None: ...
 def xlsb_row_has_formatted(row: list[Any]) -> bool | None: ...
+
 # cell_hook(cell, column, xf, row): NotImplemented (row fallback), the encoded
 # cell as bytes, a (value, xf) pair, or the value to write in the cell's xf.
 _CellHook = Callable[[Any, int, int, int], Any]
@@ -117,6 +118,7 @@ def encode_update_xlsb_row(
     date_1904: bool,
 ) -> bytes: ...
 def patch_xlsb_row_headers(path: str | PathLike[str], last_col: int) -> None: ...
+
 @final
 class XlsbReader(Iterator[list[Any]]):
     def __iter__(self) -> XlsbReader: ...
@@ -129,27 +131,45 @@ def read_xlsb_worksheet(
     date_num_fmts: set[int],
     date_1904: bool | None = None,
 ) -> XlsbReader: ...
+
 @final
 class ModelCells:
     def __new__(cls, cell_type: type, descriptors: tuple[Any, ...]) -> ModelCells: ...
     def append_plain(
-        self, sheet: Any, row: int, values: list[Any], start: int,
-        row_cells: dict[int, Any], dirty: set[tuple[int, int]] | None,
+        self,
+        sheet: Any,
+        row: int,
+        values: list[Any],
+        start: int,
+        row_cells: dict[int, Any],
+        dirty: set[tuple[int, int]] | None,
     ) -> int: ...
     def row_values(
-        self, row_cells: dict[int, Any], styles: dict[int, Any], style_at: Callable[[int], Any],
+        self,
+        row_cells: dict[int, Any],
+        styles: dict[int, Any],
+        style_at: Callable[[int], Any],
     ) -> list[Any] | None: ...
     def styled_and_commented(
-        self, cells: dict[int, dict[int, Any]],
+        self,
+        cells: dict[int, dict[int, Any]],
     ) -> tuple[list[Any], list[Any]] | None: ...
-def xlsb_sheet_scan(data: ReadableBuffer) -> tuple[
-    int, int, int,
-    list[tuple[int, int]],
-    list[tuple[int, int, int, int]],
-    list[tuple[int, int, int, int]],
-    tuple[int, int, tuple[int, int, int, int]] | None,
-    tuple[int, int, int, int] | None,
-] | None: ...
+
+def xlsb_sheet_scan(
+    data: ReadableBuffer,
+) -> (
+    tuple[
+        int,
+        int,
+        int,
+        list[tuple[int, int]],
+        list[tuple[int, int, int, int]],
+        list[tuple[int, int, int, int]],
+        tuple[int, int, tuple[int, int, int, int]] | None,
+        tuple[int, int, int, int] | None,
+    ]
+    | None
+): ...
 def convert_frame_row(
     row: Any,
     formats: list[str | None],
@@ -158,12 +178,17 @@ def convert_frame_row(
     timestamp: Any,
     slow: Callable[[Any, str | None], Any],
 ) -> list[Any] | None: ...
-def xlsx_edit_scan(body: str, targets: list[str]) -> tuple[
-    tuple[int, int, int, int] | None,
-    list[tuple[str, str | None, bool]],
-    int | None,
-    list[tuple[str, int]],
-] | None: ...
+def xlsx_edit_scan(
+    body: str, targets: list[str]
+) -> (
+    tuple[
+        tuple[int, int, int, int] | None,
+        list[tuple[str, str | None, bool]],
+        int | None,
+        list[tuple[str, int]],
+    ]
+    | None
+): ...
 def xlsb_load_cells(
     data: ReadableBuffer,
     shared_strings: list[Any],
@@ -183,6 +208,7 @@ def xlsb_load_cells(
     int,
     int,
 ]: ...
+
 @final
 class XlsxReader(Iterator[Any]):
     """Items are ``(row_number, cells)``, or ``bytes`` for a row the caller
@@ -203,6 +229,7 @@ def read_xlsx_worksheet(
     date_1904: bool | None = None,
     model: tuple[Any, ...] | None = None,
 ) -> XlsxReader: ...
+
 @final
 class WidthMeter:
     """Column widths in pixels of the rows the native code measures (see
@@ -216,11 +243,16 @@ class WidthMeter:
         overlay_kind: Callable[[Any, Any, bool], tuple[int, tuple[Any, ...] | None]] | None = None,
     ) -> WidthMeter: ...
     def add_kind(
-        self, id: int, spec: tuple[dict[str, int], int, bool, bool, Callable[[str], int], tuple[Any, ...] | None, int],
+        self,
+        id: int,
+        spec: tuple[dict[str, int], int, bool, bool, Callable[[str], int], tuple[Any, ...] | None, int],
     ) -> None: ...
     def add(
-        self, row: list[Any] | tuple[Any, ...], styles: dict[int, Any] | None = None,
-        header: bool = False, keep: bool = False,
+        self,
+        row: list[Any] | tuple[Any, ...],
+        styles: dict[int, Any] | None = None,
+        header: bool = False,
+        keep: bool = False,
     ) -> list[int] | None: ...
     def best(self) -> list[int]: ...
 

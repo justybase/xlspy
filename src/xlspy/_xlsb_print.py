@@ -41,8 +41,12 @@ def _nullable_text(text: str | None) -> bytes:
 
 def _xlsb_page_setup_record(settings: PrintSettings) -> bytes:
     """BrtPageSetup, or nothing when no page option is set (as in XLSX)."""
-    if (settings.paper_size is None and not settings.fit_to_page
-            and settings.scale is None and settings.orientation is None):
+    if (
+        settings.paper_size is None
+        and not settings.fit_to_page
+        and settings.scale is None
+        and settings.orientation is None
+    ):
         return b""
     paper = 1 if settings.paper_size is None else _paper_code(settings.paper_size)
     fit_width = fit_height = 1
@@ -50,9 +54,21 @@ def _xlsb_page_setup_record(settings: PrintSettings) -> bytes:
         fit_width = 1 if settings.fit_to_width is None else settings.fit_to_width
         fit_height = 1 if settings.fit_to_height is None else settings.fit_to_height
     flags = {"landscape": _LANDSCAPE, "portrait": 0, None: _NO_ORIENTATION}[settings.orientation]
-    payload = struct.pack(
-        "<8IH", paper, settings.scale or 100, 600, 600, 1, 1, fit_width, fit_height, flags,
-    ) + _NULL_STRING
+    payload = (
+        struct.pack(
+            "<8IH",
+            paper,
+            settings.scale or 100,
+            600,
+            600,
+            1,
+            1,
+            fit_width,
+            fit_height,
+            flags,
+        )
+        + _NULL_STRING
+    )
     return build_record(BRT_PAGE_SETUP, payload)
 
 
@@ -68,12 +84,16 @@ def breaks_block(begin: int, end: int, breaks: Sequence[tuple[int, int, int, boo
     if not breaks:
         return b""
     manual = sum(1 for item in breaks if item[3])
-    return b"".join((
-        build_record(begin, struct.pack("<II", len(breaks), manual)),
-        *(build_record(BRT_BREAK, struct.pack("<5I", index, first, last, 1 if man else 0, pivot))
-          for index, first, last, man, pivot in breaks),
-        build_record(end),
-    ))
+    return b"".join(
+        (
+            build_record(begin, struct.pack("<II", len(breaks), manual)),
+            *(
+                build_record(BRT_BREAK, struct.pack("<5I", index, first, last, 1 if man else 0, pivot))
+                for index, first, last, man, pivot in breaks
+            ),
+            build_record(end),
+        )
+    )
 
 
 def margins_record(margins: Iterable[float]) -> bytes:
@@ -101,11 +121,13 @@ def print_records(settings: PrintSettings) -> bytes:
     if settings.center_vertically:
         options |= 0x02
     margins = settings.margins or PageMargins()
-    return b"".join((
-        build_record(BRT_PRINT_OPTIONS, struct.pack("<H", options)),
-        margins_record((margins.left, margins.right, margins.top, margins.bottom, margins.header, margins.footer)),
-        _xlsb_page_setup_record(settings),
-        _header_footer_record(settings),
-        _breaks(BRT_BEGIN_ROW_BREAKS, BRT_END_ROW_BREAKS, settings.row_breaks, 16383),
-        _breaks(BRT_BEGIN_COL_BREAKS, BRT_END_COL_BREAKS, settings.col_breaks, 1048575),
-    ))
+    return b"".join(
+        (
+            build_record(BRT_PRINT_OPTIONS, struct.pack("<H", options)),
+            margins_record((margins.left, margins.right, margins.top, margins.bottom, margins.header, margins.footer)),
+            _xlsb_page_setup_record(settings),
+            _header_footer_record(settings),
+            _breaks(BRT_BEGIN_ROW_BREAKS, BRT_END_ROW_BREAKS, settings.row_breaks, 16383),
+            _breaks(BRT_BEGIN_COL_BREAKS, BRT_END_COL_BREAKS, settings.col_breaks, 1048575),
+        )
+    )

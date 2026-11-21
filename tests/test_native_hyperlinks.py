@@ -51,11 +51,7 @@ def _package(rows, shared, native=True):
             writer.add_sheet("T")
             writer.write_sheet(rows)
     with zipfile.ZipFile(io.BytesIO(buffer.getvalue())) as archive:
-        return {
-            name: archive.read(name)
-            for name in archive.namelist()
-            if not name.startswith("docProps/")
-        }
+        return {name: archive.read(name) for name in archive.namelist() if not name.startswith("docProps/")}
 
 
 @needs_native

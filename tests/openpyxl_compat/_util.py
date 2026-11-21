@@ -126,9 +126,7 @@ def xfail_mismatch(gap: str, label: str, actual, expected):
 
 def assert_close(actual, expected, *, rel_tol=1e-9, abs_tol=1e-9):
     if isinstance(actual, float) and isinstance(expected, float):
-        assert math.isclose(actual, expected, rel_tol=rel_tol, abs_tol=abs_tol), (
-            f"{actual!r} != {expected!r}"
-        )
+        assert math.isclose(actual, expected, rel_tol=rel_tol, abs_tol=abs_tol), f"{actual!r} != {expected!r}"
     else:
         assert normalize(actual) == normalize(expected), f"{actual!r} != {expected!r}"
 

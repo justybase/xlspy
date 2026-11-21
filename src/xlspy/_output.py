@@ -14,6 +14,7 @@ The copy into a caller's stream is the one step that cannot be rolled back:
 if the stream itself fails part-way through that copy, the bytes it already
 accepted stay there.
 """
+
 from __future__ import annotations
 
 import errno
@@ -33,7 +34,6 @@ WriteTarget: TypeAlias = "str | os.PathLike[str] | IO[bytes]"
 
 DEFAULT_STAGING_BYTES = 8 << 20
 _COPY_CHUNK = 1 << 20
-
 
 
 class PackageZip(zipfile.ZipFile):
@@ -69,6 +69,7 @@ class PackageZip(zipfile.ZipFile):
         """The worker thread that compresses this archive's large members."""
         if self._deflate_pool is None:
             from concurrent.futures import ThreadPoolExecutor
+
             self._deflate_pool = ThreadPoolExecutor(1, thread_name_prefix="xlspy-deflate")
         return self._deflate_pool
 
@@ -82,9 +83,7 @@ class PackageZip(zipfile.ZipFile):
         """
         member = self.open(name, "w")
         if self.threaded_deflate() and member._compressor is not None:
-            member._compressor = _zip_threads.ThreadedDeflate(
-                self.deflate_pool(), self.compresslevel
-            )
+            member._compressor = _zip_threads.ThreadedDeflate(self.deflate_pool(), self.compresslevel)
         return member
 
     def close(self):
@@ -94,6 +93,7 @@ class PackageZip(zipfile.ZipFile):
             if self._deflate_pool is not None:
                 self._deflate_pool.shutdown(wait=True)
                 self._deflate_pool = None
+
 
 class StagedOutput:
     """The staging file for one workbook and its eventual publication."""
@@ -157,7 +157,6 @@ class StagedOutput:
             self._temp_path = None
 
 
-
 class StagedWriter:
     """The open/save/close lifecycle shared by ``XlsxWriter`` and ``XlsbWriter``.
 
@@ -175,6 +174,7 @@ class StagedWriter:
         _output: StagedOutput | None
         _aborted: bool
         _saved: bool
+
         def _write_workbook_parts(self) -> None: ...
 
     # Set by set_workbook_protection; None while the workbook has no protection.
@@ -194,16 +194,16 @@ class StagedWriter:
         if self._zf is None:
             output = StagedOutput(self._file, self._staging_bytes())
             try:
-                self._zf = PackageZip(output.stream, 'w', zipfile.ZIP_DEFLATED,
-                                           compresslevel=self._compression_level)
+                self._zf = PackageZip(output.stream, "w", zipfile.ZIP_DEFLATED, compresslevel=self._compression_level)
             except BaseException:
                 output.discard()
                 raise
             self._output = output
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None,
-                 exc_tb: TracebackType | None) -> Literal[False]:
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+    ) -> Literal[False]:
         publish = exc_type is None
         try:
             if publish and self._zf is not None and not self._saved:
@@ -219,9 +219,7 @@ class StagedWriter:
         if self._zf is None:
             raise RuntimeError("the writer is not open; use it as a context manager")
         if self._aborted:
-            raise RuntimeError(
-                "a previous write failed; the workbook is incomplete and was not saved"
-            )
+            raise RuntimeError("a previous write failed; the workbook is incomplete and was not saved")
         if self._saved:
             raise RuntimeError("the workbook was already saved")
 

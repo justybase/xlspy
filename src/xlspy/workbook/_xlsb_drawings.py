@@ -39,8 +39,7 @@ def add_drawing_objects(updater: XlsbUpdater, sheet: Worksheet) -> None:
     added = {name: items for name, items in new_drawing_objects(sheet).items() if items}
     if not added:
         return
-    objects = {"charts": [], "images": [], "tables": [], "data_validations": [],
-               "conditional_formatting": [], **added}
+    objects = {"charts": [], "images": [], "tables": [], "data_validations": [], "conditional_formatting": [], **added}
     scratch = _scratch(sheet, objects, None)
     package = _Package(updater)
     handle = PackageHandle(updater)
@@ -52,8 +51,13 @@ def add_drawing_objects(updater: XlsbUpdater, sheet: Worksheet) -> None:
     package.set(_rels_path(path), _bytes(rels))
     if hook.rid is not None:
         data = package.get(path)
-        package.set(path, replace_records(
-            data, {BRT_DRAWING}, build_record(BRT_DRAWING, wide_string(hook.rid)),
-            before=tuple(item for item in _AFTER_PRINT if item != BRT_DRAWING),
-        ))
+        package.set(
+            path,
+            replace_records(
+                data,
+                {BRT_DRAWING},
+                build_record(BRT_DRAWING, wide_string(hook.rid)),
+                before=tuple(item for item in _AFTER_PRINT if item != BRT_DRAWING),
+            ),
+        )
     package.commit()

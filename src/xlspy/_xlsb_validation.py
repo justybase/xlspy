@@ -25,7 +25,7 @@ _TYPES = {"whole": 1, "decimal": 2, "list": 3, "date": 4, "time": 5, "text_lengt
 _ERROR_STYLES = {"stop": 0, "warning": 1, "information": 2}
 _XLSB_OPERATOR_CODES = {name: index for index, name in enumerate(OPERATORS)}
 
-_LITERAL_LIST = 0x80        # fStrLookup: formula1 is a quoted list of values
+_LITERAL_LIST = 0x80  # fStrLookup: formula1 is a quoted list of values
 _ALLOW_BLANK = 0x100
 _SUPPRESS_DROPDOWN = 0x200  # fSuppressCombo
 _SHOW_INPUT = 1 << 18
@@ -70,8 +70,12 @@ def _dval(rule: DataValidation, context) -> bytes:
             payload += _EMPTY_FORMULA
         else:
             payload += compile_formula(
-                text, context, sheet=None, origin=(first_col, first_row),
-                cell_relative=True, operand=operand,
+                text,
+                context,
+                sheet=None,
+                origin=(first_col, first_row),
+                cell_relative=True,
+                operand=operand,
             )
     return build_record(BRT_DVAL, bytes(payload))
 
@@ -82,11 +86,13 @@ def validations_bin(rules, context) -> bytes:
         return b""
     # wFlags, xLeft, yTop, unused, idvMac (the rule count).
     begin = struct.pack("<HIIII", 0, 0, 0, 0, len(rules))
-    return b"".join((
-        build_record(BRT_BEGIN_DVALS, begin),
-        *(_dval(rule, context) for rule in rules),
-        build_record(BRT_END_DVALS),
-    ))
+    return b"".join(
+        (
+            build_record(BRT_BEGIN_DVALS, begin),
+            *(_dval(rule, context) for rule in rules),
+            build_record(BRT_END_DVALS),
+        )
+    )
 
 
 _TYPE_NAMES = {value: name for name, value in _TYPES.items()}
@@ -105,7 +111,7 @@ def _format_sqref(ranges) -> str:
 
 
 def _formula(payload: bytes, offset: int, context, origin):
-    if payload[offset:offset + 8] == _EMPTY_FORMULA:
+    if payload[offset : offset + 8] == _EMPTY_FORMULA:
         return None, offset + 8
     _tokens, _extra, end = read_parsed(payload, offset)
     return decode_formula(payload[offset:end], context, origin=origin), end

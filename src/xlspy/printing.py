@@ -191,7 +191,9 @@ class PrintSettings:
             object.__setattr__(self, "repeat_rows", _normalize_repeat_rows(self.repeat_rows))
         if self.repeat_columns is not None:
             object.__setattr__(
-                self, "repeat_columns", _normalize_repeat_columns(self.repeat_columns),
+                self,
+                "repeat_columns",
+                _normalize_repeat_columns(self.repeat_columns),
             )
         _check_optional_int(self.fit_to_width, "fit_to_width", 0, 32767)
         _check_optional_int(self.fit_to_height, "fit_to_height", 0, 32767)

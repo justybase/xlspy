@@ -24,7 +24,13 @@ from ..styles.core import table_column_names
 from ..writer import XlsbWriter
 from .._xlsx_edit import _bytes
 from ._objects import (
-    _Package, _as_excel_table, _overlaps, _resolve_part_target, _rels_path, _table_signature, _target,
+    _Package,
+    _as_excel_table,
+    _overlaps,
+    _resolve_part_target,
+    _rels_path,
+    _table_signature,
+    _target,
 )
 from ._xlsb_sheet_meta import LIST_PART, read_table_part
 from ..refs import column_label, parse_cell_range
@@ -125,14 +131,19 @@ def _edit_for(sheet: Worksheet, table: Any, part: TablePart) -> TableEdit:
         wanted = table.autoFilter.ref if table.autoFilter is not None else part.auto_filter_ref
         if wanted != part.auto_filter_ref:
             auto_filter = wanted
-        elif (excel.ref != part.ref or totals_changed) and part.auto_filter_ref == _data_range(part.ref, part.totals_rows or 0):
+        elif (excel.ref != part.ref or totals_changed) and part.auto_filter_ref == _data_range(
+            part.ref, part.totals_rows or 0
+        ):
             auto_filter = _data_range(excel.ref, int(excel.totals_row))
     style = None
     info = table.tableStyleInfo
     if info is not None:
         style = TablePartStyle(
-            name=info.name, first_column=bool(info.showFirstColumn), last_column=bool(info.showLastColumn),
-            row_stripes=bool(info.showRowStripes), column_stripes=bool(info.showColumnStripes),
+            name=info.name,
+            first_column=bool(info.showFirstColumn),
+            last_column=bool(info.showLastColumn),
+            row_stripes=bool(info.showRowStripes),
+            column_stripes=bool(info.showColumnStripes),
         )
     totals_cells = None
     if excel.totals_row and (excel.ref != part.ref or totals_changed):
@@ -143,8 +154,13 @@ def _edit_for(sheet: Worksheet, table: Any, part: TablePart) -> TableEdit:
                 "totals row cannot be saved into a loaded XLSB workbook yet"
             )
     return TableEdit(
-        ref=excel.ref, name=excel.display_name, header_rows=int(excel.header_row),
-        totals_rows=int(excel.totals_row), column_names=names, auto_filter_ref=auto_filter, style=style,
+        ref=excel.ref,
+        name=excel.display_name,
+        header_rows=int(excel.header_row),
+        totals_rows=int(excel.totals_row),
+        column_names=names,
+        auto_filter_ref=auto_filter,
+        style=style,
         totals_cells=totals_cells,
     )
 
@@ -233,7 +249,9 @@ def plan_tables(workbook: Any, updater: XlsbUpdater) -> TablePlan:
                 continue
             excel = _as_excel_table(table)
             try:
-                columns: list[str] | None = table_column_names(excel, _header_row(sheet, excel) if excel.header_row else None)
+                columns: list[str] | None = table_column_names(
+                    excel, _header_row(sheet, excel) if excel.header_row else None
+                )
             except ValueError:
                 columns = None  # the save reports it, in its own order of checks
             added.append(PendingTable(table, next_id, excel.display_name, columns, sheet.title))
@@ -276,7 +294,8 @@ def sync_tables(updater: XlsbUpdater, sheet: Worksheet, pending: tuple[PendingTa
     added = [table for table in current if id(table) not in saved_ids]
     removed = {index for index, table in enumerate(saved) if id(table) not in current_ids}
     edited = {
-        index for index, table in enumerate(saved)
+        index
+        for index, table in enumerate(saved)
         if id(table) in current_ids and _table_signature(table) != signatures[index]
     }
     if not (added or removed or edited):
@@ -328,18 +347,18 @@ def sync_tables(updater: XlsbUpdater, sheet: Worksheet, pending: tuple[PendingTa
     for position, (table, excel) in enumerate(final):
         for other_table, other in final[:position]:
             if (id(table) in changed or id(other_table) in changed) and _overlaps(excel.ref, other.ref):
-                raise ValueError(
-                    f"table {excel.display_name!r} ({excel.ref}) overlaps the sheet's table ({other.ref})"
-                )
+                raise ValueError(f"table {excel.display_name!r} ({excel.ref}) overlaps the sheet's table ({other.ref})")
     patched = {}
     for index in sorted(edited - removed):
         part = readable[index].part
         assert part is not None and readable[index].data is not None
-        patched[part] = patch_table_part(cast(bytes, readable[index].data), _edit_for(sheet, saved[index], parsed[index]))
-    new_columns = [table_column_names(excel, _header_row(sheet, excel)) for table, excel in final[len(kept):]]
+        patched[part] = patch_table_part(
+            cast(bytes, readable[index].data), _edit_for(sheet, saved[index], parsed[index])
+        )
+    new_columns = [table_column_names(excel, _header_row(sheet, excel)) for table, excel in final[len(kept) :]]
     new_totals = [
         _row_values(sheet, excel, parse_cell_range(excel.ref)[3]) if excel.totals_row else None
-        for _, excel in final[len(kept):]
+        for _, excel in final[len(kept) :]
     ]
 
     for part, body in patched.items():
@@ -360,12 +379,21 @@ def sync_tables(updater: XlsbUpdater, sheet: Worksheet, pending: tuple[PendingTa
     planned = {id(item.table): item.ident for item in pending}
     next_id = max([table.id or 0 for table in others] + [part.id for part in parsed], default=0) + 1
     formula_context = handle.formula_context()
-    for (table, excel), columns, totals in zip(final[len(kept):], new_columns, new_totals):
+    for (table, excel), columns, totals in zip(final[len(kept) :], new_columns, new_totals):
         part = package.free_part("xl/tables", "table", "bin")
         ident = planned.get(id(table), next_id)
-        package.set(part, cast(Any, XlsbWriter)._table_bin(
-            XlsbWriter, excel, ident, columns, totals, formula_context, sheet.title,
-        ))
+        package.set(
+            part,
+            cast(Any, XlsbWriter)._table_bin(
+                XlsbWriter,
+                excel,
+                ident,
+                columns,
+                totals,
+                formula_context,
+                sheet.title,
+            ),
+        )
         package.override(part, _TABLE_TYPE)
         rids.append(package.add_rel(rels, path, "table", part))
         next_id = max(next_id, ident) + 1
@@ -376,8 +404,14 @@ def sync_tables(updater: XlsbUpdater, sheet: Worksheet, pending: tuple[PendingTa
         for rid in rids:
             block += build_record(LIST_PART, wide_string(rid))
         block += build_record(END_LIST_PARTS)
-    package.set(path, replace_records(
-        data, {BEGIN_LIST_PARTS, LIST_PART, END_LIST_PARTS}, block, before=_AFTER_LIST_PARTS,
-    ))
+    package.set(
+        path,
+        replace_records(
+            data,
+            {BEGIN_LIST_PARTS, LIST_PART, END_LIST_PARTS},
+            block,
+            before=_AFTER_LIST_PARTS,
+        ),
+    )
     package.set(_rels_path(path), _bytes(rels))
     package.commit()

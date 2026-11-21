@@ -27,14 +27,18 @@ def xlsx(tmp_path):
 
 
 def _validations(path):
-    return [(item.type, str(item.sqref)) for item in openpyxl.load_workbook(path).active.data_validations.dataValidation]
+    return [
+        (item.type, str(item.sqref)) for item in openpyxl.load_workbook(path).active.data_validations.dataValidation
+    ]
 
 
 def test_xlsx_appending_keeps_unread_validations(xlsx, tmp_path):
     out = tmp_path / "out.xlsx"
     workbook = load_workbook(xlsx)
     try:
-        workbook.active.add_data_validation(DataValidation(type="whole", sqref="C1:C5", operator="greater_than", formula1="0"))
+        workbook.active.add_data_validation(
+            DataValidation(type="whole", sqref="C1:C5", operator="greater_than", formula1="0")
+        )
         workbook.save(out)
     finally:
         workbook.close()

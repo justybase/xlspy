@@ -101,15 +101,16 @@ def _run_pytest(args: list[str]) -> tuple[int, dict[str, int | float]]:
         started = time.perf_counter()
         completed = subprocess.run(command, cwd=ROOT, text=True, env=env)
         seconds = round(time.perf_counter() - started, 3)
-        counts = _junit_counts(junit) if junit.exists() else {
-            "tests": 0, "failures": 0, "errors": 0, "skipped": 0, "seconds": seconds
-        }
+        counts = (
+            _junit_counts(junit)
+            if junit.exists()
+            else {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "seconds": seconds}
+        )
         counts["wall_seconds"] = seconds
         return completed.returncode, counts
 
 
-def _artifact(commit: str, dirty: bool, excel: dict[str, str], args: list[str],
-              result: dict, exit_code: int) -> dict:
+def _artifact(commit: str, dirty: bool, excel: dict[str, str], args: list[str], result: dict, exit_code: int) -> dict:
     return {
         "tool": "tools/excel_validation.py",
         "created": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
@@ -127,6 +128,7 @@ def _xlspy_version() -> str:
     sys.path.insert(0, str(ROOT / "src"))
     try:
         import xlspy
+
         return xlspy.__version__
     finally:
         sys.path.pop(0)
@@ -174,10 +176,7 @@ def _check(out_dir: Path, max_age_days: int) -> int:
     if artifact["result"]["tests"] == 0:
         problems.append("the validation ran no tests")
     if artifact["result"]["failures"] or artifact["result"]["errors"]:
-        problems.append(
-            f"{artifact['result']['failures']} failures, "
-            f"{artifact['result']['errors']} errors"
-        )
+        problems.append(f"{artifact['result']['failures']} failures, {artifact['result']['errors']} errors")
     print(f"artifact: {path}")
     print(f"excel: {artifact['excel']['version']} ({artifact['excel']['build']})")
     print(f"commit: {artifact['git']['commit'][:12]} (age {age} days)")

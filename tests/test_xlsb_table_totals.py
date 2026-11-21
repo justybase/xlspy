@@ -56,7 +56,7 @@ def test_totals_metadata_follows_the_cells(tmp_path, value, ilta, label):
     assert int.from_bytes(begin[32:36], "little") & 1
 
     auto_filter = next(payload for record_id, payload in records if record_id == 0xA1)
-    assert tuple(int.from_bytes(auto_filter[i:i + 4], "little") for i in range(0, 16, 4)) == (0, 2, 0, 1)
+    assert tuple(int.from_bytes(auto_filter[i : i + 4], "little") for i in range(0, 16, 4)) == (0, 2, 0, 1)
 
     columns = [payload for record_id, payload in records if record_id == 0x15B]
     assert int.from_bytes(columns[0][4:8], "little") == 0
@@ -68,9 +68,15 @@ def test_totals_metadata_follows_the_cells(tmp_path, value, ilta, label):
     if ilta == 9:
         assert len(formulas) == 1
         assert formulas[0][0] == 0
-        assert decode_formula(
-            formulas[0][1:], FormulaContext(["Data"]), sheet="Data", origin=(3, 1),
-        ) == "SUM(B2:B3)"
+        assert (
+            decode_formula(
+                formulas[0][1:],
+                FormulaContext(["Data"]),
+                sheet="Data",
+                origin=(3, 1),
+            )
+            == "SUM(B2:B3)"
+        )
     else:
         assert formulas == []
 
@@ -88,9 +94,14 @@ def test_explicit_totals_functions_are_written(tmp_path):
     for row, values in enumerate([["name", "qty"], ["a", 2], ["b", 3], ["Total", 5]], start=1):
         for column, cell in enumerate(values, start=1):
             sheet.cell(row=row, column=column, value=cell)
-    sheet.add_table(ExcelTable(
-        "Tbl", "A1:B4", totals_row=True, totals_row_functions=("label", "average"),
-    ))
+    sheet.add_table(
+        ExcelTable(
+            "Tbl",
+            "A1:B4",
+            totals_row=True,
+            totals_row_functions=("label", "average"),
+        )
+    )
     workbook.save(path)
     workbook.close()
 
@@ -128,9 +139,14 @@ def test_an_explicit_totals_function_must_fit_the_cell(tmp_path):
     for row, values in enumerate([["name", "qty"], ["a", 2], ["b", 3], ["Total", 5]], start=1):
         for column, cell in enumerate(values, start=1):
             sheet.cell(row=row, column=column, value=cell)
-    sheet.add_table(ExcelTable(
-        "Tbl", "A1:B4", totals_row=True, totals_row_functions=("label", "label"),
-    ))
+    sheet.add_table(
+        ExcelTable(
+            "Tbl",
+            "A1:B4",
+            totals_row=True,
+            totals_row_functions=("label", "label"),
+        )
+    )
     with pytest.raises(ValueError, match="label totals cell"):
         workbook.save(path)
     workbook.close()

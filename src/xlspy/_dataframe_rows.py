@@ -11,6 +11,7 @@ either of them at import time -- they are imported lazily only when a
 DataFrame-like object is actually passed in. That is why ``import xlspy``
 works on a bare installation with no third-party dependencies.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -98,12 +99,7 @@ def _normalize_cell(value: Any, pd: Any, np: Any) -> Any:
         return value.total_seconds() / _SECONDS_PER_DAY
     if isinstance(value, datetime.time):
         # polars "Time" and object columns may hold plain times.
-        seconds = (
-            value.hour * 3600
-            + value.minute * 60
-            + value.second
-            + value.microsecond / 1_000_000
-        )
+        seconds = value.hour * 3600 + value.minute * 60 + value.second + value.microsecond / 1_000_000
         return seconds / _SECONDS_PER_DAY
     if isinstance(value, Decimal):
         return value
@@ -165,9 +161,7 @@ def _pandas_rows(df: Any, include_index: bool) -> tuple[list[str], Iterator[tupl
 
 def _polars_rows(df: Any, include_index: bool) -> tuple[list[str], Iterator[tuple[Any, ...]]]:
     if include_index:
-        raise ValueError(
-            "polars DataFrames have no index, so include_index=True is not supported."
-        )
+        raise ValueError("polars DataFrames have no index, so include_index=True is not supported.")
     headers = [str(col) for col in df.columns]
     return headers, df.iter_rows()
 
@@ -240,9 +234,11 @@ def dataframe_to_rows(
 
         for row in rows:
             converted = native(row, format_for, na_rep, missing, timestamp, slow)
-            yield converted if converted is not None else [
-                _convert_cell(cell, fmt, na_rep, pd, np) for cell, fmt in zip(row, format_for)
-            ]
+            yield (
+                converted
+                if converted is not None
+                else [_convert_cell(cell, fmt, na_rep, pd, np) for cell, fmt in zip(row, format_for)]
+            )
         return
     for row in rows:
         yield [_convert_cell(cell, fmt, na_rep, pd, np) for cell, fmt in zip(row, format_for)]

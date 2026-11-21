@@ -3,6 +3,7 @@
 Pending edits are kept in sets of A1 references; string hashing differs between
 processes (PYTHONHASHSEED), so saving must not depend on set order.
 """
+
 from __future__ import annotations
 
 import os
@@ -13,7 +14,7 @@ import zipfile
 
 import pytest
 
-SCRIPT = r'''
+SCRIPT = r"""
 import sys
 from xlspy import Comment, Font, Hyperlink, Style, XlsbWriter, XlsxWriter, load_workbook
 
@@ -33,7 +34,7 @@ for row in range(1, 30, 3):
         ws.cell(row, 4).hyperlink = Hyperlink(f"https://example.com/{row}")
 workbook.save(target)
 workbook.close()
-'''
+"""
 
 
 def _save_in_process(tmp_path: pathlib.Path, suffix: str, seed: int) -> dict[str, bytes]:

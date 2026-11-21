@@ -43,8 +43,10 @@ def test_the_bytes_of_a_ptg_list_must_be_in_their_places():
 
 
 def test_parts_other_than_the_sheets_and_the_workbook_are_not_searched():
-    package = _FakePackage({
-        "xl/tables/table1.bin": _ptg_list(1, 0x0001, 7),
-        "xl/worksheets/sheet1.xml": _ptg_list(1, 0x0001, 7),
-    })
+    package = _FakePackage(
+        {
+            "xl/tables/table1.bin": _ptg_list(1, 0x0001, 7),
+            "xl/worksheets/sheet1.xml": _ptg_list(1, 0x0001, 7),
+        }
+    )
     assert not _is_referred_to(package, 7)

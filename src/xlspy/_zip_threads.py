@@ -29,9 +29,9 @@ import zlib
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 
-AVAILABLE = "_compressor" in getattr(
-    getattr(zipfile, "_ZipWriteFile", None), "__init__", lambda: None
-).__code__.co_names
+AVAILABLE = (
+    "_compressor" in getattr(getattr(zipfile, "_ZipWriteFile", None), "__init__", lambda: None).__code__.co_names
+)
 
 # Input is handed to the worker in blocks of this size: large enough that the
 # per-task overhead is negligible, small enough to keep the worker busy.
@@ -42,9 +42,7 @@ _MAX_PENDING = 8
 
 def new_deflater(level: int | None) -> zlib._Compress:
     """The compressor ``zipfile`` would use for a deflated member."""
-    return zlib.compressobj(
-        zlib.Z_DEFAULT_COMPRESSION if level is None else level, zlib.DEFLATED, -15
-    )
+    return zlib.compressobj(zlib.Z_DEFAULT_COMPRESSION if level is None else level, zlib.DEFLATED, -15)
 
 
 class _Pipeline:
@@ -157,7 +155,8 @@ def replay_member(zf, name: str, head: bytes, raw_body, compressed_body, tail: b
     level = zf.compresslevel
     with zf.open(name, "w") as member:
         member._compressor = _Replay(
-            _segment(level, head, zlib.Z_SYNC_FLUSH), compressed_body,
+            _segment(level, head, zlib.Z_SYNC_FLUSH),
+            compressed_body,
             _segment(level, tail, zlib.Z_FINISH),
         )
         member.write(head)

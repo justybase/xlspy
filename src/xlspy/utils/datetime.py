@@ -26,12 +26,7 @@ def days_to_time(value: datetime.timedelta) -> datetime.time:
 
 
 def time_to_days(value: datetime.time) -> float:
-    return (
-        value.hour * 3600
-        + value.minute * 60
-        + value.second
-        + value.microsecond / 10**6
-    ) / SECS_PER_DAY
+    return (value.hour * 3600 + value.minute * 60 + value.second + value.microsecond / 10**6) / SECS_PER_DAY
 
 
 def timedelta_to_days(value: datetime.timedelta) -> float:
@@ -85,11 +80,7 @@ def from_ISO8601(formatted_string):
 
     duration = _DURATION_RE.match(formatted_string)
     if duration is not None and any(duration.groups()):
-        parts = {
-            key: float(value)
-            for key, value in duration.groupdict().items()
-            if value is not None
-        }
+        parts = {key: float(value) for key, value in duration.groupdict().items() if value is not None}
         return datetime.timedelta(**parts)
 
     text = formatted_string

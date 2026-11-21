@@ -1,4 +1,5 @@
 """Module-level helpers of the XLSX writer: XML fragments, spool and flush constants."""
+
 from __future__ import annotations
 
 from typing import IO, Any, Protocol
@@ -102,12 +103,10 @@ def _alignment_xml(align: Any) -> str:
     if align.relative_indent is not None:
         attrs.append(f'relativeIndent="{align.relative_indent}"')
     if align.justify_last_line is not None:
-        attrs.append(
-            f'justifyLastLine="{1 if align.justify_last_line else 0}"'
-        )
+        attrs.append(f'justifyLastLine="{1 if align.justify_last_line else 0}"')
     if align.reading_order is not None:
         attrs.append(f'readingOrder="{align.reading_order}"')
-    return f'<alignment {" ".join(attrs)}/>' if attrs else ""
+    return f"<alignment {' '.join(attrs)}/>" if attrs else ""
 
 
 def _protection_xml(prot: Any) -> str:
@@ -116,4 +115,4 @@ def _protection_xml(prot: Any) -> str:
         attrs.append(f'locked="{1 if prot.locked else 0}"')
     if prot.hidden is not None:
         attrs.append(f'hidden="{1 if prot.hidden else 0}"')
-    return f'<protection {" ".join(attrs)}/>' if attrs else ""
+    return f"<protection {' '.join(attrs)}/>" if attrs else ""

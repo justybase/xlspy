@@ -35,9 +35,13 @@ def _save(path, tmp_path, edit):
 
 def test_table_added_to_loaded_xlsb(source, tmp_path):
     path, has_table = source
-    out = _save(path, tmp_path, lambda wb: wb.active.add_table(
-        ExcelTable("Second", "C1:D3", style_name="TableStyleLight9"),
-    ))
+    out = _save(
+        path,
+        tmp_path,
+        lambda wb: wb.active.add_table(
+            ExcelTable("Second", "C1:D3", style_name="TableStyleLight9"),
+        ),
+    )
     with zipfile.ZipFile(out) as archive:
         assert archive.testzip() is None
         assert sum(n.startswith("xl/tables/") for n in archive.namelist()) == 1 + has_table
@@ -76,9 +80,13 @@ def test_duplicate_name_and_overlap_are_refused(source, tmp_path):
         with pytest.raises(ValueError, match="overlaps"):
             _save(path, tmp_path, lambda wb: wb.active.add_table(ExcelTable("Other", "B2:C3")))
     with pytest.raises(ValueError, match="header|name"):
-        _save(path, tmp_path, lambda wb: wb.active.add_table(
-            ExcelTable("Bad", "C1:D3", columns=["nope", "y"]),
-        ))
+        _save(
+            path,
+            tmp_path,
+            lambda wb: wb.active.add_table(
+                ExcelTable("Bad", "C1:D3", columns=["nope", "y"]),
+            ),
+        )
 
 
 def test_added_table_is_not_added_twice(source, tmp_path):

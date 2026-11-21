@@ -52,42 +52,58 @@ def _rel_id(rel_id: str) -> bytes:
 
 
 def _slicer_payload(slicer: Slicer) -> bytes:
-    return (bytes((_SLICER_FLAGS,)) + struct.pack("<IIII", 0, slicer.columns, 0, _ITEM_ROW_HEIGHT)
-            + wide_string(slicer.display_name) + wide_string(slicer.cache_name)
-            + wide_string(slicer.display_caption))
+    return (
+        bytes((_SLICER_FLAGS,))
+        + struct.pack("<IIII", 0, slicer.columns, 0, _ITEM_ROW_HEIGHT)
+        + wide_string(slicer.display_name)
+        + wide_string(slicer.cache_name)
+        + wide_string(slicer.display_caption)
+    )
 
 
 def slicers_part_bin(slicers: list[Slicer]) -> bytes:
     """The slicer part of one sheet, holding all of its slicers."""
-    body = b"".join(build_record(_BEGIN_SLICER, _slicer_payload(slicer)) + build_record(_END_SLICER)
-                    for slicer in slicers)
+    body = b"".join(
+        build_record(_BEGIN_SLICER, _slicer_payload(slicer)) + build_record(_END_SLICER) for slicer in slicers
+    )
     return build_record(_BEGIN_SLICERS) + body + build_record(_END_SLICERS)
 
 
 def slicer_cache_bin(slicer: Slicer, table_id: int, column_id: int) -> bytes:
     """The cache part: links the slicer to table ``table_id`` and its column ``column_id``."""
     table_cache = struct.pack("<IIIB", 0, column_id, table_id, _TABLE_CACHE_FLAGS)
-    return (build_record(_BEGIN_CACHE)
-            + build_record(_BEGIN_CACHE_DEF, wide_string(slicer.cache_name) + wide_string(slicer.column))
-            + build_record(_CACHE_PIVOT_TABLES, struct.pack("<I", 0))
-            + build_record(_FRT_BEGIN, _FRT_2013)
-            + build_record(_BEGIN_TABLE_CACHE, table_cache) + build_record(_END_TABLE_CACHE)
-            + build_record(_FRT_END)
-            + build_record(_END_CACHE_DEF) + build_record(_END_CACHE))
+    return (
+        build_record(_BEGIN_CACHE)
+        + build_record(_BEGIN_CACHE_DEF, wide_string(slicer.cache_name) + wide_string(slicer.column))
+        + build_record(_CACHE_PIVOT_TABLES, struct.pack("<I", 0))
+        + build_record(_FRT_BEGIN, _FRT_2013)
+        + build_record(_BEGIN_TABLE_CACHE, table_cache)
+        + build_record(_END_TABLE_CACHE)
+        + build_record(_FRT_END)
+        + build_record(_END_CACHE_DEF)
+        + build_record(_END_CACHE)
+    )
 
 
 def sheet_slicers_bin(rel_id: str) -> bytes:
     """The worksheet FRT block naming the sheet's slicer part by relationship id."""
-    return (build_record(_FRT_BEGIN, _FRT_2013) + build_record(_BEGIN_SHEET_LIST)
-            + build_record(_SHEET_SLICER_PART, _rel_id(rel_id))
-            + build_record(_END_SHEET_SLICER_PART) + build_record(_END_SHEET_LIST)
-            + build_record(_FRT_END))
+    return (
+        build_record(_FRT_BEGIN, _FRT_2013)
+        + build_record(_BEGIN_SHEET_LIST)
+        + build_record(_SHEET_SLICER_PART, _rel_id(rel_id))
+        + build_record(_END_SHEET_SLICER_PART)
+        + build_record(_END_SHEET_LIST)
+        + build_record(_FRT_END)
+    )
 
 
 def workbook_slicer_caches_bin(rel_ids: list[str]) -> bytes:
     """The workbook FRT block listing every slicer cache by relationship id."""
     if not rel_ids:
         return b""
-    return (build_record(_FRT_BEGIN, _FRT_2013) + build_record(_BEGIN_BOOK_CACHES)
-            + b"".join(build_record(_BOOK_CACHE, _rel_id(rel_id)) for rel_id in rel_ids)
-            + build_record(_FRT_END))
+    return (
+        build_record(_FRT_BEGIN, _FRT_2013)
+        + build_record(_BEGIN_BOOK_CACHES)
+        + b"".join(build_record(_BOOK_CACHE, _rel_id(rel_id)) for rel_id in rel_ids)
+        + build_record(_FRT_END)
+    )

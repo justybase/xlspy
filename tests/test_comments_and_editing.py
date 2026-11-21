@@ -11,8 +11,18 @@ import openpyxl
 from openpyxl.comments import Comment as OpenpyxlComment
 
 from xlspy import (
-    Comment, DefinedName, ExcelReader, Formula, SheetProtection, Style,
-    WorkbookProtection, XlsbUpdater, XlsbWriter, XlsmUpdater, XlsxUpdater, XlsxWriter,
+    Comment,
+    DefinedName,
+    ExcelReader,
+    Formula,
+    SheetProtection,
+    Style,
+    WorkbookProtection,
+    XlsbUpdater,
+    XlsbWriter,
+    XlsmUpdater,
+    XlsxUpdater,
+    XlsxWriter,
 )
 from xlspy._metadata import MAIN, REL, PKG_REL, CT, password_hash
 from xlspy._text import xstring_unescape
@@ -48,8 +58,11 @@ def get_comment_parts(path):
 
 def test_comments_writer_interoperability_and_dimensions(tmp_path):
     path = tmp_path / "notes.xlsx"
-    comments = {"A1": Comment("Zażółć <&>\n next _x0041_", "Jan & Ola", 300, 120),
-                "C8": Comment("empty cell", "Jan & Ola"), "B2": Comment("second", "Żaneta")}
+    comments = {
+        "A1": Comment("Zażółć <&>\n next _x0041_", "Jan & Ola", 300, 120),
+        "C8": Comment("empty cell", "Jan & Ola"),
+        "B2": Comment("second", "Żaneta"),
+    }
     make_book(path, comments=comments)
     with ExcelReader(str(path)) as reader:
         assert reader.get_comments("Data") == {ref: Comment(c.text, c.author) for ref, c in comments.items()}
@@ -120,8 +133,10 @@ def test_vml_controls_and_untouched_notes_are_preserved(tmp_path):
     path = tmp_path / "controls.xlsx"
     make_book(path, comments={"A1": Comment("remove", "Jan"), "B2": Comment("keep", "Ola")})
     vp = get_comment_parts(path)["vmlDrawing"][0]
-    control = (f'<v:shape xmlns:v="{V}" xmlns:x="{X}" id="control1" type="#custom">'
-               '<x:ClientData ObjectType="Button"><x:Macro>run_me</x:Macro></x:ClientData></v:shape>').encode()
+    control = (
+        f'<v:shape xmlns:v="{V}" xmlns:x="{X}" id="control1" type="#custom">'
+        '<x:ClientData ObjectType="Button"><x:Macro>run_me</x:Macro></x:ClientData></v:shape>'
+    ).encode()
     original = payloads(path)[vp]
     replace_parts(path, {vp: original.replace(b"</xml>", control + b"</xml>")})
     updater = XlsxUpdater(path)
@@ -187,7 +202,9 @@ def test_merged_comment_anchor_and_duplicate_refs(tmp_path):
         writer.write_sheet([[1]], merges=["A1:B2"], comments={"A1": Comment("ok", "author")})
 
 
-@pytest.mark.parametrize("kwargs", [{"text": 12}, {"author": None}, {"width": 0}, {"height": float("nan")}, {"width": True}])
+@pytest.mark.parametrize(
+    "kwargs", [{"text": 12}, {"author": None}, {"width": 0}, {"height": float("nan")}, {"width": True}]
+)
 def test_comment_validation(kwargs):
     args = {"text": "text", "author": "author"} | kwargs
     with pytest.raises((TypeError, ValueError)):
@@ -207,7 +224,9 @@ def test_sparse_updates_types_style_comment_and_untouched_xml(tmp_path):
     after = payloads(path)
     before_root = ET.fromstring(before["xl/worksheets/sheet1.xml"])
     after_root = ET.fromstring(after["xl/worksheets/sheet1.xml"])
-    assert ET.tostring(before_root.find(f"{{{MAIN}}}sheetData/{{{MAIN}}}row/{{{MAIN}}}c")) == ET.tostring(after_root.find(f"{{{MAIN}}}sheetData/{{{MAIN}}}row/{{{MAIN}}}c"))
+    assert ET.tostring(before_root.find(f"{{{MAIN}}}sheetData/{{{MAIN}}}row/{{{MAIN}}}c")) == ET.tostring(
+        after_root.find(f"{{{MAIN}}}sheetData/{{{MAIN}}}row/{{{MAIN}}}c")
+    )
     for name in before:
         if name != "xl/worksheets/sheet1.xml":
             assert before[name] == after[name]
@@ -249,10 +268,26 @@ def test_sparse_updates_formulas_and_calc_chain(tmp_path):
     make_book(path)
     parts = payloads(path)
     rels = ET.fromstring(parts["xl/_rels/workbook.xml.rels"])
-    ET.SubElement(rels, f"{{{PKG_REL}}}Relationship", {"Id": "chain", "Type": REL + "/calcChain", "Target": "calcChain.xml"})
+    ET.SubElement(
+        rels, f"{{{PKG_REL}}}Relationship", {"Id": "chain", "Type": REL + "/calcChain", "Target": "calcChain.xml"}
+    )
     types = ET.fromstring(parts["[Content_Types].xml"])
-    ET.SubElement(types, f"{{{CT}}}Override", {"PartName": "/xl/calcChain.xml", "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"})
-    replace_parts(path, {"xl/_rels/workbook.xml.rels": ET.tostring(rels), "[Content_Types].xml": ET.tostring(types), "xl/calcChain.xml": b'<calcChain/>'})
+    ET.SubElement(
+        types,
+        f"{{{CT}}}Override",
+        {
+            "PartName": "/xl/calcChain.xml",
+            "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml",
+        },
+    )
+    replace_parts(
+        path,
+        {
+            "xl/_rels/workbook.xml.rels": ET.tostring(rels),
+            "[Content_Types].xml": ET.tostring(types),
+            "xl/calcChain.xml": b"<calcChain/>",
+        },
+    )
     updater = XlsxUpdater(path)
     try:
         updater.update_cells("Data", {"B2": Formula("A2*2", 20), "C2": Formula('"ok"', "ok")})
@@ -364,7 +399,7 @@ def test_xlsb_metadata_features_are_available(tmp_path):
     finally:
         updater.close()
     with ExcelReader(str(path)) as reader:
-        assert reader.read_all('Sheet1') == [[2]]
+        assert reader.read_all("Sheet1") == [[2]]
 
 
 @pytest.mark.parametrize("streamed", [False, True])
@@ -401,7 +436,10 @@ def test_sparse_edits_interleave_with_data_replacement(tmp_path, streamed):
         assert reader.read_all("Other") == [["third"]]
     parts = payloads(path)
     count = int(ET.fromstring(parts["xl/sharedStrings.xml"]).get("count"))
-    actual = sum(len(ET.fromstring(parts[name]).findall(f'.//{{{MAIN}}}c[@t="s"]')) for name in ("xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"))
+    actual = sum(
+        len(ET.fromstring(parts[name]).findall(f'.//{{{MAIN}}}c[@t="s"]'))
+        for name in ("xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml")
+    )
     assert count == actual
 
 
@@ -412,10 +450,12 @@ def test_package_failure_rolls_back_all_comment_parts(tmp_path, monkeypatch):
     try:
         before = updater.to_bytes()
         original = updater._package.set
+
         def failing_set(name, data):
             if name == "[Content_Types].xml":
                 raise OSError("simulated staging failure")
             return original(name, data)
+
         monkeypatch.setattr(updater._package, "set", failing_set)
         with pytest.raises(OSError, match="simulated"):
             updater.set_comments("Data", {"A1": Comment("new", "Jan")})
@@ -431,6 +471,7 @@ def test_sparse_date_edits_reuse_existing_style(tmp_path, mac_epoch):
     book.active.title = "Data"
     if mac_epoch:
         from openpyxl.utils.datetime import MAC_EPOCH
+
         book.epoch = MAC_EPOCH
     book.active["A1"] = datetime.datetime(2025, 1, 1)
     book.save(path)
@@ -468,8 +509,14 @@ def test_sparse_empty_sheet_and_missing_dimension(tmp_path):
 def test_dataframe_comments_forwarded(tmp_path):
     pandas = pytest.importorskip("pandas")
     from xlspy import to_xlsx
+
     path = tmp_path / "dataframe.xlsx"
-    to_xlsx(pandas.DataFrame({"amount": [42]}), path, comments={"A2": Comment("ok", "Jan")}, sheet_protection=SheetProtection())
+    to_xlsx(
+        pandas.DataFrame({"amount": [42]}),
+        path,
+        comments={"A2": Comment("ok", "Jan")},
+        sheet_protection=SheetProtection(),
+    )
     with ExcelReader(str(path)) as reader:
         assert reader.get_comments("Sheet1")["A2"].text == "ok"
 
@@ -496,6 +543,7 @@ def test_threaded_comment_parts_preserved_and_collision_refused(tmp_path):
 
 def test_comment_edits_preserve_combined_report_parts(tmp_path):
     from test_xlsx_integration import build_report, _png
+
     path = build_report(tmp_path / "report.xlsx", _png(tmp_path / "logo.png"))
     before = payloads(path)
     updater = XlsxUpdater(path)
@@ -512,7 +560,11 @@ def test_comment_edits_preserve_combined_report_parts(tmp_path):
     # The picture survives in the package; openpyxl only loads images when
     # Pillow is installed, which the test extras do not require.
     assert any(name.startswith("xl/media/") for name in after)
-    assert any(re.search(rb"<(?:\w+:)?pic[\s>/]", data) for name, data in after.items() if name.startswith("xl/drawings/drawing"))
+    assert any(
+        re.search(rb"<(?:\w+:)?pic[\s>/]", data)
+        for name, data in after.items()
+        if name.startswith("xl/drawings/drawing")
+    )
     try:
         import PIL  # noqa: F401
     except ImportError:
@@ -550,7 +602,11 @@ def test_prefixed_workbook_sheet_styles_and_comments(tmp_path):
     path = tmp_path / "prefixes.xlsx"
     make_book(path, comments={"A1": Comment("original", "Jan")})
     parts = payloads(path)
-    replacements = {name: ET.tostring(ET.fromstring(data), encoding="utf-8") for name, data in parts.items() if name.endswith((".xml", ".rels"))}
+    replacements = {
+        name: ET.tostring(ET.fromstring(data), encoding="utf-8")
+        for name, data in parts.items()
+        if name.endswith((".xml", ".rels"))
+    }
     replace_parts(path, replacements)
     updater = XlsxUpdater(path)
     try:
@@ -570,15 +626,20 @@ def test_notes_do_not_use_header_footer_vml(tmp_path):
     path = tmp_path / "hf.xlsx"
     make_book(path)
     hf_vml = (f'<xml xmlns:v="{V}"><v:shape id="LH" style="width:10pt;height:10pt"/></xml>').encode()
-    sheet = payloads(path)["xl/worksheets/sheet1.xml"].replace(b"</worksheet>", b'<legacyDrawingHF r:id="rIdHF"/></worksheet>')
-    replace_parts(path, {
-        "xl/worksheets/sheet1.xml": sheet,
-        "xl/drawings/vmlDrawingHF1.vml": hf_vml,
-        "xl/worksheets/_rels/sheet1.xml.rels": (
-            f'<Relationships xmlns="{PKG_REL}"><Relationship Id="rIdHF" '
-            f'Type="{REL}/vmlDrawing" Target="../drawings/vmlDrawingHF1.vml"/></Relationships>'
-        ).encode(),
-    })
+    sheet = payloads(path)["xl/worksheets/sheet1.xml"].replace(
+        b"</worksheet>", b'<legacyDrawingHF r:id="rIdHF"/></worksheet>'
+    )
+    replace_parts(
+        path,
+        {
+            "xl/worksheets/sheet1.xml": sheet,
+            "xl/drawings/vmlDrawingHF1.vml": hf_vml,
+            "xl/worksheets/_rels/sheet1.xml.rels": (
+                f'<Relationships xmlns="{PKG_REL}"><Relationship Id="rIdHF" '
+                f'Type="{REL}/vmlDrawing" Target="../drawings/vmlDrawingHF1.vml"/></Relationships>'
+            ).encode(),
+        },
+    )
     added, removed = tmp_path / "added.xlsx", tmp_path / "removed.xlsx"
     for source, target, value in ((path, added, Comment("note", "Ann")), (added, removed, None)):
         updater = XlsxUpdater(source)

@@ -58,23 +58,44 @@ NOTE = Style(font=Font(italic=True, size=9, color="808080"))
 SECTION = Style(bold=True)
 
 BORDER_STYLES = [
-    "thin", "medium", "thick", "dashed", "dotted", "double", "hair",
-    "mediumDashed", "dashDot", "mediumDashDot", "dashDotDot",
-    "mediumDashDotDot", "slantDashDot",
+    "thin",
+    "medium",
+    "thick",
+    "dashed",
+    "dotted",
+    "double",
+    "hair",
+    "mediumDashed",
+    "dashDot",
+    "mediumDashDot",
+    "dashDotDot",
+    "mediumDashDotDot",
+    "slantDashDot",
 ]
 
 PATTERN_TYPES = [
-    "solid", "gray125",
-    "darkGray", "mediumGray", "lightGray", "gray0625",
-    "darkHorizontal", "darkVertical", "darkDown", "darkUp",
-    "darkGrid", "darkTrellis",
-    "lightHorizontal", "lightVertical", "lightDown", "lightUp",
-    "lightGrid", "lightTrellis",
+    "solid",
+    "gray125",
+    "darkGray",
+    "mediumGray",
+    "lightGray",
+    "gray0625",
+    "darkHorizontal",
+    "darkVertical",
+    "darkDown",
+    "darkUp",
+    "darkGrid",
+    "darkTrellis",
+    "lightHorizontal",
+    "lightVertical",
+    "lightDown",
+    "lightUp",
+    "lightGrid",
+    "lightTrellis",
 ]
 
 
-def _serial(hours: float, minutes: float, seconds: float = 0.0,
-            milliseconds: float = 0.0) -> float:
+def _serial(hours: float, minutes: float, seconds: float = 0.0, milliseconds: float = 0.0) -> float:
     """Excel time-of-day serial for a fraction of a day."""
     total = hours * 3600 + minutes * 60 + seconds + milliseconds / 1000.0
     return total / 86400.0
@@ -83,6 +104,7 @@ def _serial(hours: float, minutes: float, seconds: float = 0.0,
 # ---------------------------------------------------------------------------
 # Sheet builders
 # ---------------------------------------------------------------------------
+
 
 def _flat_sheet(writer: XlsxWriter | XlsbWriter) -> None:
     """Flat (0.6.0) style API plus tuple number formats."""
@@ -121,9 +143,13 @@ def _font_sheet(writer: XlsxWriter | XlsbWriter) -> None:
     data = [
         ["Element", "Demo", "Expected result"],
         ["name='Segoe UI', size=14", "Segoe UI 14", "Excel shows Segoe UI, not Calibri"],
-        ["charset=0, family=2", "charset/family", "styles.xml: <charset val=\"0\"/>, <family val=\"2\"/>"],
+        ["charset=0, family=2", "charset/family", 'styles.xml: <charset val="0"/>, <family val="2"/>'],
         ["scheme='major'", "Theme font (major)", "Excel uses the theme's major font (e.g. Calibri Light)"],
-        ["name='Arial' without scheme", "Arial without scheme", "Excel shows Arial (no substitution for the theme font)"],
+        [
+            "name='Arial' without scheme",
+            "Arial without scheme",
+            "Excel shows Arial (no substitution for the theme font)",
+        ],
         ["outline=True", "Outline letters", "outline around the glyphs"],
         ["shadow=True", "Shadowed letters", "shadow below the glyphs"],
         ["condense=True", "Condensed letters", "tighter character spacing"],
@@ -135,7 +161,7 @@ def _font_sheet(writer: XlsxWriter | XlsbWriter) -> None:
         ["underline='doubleAccounting'", "Accounting 2", "double line below the baseline"],
         ["vertAlign='superscript'", "x2", "whole text raised (x²)"],
         ["vertAlign='subscript'", "H2O", "whole text lowered (H₂O)"],
-        ["color=Color(auto=True)", "Automatic color", "styles.xml: auto=\"1\""],
+        ["color=Color(auto=True)", "Automatic color", 'styles.xml: auto="1"'],
         ["color=Color(theme=4, tint=0.4)", "Theme color + tint", "lighter shade of the theme accent color"],
         ["color=Color(indexed=3)", "Indexed color 3", "red from the indexed palette"],
         ["name='Arial' + rgb + bold + 18", "Red Arial 18", "bold red, 18 pt"],
@@ -180,42 +206,52 @@ def _border_sheet(writer: XlsxWriter) -> None:
     row = 2  # 1-based row cursor
 
     for name in BORDER_STYLES:
-        data.append([f"left={name}", None, None, f"styles.xml: <left style=\"{name}\"/>"])
+        data.append([f"left={name}", None, None, f'styles.xml: <left style="{name}"/>'])
         styles[f"B{row}"] = Style(border=Border(left=Side(name)))
         row += 1
 
-    outer = {"left": Side("thin"), "right": Side("thin"),
-             "top": Side("thin"), "bottom": Side("thin")}
+    outer = {"left": Side("thin"), "right": Side("thin"), "top": Side("thin"), "bottom": Side("thin")}
     entries = [
         # (label, note, border, merge_rows)
-        ("left=thin + bottom=double (red)",
-         "thin left edge, red double bottom edge",
-         Border(left=Side("thin"), bottom=Side("double", "C00000")), 1),
-        ("start=thin, end=medium",
-         "start/end = leading/trailing edge (LTR)",
-         Border(start=Side("thin"), end=Side("medium")), 1),
-        ("diagonal up (diagonal_direction='up')",
-         "line from the bottom-left to the top-right corner",
-         Border(diagonal=Side("hair", "C00000"), diagonal_direction="up"), 1),
-        ("diagonal down (diagonal_down=True)",
-         "line from the top-left to the bottom-right corner",
-         Border(diagonal=Side("double", "0070C0"), diagonal_down=True), 1),
-        ("diagonal in both directions",
-         "two diagonal lines",
-         Border(diagonal=Side("thin"), diagonal_up=True, diagonal_down=True), 1),
-        ("vertical + horizontal inside a merged 2×2 block",
-         "inner cross inside the merged block (vertical=red, horizontal=blue)",
-         Border(**outer, vertical=Side("thin", "C00000"),
-                horizontal=Side("thin", "0070C0")), 2),
-        ("outline=False on a merged block",
-         "no frame around the merged block",
-         Border(**outer, outline=False), 2),
-        ("default outline on a merged block",
-         "frame around the whole merged block",
-         Border(**outer), 2),
-        ("no border (Border())",
-         "cell without any frame",
-         None, 1),
+        (
+            "left=thin + bottom=double (red)",
+            "thin left edge, red double bottom edge",
+            Border(left=Side("thin"), bottom=Side("double", "C00000")),
+            1,
+        ),
+        (
+            "start=thin, end=medium",
+            "start/end = leading/trailing edge (LTR)",
+            Border(start=Side("thin"), end=Side("medium")),
+            1,
+        ),
+        (
+            "diagonal up (diagonal_direction='up')",
+            "line from the bottom-left to the top-right corner",
+            Border(diagonal=Side("hair", "C00000"), diagonal_direction="up"),
+            1,
+        ),
+        (
+            "diagonal down (diagonal_down=True)",
+            "line from the top-left to the bottom-right corner",
+            Border(diagonal=Side("double", "0070C0"), diagonal_down=True),
+            1,
+        ),
+        (
+            "diagonal in both directions",
+            "two diagonal lines",
+            Border(diagonal=Side("thin"), diagonal_up=True, diagonal_down=True),
+            1,
+        ),
+        (
+            "vertical + horizontal inside a merged 2×2 block",
+            "inner cross inside the merged block (vertical=red, horizontal=blue)",
+            Border(**outer, vertical=Side("thin", "C00000"), horizontal=Side("thin", "0070C0")),
+            2,
+        ),
+        ("outline=False on a merged block", "no frame around the merged block", Border(**outer, outline=False), 2),
+        ("default outline on a merged block", "frame around the whole merged block", Border(**outer), 2),
+        ("no border (Border())", "cell without any frame", None, 1),
     ]
     data.append([None, None, None, None])
     row += 1
@@ -248,8 +284,7 @@ def _border_sheet(writer: XlsxWriter) -> None:
 
 
 def _alignment_sheet(writer: XlsxWriter) -> None:
-    text = ("Allocation of the research and development budget by quarter, "
-            "together with the management commentary")
+    text = "Allocation of the research and development budget by quarter, together with the management commentary"
     data = [
         ["Element", "Demo", "Expected result"],
         ["justify + justify_last_line + wrap", text, "every line stretched to the column width"],
@@ -259,9 +294,13 @@ def _alignment_sheet(writer: XlsxWriter) -> None:
         ["text_rotation=45", "45 degrees", "text rotated 45° upwards"],
         ["text_rotation=135", "135 degrees", "text rotated 135° (downwards)"],
         ["text_rotation=255", "Vertical", "vertical text, top to bottom"],
-        ["reading_order=2 (RTL)", "Reading order 2 — RTL", "styles.xml: readingOrder=\"2\""],
-        ["reading_order=1 (LTR)", "Reading order 1 — LTR", "styles.xml: readingOrder=\"1\""],
-        ["wrap + vertical='top'", "Wrapped paragraph aligned to the top edge of the cell", "two lines aligned to the top"],
+        ["reading_order=2 (RTL)", "Reading order 2 — RTL", 'styles.xml: readingOrder="2"'],
+        ["reading_order=1 (LTR)", "Reading order 1 — LTR", 'styles.xml: readingOrder="1"'],
+        [
+            "wrap + vertical='top'",
+            "Wrapped paragraph aligned to the top edge of the cell",
+            "two lines aligned to the top",
+        ],
     ]
     styles = {
         "B2": Style(alignment=Alignment(horizontal="justify", wrap_text=True, justify_last_line=True)),
@@ -307,20 +346,26 @@ def _fill_sheet(writer: XlsxWriter | XlsbWriter) -> None:
     row += 1
 
     gradients = [
-        ("linear, degree=90, two explicit Stop objects",
-         GradientFill("linear", degree=90,
-                      stop=[Stop("C00000", 0.0), Stop("0070C0", 1.0)]),
-         "red → blue, top to bottom"),
-        ("linear, degree=0, three bare colors",
-         GradientFill("linear", degree=0, stop=["C00000", "FFFF00", "0070C0"]),
-         "colors spread evenly at 0 / 0.5 / 1, left to right"),
-        ("linear, degree=45, two colors",
-         GradientFill("linear", degree=45, stop=["008000", "FFFFFF"]),
-         "green → white at 45°"),
-        ("path, extents 0.2",
-         GradientFill("path", left=0.2, right=0.2, top=0.2, bottom=0.2,
-                      stop=["FFF2CC", "BF8F00"]),
-         "path (radial) gradient"),
+        (
+            "linear, degree=90, two explicit Stop objects",
+            GradientFill("linear", degree=90, stop=[Stop("C00000", 0.0), Stop("0070C0", 1.0)]),
+            "red → blue, top to bottom",
+        ),
+        (
+            "linear, degree=0, three bare colors",
+            GradientFill("linear", degree=0, stop=["C00000", "FFFF00", "0070C0"]),
+            "colors spread evenly at 0 / 0.5 / 1, left to right",
+        ),
+        (
+            "linear, degree=45, two colors",
+            GradientFill("linear", degree=45, stop=["008000", "FFFFFF"]),
+            "green → white at 45°",
+        ),
+        (
+            "path, extents 0.2",
+            GradientFill("path", left=0.2, right=0.2, top=0.2, bottom=0.2, stop=["FFF2CC", "BF8F00"]),
+            "path (radial) gradient",
+        ),
     ]
     for label, fill, note in gradients:
         data.append([label, None, None, None, note])
@@ -329,14 +374,16 @@ def _fill_sheet(writer: XlsxWriter | XlsbWriter) -> None:
 
     block_label = f"gradient 90° repeated over B{row}:D{row + 2}"
     for extra in range(3):
-        data.append([
-            block_label if extra == 0 else None,
-            None, None, None,
-            "one GradientFill applied to a 3×3 range" if extra == 0 else None,
-        ])
-    styles[f"B{row}:D{row + 2}"] = Style(
-        fill=GradientFill("linear", degree=90, stop=["FFF2CC", "BF8F00"])
-    )
+        data.append(
+            [
+                block_label if extra == 0 else None,
+                None,
+                None,
+                None,
+                "one GradientFill applied to a 3×3 range" if extra == 0 else None,
+            ]
+        )
+    styles[f"B{row}:D{row + 2}"] = Style(fill=GradientFill("linear", degree=90, stop=["FFF2CC", "BF8F00"]))
 
     writer.add_sheet("Fills")
     writer.write_sheet(
@@ -350,26 +397,34 @@ def _fill_sheet(writer: XlsxWriter | XlsbWriter) -> None:
 
 def _cf_sheet(writer: XlsxWriter) -> None:
     headers = [
-        "Data", "cellIs: full dxf", "formula: gradient dxf",
-        "2-color scale", "3-color scale", "data bar",
-        "5Arrows icons", "3TrafficLights1 icons",
-        "shared dxf A", "shared dxf B",
+        "Data",
+        "cellIs: full dxf",
+        "formula: gradient dxf",
+        "2-color scale",
+        "3-color scale",
+        "data bar",
+        "5Arrows icons",
+        "3TrafficLights1 icons",
+        "shared dxf A",
+        "shared dxf B",
     ]
     values_b = [3, 8, 1, 9, 4, 7, 2, 10, 5, 6]
     data = [headers]
     for index in range(10):
-        data.append([
-            index + 1,
-            values_b[index],
-            index + 1,
-            (index + 1) * 2,
-            (index + 1) * 5,
-            index - 5,
-            index + 1,
-            index + 1,
-            index + 1,
-            index + 1,
-        ])
+        data.append(
+            [
+                index + 1,
+                values_b[index],
+                index + 1,
+                (index + 1) * 2,
+                (index + 1) * 5,
+                index - 5,
+                index + 1,
+                index + 1,
+                index + 1,
+                index + 1,
+            ]
+        )
 
     full_dxf = DifferentialStyle(
         font=Font(bold=True, color="9C0006"),
@@ -397,17 +452,22 @@ def _cf_sheet(writer: XlsxWriter) -> None:
         CellIsRule("B2:B11", "between", ["7", "8"], dxf=warm_dxf, priority=2),
         FormulaRule("C2:C11", "MOD($A2,2)=0", dxf=gradient_dxf, priority=3),
         ColorScaleRule(
-            "D2:D11", FormatObject("min"), None, FormatObject("max"),
+            "D2:D11",
+            FormatObject("min"),
+            None,
+            FormatObject("max"),
             ["F8696B", "63BE7B"],
         ),
         ColorScaleRule(
-            "E2:E11", FormatObject("min"), FormatObject("percentile", 50),
-            FormatObject("max"), ["F8696B", "FFEB84", "63BE7B"],
+            "E2:E11",
+            FormatObject("min"),
+            FormatObject("percentile", 50),
+            FormatObject("max"),
+            ["F8696B", "FFEB84", "63BE7B"],
         ),
         DataBarRule("F2:F11", FormatObject("min"), FormatObject("max"), "638EC6"),
         IconSetRule("G2:G11", "5Arrows", [0, 20, 40, 60, 80], show_value=True),
-        IconSetRule("H2:H11", "3TrafficLights1", [0, 35, 70],
-                    percent=True, reverse=True),
+        IconSetRule("H2:H11", "3TrafficLights1", [0, 35, 70], percent=True, reverse=True),
         FormulaRule("I2:I11", "$A2>5", dxf=shared_dxf),
         FormulaRule("J2:J11", "$A2<=5", dxf=shared_dxf),
     ]
@@ -416,14 +476,12 @@ def _cf_sheet(writer: XlsxWriter) -> None:
     notes = [
         "Priorities: rules 1–3 carry an explicit priority=1..3; the writer assigned 4.. "
         "to the remaining rules — the rules manager shows the order without duplicates.",
-        "dxf dedup: columns I and J use the same DifferentialStyle object, so styles.xml "
-        "contains one shared <dxf>.",
+        "dxf dedup: columns I and J use the same DifferentialStyle object, so styles.xml contains one shared <dxf>.",
         "Column B: 'less than 5' (full dxf: red bold font, 0.00 format, pink fill, "
         "centered, left border, locked=False) and 'between 7 and 8' (yellow dxf).",
         "Column C: dxf with a gradient — Excel may render a dxf gradient fill as solid; "
         "the bold red font from the dxf must be visible.",
-        "dxf protection (locked=False) shows up after enabling sheet protection: "
-        "Review → Protect Sheet.",
+        "dxf protection (locked=False) shows up after enabling sheet protection: Review → Protect Sheet.",
         "Column H: reversed icons (reverse=True), three traffic lights.",
     ]
     note_row = len(data) + 1
@@ -438,8 +496,16 @@ def _cf_sheet(writer: XlsxWriter) -> None:
         styles=styles,
         conditional_formats=rules,
         column_widths={
-            "A": 20, "B": 18, "C": 24, "D": 14, "E": 14,
-            "F": 14, "G": 16, "H": 18, "I": 20, "J": 20,
+            "A": 20,
+            "B": 18,
+            "C": 24,
+            "D": 14,
+            "E": 14,
+            "F": 14,
+            "G": 16,
+            "H": 18,
+            "I": 20,
+            "J": 20,
         },
         freeze_panes="B2",
         auto_filter=False,
@@ -463,10 +529,13 @@ def _table_sheet(writer: XlsxWriter) -> None:
     writer.write_sheet(
         data,
         header_style=HEADER,
-        tables=[ExcelTable(
-            "VerifTable", "A1:D6",
-            columns=["Product", "Quantity", "Price", "Notes"],
-        )],
+        tables=[
+            ExcelTable(
+                "VerifTable",
+                "A1:D6",
+                columns=["Product", "Quantity", "Price", "Notes"],
+            )
+        ],
         styles={"C2:C6": Style(number_format=F.TWO_DECIMALS), "A8:A10": NOTE},
         column_widths={"A": 34, "B": 10, "C": 12, "D": 18},
         auto_filter=False,
@@ -561,7 +630,11 @@ def _format_sheet(writer: XlsxWriter | XlsbWriter) -> None:
         ["F.LEADING_ZEROS", (42, F.LEADING_ZEROS), "000000042"],
         ["F.TEXT", ("007", F.TEXT), "007 kept as text (no number conversion)"],
         ["F.DATE_ISO", (datetime.date(2026, 10, 18), F.DATE_ISO), "2026-10-18"],
-        ["F.DATE_LONG", (datetime.date(2026, 10, 18), F.DATE_LONG), "18 October 2026 (pl-PL locale: 18 października 2026)"],
+        [
+            "F.DATE_LONG",
+            (datetime.date(2026, 10, 18), F.DATE_LONG),
+            "18 October 2026 (pl-PL locale: 18 października 2026)",
+        ],
         ["F.DATETIME_ISO", (datetime.datetime(2026, 10, 18, 14, 30, 15), F.DATETIME_ISO), "2026-10-18T14:30:15"],
         ["F.TIME_HH_MM", (_serial(14, 30), F.TIME_HH_MM), "14:30"],
         ["F.TIME_MS", (_serial(14, 30, 15, 250), F.TIME_MS), "14:30:15.250"],

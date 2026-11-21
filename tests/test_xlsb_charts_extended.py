@@ -6,7 +6,13 @@ import zipfile
 import pytest
 
 from xlspy import (
-    Chart, ChartAxis, ChartLegend, ChartMarker, ChartSeries, DataLabels, XlsbWriter,
+    Chart,
+    ChartAxis,
+    ChartLegend,
+    ChartMarker,
+    ChartSeries,
+    DataLabels,
+    XlsbWriter,
 )
 
 C = "{http://schemas.openxmlformats.org/drawingml/2006/chart}"
@@ -27,20 +33,30 @@ CHARTS = {
     "barh": Chart("barh", TWO_SERIES),
     "area": Chart("area", TWO_SERIES),
     "doughnut": Chart("doughnut", [ChartSeries("B2:B4", categories="A2:A4")]),
-    "scatter": Chart("scatter", [
-        ChartSeries("B2:B4", x_values="D2:D4", title="Sales",
-                    marker=ChartMarker("diamond", 9), line=True, color="FF0000"),
-    ]),
+    "scatter": Chart(
+        "scatter",
+        [
+            ChartSeries(
+                "B2:B4", x_values="D2:D4", title="Sales", marker=ChartMarker("diamond", 9), line=True, color="FF0000"
+            ),
+        ],
+    ),
     "stacked": Chart("bar", TWO_SERIES, grouping="stacked"),
     "percent": Chart("area", TWO_SERIES, grouping="percent_stacked"),
-    "axes": Chart("line", TWO_SERIES, x_axis=ChartAxis(title="Quarter"),
-                  y_axis=ChartAxis(minimum=0, maximum=40, major_unit=10, number_format="0.0")),
+    "axes": Chart(
+        "line",
+        TWO_SERIES,
+        x_axis=ChartAxis(title="Quarter"),
+        y_axis=ChartAxis(minimum=0, maximum=40, major_unit=10, number_format="0.0"),
+    ),
     "legend": Chart("bar", TWO_SERIES, legend=ChartLegend("bottom")),
     "no_legend": Chart("bar", TWO_SERIES, legend=False),
     "labels": Chart("bar", TWO_SERIES, data_labels=DataLabels(number_format="0", position="outside_end")),
     "colours": Chart("bar", [ChartSeries("B2:B4", color="00B050"), ChartSeries("C2:C4", color="7030A0")]),
-    "markers": Chart("line", [ChartSeries("B2:B4", marker=ChartMarker("square")), ChartSeries("C2:C4", line=False,
-                                                                                         marker=ChartMarker())]),
+    "markers": Chart(
+        "line",
+        [ChartSeries("B2:B4", marker=ChartMarker("square")), ChartSeries("C2:C4", line=False, marker=ChartMarker())],
+    ),
     "title_size": Chart("bar", TWO_SERIES, title="Small title", title_size=12),
 }
 
@@ -72,7 +88,7 @@ def test_every_reference_carries_a_cache(tmp_path, name):
 def test_scatter_caches_x_and_y_values(tmp_path):
     xml = _chart(tmp_path, CHARTS["scatter"])
     assert "<xVal><numRef><f>'Data'!$D$2:$D$4</f><numCache>" in xml
-    assert "<pt idx=\"0\"><v>1.5</v></pt>" in xml
+    assert '<pt idx="0"><v>1.5</v></pt>' in xml
     assert "<yVal><numRef><f>'Data'!$B$2:$B$4</f><numCache>" in xml
     assert '<marker><symbol val="diamond"/><size val="9"/>' in xml
     assert '<a:srgbClr val="FF0000"/>' in xml

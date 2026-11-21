@@ -35,7 +35,10 @@ def test_rich_style_round_trip_through_openpyxl(tmp_path):
             [["h1", "h2", "h3"], ["a", 1, 2], ["b", 3, 4]],
             header_style=Style(
                 font=Font(
-                    name="Calibri", size=14, bold=True, color="FF0000",
+                    name="Calibri",
+                    size=14,
+                    bold=True,
+                    color="FF0000",
                 ),
                 pattern=PatternFill("solid", start_color="FFFF00"),
                 border=Border(
@@ -43,8 +46,10 @@ def test_rich_style_round_trip_through_openpyxl(tmp_path):
                     bottom=Side("double", "FF0000"),
                 ),
                 alignment=Alignment(
-                    horizontal="center", vertical="center",
-                    wrap_text=True, text_rotation=45,
+                    horizontal="center",
+                    vertical="center",
+                    wrap_text=True,
+                    text_rotation=45,
                 ),
                 number_format="#,##0",
             ),
@@ -128,17 +133,24 @@ def test_cf_and_table_round_trip(tmp_path):
             [["a", "b", "c"], [1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]],
             conditional_formats=[
                 CellIsRule(
-                    "A1:A10", "lessThan", ["5"],
+                    "A1:A10",
+                    "lessThan",
+                    ["5"],
                     dxf=DifferentialStyle(
                         fill=PatternFill("solid", "FFC7CE"),
                     ),
                 ),
                 ColorScaleRule(
-                    "B1:B10", FormatObject("min"), None,
-                    FormatObject("max"), ["FF0000", "00FF00"],
+                    "B1:B10",
+                    FormatObject("min"),
+                    None,
+                    FormatObject("max"),
+                    ["FF0000", "00FF00"],
                 ),
                 DataBarRule(
-                    "C1:C10", FormatObject("min"), FormatObject("max"),
+                    "C1:C10",
+                    FormatObject("min"),
+                    FormatObject("max"),
                     "638EC6",
                 ),
             ],
@@ -146,10 +158,7 @@ def test_cf_and_table_round_trip(tmp_path):
         )
 
     sheet = openpyxl.load_workbook(path)["Data"]
-    total = sum(
-        len(sheet.conditional_formatting[range_string])
-        for range_string in sheet.conditional_formatting
-    )
+    total = sum(len(sheet.conditional_formatting[range_string]) for range_string in sheet.conditional_formatting)
     assert total == 3
     assert sheet.tables["Tbl"].ref == "A1:C5"
 
@@ -202,7 +211,7 @@ def test_plain_write_stays_lean(tmp_path):
     with zipfile.ZipFile(path) as archive:
         styles_xml = archive.read("xl/styles.xml").decode()
         sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode()
-    assert "<borders count=\"1\">" in styles_xml
+    assert '<borders count="1">' in styles_xml
     assert '<dxfs count="0"/>' in styles_xml
     assert "applyBorder" not in styles_xml
     assert "applyProtection" not in styles_xml
@@ -242,7 +251,10 @@ def test_model_validation_rejects_bad_input():
         CellIsRule("A1:A5", "lessThan", ["5"], dxf="red")
     with pytest.raises(ValueError):
         ColorScaleRule(
-            "A1:A5", FormatObject("min"), None, FormatObject("max"),
+            "A1:A5",
+            FormatObject("min"),
+            None,
+            FormatObject("max"),
             ["FF0000"],
         )
     with pytest.raises(ValueError):
@@ -258,9 +270,7 @@ def test_model_validation_rejects_bad_input():
         eval("Style(fill=GradientFill())", namespace)
     # Foreign conditional-formatting classes named like ours are rejected too.
     with pytest.raises(TypeError):
-        XlsxWriter.__new__(XlsxWriter)._normalize_cf_rules(
-            [type("IconSetRule", (), {"sqref": "A1"})()]
-        )
+        XlsxWriter.__new__(XlsxWriter)._normalize_cf_rules([type("IconSetRule", (), {"sqref": "A1"})()])
     with pytest.raises(ValueError):
         Color(auto=False)
     with pytest.raises(ValueError):
@@ -338,7 +348,9 @@ def test_structured_colors_and_protection(tmp_path):
                     ),
                     protection=Protection(locked=False, hidden=True),
                     alignment=Alignment(
-                        shrink_to_fit=True, indent=2, text_rotation=255,
+                        shrink_to_fit=True,
+                        indent=2,
+                        text_rotation=255,
                     ),
                 ),
             },
@@ -365,9 +377,9 @@ def test_named_font_does_not_force_theme_scheme(tmp_path):
     # scheme="minor" next to an explicit name would make Excel substitute
     # the theme font (Calibri) for Arial.
     assert "<scheme" not in arial
-    assert "<name val=\"Arial\"/>" in arial
+    assert '<name val="Arial"/>' in arial
     # The built-in default font keeps its scheme.
-    assert "<scheme val=\"minor\"/>" in font_elements[0]
+    assert '<scheme val="minor"/>' in font_elements[0]
 
 
 def test_font_extended_attributes_round_trip(tmp_path):
@@ -530,9 +542,7 @@ def test_differential_style_full_round_trip(tmp_path):
         )
     sheet = openpyxl.load_workbook(path)["Data"]
     rules = [
-        rule
-        for range_string in sheet.conditional_formatting
-        for rule in sheet.conditional_formatting[range_string]
+        rule for range_string in sheet.conditional_formatting for rule in sheet.conditional_formatting[range_string]
     ]
     assert len(rules) == 1
     dxf = rules[0].dxf
@@ -677,9 +687,7 @@ def test_gradient_fill_in_differential_style(tmp_path):
         )
     sheet = openpyxl.load_workbook(path)["Data"]
     rules = [
-        rule
-        for range_string in sheet.conditional_formatting
-        for rule in sheet.conditional_formatting[range_string]
+        rule for range_string in sheet.conditional_formatting for rule in sheet.conditional_formatting[range_string]
     ]
     fill = rules[0].dxf.fill
     assert fill.type == "linear"

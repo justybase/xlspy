@@ -16,8 +16,16 @@ def manifest():
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-@pytest.fixture(params=["metadata.xlsx", "objects.xlsx", "array_formulas.xlsx",
-                        "charts.xlsx", "images.xlsx", "chartsheet.xlsx",
-                        "long_tail.xlsx"])
+@pytest.fixture(
+    params=[
+        "metadata.xlsx",
+        "objects.xlsx",
+        "array_formulas.xlsx",
+        "charts.xlsx",
+        "images.xlsx",
+        "chartsheet.xlsx",
+        "long_tail.xlsx",
+    ]
+)
 def golden(request):
     return golden_path(request.param)

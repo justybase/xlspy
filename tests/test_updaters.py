@@ -62,10 +62,7 @@ def _make_xlsb_pivot(path):
     sheet_name = "Data"
     encoded_name = sheet_name.encode("utf-16le")
     source_payload = (
-        b"\x00\x00\x00"
-        + struct.pack("<I", len(sheet_name))
-        + encoded_name
-        + struct.pack("<iiii", 0, 1, 0, 1)
+        b"\x00\x00\x00" + struct.pack("<I", len(sheet_name)) + encoded_name + struct.pack("<iiii", 0, 1, 0, 1)
     )
     cache = build_record(0xB3, b"\x00\x00\x00\x00") + build_record(0xBB, source_payload)
     _add_zip_members(path, {"xl/pivotCache/pivotCacheDefinition1.bin": cache})
@@ -85,13 +82,9 @@ def _set_xlsx_date_system(path, enabled=True):
     with zipfile.ZipFile(path) as archive:
         workbook = archive.read("xl/workbook.xml").decode("utf-8")
     value = "1" if enabled else "0"
-    workbook = workbook.replace(
-        "<workbookPr ", f'<workbookPr date1904="{value}" '
-    )
+    workbook = workbook.replace("<workbookPr ", f'<workbookPr date1904="{value}" ')
     if "<workbookPr" not in workbook:
-        workbook = workbook.replace(
-            "<workbook ", f'<workbookPr date1904="{value}"/><workbook '
-        )
+        workbook = workbook.replace("<workbook ", f'<workbookPr date1904="{value}"/><workbook ')
     _add_zip_members(path, {"xl/workbook.xml": workbook.encode("utf-8")})
 
 
@@ -114,9 +107,7 @@ def _set_xlsb_date_system(path, enabled=True):
 def _set_xlsb_trailing_row_header(path):
     with zipfile.ZipFile(path) as archive:
         sheet = archive.read("xl/worksheets/sheet1.bin")
-    insertion = next(
-        record.header_start for record in iter_records(sheet) if record.record_id == 0x92
-    )
+    insertion = next(record.header_start for record in iter_records(sheet) if record.record_id == 0x92)
     payload = bytearray(25)
     struct.pack_into("<i", payload, 0, 4)
     struct.pack_into("<i", payload, 8, 300)
@@ -275,9 +266,7 @@ def test_xlsx_updater_preserves_worksheet_and_sst_prefixes(tmp_path):
     sheet = sheet.replace(
         "<worksheet ", '<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
     ).replace("</worksheet>", "</x:worksheet>")
-    sheet = sheet.replace("<sheetData", "<x:sheetData").replace(
-        "</sheetData>", "</x:sheetData>"
-    )
+    sheet = sheet.replace("<sheetData", "<x:sheetData").replace("</sheetData>", "</x:sheetData>")
     strings = strings.replace(
         "<sst ", '<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
     ).replace("</sst>", "</x:sst>")
@@ -371,18 +360,11 @@ def test_xlsb_updater_only_refreshes_matching_pivot_cache(tmp_path):
     _write_xlsb(path, [("Data", [["old"]]), ("Other", [["old"]])])
     _make_xlsb_pivot(path)
     other_name = "Other".encode("utf-16le")
-    other_payload = (
-        b"\x00\x00\x00"
-        + struct.pack("<I", len("Other"))
-        + other_name
-        + struct.pack("<iiii", 0, 1, 0, 0)
-    )
+    other_payload = b"\x00\x00\x00" + struct.pack("<I", len("Other")) + other_name + struct.pack("<iiii", 0, 1, 0, 0)
     _add_zip_members(
         path,
         {
-            "xl/pivotCache/pivotCacheDefinition2.bin": build_record(
-                0xB3, b"\x00\x00\x00\x00"
-            )
+            "xl/pivotCache/pivotCacheDefinition2.bin": build_record(0xB3, b"\x00\x00\x00\x00")
             + build_record(0xBB, other_payload)
         },
     )
@@ -393,9 +375,7 @@ def test_xlsb_updater_only_refreshes_matching_pivot_cache(tmp_path):
 
     with zipfile.ZipFile(path) as archive:
         other_cache = archive.read("xl/pivotCache/pivotCacheDefinition2.bin")
-    other_header = next(
-        record for record in iter_records(other_cache) if record.record_id == 0xB3
-    )
+    other_header = next(record for record in iter_records(other_cache) if record.record_id == 0xB3)
     assert other_cache[other_header.data_start + 3] & 0x04 == 0
 
 
@@ -634,7 +614,7 @@ def xlsb_records(data: bytes):
     while i < len(data):
         record_id, i = varint(i)
         size, i = varint(i)
-        yield record_id, data[i:i + size]
+        yield record_id, data[i : i + size]
         i += size
 
 

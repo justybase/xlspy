@@ -39,10 +39,14 @@ def test_default_bar_chart_keeps_gap_width_150(tmp_path):
 
 
 def test_gap_width_is_written_to_every_bar_group(tmp_path):
-    chart = Chart("bar", [
-        ChartSeries("B2:B4", categories="A2:A4"),
-        ChartSeries("C2:C4", categories="A2:A4", chart_type="line"),
-    ], gap_width=40)
+    chart = Chart(
+        "bar",
+        [
+            ChartSeries("B2:B4", categories="A2:A4"),
+            ChartSeries("C2:C4", categories="A2:A4", chart_type="line"),
+        ],
+        gap_width=40,
+    )
     root = _chart_root(_write(tmp_path / "combo.xlsx", chart))
     assert [node.get("val") for node in root.iter(f"{C_NS}gapWidth")] == ["40"]
 

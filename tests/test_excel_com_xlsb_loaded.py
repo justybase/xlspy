@@ -1,6 +1,5 @@
 """Native Excel checks for edits saved into a loaded XLSB workbook."""
 
-
 import pytest
 
 from xlspy import Border, Font, PatternFill, Side, Workbook, load_workbook
@@ -72,10 +71,8 @@ def test_loaded_xlsb_validations_in_excel(tmp_path, open_workbook):
     from xlspy import DataValidation
 
     created = Workbook()
-    created.active.add_data_validation(
-        DataValidation(type="list", sqref="A1:A5", formula1='"New,Active"'))
-    created.active.add_data_validation(
-        DataValidation(type="whole", sqref="B1:B7", formula1="1", formula2="10"))
+    created.active.add_data_validation(DataValidation(type="list", sqref="A1:A5", formula1='"New,Active"'))
+    created.active.add_data_validation(DataValidation(type="whole", sqref="B1:B7", formula1="1", formula2="10"))
     source = tmp_path / "source.xlsb"
     created.save(source)
     created.close()
@@ -84,8 +81,7 @@ def test_loaded_xlsb_validations_in_excel(tmp_path, open_workbook):
     try:
         rules = workbook.active.data_validations
         rules.remove(list(rules)[0])
-        workbook.active.add_data_validation(
-            DataValidation(type="custom", sqref="E1:E7", formula1="LEN(E1)<5"))
+        workbook.active.add_data_validation(DataValidation(type="custom", sqref="E1:E7", formula1="LEN(E1)<5"))
         workbook.save(tmp_path / "edited.xlsb")
     finally:
         workbook.close()

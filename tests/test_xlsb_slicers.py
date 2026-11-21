@@ -13,7 +13,10 @@ import pytest
 from xlspy import ExcelTable, Formula, Slicer, XlsbWriter
 from xlspy._xlsb_metadata import read_wide
 from xlspy._xlsb_slicers import (
-    sheet_slicers_bin, slicer_cache_bin, slicers_part_bin, workbook_slicer_caches_bin,
+    sheet_slicers_bin,
+    slicer_cache_bin,
+    slicers_part_bin,
+    workbook_slicer_caches_bin,
 )
 from xlspy.biff_utils import iter_records
 from xlspy.workbook import load_workbook
@@ -39,7 +42,7 @@ EXCEL_BOOK_CACHE_REL = bytes.fromhex("08000000 0400 72004900640032 00")
 
 
 def _records(data):
-    return [(record.record_id, data[record.data_start:record.data_end]) for record in iter_records(data)]
+    return [(record.record_id, data[record.data_start : record.data_end]) for record in iter_records(data)]
 
 
 def _write(path, slicers, rows=ROWS, tables=(TABLE,)):
@@ -72,8 +75,7 @@ def test_slicer_record_matches_excel_layout():
 
 def test_cache_records_match_excel():
     records = _records(slicer_cache_bin(Slicer("Sales", "Region"), table_id=1, column_id=1))
-    assert [record_id for record_id, _ in records] == [
-        0x433, 0x435, 0x43D, 0x23, 0x81D, 0x81E, 0x24, 0x436, 0x434]
+    assert [record_id for record_id, _ in records] == [0x433, 0x435, 0x43D, 0x23, 0x81D, 0x81E, 0x24, 0x436, 0x434]
     payloads = dict(records)
     assert payloads[0x23] == b"\x03\x0f\x00\x00"
     assert payloads[0x81D] == EXCEL_TABLE_CACHE
@@ -95,16 +97,19 @@ def test_relationship_records_match_excel():
 
 
 def test_writer_links_parts_relationships_and_names(tmp_path):
-    path = _write(tmp_path / "s.xlsb", [Slicer("Sales", "Region", anchor="H2"),
-                                         Slicer("Sales", "Month", anchor="K2", name="Months")])
+    path = _write(
+        tmp_path / "s.xlsb",
+        [Slicer("Sales", "Region", anchor="H2"), Slicer("Sales", "Month", anchor="K2", name="Months")],
+    )
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         types = archive.read("[Content_Types].xml").decode()
         book_rels = archive.read("xl/_rels/workbook.bin.rels").decode()
         sheet_rels = archive.read("xl/worksheets/_rels/sheet1.bin.rels").decode()
         drawing = archive.read("xl/drawings/drawing1.xml").decode()
-    assert {"xl/slicers/slicer1.bin", "xl/slicerCaches/slicerCache1.bin",
-            "xl/slicerCaches/slicerCache2.bin"} <= set(names)
+    assert {"xl/slicers/slicer1.bin", "xl/slicerCaches/slicerCache1.bin", "xl/slicerCaches/slicerCache2.bin"} <= set(
+        names
+    )
     assert 'PartName="/xl/slicers/slicer1.bin" ContentType="application/vnd.ms-excel.slicer"' in types
     assert types.count("application/vnd.ms-excel.slicerCache") == 2
     assert 'Target="slicerCaches/slicerCache2.bin"' in book_rels
@@ -144,9 +149,11 @@ def test_unknown_column_is_rejected_before_the_rows_stream(tmp_path):
     with XlsbWriter(tmp_path / "s.xlsb") as writer:
         writer.add_sheet("Data")
         with pytest.raises(ValueError, match="not a column"):
-            writer.write_sheet(ROWS, tables=[ExcelTable("Sales", "A1:D5",
-                                                        columns=["Region", "Month", "Sales", "Visible"])],
-                               slicers=[Slicer("Sales", "Country")])
+            writer.write_sheet(
+                ROWS,
+                tables=[ExcelTable("Sales", "A1:D5", columns=["Region", "Month", "Sales", "Visible"])],
+                slicers=[Slicer("Sales", "Country")],
+            )
         writer.write_sheet(ROWS, tables=[TABLE], slicers=[Slicer("Sales", "Region")])
 
 
@@ -164,8 +171,9 @@ def test_slicer_names_must_be_unique_across_sheets(tmp_path):
         writer.write_sheet(ROWS, tables=[TABLE], slicers=[Slicer("Sales", "Region")])
         writer.add_sheet("B")
         with pytest.raises(ValueError, match="cache name"):
-            writer.write_sheet(ROWS, tables=[ExcelTable("Costs", "A1:D5")],
-                               slicers=[Slicer("Costs", "Region", name="Other")])
+            writer.write_sheet(
+                ROWS, tables=[ExcelTable("Costs", "A1:D5")], slicers=[Slicer("Costs", "Region", name="Other")]
+            )
 
 
 def test_loaded_workbook_keeps_the_slicers_on_save(tmp_path):
@@ -205,10 +213,13 @@ def test_removing_a_sheet_with_slicers_is_refused(tmp_path):
 @pytest.mark.com
 def test_excel_filters_the_table_with_an_xlsb_slicer(tmp_path):
     win32 = pytest.importorskip("win32com.client")
-    path = _write(tmp_path / "com.xlsb", [
-        Slicer("Sales", "Region", anchor="H2", caption="Wybierz region"),
-        Slicer("Sales", "Month", anchor="K2", columns=2, name="Months"),
-    ])
+    path = _write(
+        tmp_path / "com.xlsb",
+        [
+            Slicer("Sales", "Region", anchor="H2", caption="Wybierz region"),
+            Slicer("Sales", "Month", anchor="K2", columns=2, name="Months"),
+        ],
+    )
     excel = win32.DispatchEx("Excel.Application")
     excel.Visible = True
     excel.DisplayAlerts = False

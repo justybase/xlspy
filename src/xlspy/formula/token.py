@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 class Token:
     LITERAL = "LITERAL"
     OPERAND = "OPERAND"
@@ -36,9 +37,7 @@ class Token:
     def __eq__(self, other):
         if not isinstance(other, Token):
             return NotImplemented
-        return (self.value, self.type, self.subtype) == (
-            other.value, other.type, other.subtype
-        )
+        return (self.value, self.type, self.subtype) == (other.value, other.type, other.subtype)
 
     def __hash__(self):
         return hash((self.value, self.type, self.subtype))

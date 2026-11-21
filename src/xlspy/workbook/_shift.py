@@ -17,9 +17,7 @@ from ..formulas import ArrayFormula, Formula
 from ..refs import column_label, parse_cell_range, shift_references as translate_formula, _MAX_ROW as _MAX_ROW
 
 _MAX_COL = 16384
-_CELL_REF = re.compile(
-    r"(?<![A-Za-z0-9_.])(\$?)([A-Za-z]{1,3})(\$?)([0-9]+)(?![A-Za-z0-9_(.])"
-)
+_CELL_REF = re.compile(r"(?<![A-Za-z0-9_.])(\$?)([A-Za-z]{1,3})(\$?)([0-9]+)(?![A-Za-z0-9_(.])")
 
 
 def _column_number(letters: str) -> int | None:
@@ -98,8 +96,9 @@ def shift_rows(sheet, idx: int, amount: int, *, delete: bool) -> None:
 
 def shift_cols(sheet, idx: int, amount: int, *, delete: bool) -> None:
     _check_amount(idx, amount, _MAX_COL, "column")
-    if not delete and any(cells and max(cells) >= idx and max(cells) + amount > _MAX_COL
-                          for cells in sheet._cells.values()):
+    if not delete and any(
+        cells and max(cells) >= idx and max(cells) + amount > _MAX_COL for cells in sheet._cells.values()
+    ):
         raise ValueError("the insert pushes cells past Excel's last column")
     cells_by_row: dict[int, Any] = {}
     vacated: list[Any] = []
@@ -127,8 +126,13 @@ def shift_cols(sheet, idx: int, amount: int, *, delete: bool) -> None:
     if not delete and sheet._max_column >= idx:
         sheet._max_column += amount
     _shift_dimensions(
-        sheet.column_dimensions, idx, amount, delete,
-        _column_number, lambda n: column_label(n - 1), _MAX_COL,
+        sheet.column_dimensions,
+        idx,
+        amount,
+        delete,
+        _column_number,
+        lambda n: column_label(n - 1),
+        _MAX_COL,
     )
 
 
@@ -138,8 +142,9 @@ def move_range(sheet, cell_range, rows: int = 0, cols: int = 0, translate: bool 
             raise TypeError(f"move_range {name} must be an int")
     c1, r1, c2, r2 = parse_cell_range(str(cell_range))
     first_row, last_row, first_col, last_col = r1 + 1, r2 + 1, c1 + 1, c2 + 1
-    if not (1 <= first_row + rows and last_row + rows <= _MAX_ROW
-            and 1 <= first_col + cols and last_col + cols <= _MAX_COL):
+    if not (
+        1 <= first_row + rows and last_row + rows <= _MAX_ROW and 1 <= first_col + cols and last_col + cols <= _MAX_COL
+    ):
         raise ValueError(f"moving {cell_range} by ({rows}, {cols}) leaves the sheet")
 
     def target(row, col):
@@ -163,8 +168,7 @@ def move_range(sheet, cell_range, rows: int = 0, cols: int = 0, translate: bool 
                     )
                 elif isinstance(formula, Formula):
                     array_ref = (
-                        _translate_array_ref(formula.array_ref, rows, cols)
-                        if formula.array_ref is not None else None
+                        _translate_array_ref(formula.array_ref, rows, cols) if formula.array_ref is not None else None
                     )
                     translated_formulas[id(cell)] = Formula(
                         translate_formula(formula.text, rows, cols),
@@ -243,8 +247,13 @@ def _recompute_extent(sheet) -> None:
     max_row = max_col = 0
     for row, cells in sheet._cells.items():
         for col, cell in cells.items():
-            if (cell._value is not None or cell._formula is not None or cell._style_id
-                    or cell._comment is not None or cell._hyperlink is not None):
+            if (
+                cell._value is not None
+                or cell._formula is not None
+                or cell._style_id
+                or cell._comment is not None
+                or cell._hyperlink is not None
+            ):
                 max_row = max(max_row, row)
                 max_col = max(max_col, col)
     sheet._max_row, sheet._max_column = max_row, max_col

@@ -7,8 +7,14 @@ import re
 from .token import Token
 
 _ERROR_CODES = (
-    "#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?",
-    "#NUM!", "#N/A", "#GETTING_DATA",
+    "#NULL!",
+    "#DIV/0!",
+    "#VALUE!",
+    "#REF!",
+    "#NAME?",
+    "#NUM!",
+    "#N/A",
+    "#GETTING_DATA",
 )
 _NUMBER_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?$")
 _MANTISSA_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)[Ee]")
@@ -177,8 +183,12 @@ class Tokenizer:
                 continue
 
             # The sign of an exponent (1.5E+2), not an operator after a name (RATE+1).
-            if char in "+-" and _MANTISSA_RE.fullmatch("".join(buffer)) \
-                    and index + 1 < length and formula[index + 1].isdigit():
+            if (
+                char in "+-"
+                and _MANTISSA_RE.fullmatch("".join(buffer))
+                and index + 1 < length
+                and formula[index + 1].isdigit()
+            ):
                 buffer.append(char)
                 index += 1
                 continue
@@ -187,10 +197,11 @@ class Tokenizer:
                 flush()
                 if char == "%":
                     token = Token(char, Token.OP_POST)
-                elif previous is None or previous.type in {
-                    Token.OP_IN, Token.OP_PRE, Token.SEP
-                } or (previous.type in {Token.PAREN, Token.FUNC}
-                      and previous.subtype == Token.OPEN):
+                elif (
+                    previous is None
+                    or previous.type in {Token.OP_IN, Token.OP_PRE, Token.SEP}
+                    or (previous.type in {Token.PAREN, Token.FUNC} and previous.subtype == Token.OPEN)
+                ):
                     token = Token(char, Token.OP_PRE)
                 else:
                     token = Token(char, Token.OP_IN)

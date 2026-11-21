@@ -71,14 +71,17 @@ def test_explicit_names_may_differ_only_in_case(writer_cls, ext):
 
 
 @pytest.mark.parametrize("writer_cls,ext", WRITERS)
-@pytest.mark.parametrize("header,columns,match", [
-    pytest.param(["Name", "Qty"], ["Name", "Amount"], "does not match header cell B1", id="mismatch"),
-    pytest.param(["Name", None], None, "header cell B1 must hold text", id="empty"),
-    pytest.param(["Name", ""], None, "header cell B1 must hold text", id="empty-string"),
-    pytest.param(["Name", 2024], ["Name", "2024"], "header cell B1 must hold text", id="numeric"),
-    pytest.param(["Name", "name"], None, "duplicate column name", id="duplicate"),
-    pytest.param(["Name"], None, "header cell B1 must hold text", id="short-row"),
-])
+@pytest.mark.parametrize(
+    "header,columns,match",
+    [
+        pytest.param(["Name", "Qty"], ["Name", "Amount"], "does not match header cell B1", id="mismatch"),
+        pytest.param(["Name", None], None, "header cell B1 must hold text", id="empty"),
+        pytest.param(["Name", ""], None, "header cell B1 must hold text", id="empty-string"),
+        pytest.param(["Name", 2024], ["Name", "2024"], "header cell B1 must hold text", id="numeric"),
+        pytest.param(["Name", "name"], None, "duplicate column name", id="duplicate"),
+        pytest.param(["Name"], None, "header cell B1 must hold text", id="short-row"),
+    ],
+)
 def test_headers_excel_refuses_raise_and_publish_nothing(writer_cls, ext, header, columns, match):
     buffer = io.BytesIO()
     with pytest.raises(ValueError, match=match):
@@ -282,6 +285,7 @@ def test_matching_headers_are_accepted_ignoring_case_and_length(tmp_path, suffix
 
 
 # -- ws.tables: openpyxl's name-keyed operations ---------------------------------
+
 
 def _sheet_with_tables(tmp_path):
     from xlspy import Workbook

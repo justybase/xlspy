@@ -39,9 +39,5 @@ def test_no_top_level_name_is_defined_in_two_modules():
                 continue
             owners.setdefault(name, set()).add(rel)
 
-    duplicates = {
-        name: sorted(files)
-        for name, files in owners.items()
-        if len(files) > 1
-    }
+    duplicates = {name: sorted(files) for name, files in owners.items() if len(files) > 1}
     assert duplicates == {}, f"defined in more than one module: {duplicates}"

@@ -18,11 +18,24 @@ from xlspy._scalars import numpy_value
 np = pytest.importorskip("numpy")
 
 NUMPY_ROW = [
-    np.int64(7), np.int8(-3), np.uint16(9), np.float32(0.1), np.float16(2.5),
-    np.bool_(True), np.bool_(False), np.float64(1.5),
+    np.int64(7),
+    np.int8(-3),
+    np.uint16(9),
+    np.float32(0.1),
+    np.float16(2.5),
+    np.bool_(True),
+    np.bool_(False),
+    np.float64(1.5),
 ]
 PYTHON_ROW = [
-    7, -3, 9, float(np.float32(0.1)), 2.5, True, False, 1.5,
+    7,
+    -3,
+    9,
+    float(np.float32(0.1)),
+    2.5,
+    True,
+    False,
+    1.5,
 ]
 
 

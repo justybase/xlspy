@@ -85,14 +85,9 @@ def ignored_errors_from_records(records: Iterable[tuple[int, bytes]]) -> list[An
             continue
         ranges = []
         for index in range(count):
-            row_first, row_last, col_first, col_last = struct.unpack_from(
-                "<IIII", payload, 8 + index * 16
-            )
+            row_first, row_last, col_first, col_last = struct.unpack_from("<IIII", payload, 8 + index * 16)
             ranges.append(_reference(row_first, row_last, col_first, col_last))
-        values = {
-            name: True if flags & bit else None
-            for name, bit in BITS
-        }
+        values = {name: True if flags & bit else None for name, bit in BITS}
         items.append(IgnoredError(sqref=" ".join(ranges), **values))
     return items
 

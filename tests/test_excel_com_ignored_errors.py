@@ -21,10 +21,7 @@ WRITERS = [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")]
 def _ignored(sheet, reference):
     """The XlErrorChecks indexes Excel shows as ignored on a cell."""
     errors = sheet.Range(reference).Errors
-    return [
-        index for index in range(1, 10)
-        if errors.Item(index).Ignore
-    ]
+    return [index for index in range(1, 10) if errors.Item(index).Ignore]
 
 
 @pytest.mark.parametrize("writer_class,extension", WRITERS)

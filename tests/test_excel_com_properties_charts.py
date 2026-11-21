@@ -17,10 +17,16 @@ from xlspy import Chart, ChartSeries, Image, XlsbWriter, XlsxWriter  # noqa: E40
 
 # Excel's XlChartType values.
 XL_CHART_TYPES = {
-    ("bar", None): 51, ("bar", "stacked"): 52, ("bar", "percent_stacked"): 53,
-    ("barh", "stacked"): 58, ("barh", "percent_stacked"): 59,
-    ("line", "stacked"): 63, ("line", "percent_stacked"): 64,
-    ("area", None): 1, ("area", "stacked"): 76, ("area", "percent_stacked"): 77,
+    ("bar", None): 51,
+    ("bar", "stacked"): 52,
+    ("bar", "percent_stacked"): 53,
+    ("barh", "stacked"): 58,
+    ("barh", "percent_stacked"): 59,
+    ("line", "stacked"): 63,
+    ("line", "percent_stacked"): 64,
+    ("area", None): 1,
+    ("area", "stacked"): 76,
+    ("area", "percent_stacked"): 77,
     ("doughnut", None): -4120,
 }
 ROWS = [["Month", "North", "South"], ["Jan", 10, 20], ["Feb", 15, 25], ["Mar", 12, 30]]
@@ -59,21 +65,38 @@ def test_document_properties_in_excel(tmp_path, open_workbook, writer_cls, ext):
     path = tmp_path / f"props.{ext}"
     with writer_cls(path) as writer:
         writer.set_properties(
-            title="Report Q3 & <test>", subject="Sales", author="Zoë Ångström",
-            manager="Boss", company="ACME", category="Finance", keywords="q3, sales",
-            comments="Report description", status="Draft",
+            title="Report Q3 & <test>",
+            subject="Sales",
+            author="Zoë Ångström",
+            manager="Boss",
+            company="ACME",
+            category="Finance",
+            keywords="q3, sales",
+            comments="Report description",
+            status="Draft",
             created=datetime.datetime(2024, 5, 1, 10, 0, tzinfo=datetime.UTC),
-            custom={"Project": "Alpha", "Count": 7, "Ratio": 0.25, "Approved": True,
-                    "Due": datetime.datetime(2024, 6, 1, 12, 0)},
+            custom={
+                "Project": "Alpha",
+                "Count": 7,
+                "Ratio": 0.25,
+                "Approved": True,
+                "Due": datetime.datetime(2024, 6, 1, 12, 0),
+            },
         )
         writer.add_sheet("Data")
         writer.write_sheet(ROWS)
     workbook = open_workbook(path)
     builtin = workbook.BuiltinDocumentProperties
     expected = {
-        "Title": "Report Q3 & <test>", "Subject": "Sales", "Author": "Zoë Ångström",
-        "Manager": "Boss", "Company": "ACME", "Category": "Finance",
-        "Keywords": "q3, sales", "Comments": "Report description", "Content status": "Draft",
+        "Title": "Report Q3 & <test>",
+        "Subject": "Sales",
+        "Author": "Zoë Ångström",
+        "Manager": "Boss",
+        "Company": "ACME",
+        "Category": "Finance",
+        "Keywords": "q3, sales",
+        "Comments": "Report description",
+        "Content status": "Draft",
     }
     for name, value in expected.items():
         assert builtin(name).Value == value, name
@@ -93,10 +116,15 @@ def test_stacked_area_and_doughnut_charts_in_excel(tmp_path, open_workbook):
     charts = []
     for index, (chart_type, grouping) in enumerate(XL_CHART_TYPES):
         series = SERIES[:1] if chart_type == "doughnut" else SERIES
-        charts.append(Chart(
-            chart_type, series, title=f"{chart_type} {grouping}", grouping=grouping,
-            anchor=f"E{2 + index * 16}",
-        ))
+        charts.append(
+            Chart(
+                chart_type,
+                series,
+                title=f"{chart_type} {grouping}",
+                grouping=grouping,
+                anchor=f"E{2 + index * 16}",
+            )
+        )
     path = tmp_path / "charts.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Data")
@@ -118,17 +146,24 @@ def _png(width, height):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
 
 
 def _bmp(width, height):
     row = b"\xff\x00\x00" * width
     row += b"\x00" * (-len(row) % 4)
     pixels = row * height
-    return (b"BM" + struct.pack("<IHHI", 54 + len(pixels), 0, 0, 54)
-            + struct.pack("<IiiHHIIiiII", 40, width, height, 1, 24, 0, len(pixels), 2835, 2835, 0, 0)
-            + pixels)
+    return (
+        b"BM"
+        + struct.pack("<IHHI", 54 + len(pixels), 0, 0, 54)
+        + struct.pack("<IiiHHIIiiII", 40, width, height, 1, 24, 0, len(pixels), 2835, 2835, 0, 0)
+        + pixels
+    )
 
 
 GIF_1X1 = (
@@ -152,8 +187,7 @@ def test_pictures_from_memory_gif_and_bmp_in_excel(tmp_path, open_workbook):
     shapes = sheet.Shapes
     assert shapes.Count == 4
     # Shape sizes are in points: 0.75 point per pixel.
-    sizes = sorted((round(shapes(i).Width / 0.75), round(shapes(i).Height / 0.75))
-                   for i in range(1, 5))
+    sizes = sorted((round(shapes(i).Width / 0.75), round(shapes(i).Height / 0.75)) for i in range(1, 5))
     assert sizes == sorted([(40, 20), (80, 40), (24, 24), (30, 12)])
     corners = sorted(shapes(i).TopLeftCell.Address.replace("$", "") for i in range(1, 5))
     assert corners == ["B2", "B8", "F2", "F8"]

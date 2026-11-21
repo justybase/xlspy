@@ -18,9 +18,7 @@ _ABS_RE = re.compile(
 # names would otherwise grow the letter cache to ~140,000 entries.
 _LETTER_CACHE_SIZE = 20_000
 
-_SHEET_RANGE_RE = re.compile(
-    r"^(?:(?P<quoted>'(?:[^']|'')*')|(?P<notquoted>[^!]+))!(?P<cells>.+)$"
-)
+_SHEET_RANGE_RE = re.compile(r"^(?:(?P<quoted>'(?:[^']|'')*')|(?P<notquoted>[^!]+))!(?P<cells>.+)$")
 
 
 @lru_cache(maxsize=_LETTER_CACHE_SIZE)
@@ -88,11 +86,7 @@ def range_boundaries(range_string: str) -> tuple[int | None, int | None, int | N
     if ":" in range_string:
         cols = (min_col, max_col)
         rows = (min_row, max_row)
-        if not (
-            all(cols + rows)
-            or all(cols) and not any(rows)
-            or all(rows) and not any(cols)
-        ):
+        if not (all(cols + rows) or all(cols) and not any(rows) or all(rows) and not any(cols)):
             raise ValueError(message)
 
     if min_col is not None:

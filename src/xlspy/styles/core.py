@@ -156,5 +156,3 @@ from ..refs import parse_cell_range as parse_cell_range
 # ---------------------------------------------------------------------------
 # Registry-key splitting (used only by the XLSX writer)
 # ---------------------------------------------------------------------------
-
-

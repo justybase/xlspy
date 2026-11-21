@@ -1,6 +1,5 @@
 """Excel reads conditional formats written into XLSB files, new and loaded."""
 
-
 from dataclasses import replace
 from pathlib import Path
 
@@ -8,7 +7,13 @@ import pytest
 
 from xlspy import Workbook, load_workbook
 from xlspy.styles import (
-    CellIsRule, ColorScaleRule, DataBarRule, DifferentialStyle, Font, FormatObject, IconSetRule,
+    CellIsRule,
+    ColorScaleRule,
+    DataBarRule,
+    DifferentialStyle,
+    Font,
+    FormatObject,
+    IconSetRule,
     PatternFill,
 )
 
@@ -23,17 +28,30 @@ X14_DATABARS = Path(__file__).parent / "data" / "x14_databars.xlsb"
 
 
 def _rules():
-    red = DifferentialStyle(font=Font(color="FF9C0006", bold=True),
-                            fill=PatternFill("solid", start_color="FFFFC7CE"))
+    red = DifferentialStyle(font=Font(color="FF9C0006", bold=True), fill=PatternFill("solid", start_color="FFFFC7CE"))
     return [
         ("A1:A10", CellIsRule("A1", "greaterThan", ["5"], dxf=red)),
-        ("B1:B10", ColorScaleRule("B1", FormatObject("num", 2), FormatObject("formula", "$D$1"),
-                                  FormatObject("percentile", 90), ["FFF8696B", "FFFFEB84", "FF63BE7B"])),
-        ("C1:C10", DataBarRule("C1", FormatObject("min"), FormatObject("formula", "$A$1+$A$3*2"),
-                               "FF638EC6", show_value=False)),
+        (
+            "B1:B10",
+            ColorScaleRule(
+                "B1",
+                FormatObject("num", 2),
+                FormatObject("formula", "$D$1"),
+                FormatObject("percentile", 90),
+                ["FFF8696B", "FFFFEB84", "FF63BE7B"],
+            ),
+        ),
+        (
+            "C1:C10",
+            DataBarRule(
+                "C1", FormatObject("min"), FormatObject("formula", "$A$1+$A$3*2"), "FF638EC6", show_value=False
+            ),
+        ),
         ("D1:D10", IconSetRule("D1", "3Arrows", [0, 33, 67], reverse=True, show_value=False)),
-        ("A12:A14 D12:D14", IconSetRule("A12", "5Rating", ["$A$1", "$A$2", "$A$3", "$A$4", "$A$5"],
-                                        cfvo_type="formula")),
+        (
+            "A12:A14 D12:D14",
+            IconSetRule("A12", "5Rating", ["$A$1", "$A$2", "$A$3", "$A$4", "$A$5"], cfvo_type="formula"),
+        ),
     ]
 
 
@@ -112,7 +130,8 @@ def test_priority_edit_keeps_x14_data_bar_settings_in_excel(tmp_path, open_workb
     workbook = load_workbook(X14_DATABARS)
     try:
         workbook.active.conditional_formatting[0].rules[0] = replace(
-            workbook.active.conditional_formatting[0].rules[0], priority=7,
+            workbook.active.conditional_formatting[0].rules[0],
+            priority=7,
         )
         target = tmp_path / "priority.xlsb"
         workbook.save(target)

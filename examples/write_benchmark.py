@@ -131,12 +131,18 @@ def _peak_rss_bytes():
         from ctypes import wintypes
 
         class Counters(ctypes.Structure):
-            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
-                        ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
-                        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
-                        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
-                        ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
-                        ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+            _fields_ = [
+                ("cb", wintypes.DWORD),
+                ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
 
         kernel32, psapi = ctypes.WinDLL("kernel32"), ctypes.WinDLL("psapi")
         # Explicit types: the process pseudo-handle is pointer-sized.
@@ -212,8 +218,16 @@ def _write(writer, path, rows):
 
 def run_worker(args):
     sys.path.insert(0, args.src)
-    result = {"writer": args.writer, "rows": args.rows, "cols": args.cols, "dataset": args.dataset,
-              "input": args.input, "target": args.target, "seed": args.seed, "tracemalloc": args.tracemalloc}
+    result = {
+        "writer": args.writer,
+        "rows": args.rows,
+        "cols": args.cols,
+        "dataset": args.dataset,
+        "input": args.input,
+        "target": args.target,
+        "seed": args.seed,
+        "tracemalloc": args.tracemalloc,
+    }
     if args.writer in XLSPY_WRITERS:
         from xlspy import _accel
 
@@ -319,9 +333,12 @@ def environment(args):
         "openpyxl": _version("openpyxl"),
         "xlsxwriter": _version("xlsxwriter"),
         "pyexcelerate": _version("pyexcelerate"),
-        "compression": {"xlspy": f"deflate level {COMPRESSION_LEVEL}",
-                        "openpyxl": "library default", "xlsxwriter": "library default",
-                        "pyexcelerate": "library default"},
+        "compression": {
+            "xlspy": f"deflate level {COMPRESSION_LEVEL}",
+            "openpyxl": "library default",
+            "xlsxwriter": "library default",
+            "pyexcelerate": "library default",
+        },
         "peak_memory_source": "peak working set" if sys.platform == "win32" else "ru_maxrss",
     }
 
@@ -348,9 +365,29 @@ def _jobs(args):
 
 
 def _run_job(args, writer, mode, tracemalloc, outdir):
-    cmd = [sys.executable, os.path.abspath(__file__), "--worker", "--writer", writer, "--rows", str(args.rows),
-           "--cols", str(args.cols), "--dataset", args.dataset, "--seed", str(args.seed), "--input", args.input,
-           "--target", args.target, "--src", args.src, "--outdir", outdir]
+    cmd = [
+        sys.executable,
+        os.path.abspath(__file__),
+        "--worker",
+        "--writer",
+        writer,
+        "--rows",
+        str(args.rows),
+        "--cols",
+        str(args.cols),
+        "--dataset",
+        args.dataset,
+        "--seed",
+        str(args.seed),
+        "--input",
+        args.input,
+        "--target",
+        args.target,
+        "--src",
+        args.src,
+        "--outdir",
+        outdir,
+    ]
     if tracemalloc:
         cmd.append("--tracemalloc")
     env = dict(os.environ)
@@ -361,7 +398,9 @@ def _run_job(args, writer, mode, tracemalloc, outdir):
         return {"writer": writer, "status": "error", "error": (proc.stderr or proc.stdout)[-500:]}
     result = json.loads(lines[-1])
     if mode is not None and result.get("native") != (mode == "on"):
-        result.update(status="error", error=f"native module state {result.get('native')} does not match --native {mode}")
+        result.update(
+            status="error", error=f"native module state {result.get('native')} does not match --native {mode}"
+        )
     return result
 
 
@@ -372,8 +411,10 @@ def _label(writer, mode):
 def summarize(runs):
     summary = {}
     for run in runs:
-        entry = summary.setdefault(run["label"], {"runs": 0, "errors": 0, "elapsed_s": [], "peak_rss_mb": [],
-                                                  "tracemalloc_mb": [], "file_mb": None})
+        entry = summary.setdefault(
+            run["label"],
+            {"runs": 0, "errors": 0, "elapsed_s": [], "peak_rss_mb": [], "tracemalloc_mb": [], "file_mb": None},
+        )
         if run.get("status") != "ok":
             entry["errors"] += 1
             entry["error"] = run.get("error")
@@ -394,10 +435,14 @@ def summarize(runs):
 
 def run_orchestrator(args):
     jobs = _jobs(args)
-    report = {"environment": environment(args),
-              "parameters": {k: getattr(args, k) for k in ("rows", "cols", "iterations", "dataset", "input",
-                                                           "target", "seed", "native", "tracemalloc")},
-              "runs": []}
+    report = {
+        "environment": environment(args),
+        "parameters": {
+            k: getattr(args, k)
+            for k in ("rows", "cols", "iterations", "dataset", "input", "target", "seed", "native", "tracemalloc")
+        },
+        "runs": [],
+    }
     outdir = args.outdir or tempfile.mkdtemp(prefix="xlspy_bench_")
     os.makedirs(outdir, exist_ok=True)
     passes = [False] + ([True] if args.tracemalloc else [])
@@ -407,32 +452,55 @@ def run_orchestrator(args):
                 result = _run_job(args, writer, mode, traced, outdir)
                 result.update(label=_label(writer, mode), iteration=iteration)
                 report["runs"].append(result)
-                shown = (f"{result['tracemalloc_mb']:.1f} MB traced" if traced and "tracemalloc_mb" in result
-                         else f"{result.get('elapsed_s', 0):.2f} s, peak {result.get('peak_rss_mb', 0):.1f} MB")
-                print(f"[{iteration + 1}/{args.iterations}] {result['label']}: "
-                      f"{shown if result.get('status') == 'ok' else 'ERROR ' + str(result.get('error'))[:200]}",
-                      file=sys.stderr)
+                shown = (
+                    f"{result['tracemalloc_mb']:.1f} MB traced"
+                    if traced and "tracemalloc_mb" in result
+                    else f"{result.get('elapsed_s', 0):.2f} s, peak {result.get('peak_rss_mb', 0):.1f} MB"
+                )
+                print(
+                    f"[{iteration + 1}/{args.iterations}] {result['label']}: "
+                    f"{shown if result.get('status') == 'ok' else 'ERROR ' + str(result.get('error'))[:200]}",
+                    file=sys.stderr,
+                )
     report["summary"] = summarize(report["runs"])
     if args.output:
         with open(args.output, "w", encoding="utf-8") as out:
             json.dump(report, out, indent=2)
     if args.csv:
-        fields = ["label", "iteration", "writer", "native", "status", "rows", "cols", "dataset", "input", "seed",
-                  "elapsed_s", "peak_rss_mb", "baseline_rss_mb", "tracemalloc_mb", "file_mb", "error"]
+        fields = [
+            "label",
+            "iteration",
+            "writer",
+            "native",
+            "status",
+            "rows",
+            "cols",
+            "dataset",
+            "input",
+            "seed",
+            "elapsed_s",
+            "peak_rss_mb",
+            "baseline_rss_mb",
+            "tracemalloc_mb",
+            "file_mb",
+            "error",
+        ]
         with open(args.csv, "w", newline="", encoding="utf-8") as out:
             writer = csv.DictWriter(out, fieldnames=fields, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(report["runs"])
-    print(f"\n{args.rows:,} x {args.cols} ({args.dataset}, {args.input} input), "
-          f"median of {args.iterations} run(s):")
+    print(f"\n{args.rows:,} x {args.cols} ({args.dataset}, {args.input} input), median of {args.iterations} run(s):")
     print(f"{'writer':<26}{'time (s)':>10}{'peak (MB)':>11}{'traced (MB)':>13}{'file (MiB)':>12}")
     for label, entry in report["summary"].items():
+
         def fmt(value, spec):
             return format(value, spec) if value is not None else "-"
 
         status = f"  ({entry['errors']} failed: {entry.get('error', '')[:60]})" if entry["errors"] else ""
-        print(f"{label:<26}{fmt(entry['median_elapsed_s'], '.2f'):>10}{fmt(entry['median_peak_rss_mb'], '.1f'):>11}"
-              f"{fmt(entry['median_tracemalloc_mb'], '.1f'):>13}{fmt(entry['file_mb'], '.2f'):>12}{status}")
+        print(
+            f"{label:<26}{fmt(entry['median_elapsed_s'], '.2f'):>10}{fmt(entry['median_peak_rss_mb'], '.1f'):>11}"
+            f"{fmt(entry['median_tracemalloc_mb'], '.1f'):>13}{fmt(entry['file_mb'], '.2f'):>12}{status}"
+        )
     return 1 if any(entry["errors"] for entry in report["summary"].values()) else 0
 
 
@@ -442,13 +510,21 @@ def main(argv=None):
     parser.add_argument("--cols", type=int, default=50)
     parser.add_argument("--iterations", type=int, default=3, help="timed runs per writer (default 3)")
     parser.add_argument("--writers", default="all", help=f"comma-separated: {', '.join(ALL_WRITERS)}, or all")
-    parser.add_argument("--native", choices=["on", "off", "both"], default="on",
-                        help="xlspy with the native (Rust) module, without it, or both (default on)")
+    parser.add_argument(
+        "--native",
+        choices=["on", "off", "both"],
+        default="on",
+        help="xlspy with the native (Rust) module, without it, or both (default on)",
+    )
     parser.add_argument("--dataset", choices=sorted(DATASETS), default="mixed")
     parser.add_argument("--seed", type=int, default=0, help="seed for the random dataset (default 0)")
     parser.add_argument("--input", choices=["stream", "list"], default="stream")
-    parser.add_argument("--target", choices=["file", "memory"], default="file",
-                        help="write to a file path, or to an io.BytesIO kept in memory (default file)")
+    parser.add_argument(
+        "--target",
+        choices=["file", "memory"],
+        default="file",
+        help="write to a file path, or to an io.BytesIO kept in memory (default file)",
+    )
     parser.add_argument("--tracemalloc", action="store_true", help="add one traced, untimed run per writer")
     parser.add_argument("--outdir", help="directory for the workbooks (default: a new temporary directory)")
     parser.add_argument("--output", help="write the JSON report here")

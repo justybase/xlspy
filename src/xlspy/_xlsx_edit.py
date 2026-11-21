@@ -19,14 +19,36 @@ from xml.sax.saxutils import escape, quoteattr
 from ._sheet_data import insert_rows, patch_rows, set_dimension_ref, sheet_data_match
 from ._metadata import (
     tag_attributes,
-    MAIN, REL, PKG_REL, CT, DefinedName, SheetProtection, WorkbookProtection,
-    cell_ref, element_pattern, replace_element, append_child, read_defined_names, xml_text,
+    MAIN,
+    REL,
+    PKG_REL,
+    CT,
+    DefinedName,
+    SheetProtection,
+    WorkbookProtection,
+    cell_ref,
+    element_pattern,
+    replace_element,
+    append_child,
+    read_defined_names,
+    xml_text,
 )
 from ._metadata_part import METADATA_XML
 from ._text import check_cell_text, xstring_escape
 from .comments import (
-    Comment, COMMENTS_TYPE, VML_TYPE, V, comments_xml, vml_xml, normalize_comments,
-    NotePartsEdit, comment_part_targets, find_comment_parts, read_comments, resolve_part, rels_path,
+    Comment,
+    COMMENTS_TYPE,
+    VML_TYPE,
+    V,
+    comments_xml,
+    vml_xml,
+    normalize_comments,
+    NotePartsEdit,
+    comment_part_targets,
+    find_comment_parts,
+    read_comments,
+    resolve_part,
+    rels_path,
 )
 from .data_validation import DataValidation, data_validation_xml, normalize_validations
 from .excel_dates import datetime_to_serial
@@ -58,10 +80,26 @@ _HYPERLINK_TYPE = REL + "/hyperlink"
 _KEEP = object()
 # The <worksheet> children that follow <hyperlinks> (CT_Worksheet).
 _AFTER_HYPERLINKS = (
-    "printOptions", "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks",
-    "customProperties", "cellWatches", "ignoredErrors", "smartTags", "drawing",
-    "legacyDrawing", "legacyDrawingHF", "drawingHF", "picture", "oleObjects", "controls",
-    "webPublishItems", "tableParts", "extLst",
+    "printOptions",
+    "pageMargins",
+    "pageSetup",
+    "headerFooter",
+    "rowBreaks",
+    "colBreaks",
+    "customProperties",
+    "cellWatches",
+    "ignoredErrors",
+    "smartTags",
+    "drawing",
+    "legacyDrawing",
+    "legacyDrawingHF",
+    "drawingHF",
+    "picture",
+    "oleObjects",
+    "controls",
+    "webPublishItems",
+    "tableParts",
+    "extLst",
 )
 
 
@@ -182,11 +220,26 @@ class XlsxEditMixin:
             sheet = replace_element(sheet, "legacyDrawing", "")
         else:
             # Use a part override: it cannot alter another VML part's type.
-            if not any(n.get("PartName") == "/" + vp for n in types) and not any(n.get("Extension") == "vml" for n in types):
+            if not any(n.get("PartName") == "/" + vp for n in types) and not any(
+                n.get("Extension") == "vml" for n in types
+            ):
                 ET.SubElement(types, f"{{{CT}}}Override", {"PartName": "/" + vp, "ContentType": VML_TYPE})
             if legacy is None:
                 fragment = f'<legacyDrawing xmlns="{MAIN}" xmlns:r="{REL}" r:id="{parts["vmlDrawing"][1]}"/>'
-                sheet = replace_element(sheet, "legacyDrawing", fragment, before=("legacyDrawingHF", "picture", "oleObjects", "controls", "webPublishItems", "tableParts", "extLst"))
+                sheet = replace_element(
+                    sheet,
+                    "legacyDrawing",
+                    fragment,
+                    before=(
+                        "legacyDrawingHF",
+                        "picture",
+                        "oleObjects",
+                        "controls",
+                        "webPublishItems",
+                        "tableParts",
+                        "extLst",
+                    ),
+                )
         updates[path] = sheet
         if len(relationships):
             updates[rp] = _bytes(relationships)
@@ -212,8 +265,7 @@ class XlsxEditMixin:
         rp = rels_path(path)
         names = self._package.names()
         relationships = (
-            safe_fromstring(self._package.get(rp)) if rp in names
-            else ET.Element(f"{{{PKG_REL}}}Relationships")
+            safe_fromstring(self._package.get(rp)) if rp in names else ET.Element(f"{{{PKG_REL}}}Relationships")
         )
         prefix = self._tag_prefix(sheet, "worksheet")
         container = element_pattern("hyperlinks").search(sheet)
@@ -246,10 +298,16 @@ class XlsxEditMixin:
                     index += 1
                 rid = f"rId{index}"
                 used_ids.add(rid)
-                ET.SubElement(relationships, f"{{{PKG_REL}}}Relationship", {
-                    "Id": rid, "Type": _HYPERLINK_TYPE,
-                    "Target": xml_text(link.target), "TargetMode": "External",
-                })
+                ET.SubElement(
+                    relationships,
+                    f"{{{PKG_REL}}}Relationship",
+                    {
+                        "Id": rid,
+                        "Type": _HYPERLINK_TYPE,
+                        "Target": xml_text(link.target),
+                        "TargetMode": "External",
+                    },
+                )
                 text += f' xmlns:r="{REL}" r:id="{rid}"'
             if link.text is not None:
                 text += f" display={quoteattr(xml_text(link.text))}"
@@ -279,10 +337,7 @@ class XlsxEditMixin:
     def _workbook_sheets(self) -> list[str]:
         """Sheet names in the order workbook.xml lists them (chartsheets included)."""
         root = safe_fromstring(self._package.get("xl/workbook.xml"))
-        return [
-            node.get("name", "")
-            for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
-        ]
+        return [node.get("name", "") for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")]
 
     @staticmethod
     def _resolve_defined_name(definition: DefinedName, sheets: list[str]) -> DefinedName:
@@ -323,7 +378,23 @@ class XlsxEditMixin:
         if element_pattern("definedNames").search(xml):
             xml = append_child(xml, "definedNames", combined)
         else:
-            xml = replace_element(xml, "definedNames", f'<definedNames xmlns="{MAIN}">{combined}</definedNames>', before=("calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"))
+            xml = replace_element(
+                xml,
+                "definedNames",
+                f'<definedNames xmlns="{MAIN}">{combined}</definedNames>',
+                before=(
+                    "calcPr",
+                    "oleSize",
+                    "customWorkbookViews",
+                    "pivotCaches",
+                    "smartTagPr",
+                    "smartTagTypes",
+                    "webPublishing",
+                    "fileRecoveryPr",
+                    "webPublishObjects",
+                    "extLst",
+                ),
+            )
         self._apply_name_change(xml)
 
     def _apply_name_change(self, xml: str) -> None:
@@ -336,9 +407,15 @@ class XlsxEditMixin:
 
     def _remove_name(self, xml: str, name: str, scope: str | None, sheets: list[str]) -> str:
         scope_id = None if scope is None else str(sheets.index(scope))
+
         def remove(match: re.Match[str]) -> str:
             attrs = tag_attributes(match[0])
-            return "" if attrs.get("name", "").casefold() == name.casefold() and attrs.get("localSheetId") == scope_id else match[0]
+            return (
+                ""
+                if attrs.get("name", "").casefold() == name.casefold() and attrs.get("localSheetId") == scope_id
+                else match[0]
+            )
+
         updated = element_pattern("definedName").sub(remove, xml)
         if not element_pattern("definedName").search(updated):
             updated = replace_element(updated, "definedNames", "")
@@ -368,7 +445,34 @@ class XlsxEditMixin:
         if not isinstance(protection, SheetProtection):
             raise TypeError("protection must be SheetProtection")
         path, xml = self._sheet_xml(sheet_name)
-        xml = replace_element(xml, "sheetProtection", protection.to_xml(), before=("protectedRanges", "scenarios", "autoFilter", "sortState", "dataConsolidate", "customSheetViews", "mergeCells", "phoneticPr", "conditionalFormatting", "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks", "drawing", "legacyDrawing", "tableParts", "extLst"))
+        xml = replace_element(
+            xml,
+            "sheetProtection",
+            protection.to_xml(),
+            before=(
+                "protectedRanges",
+                "scenarios",
+                "autoFilter",
+                "sortState",
+                "dataConsolidate",
+                "customSheetViews",
+                "mergeCells",
+                "phoneticPr",
+                "conditionalFormatting",
+                "dataValidations",
+                "hyperlinks",
+                "printOptions",
+                "pageMargins",
+                "pageSetup",
+                "headerFooter",
+                "rowBreaks",
+                "colBreaks",
+                "drawing",
+                "legacyDrawing",
+                "tableParts",
+                "extLst",
+            ),
+        )
         self._apply_parts({path: xml})
 
     def set_merged_cells(self, sheet_name: str, ranges: Iterable[str]) -> None:
@@ -378,10 +482,7 @@ class XlsxEditMixin:
         fragment = ""
         if refs:
             cells = "".join(f"<mergeCell ref={quoteattr(ref)}/>" for ref in refs)
-            fragment = (
-                f'<mergeCells xmlns="{MAIN}" count="{len(refs)}">'
-                f"{cells}</mergeCells>"
-            )
+            fragment = f'<mergeCells xmlns="{MAIN}" count="{len(refs)}">{cells}</mergeCells>'
         updated = replace_element(
             xml,
             "mergeCells",
@@ -398,10 +499,7 @@ class XlsxEditMixin:
         fragment = ""
         if rules:
             body = "".join(data_validation_xml(rule) for rule in rules)
-            fragment = (
-                f'<dataValidations xmlns="{MAIN}" count="{len(rules)}">'
-                f"{body}</dataValidations>"
-            )
+            fragment = f'<dataValidations xmlns="{MAIN}" count="{len(rules)}">{body}</dataValidations>'
         updated = replace_element(
             xml,
             "dataValidations",
@@ -419,8 +517,9 @@ class XlsxEditMixin:
         xml = replace_element(xml, "workbookProtection", protection.to_xml(), before=("bookViews", "sheets"))
         self._apply_parts({"xl/workbook.xml": xml})
 
-    def update_cells(self, sheet_name: str, cells: Mapping[str, object], *,
-                     styles: Mapping[str, int] | None = None) -> None:
+    def update_cells(
+        self, sheet_name: str, cells: Mapping[str, object], *, styles: Mapping[str, int] | None = None
+    ) -> None:
         """Update sparse cells, preserving styles, notes and untouched cell XML.
 
         ``styles`` maps addresses to cell XF indexes. An address only in
@@ -467,9 +566,7 @@ class XlsxEditMixin:
             if isinstance(value, Formula) and value.array_ref is not None:
                 raise ValueError("update_cells supports scalar formulas only")
             if isinstance(value, Formula) and value.spill_ref is not None:
-                raise UnsupportedFeatureError(
-                    "update_cells cannot write dynamic-array formulas"
-                )
+                raise UnsupportedFeatureError("update_cells cannot write dynamic-array formulas")
         sheet_data = fast.sheet_data if fast is not None else sheet_data_match(xml)
         if sheet_data is None:
             raise ValueError("Worksheet sheetData element was not found")
@@ -485,8 +582,7 @@ class XlsxEditMixin:
 
         def patch_row(row_num: int, row_xml: str) -> str:
             # Popped, so a second <row> with the same number stays as it is.
-            return _patch_row(row_xml, by_row_targets.pop(row_num), pending, prefix,
-                              row_num, style_ids)
+            return _patch_row(row_xml, by_row_targets.pop(row_num), pending, prefix, row_num, style_ids)
 
         body = patch_rows(sheet_data[0], patch_row, by_row_targets.keys())
         # The cells left in ``pending`` are in rows the sheet does not have yet.
@@ -501,7 +597,7 @@ class XlsxEditMixin:
             )
             new_rows[row_num] = f'<{prefix}row r="{row_num}">{content}</{prefix}row>'
         body = insert_rows(body, new_rows)
-        xml = xml[:sheet_data.start()] + body + xml[sheet_data.end():]
+        xml = xml[: sheet_data.start()] + body + xml[sheet_data.end() :]
         # Expand dimensions, never shrink existing coverage or filters/tables.
         refs = list(targets)
         if scan.dimension:
@@ -526,16 +622,22 @@ class XlsxEditMixin:
                         raise ValueError("sharedStrings element was not found")
                     attrs = tag_attributes(opening[0])
                     if "count" in attrs:
-                        updated_tag = replace_or_add_xml_attribute(opening[0], "count", max(0, int(attrs["count"]) - removed_shared_refs))
-                        updates[part] = strings[:opening.start()] + updated_tag + strings[opening.end():]
+                        updated_tag = replace_or_add_xml_attribute(
+                            opening[0], "count", max(0, int(attrs["count"]) - removed_shared_refs)
+                        )
+                        updates[part] = strings[: opening.start()] + updated_tag + strings[opening.end() :]
         old_formula = any(has_formula for _, _, has_formula in scan.edited)
-        if old_formula or any(isinstance(value, (Formula, ArrayFormula, DataTableFormula)) for value in values.values()):
+        if old_formula or any(
+            isinstance(value, (Formula, ArrayFormula, DataTableFormula)) for value in values.values()
+        ):
             self._recalculate(updates, removed)
         self._apply_parts(updates, removed)
         if self._shared_strings_loaded:
             self._shared_strings_total = max(0, self._shared_strings_total - removed_shared_refs)
         if self._stream_shared_strings is not None:
-            self._stream_shared_strings.total_count = max(0, self._stream_shared_strings.total_count - removed_shared_refs)
+            self._stream_shared_strings.total_count = max(
+                0, self._stream_shared_strings.total_count - removed_shared_refs
+            )
 
     def _drop_stale_calc_chain(self, *, had_formulas: bool, has_formulas: bool) -> None:
         """Drop calcChain when a sheet's formula cells are being replaced.
@@ -561,8 +663,27 @@ class XlsxEditMixin:
         existing = element_pattern("calcPr").search(xml)
         attrs = tag_attributes(existing[0]) if existing else {}
         attrs.update(fullCalcOnLoad="1", forceFullCalc="1", calcMode="auto")
-        fragment = f'<calcPr xmlns="{MAIN}" ' + " ".join(f"{key}={quoteattr(value)}" for key, value in attrs.items() if not key.startswith("xmlns")) + "/>"
-        updates["xl/workbook.xml"] = replace_element(xml, "calcPr", fragment, before=("oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"))
+        fragment = (
+            f'<calcPr xmlns="{MAIN}" '
+            + " ".join(f"{key}={quoteattr(value)}" for key, value in attrs.items() if not key.startswith("xmlns"))
+            + "/>"
+        )
+        updates["xl/workbook.xml"] = replace_element(
+            xml,
+            "calcPr",
+            fragment,
+            before=(
+                "oleSize",
+                "customWorkbookViews",
+                "pivotCaches",
+                "smartTagPr",
+                "smartTagTypes",
+                "webPublishing",
+                "fileRecoveryPr",
+                "webPublishObjects",
+                "extLst",
+            ),
+        )
         rp = "xl/_rels/workbook.xml.rels"
         rels = safe_fromstring(updates.get(rp) or self._package.get(rp))
         types = safe_fromstring(updates.get("[Content_Types].xml") or self._package.get("[Content_Types].xml"))
@@ -645,7 +766,7 @@ def _fast_sheet(xml: str) -> _PlainSheet | None:
     sheet_data = sheet_data_match(xml)
     if sheet_data is None or sheet_data["prefix"]:
         return None
-    head, tail = xml[:sheet_data.start()], xml[sheet_data.end():]
+    head, tail = xml[: sheet_data.start()], xml[sheet_data.end() :]
     root = _ROOT_OPEN.match(head)
     if root is None or f'xmlns="{MAIN}"' not in root[1] or xml.count("xmlns") != root[1].count("xmlns"):
         return None
@@ -752,10 +873,7 @@ def _cell_xml_value(value: Any, date_1904: bool, prefix: str) -> tuple[str | Non
         check_cell_text(value.text)
         if len(value.text) > 8192:
             raise ValueError("formula exceeds Excel's 8192-character limit")
-        return None, (
-            f'<{prefix}f t="array" ref={quoteattr(value.ref)}>'
-            f"{escape(value.text)}</{prefix}f>"
-        )
+        return None, (f'<{prefix}f t="array" ref={quoteattr(value.ref)}>{escape(value.text)}</{prefix}f>')
     if isinstance(value, DataTableFormula):
         attributes = ['t="dataTable"', f"ref={quoteattr(value.ref)}"]
         for name in ("dt2D", "dtr", "del1", "del2", "ca"):
@@ -765,7 +883,7 @@ def _cell_xml_value(value: Any, date_1904: bool, prefix: str) -> tuple[str | Non
             cell = getattr(value, name)
             if cell is not None:
                 attributes.append(f"{name}={quoteattr(cell)}")
-        return None, f'<{prefix}f {" ".join(attributes)}/>'
+        return None, f"<{prefix}f {' '.join(attributes)}/>"
     if isinstance(value, Formula):
         xml_text(value.text)
         check_cell_text(value.text)
@@ -775,25 +893,25 @@ def _cell_xml_value(value: Any, date_1904: bool, prefix: str) -> tuple[str | Non
         kind = "str" if isinstance(cached, str) else None
         if isinstance(cached, str):
             check_cell_text(cached)
-        content = f'<{prefix}f>{escape(value.text)}</{prefix}f>'
+        content = f"<{prefix}f>{escape(value.text)}</{prefix}f>"
         if cached is not None:
             text = xstring_escape(cached) if isinstance(cached, str) else str(cached)
-            content += f'<{prefix}v>{escape(text)}</{prefix}v>'
+            content += f"<{prefix}v>{escape(text)}</{prefix}v>"
         return kind, content
     if isinstance(value, bool):
-        return "b", f'<{prefix}v>{int(value)}</{prefix}v>'
+        return "b", f"<{prefix}v>{int(value)}</{prefix}v>"
     if isinstance(value, (datetime.datetime, datetime.date)):
-        return None, f'<{prefix}v>{datetime_to_serial(value, date_1904):.17g}</{prefix}v>'
+        return None, f"<{prefix}v>{datetime_to_serial(value, date_1904):.17g}</{prefix}v>"
     if isinstance(value, (numbers.Real, Decimal)):
         if not math.isfinite(value):
             raise ValueError("numeric cell values must be finite")
         text = str(value) if isinstance(value, (int, Decimal)) else repr(float(value))
-        return None, f'<{prefix}v>{text}</{prefix}v>'
+        return None, f"<{prefix}v>{text}</{prefix}v>"
 
     if isinstance(value, CellRichText):
         runs = value.runs_xml(prefix)
         runs.encode("utf-8")
-        return "inlineStr", f'<{prefix}is>{runs}</{prefix}is>'
+        return "inlineStr", f"<{prefix}is>{runs}</{prefix}is>"
     if not isinstance(value, str):
         raise TypeError(f"unsupported cell value: {type(value).__name__}")
     check_cell_text(value)
@@ -803,8 +921,7 @@ def _cell_xml_value(value: Any, date_1904: bool, prefix: str) -> tuple[str | Non
     return "inlineStr", f'<{prefix}is><{prefix}t xml:space="preserve">{text}</{prefix}t></{prefix}is>'
 
 
-def _cell_xml(ref: str, encoded: Any, prefix: str, old: str | None = None,
-              style: int | None = None) -> str:
+def _cell_xml(ref: str, encoded: Any, prefix: str, old: str | None = None, style: int | None = None) -> str:
     if encoded is _KEEP:
         if old is None:
             style_attr = "" if style is None else f' s="{style}"'
@@ -824,22 +941,23 @@ def _cell_xml(ref: str, encoded: Any, prefix: str, old: str | None = None,
         attrs["s"] = str(style)
     if kind:
         attrs["t"] = kind
-    opening = f'<{prefix}c ' + " ".join(f"{key}={quoteattr(value)}" for key, value in attrs.items()) + ">"
+    opening = f"<{prefix}c " + " ".join(f"{key}={quoteattr(value)}" for key, value in attrs.items()) + ">"
     # Keep cell extensions and other metadata when replacing the value.
     if old:
         inner = re.sub(r"^<[^>]+>|</[^>]+>$", "", old) if not old.endswith("/>") else ""
         for tag in ("f", "v", "is"):
             inner = element_pattern(tag).sub("", inner)
         content += inner
-    return opening + content + f'</{prefix}c>'
+    return opening + content + f"</{prefix}c>"
 
 
 # An already normal reference, the usual case: no ``$``, upper case, no range.
 _PLAIN_CELL_REF = re.compile(r"([A-Z]{1,3})([1-9][0-9]{0,6})")
 
 
-def _located_cell(reference: str | None, next_column: int, row_number: int,
-                   wanted_rows: Collection[int]) -> tuple[str | None, int, int]:
+def _located_cell(
+    reference: str | None, next_column: int, row_number: int, wanted_rows: Collection[int]
+) -> tuple[str | None, int, int]:
     """A cell's normal reference and zero-based column and row. Without an ``r``
     attribute it is at the column after the previous cell in the row, and the
     reference is only made for the ``wanted_rows`` (None otherwise).
@@ -860,11 +978,18 @@ def _located_cell(reference: str | None, next_column: int, row_number: int,
     return reference, column, row
 
 
-def _patch_row(row_xml: str, targets: dict[str, Any], pending: dict[str, Any], prefix: str,
-               row_num: int, styles: Mapping[str, int] | None = None) -> str:
+def _patch_row(
+    row_xml: str,
+    targets: dict[str, Any],
+    pending: dict[str, Any],
+    prefix: str,
+    row_num: int,
+    styles: Mapping[str, int] | None = None,
+) -> str:
     additions = dict(targets)
     styles = styles or {}
     next_col = 0
+
     def patch_cell(match: re.Match[str]) -> str:
         nonlocal next_col
         ref = cell_ref(tag_attributes(match[0]).get("r", f"{column_label(next_col)}{row_num}"))
@@ -873,16 +998,15 @@ def _patch_row(row_xml: str, targets: dict[str, Any], pending: dict[str, Any], p
         col = parse_cell_range(ref)[0]
         for new_ref in sorted(additions, key=lambda r: parse_cell_range(r)[0]):
             if parse_cell_range(new_ref)[0] < col:
-                result.append(_cell_xml(new_ref, additions.pop(new_ref), prefix,
-                                        style=styles.get(new_ref)))
+                result.append(_cell_xml(new_ref, additions.pop(new_ref), prefix, style=styles.get(new_ref)))
                 pending.pop(new_ref)
         if ref in additions:
-            result.append(_cell_xml(ref, additions.pop(ref), prefix, match[0],
-                                    styles.get(ref)))
+            result.append(_cell_xml(ref, additions.pop(ref), prefix, match[0], styles.get(ref)))
             pending.pop(ref)
         else:
             result.append(match[0])
         return "".join(result)
+
     row_xml = element_pattern("c").sub(patch_cell, row_xml)
     if additions:
         content = "".join(
@@ -894,5 +1018,5 @@ def _patch_row(row_xml: str, targets: dict[str, Any], pending: dict[str, Any], p
             pending.pop(ref)
     # Existing spans describe the original cells, so discard this optional hint.
     opening_end = row_xml.index(">")
-    opening = re.sub(r'''\s+spans\s*=\s*(?:"[^"]*"|'[^']*')''', "", row_xml[:opening_end])
+    opening = re.sub(r"""\s+spans\s*=\s*(?:"[^"]*"|'[^']*')""", "", row_xml[:opening_end])
     return opening + row_xml[opening_end:]

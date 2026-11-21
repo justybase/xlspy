@@ -66,30 +66,21 @@ def _assert_grid(actual, expected, context):
     for name in expected:
         assert len(actual[name]) == len(expected[name]), f"{context} [{name}]: row count"
         for row_index, (actual_row, expected_row) in enumerate(zip(actual[name], expected[name])):
-            assert len(actual_row) == len(expected_row), (
-                f"{context} [{name}] row {row_index}: width differs"
-            )
+            assert len(actual_row) == len(expected_row), f"{context} [{name}] row {row_index}: width differs"
             for column_index, (actual_cell, expected_cell) in enumerate(zip(actual_row, expected_row)):
                 assert _normalize(actual_cell) == _normalize(expected_cell), (
-                    f"{context} [{name}] r{row_index}c{column_index}: "
-                    f"{actual_cell!r} != {expected_cell!r}"
+                    f"{context} [{name}] r{row_index}c{column_index}: {actual_cell!r} != {expected_cell!r}"
                 )
 
 
 def _xlspy_grid(workbook):
-    return {
-        sheet.title: [list(row) for row in sheet.iter_rows(values_only=True)]
-        for sheet in workbook.worksheets
-    }
+    return {sheet.title: [list(row) for row in sheet.iter_rows(values_only=True)] for sheet in workbook.worksheets}
 
 
 def _openpyxl_grid(path, *, data_only=True):
     book = openpyxl.load_workbook(path, data_only=data_only)
     try:
-        return {
-            name: [list(row) for row in book[name].iter_rows(values_only=True)]
-            for name in book.sheetnames
-        }
+        return {name: [list(row) for row in book[name].iter_rows(values_only=True)] for name in book.sheetnames}
     finally:
         book.close()
 
@@ -255,9 +246,15 @@ def test_openpyxl_source_loads_with_coordinates_styles_and_metadata(tmp_path):
         assert ws.max_row == 4
         assert ws.max_column == 9
         assert [cell.value for cell in ws[2]] == [
-            1, dt.datetime(2024, 1, 2, 3, 4, 5), dt.time(12, 30),
-            dt.timedelta(hours=27, minutes=5), "=SUM(A2:A4)",
-            "merge", None, "link", "note",
+            1,
+            dt.datetime(2024, 1, 2, 3, 4, 5),
+            dt.time(12, 30),
+            dt.timedelta(hours=27, minutes=5),
+            "=SUM(A2:A4)",
+            "merge",
+            None,
+            "link",
+            "note",
         ]
         assert ws["A2"].value == 1
         assert ws["A3"].value is None
@@ -377,10 +374,7 @@ def test_loaded_workbook_sheet_management(tmp_path):
 
     with zipfile.ZipFile(edited) as archive:
         names = set(archive.namelist())
-    sheets = sorted(
-        name for name in names
-        if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
-    )
+    sheets = sorted(name for name in names if name.startswith("xl/worksheets/sheet") and name.endswith(".xml"))
     assert len(sheets) == 2
 
 
@@ -559,6 +553,7 @@ def test_fast_path_modules_do_not_import_workbook_model():
 
 def test_removing_loaded_sheet_drops_relationship_and_remaps_local_names(tmp_path):
     from openpyxl.workbook.defined_name import DefinedName as OpenpyxlDefinedName
+
     source = tmp_path / "source.xlsx"
     book = openpyxl.Workbook()
     book.active.title = "A"
@@ -608,7 +603,6 @@ def test_style_edit_keeps_values_of_cells_without_references(tmp_path):
     assert sheet["B1"].font.b
 
 
-
 def test_read_only_sparse_rows_match_openpyxl(tmp_path):
     path = tmp_path / "sparse.xlsx"
     book = openpyxl.Workbook()
@@ -624,14 +618,23 @@ def test_read_only_sparse_rows_match_openpyxl(tmp_path):
     try:
         expected_sheet, sheet = reference["Data"], workbook["Data"]
         assert (sheet.min_row, sheet.min_column, sheet.max_row, sheet.max_column) == (
-            expected_sheet.min_row, expected_sheet.min_column,
-            expected_sheet.max_row, expected_sheet.max_column)
-        for options in ({}, {"min_row": 4, "max_row": 6}, {"min_col": 2, "max_col": 4},
-                        {"min_row": 3, "max_row": 12, "min_col": 1, "max_col": 2}):
-            assert (list(sheet.iter_rows(values_only=True, **options))
-                    == list(expected_sheet.iter_rows(values_only=True, **options)))
-            assert ([[cell.value for cell in row] for row in sheet.iter_rows(**options)]
-                    == [[cell.value for cell in row] for row in expected_sheet.iter_rows(**options)])
+            expected_sheet.min_row,
+            expected_sheet.min_column,
+            expected_sheet.max_row,
+            expected_sheet.max_column,
+        )
+        for options in (
+            {},
+            {"min_row": 4, "max_row": 6},
+            {"min_col": 2, "max_col": 4},
+            {"min_row": 3, "max_row": 12, "min_col": 1, "max_col": 2},
+        ):
+            assert list(sheet.iter_rows(values_only=True, **options)) == list(
+                expected_sheet.iter_rows(values_only=True, **options)
+            )
+            assert [[cell.value for cell in row] for row in sheet.iter_rows(**options)] == [
+                [cell.value for cell in row] for row in expected_sheet.iter_rows(**options)
+            ]
         assert sheet["D5"].value == expected_sheet["D5"].value
         sheet.reset_dimensions()
         expected_sheet.reset_dimensions()
@@ -645,6 +648,7 @@ def test_read_only_sparse_rows_match_openpyxl(tmp_path):
 
 def test_read_only_binary_workbook_uses_worksheet_coordinates(tmp_path):
     from xlspy import XlsbUpdater, XlsbWriter
+
     source, path = tmp_path / "source.xlsb", tmp_path / "sparse.xlsb"
     with XlsbWriter(source) as writer:
         writer.add_sheet("Data")
@@ -668,22 +672,26 @@ def test_read_only_binary_workbook_uses_worksheet_coordinates(tmp_path):
 def test_serialize_like_keeps_prefixes_named_by_ignorable():
     from xml.etree import ElementTree as ET
     from xlspy._metadata import serialize_like
+
     original = (
         '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
         'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
         'xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" '
         'mc:Ignorable="x15"><sheets/><extLst><ext xmlns:xcalcf="urn:calc" uri="{1}">'
-        '<xcalcf:calcFeatures/></ext></extLst></workbook>'
+        "<xcalcf:calcFeatures/></ext></extLst></workbook>"
     )
     output = serialize_like(ET.fromstring(original), original).decode()
     assert 'xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"' in output
     assert 'mc:Ignorable="x15"' in output and "<xcalcf:calcFeatures" in output
     assert "ns0" not in output and "ns1" not in output
-    assert output.splitlines()[1].startswith('<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"')
+    assert output.splitlines()[1].startswith(
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    )
 
 
 def test_read_only_binary_files_written_by_xlspy_are_not_truncated(tmp_path):
     from xlspy import XlsbUpdater, XlsbWriter
+
     path = tmp_path / "written.xlsb"
     with XlsbWriter(path) as writer:
         writer.add_sheet("Data")

@@ -15,6 +15,7 @@ Usage:
 
 The XLSB files stay in OUT_DIR for inspection. Excel must be installed.
 """
+
 import os
 import sys
 import zipfile
@@ -39,6 +40,7 @@ def _set(attribute):
         for name in path:
             target = getattr(target, name)
         setattr(target, last, True)
+
     return apply
 
 
@@ -121,11 +123,11 @@ def build_slicer(excel, out_dir, name, spec):
             table = sheet.ListObjects.Add(1, sheet.Range("A6:C8"), None, 1)
             table.Name = "Costs"
         cache = book.SlicerCaches.Add2(table, spec.get("column", "Region"))
-        slicer = cache.Slicers.Add(sheet, pythoncom.Missing, pythoncom.Missing, pythoncom.Missing,
-                                   20, 300, 150, 150)
+        slicer = cache.Slicers.Add(sheet, pythoncom.Missing, pythoncom.Missing, pythoncom.Missing, 20, 300, 150, 150)
         if spec.get("two"):
             book.SlicerCaches.Add2(table, "Month").Slicers.Add(
-                sheet, pythoncom.Missing, pythoncom.Missing, pythoncom.Missing, 20, 500, 150, 150)
+                sheet, pythoncom.Missing, pythoncom.Missing, pythoncom.Missing, 20, 500, 150, 150
+            )
         if "name" in spec:
             slicer.Name = spec["name"]
         if "caption" in spec:
@@ -148,26 +150,40 @@ def slicer_records(path):
     with zipfile.ZipFile(path) as archive:
         for part, ids in SLICER_RECORDS.items():
             data = archive.read(part)
-            found += [(record.record_id, bytes(data[record.data_start:record.data_end]))
-                      for record in iter_records(data) if record.record_id in ids]
+            found += [
+                (record.record_id, bytes(data[record.data_start : record.data_end]))
+                for record in iter_records(data)
+                if record.record_id in ids
+            ]
     return found
 
 
 PIVOT_ROWS = [
     ("Region", "Product", "Quarter", "Sales", "Units"),
-    ("North", "Coffee", 1, 1200, 40), ("North", "Tea", 1, 800, 50),
-    ("South", "Coffee", 1, 1500, 55), ("South", "Tea", 2, 700, 30),
-    ("East", "Coffee", 2, 900, 33), ("East", "Tea", 2, 1100, 60),
-    ("North", "Coffee", 2, 1300, 44), ("South", "Coffee", 2, 1600, 58),
+    ("North", "Coffee", 1, 1200, 40),
+    ("North", "Tea", 1, 800, 50),
+    ("South", "Coffee", 1, 1500, 55),
+    ("South", "Tea", 2, 700, 30),
+    ("East", "Coffee", 2, 900, 33),
+    ("East", "Tea", 2, 1100, 60),
+    ("North", "Coffee", 2, 1300, 44),
+    ("South", "Coffee", 2, 1600, 58),
 ]
 XL_ROW, XL_COLUMN, XL_PAGE, XL_DATA = 1, 2, 3, 4
 XL_SUM, XL_COUNT, XL_AVERAGE, XL_MAX, XL_MIN = -4157, -4112, -4106, -4136, -4139
 
 
-def _pivot_variant(*, rows=("Region",), columns=(), filters=(), values=(("Sales", XL_SUM),),
-                   location="A3", number_format=None):
-    return {"rows": rows, "columns": columns, "filters": filters, "values": values,
-            "location": location, "number_format": number_format}
+def _pivot_variant(
+    *, rows=("Region",), columns=(), filters=(), values=(("Sales", XL_SUM),), location="A3", number_format=None
+):
+    return {
+        "rows": rows,
+        "columns": columns,
+        "filters": filters,
+        "values": values,
+        "location": location,
+        "number_format": number_format,
+    }
 
 
 PIVOT_VARIANTS = {
@@ -175,8 +191,7 @@ PIVOT_VARIANTS = {
     "pivot_column": _pivot_variant(columns=("Quarter",)),
     "pivot_text_column": _pivot_variant(columns=("Product",)),
     "pivot_two_values": _pivot_variant(values=(("Sales", XL_SUM), ("Units", XL_SUM))),
-    "pivot_column_two_values": _pivot_variant(
-        columns=("Quarter",), values=(("Sales", XL_SUM), ("Units", XL_SUM))),
+    "pivot_column_two_values": _pivot_variant(columns=("Quarter",), values=(("Sales", XL_SUM), ("Units", XL_SUM))),
     "pivot_filter": _pivot_variant(filters=("Product",)),
     "pivot_average": _pivot_variant(values=(("Units", XL_AVERAGE),)),
     "pivot_count": _pivot_variant(values=(("Sales", XL_COUNT),)),
@@ -206,8 +221,7 @@ def build_pivot(excel, out_dir, name, spec):
         cache = book.PivotCaches().Create(1, "SalesTable")
         cache.RefreshOnFileOpen = True
         pivot = cache.CreatePivotTable(summary.Range(spec["location"]), "PT")
-        for orientation, fields in ((XL_ROW, spec["rows"]), (XL_COLUMN, spec["columns"]),
-                                    (XL_PAGE, spec["filters"])):
+        for orientation, fields in ((XL_ROW, spec["rows"]), (XL_COLUMN, spec["columns"]), (XL_PAGE, spec["filters"])):
             for field in fields:
                 pivot.PivotFields(field).Orientation = orientation
         for field, function in spec["values"]:
@@ -231,8 +245,11 @@ def pivot_records(path):
     with zipfile.ZipFile(path) as archive:
         for part in PIVOT_PARTS:
             data = archive.read(part)
-            found += [(record.record_id, bytes(data[record.data_start:record.data_end]))
-                      for record in iter_records(data) if record.record_id != UID_RECORD]
+            found += [
+                (record.record_id, bytes(data[record.data_start : record.data_end]))
+                for record in iter_records(data)
+                if record.record_id != UID_RECORD
+            ]
     return found
 
 
@@ -247,8 +264,7 @@ def build(excel, out_dir, name, spec):
             for row, values in enumerate(([3, -1, 4], [1, 5, -9]), start=2):
                 for column, value in enumerate(values, start=2):
                     target.Cells(row, column).Value = value
-        group = _group(sheet, spec.get("location", "E2"), spec.get("data", "Sheet1!B2:D2"),
-                       spec.get("kind", 1))
+        group = _group(sheet, spec.get("location", "E2"), spec.get("data", "Sheet1!B2:D2"), spec.get("kind", 1))
         if "edit" in spec:
             spec["edit"](group)
         path = os.path.join(out_dir, f"{name}.xlsb")
@@ -267,8 +283,11 @@ def sparkline_records(path):
             if not (name.startswith("xl/worksheets/") and name.endswith(".bin")):
                 continue
             data = archive.read(name)
-            found += [(record.record_id, bytes(data[record.data_start:record.data_end]))
-                      for record in iter_records(data) if record.record_id in (GROUP, SPARKLINE)]
+            found += [
+                (record.record_id, bytes(data[record.data_start : record.data_end]))
+                for record in iter_records(data)
+                if record.record_id in (GROUP, SPARKLINE)
+            ]
     return found
 
 
@@ -278,12 +297,13 @@ def show(name, records, base):
         reference = base[index][1] if index < len(base) and base[index][0] == record_id else b""
         marks = "".join(
             "^^ " if index_ >= len(reference) or reference[index_] != byte else "   "
-            for index_, byte in enumerate(payload))
+            for index_, byte in enumerate(payload)
+        )
         print(f"  0x{record_id:04X} len={len(payload)}")
         for start in range(0, len(payload), 24):
-            print(f"    {start:3d}  {payload[start:start + 24].hex(' ')}")
-            if reference and marks[start * 3:(start + 24) * 3].strip():
-                print(f"         {marks[start * 3:(start + 24) * 3]}")
+            print(f"    {start:3d}  {payload[start : start + 24].hex(' ')}")
+            if reference and marks[start * 3 : (start + 24) * 3].strip():
+                print(f"         {marks[start * 3 : (start + 24) * 3]}")
 
 
 def main(argv=None):
@@ -295,11 +315,9 @@ def main(argv=None):
     pivots = "--pivots" in argv
     argv = [arg for arg in argv if arg not in ("--slicers", "--pivots")]
     if slicers:
-        variants, builder, reader, base_name = (
-            SLICER_VARIANTS, build_slicer, slicer_records, "slicer_base")
+        variants, builder, reader, base_name = (SLICER_VARIANTS, build_slicer, slicer_records, "slicer_base")
     elif pivots:
-        variants, builder, reader, base_name = (
-            PIVOT_VARIANTS, build_pivot, pivot_records, "pivot_base")
+        variants, builder, reader, base_name = (PIVOT_VARIANTS, build_pivot, pivot_records, "pivot_base")
     else:
         variants, builder, reader, base_name = VARIANTS, build, sparkline_records, "base"
     names = list(dict.fromkeys([base_name, *(argv[1:] or variants)]))

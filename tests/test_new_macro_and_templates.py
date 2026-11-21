@@ -88,7 +88,7 @@ def test_excel_runs_the_moved_macro(tmp_path):
         except pywintypes.com_error:
             book.Close(False)
             pytest.skip("Excel does not trust access to the VBA project model")
-        module.CodeModule.AddFromString('Function Answer()\n    Answer = 42\nEnd Function\n')
+        module.CodeModule.AddFromString("Function Answer()\n    Answer = 42\nEnd Function\n")
         book.SaveAs(str(tmp_path / "excel.xlsm"), 52)  # xlOpenXMLWorkbookMacroEnabled
         book.Close(False)
 
@@ -120,6 +120,7 @@ def test_excel_opens_new_templates_and_macro_books(tmp_path):
 
     excel = win32com.client.DispatchEx("Excel.Application")
     excel.DisplayAlerts = False
+
     def opened(path):
         """How Excel takes the file: its format and whether it opened a copy."""
         book = excel.Workbooks.Open(str(path))

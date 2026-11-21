@@ -24,28 +24,20 @@ from golden_data import SHEETS, encoded_sheets, writer_rows
 from helpers import write_workbook
 
 DATA_DIR = pathlib.Path(__file__).parent / "data"
-GOLDEN_FILES = sorted(
-    path for path in DATA_DIR.glob("golden_*") if path.suffix in {".xlsx", ".xlsb"}
-)
+GOLDEN_FILES = sorted(path for path in DATA_DIR.glob("golden_*") if path.suffix in {".xlsx", ".xlsb"})
 GOLDEN_IDS = [path.name for path in GOLDEN_FILES]
 
 
 def _read_with_xlspy(path):
     with ExcelReader(str(path)) as reader:
-        return {
-            name: [list(row) for row in reader.get_rows(name)]
-            for name in reader.get_sheet_names()
-        }
+        return {name: [list(row) for row in reader.get_rows(name)] for name in reader.get_sheet_names()}
 
 
 def _read_with_openpyxl(path):
     openpyxl = pytest.importorskip("openpyxl")
     workbook = openpyxl.load_workbook(str(path), data_only=True)
     try:
-        return {
-            name: [list(row) for row in workbook[name].iter_rows(values_only=True)]
-            for name in workbook.sheetnames
-        }
+        return {name: [list(row) for row in workbook[name].iter_rows(values_only=True)] for name in workbook.sheetnames}
     finally:
         workbook.close()
 
@@ -57,10 +49,7 @@ def _decode_cell(value):
 
 
 def _decode_sheets(encoded):
-    return {
-        name: [[_decode_cell(cell) for cell in row] for row in rows]
-        for name, rows in encoded.items()
-    }
+    return {name: [[_decode_cell(cell) for cell in row] for row in rows] for name, rows in encoded.items()}
 
 
 def _normalize(value):

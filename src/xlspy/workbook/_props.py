@@ -15,17 +15,31 @@ from xml.sax.saxutils import escape
 
 from .._metadata import CT, PKG_REL
 from ..doc_properties import (
-    _CORE_REL, _CORE_TYPE, _CUSTOM_FMTID, _CUSTOM_REL, _CUSTOM_TYPE, _check_doc_text, _custom_value, _utc,
+    _CORE_REL,
+    _CORE_TYPE,
+    _CUSTOM_FMTID,
+    _CUSTOM_REL,
+    _CUSTOM_TYPE,
+    _check_doc_text,
+    _custom_value,
+    _utc,
 )
 
 _CORE_PATH, _CUSTOM_PATH = "docProps/core.xml", "docProps/custom.xml"
 # Model field -> element, in the order Excel writes them.
 _CORE = (
-    ("title", "dc:title"), ("subject", "dc:subject"), ("creator", "dc:creator"),
-    ("keywords", "cp:keywords"), ("description", "dc:description"),
-    ("lastModifiedBy", "cp:lastModifiedBy"), ("revision", "cp:revision"),
-    ("category", "cp:category"), ("contentStatus", "cp:contentStatus"),
-    ("identifier", "dc:identifier"), ("language", "dc:language"), ("version", "cp:version"),
+    ("title", "dc:title"),
+    ("subject", "dc:subject"),
+    ("creator", "dc:creator"),
+    ("keywords", "cp:keywords"),
+    ("description", "dc:description"),
+    ("lastModifiedBy", "cp:lastModifiedBy"),
+    ("revision", "cp:revision"),
+    ("category", "cp:category"),
+    ("contentStatus", "cp:contentStatus"),
+    ("identifier", "dc:identifier"),
+    ("language", "dc:language"),
+    ("version", "cp:version"),
 )
 _DATES = (("lastPrinted", "cp:lastPrinted"), ("created", "dcterms:created"), ("modified", "dcterms:modified"))
 
@@ -54,8 +68,7 @@ def core_xml(props) -> bytes:
         '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
         'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" '
         'xmlns:dcmitype="http://purl.org/dc/dcmitype/" '
-        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
-        + "".join(body) + "</cp:coreProperties>"
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + "".join(body) + "</cp:coreProperties>"
     ).encode("utf-8")
 
 
@@ -97,9 +110,15 @@ def save_properties(updater, workbook) -> None:
             number = 1
             while f"rId{number}" in taken:
                 number += 1
-            ET.SubElement(rels, f"{{{PKG_REL}}}Relationship", {
-                "Id": f"rId{number}", "Type": rel_type, "Target": path,
-            })
+            ET.SubElement(
+                rels,
+                f"{{{PKG_REL}}}Relationship",
+                {
+                    "Id": f"rId{number}",
+                    "Type": rel_type,
+                    "Target": path,
+                },
+            )
 
     ensure(_CORE_PATH, _CORE_TYPE, _CORE_REL)
     if workbook.custom_doc_props:

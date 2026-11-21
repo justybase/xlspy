@@ -1,5 +1,6 @@
 """Both writers check write_sheet options the same way, before anything is recorded:
 a rejected call leaves the writer usable (xlspy._writer_common.WriterFrontEnd._check_sheet_options)."""
+
 from __future__ import annotations
 
 import pytest

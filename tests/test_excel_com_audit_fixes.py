@@ -90,10 +90,12 @@ def test_custom_autofilter_criterion_is_kept_in_excel(open_workbook, tmp_path):
     for value in range(1, 6):
         sheet.append([value])
     sheet.auto_filter.ref = "A1:A6"
-    sheet.auto_filter.filterColumn.append(FilterColumn(
-        colId=0,
-        customFilters=CustomFilters(customFilter=[CustomFilter(operator="greaterThan", val="2")]),
-    ))
+    sheet.auto_filter.filterColumn.append(
+        FilterColumn(
+            colId=0,
+            customFilters=CustomFilters(customFilter=[CustomFilter(operator="greaterThan", val="2")]),
+        )
+    )
     book.save(source)
 
     out = tmp_path / "filters_out.xlsx"

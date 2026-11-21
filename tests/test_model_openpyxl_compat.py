@@ -14,10 +14,29 @@ import pytest
 import xlspy
 
 from xlspy import (
-    AboveAverageRule, BlanksRule, CellIsRule, CellRichText, Chart, ChartSeries, ExcelReader,
-    DataValidation, DifferentialStyle, DuplicateRule, ExcelTable, Font, Image,
-    InlineFont, TextBlock, TextRule, TimePeriodRule, TopBottomRule, Workbook,
-    Style, XlsbWriter, XlsxWriter, load_workbook,
+    AboveAverageRule,
+    BlanksRule,
+    CellIsRule,
+    CellRichText,
+    Chart,
+    ChartSeries,
+    ExcelReader,
+    DataValidation,
+    DifferentialStyle,
+    DuplicateRule,
+    ExcelTable,
+    Font,
+    Image,
+    InlineFont,
+    TextBlock,
+    TextRule,
+    TimePeriodRule,
+    TopBottomRule,
+    Workbook,
+    Style,
+    XlsbWriter,
+    XlsxWriter,
+    load_workbook,
 )
 from xlspy.workbook._shift import translate_formula
 
@@ -30,8 +49,12 @@ def _png(width, height):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
 
 
 def _sheet_xml(path, index=1):
@@ -57,8 +80,9 @@ def test_model_objects_are_saved(tmp_path):
     sheet.add_chart(Chart("bar", [ChartSeries("B2:B4", categories="A2:A4")]), "D2")
     sheet.add_image(Image(io.BytesIO(_png(8, 4))), "D20")
     sheet.add_table(ExcelTable(display_name="Sales", ref="A1:B4"))
-    sheet.add_data_validation(DataValidation(type="whole", sqref="B2:B4", operator="between",
-                                             formula1="0", formula2="100"))
+    sheet.add_data_validation(
+        DataValidation(type="whole", sqref="B2:B4", operator="between", formula1="0", formula2="100")
+    )
     sheet.conditional_formatting.add("B2:B4", CellIsRule("A1", "greaterThan", ["15"], dxf=BOLD))
     path = tmp_path / "objects.xlsx"
     workbook.save(path)
@@ -155,8 +179,10 @@ def test_writer_zoom(tmp_path, writer_cls, ext):
 
 
 def _values(sheet):
-    rows = [[cell.value for cell in row] for row in sheet.iter_rows(
-        min_row=1, max_row=sheet.max_row, max_col=sheet.max_column)]
+    rows = [
+        [cell.value for cell in row]
+        for row in sheet.iter_rows(min_row=1, max_row=sheet.max_row, max_col=sheet.max_column)
+    ]
     while rows and all(value is None for value in rows[-1]):
         rows.pop()  # openpyxl counts cells emptied by a move
     return rows
@@ -226,7 +252,12 @@ def test_shifts_in_a_loaded_workbook(tmp_path):
     workbook.close()
     result = openpyxl.load_workbook(tmp_path / "out.xlsx")["D"]
     assert [[c.value for c in row] for row in result.iter_rows(max_col=2)] == [
-        ["r1", 10], ["new", None], ["r2", 20], ["r3", 30], ["r4", 40], ["r5", 50],
+        ["r1", 10],
+        ["new", None],
+        ["r2", 20],
+        ["r3", 30],
+        ["r4", 40],
+        ["r5", 50],
     ]
     assert result["A3"].font.b and not result["A2"].font.b
     assert result.row_dimensions[4].height == 30 and result.row_dimensions[3].height is None
@@ -333,17 +364,33 @@ def test_rich_text_validation_and_xlsb(tmp_path):
 
 EXTRA_RULES = [
     (TopBottomRule("A2:A9", rank=3, dxf=BOLD), 'type="top10" rank="3"', None),
-    (TopBottomRule("A2:A9", rank=10, percent=True, bottom=True, dxf=BOLD),
-     'type="top10" rank="10" percent="1" bottom="1"', None),
-    (AboveAverageRule("A2:A9", below=True, std_dev=1, dxf=BOLD),
-     'type="aboveAverage" aboveAverage="0" stdDev="1"', None),
-    (TextRule("B2:B9", "contains", 'a"b', dxf=BOLD),
-     'type="containsText" operator="containsText" text="a&quot;b"', 'NOT(ISERROR(SEARCH("a""b",B2)))'),
-    (TextRule("B2:B9", "beginsWith", "x", dxf=BOLD), 'type="beginsWith" operator="beginsWith" text="x"', 'LEFT(B2,LEN("x"))="x"'),
+    (
+        TopBottomRule("A2:A9", rank=10, percent=True, bottom=True, dxf=BOLD),
+        'type="top10" rank="10" percent="1" bottom="1"',
+        None,
+    ),
+    (
+        AboveAverageRule("A2:A9", below=True, std_dev=1, dxf=BOLD),
+        'type="aboveAverage" aboveAverage="0" stdDev="1"',
+        None,
+    ),
+    (
+        TextRule("B2:B9", "contains", 'a"b', dxf=BOLD),
+        'type="containsText" operator="containsText" text="a&quot;b"',
+        'NOT(ISERROR(SEARCH("a""b",B2)))',
+    ),
+    (
+        TextRule("B2:B9", "beginsWith", "x", dxf=BOLD),
+        'type="beginsWith" operator="beginsWith" text="x"',
+        'LEFT(B2,LEN("x"))="x"',
+    ),
     (DuplicateRule("B2:B9", dxf=BOLD), 'type="duplicateValues"', None),
     (DuplicateRule("B2:B9", unique=True, dxf=BOLD), 'type="uniqueValues"', None),
-    (TimePeriodRule("C2:C9", "yesterday", dxf=BOLD), 'type="timePeriod" timePeriod="yesterday"',
-     "FLOOR(C2,1)=TODAY()-1"),
+    (
+        TimePeriodRule("C2:C9", "yesterday", dxf=BOLD),
+        'type="timePeriod" timePeriod="yesterday"',
+        "FLOOR(C2,1)=TODAY()-1",
+    ),
     (BlanksRule("D2:D9", dxf=BOLD), 'type="containsBlanks"', "LEN(TRIM(D2))=0"),
     (BlanksRule("D2:D9", "no_errors", dxf=BOLD), 'type="notContainsErrors"', "NOT(ISERROR(D2))"),
 ]

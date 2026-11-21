@@ -3,6 +3,7 @@
 pandas and polars are optional dependencies: tests that need them are skipped
 when the library is not installed.
 """
+
 import datetime
 import os
 import subprocess
@@ -178,9 +179,7 @@ def test_numpy_timedelta_becomes_day_fraction(tmp_dir):
     # written as text ("12:00:00") instead of a day fraction.
     pd = _pd()
     np = pytest.importorskip("numpy")
-    df = pd.DataFrame(
-        {"dur": pd.Series([np.timedelta64(12, "h")], dtype=object), "tag": ["a"]}
-    )
+    df = pd.DataFrame({"dur": pd.Series([np.timedelta64(12, "h")], dtype=object), "tag": ["a"]})
     path = os.path.join(tmp_dir, "np_dur.xlsx")
     to_xlsx(df, path)
     rows = read_rows(path)
@@ -312,9 +311,7 @@ def test_dataframe_matches_write_sheet_rows(tmp_dir, ext, shortcut):
     "ext,shortcut,writer_cls",
     [("xlsx", to_xlsx, XlsxWriter), ("xlsb", to_xlsb, XlsbWriter)],
 )
-def test_dataframe_shortcut_removes_partial_output_on_failure(
-    tmp_dir, monkeypatch, ext, shortcut, writer_cls
-):
+def test_dataframe_shortcut_removes_partial_output_on_failure(tmp_dir, monkeypatch, ext, shortcut, writer_cls):
     pd = _pd()
 
     def fail_during_conversion(*args, **kwargs):
@@ -404,9 +401,7 @@ def test_import_xlspy_does_not_import_optional_dependencies():
     )
     env = dict(os.environ)
     env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
-    result = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, env=env
-    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "", f"xlspy imported optional deps: {result.stdout}"
 

@@ -37,7 +37,7 @@ def _drawing_prefix(xml: str) -> str:
 def _edit_title_xml(c: str, a: str, text: str) -> str:
     return (
         f"<{c}title><{c}tx><{c}rich><{a}bodyPr/><{a}p><{a}r><{a}t>{escape(text)}</{a}t>"
-        f"</{a}r></{a}p></{c}rich></{c}tx><{c}overlay val=\"0\"/></{c}title>"
+        f'</{a}r></{a}p></{c}rich></{c}tx><{c}overlay val="0"/></{c}title>'
     )
 
 
@@ -73,13 +73,13 @@ def _set_title_in(xml: str, c: str, a: str, span: tuple[int, int], text: str | N
     paragraph = re.search(rf"<{a}p>.*?</{a}p>", old, re.S)
     first_run = re.search(rf"<{a}r>.*?</{a}r>", old, re.S)
     new = f"<{a}t>{escape(text)}</{a}t>"
-    edited = old[:run.start()] + new + old[run.end():]
+    edited = old[: run.start()] + new + old[run.end() :]
     if paragraph and first_run:
         shift = len(new) - (run.end() - run.start())
         runs = list(re.finditer(rf"<{a}r>.*?</{a}r>", edited, re.S))
         for extra in reversed(runs[1:]):
             if paragraph.start() <= extra.start() < paragraph.end() + shift:
-                edited = edited[:extra.start()] + edited[extra.end():]
+                edited = edited[: extra.start()] + edited[extra.end() :]
     return xml[:start] + edited + xml[end:]
 
 
@@ -92,7 +92,7 @@ def _auto_title_deleted(xml: str, c: str, deleted: bool) -> str:
     anchor = re.search(rf"<{c}(?:pivotFmts|view3D|floor|sideWall|backWall|plotArea)\b", xml)
     if anchor is None:
         return xml
-    return xml[:anchor.start()] + f'<{c}autoTitleDeleted val="1"/>' + xml[anchor.start():]
+    return xml[: anchor.start()] + f'<{c}autoTitleDeleted val="1"/>' + xml[anchor.start() :]
 
 
 def set_chart_title(xml: bytes, text: str | None) -> bytes:
@@ -162,11 +162,11 @@ def get_axis_title(xml: bytes, index: int) -> str | None:
     axis = _axis_span(source, c, index)
     if axis is None:
         return None
-    body = source[axis[0]:axis[1]]
+    body = source[axis[0] : axis[1]]
     found = _element(body, c, "title")
     if found is None:
         return None
-    runs = re.findall(rf"<{a}t>(.*?)</{a}t>", body[found[0]:found[1]], re.S)
+    runs = re.findall(rf"<{a}t>(.*?)</{a}t>", body[found[0] : found[1]], re.S)
     return unescape("".join(runs)) or None
 
 
@@ -176,7 +176,7 @@ def get_legend_position(xml: bytes) -> str | None:
     found = _element(source, c, "legend")
     if found is None:
         return None
-    match = re.search(rf'<{c}legendPos\s+val="(\w+)"', source[found[0]:found[1]])
+    match = re.search(rf'<{c}legendPos\s+val="(\w+)"', source[found[0] : found[1]])
     code = match[1] if match else "r"
     for name, value in LEGEND_POSITIONS.items():
         if value == code:
@@ -187,24 +187,22 @@ def get_legend_position(xml: bytes) -> str | None:
 def set_legend_position(xml: bytes, position: str | None) -> bytes:
     """Move, add (``position`` given) or remove (None) the chart legend."""
     if position is not None and position not in LEGEND_POSITIONS:
-        raise ValueError(
-            f"invalid legend position {position!r}; expected one of {sorted(LEGEND_POSITIONS)}"
-        )
+        raise ValueError(f"invalid legend position {position!r}; expected one of {sorted(LEGEND_POSITIONS)}")
     source = xml.decode("utf-8")
     c = _chart_prefix(source)
     found = _element(source, c, "legend")
     if position is None:
         if found is not None:
-            source = source[:found[0]] + source[found[1]:]
+            source = source[: found[0]] + source[found[1] :]
         return source.encode("utf-8")
     code = LEGEND_POSITIONS[position]
     if found is not None:
-        body = source[found[0]:found[1]]
+        body = source[found[0] : found[1]]
         if re.search(rf"<{c}legendPos\b", body):
             body = re.sub(rf'(<{c}legendPos\s+val=")[^"]*(")', rf"\g<1>{code}\2", body, count=1)
         else:
             body = re.sub(rf"(<{c}legend>)", rf'\1<{c}legendPos val="{code}"/>', body, count=1)
-        return (source[:found[0]] + body + source[found[1]:]).encode("utf-8")
+        return (source[: found[0]] + body + source[found[1] :]).encode("utf-8")
     plot = _element(source, c, "plotArea")
     if plot is None:
         raise ValueError("the chart has no plot area")
@@ -217,8 +215,20 @@ def set_legend_position(xml: bytes, position: str | None) -> bytes:
 # --- series -----------------------------------------------------------------
 
 _SERIES_BODY = (
-    "marker", "dPt", "dLbls", "trendline", "errBars", "cat", "val", "xVal", "yVal",
-    "invertIfNegative", "pictureOptions", "explosion", "smooth", "bubbleSize",
+    "marker",
+    "dPt",
+    "dLbls",
+    "trendline",
+    "errBars",
+    "cat",
+    "val",
+    "xVal",
+    "yVal",
+    "invertIfNegative",
+    "pictureOptions",
+    "explosion",
+    "smooth",
+    "bubbleSize",
 )
 _LINE_GROUPS = frozenset({"lineChart", "line3DChart", "scatterChart", "radarChart", "stockChart"})
 _FILLS = r"(?:solidFill|noFill|gradFill|pattFill|blipFill|grpFill)"
@@ -253,12 +263,12 @@ def set_series_title(xml: bytes, index: int, text: str) -> bytes:
     found = _element(body, c, "tx")
     header = _series_end_of_header(body, c)
     if found is not None and found[0] < header:
-        body = body[:found[0]] + tx + body[found[1]:]
+        body = body[: found[0]] + tx + body[found[1] :]
     else:
         order = re.search(rf"<{c}order\b[^>]*/>", body)
         if order is None:
             raise ValueError("the series has no order element")
-        body = body[:order.end()] + tx + body[order.end():]
+        body = body[: order.end()] + tx + body[order.end() :]
     return (source[:start] + body + source[end:]).encode("utf-8")
 
 
@@ -268,13 +278,13 @@ def get_series_titles(xml: bytes) -> list[str | None]:
     titles: list[str | None] = []
     position = 0
     while (found := _element(source, c, "ser", position)) is not None:
-        body = source[found[0]:found[1]]
+        body = source[found[0] : found[1]]
         position = found[1]
         tx = _element(body, c, "tx")
         if tx is None or tx[0] > _series_end_of_header(body, c):
             titles.append(None)
             continue
-        text = re.search(rf"<{c}v>(.*?)</{c}v>", body[tx[0]:tx[1]], re.S)
+        text = re.search(rf"<{c}v>(.*?)</{c}v>", body[tx[0] : tx[1]], re.S)
         titles.append(unescape(text[1]) if text else None)
     return titles
 
@@ -299,9 +309,9 @@ def set_series_color(xml: bytes, index: int, color: str) -> bytes:
         )
         body = body[:anchor] + shape + body[anchor:]
         return (source[:start] + body + source[end:]).encode("utf-8")
-    old = body[sp[0]:sp[1]]
+    old = body[sp[0] : sp[1]]
     inner_start = old.index(">") + 1
-    inner = old[inner_start:old.rindex("<")] if not old.endswith("/>") else ""
+    inner = old[inner_start : old.rindex("<")] if not old.endswith("/>") else ""
     ln = re.search(rf"<{a}ln\b[^>]*?(?:/>|>.*?</{a}ln>)", inner, re.S)
     strip = re.compile(rf"<{a}{_FILLS}\b[^>]*?(?:/>|>.*?</{a}{_FILLS}>)", re.S)
     if line:
@@ -312,11 +322,11 @@ def set_series_color(xml: bytes, index: int, color: str) -> bytes:
             text = ln[0]
             if text.endswith("/>"):
                 text = text[:-2] + f"></{a}ln>"
-            opening = text[:text.index(">") + 1]
-            rest = strip.sub("", text[len(opening):])
-            inner = inner[:ln.start()] + opening + fill + rest + inner[ln.end():]
+            opening = text[: text.index(">") + 1]
+            rest = strip.sub("", text[len(opening) :])
+            inner = inner[: ln.start()] + opening + fill + rest + inner[ln.end() :]
     else:
-        without_ln = inner if ln is None else inner[:ln.start()] + "\0" + inner[ln.end():]
+        without_ln = inner if ln is None else inner[: ln.start()] + "\0" + inner[ln.end() :]
         without_ln = strip.sub("", without_ln)
         if "\0" in without_ln:
             inner = without_ln.replace("\0", fill + ln[0])  # type: ignore[index]
@@ -324,7 +334,7 @@ def set_series_color(xml: bytes, index: int, color: str) -> bytes:
             inner = _insert_before_effects(without_ln, a, fill)
     opening = old[:inner_start] if not old.endswith("/>") else old[:-2] + ">"
     shape = f"{opening}{inner}</{c}spPr>"
-    body = body[:sp[0]] + shape + body[sp[1]:]
+    body = body[: sp[0]] + shape + body[sp[1] :]
     return (source[:start] + body + source[end:]).encode("utf-8")
 
 

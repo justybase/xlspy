@@ -26,8 +26,7 @@ _ROW_ATTRIBUTES = (" ht=", " hidden=", " outlineLevel=", " collapsed=")
 _TYPED = frozenset({"s", "inlineStr", "b", "e", "str", "d"})
 
 
-def read_sheet_data(sheet, package, sheet_path, style_table, *, data_only, date_1904,
-                    shared_strings, rich_text):
+def read_sheet_data(sheet, package, sheet_path, style_table, *, data_only, date_1904, shared_strings, rich_text):
     """Load the rows into ``sheet``. Return ``(max_row, max_column, remainder)``
     where ``remainder`` is the worksheet XML with an empty ``<sheetData/>``, or
     ``None`` (nothing loaded) when the part needs the element-by-element reader."""
@@ -38,25 +37,45 @@ def read_sheet_data(sheet, package, sheet_path, style_table, *, data_only, date_
         text, decoder, root_tag, _ns, raw, head = probe
         if _accel._native_read_xlsx_worksheet is not None:
             return _load_rows_native(
-                sheet, stream, raw, root_tag, head, style_table,
-                data_only, date_1904, shared_strings, rich_text,
+                sheet,
+                stream,
+                raw,
+                root_tag,
+                head,
+                style_table,
+                data_only,
+                date_1904,
+                shared_strings,
+                rich_text,
             )
         return _load_rows(
-            sheet, stream, text, decoder, root_tag, head, style_table,
-            data_only, date_1904, shared_strings, rich_text,
+            sheet,
+            stream,
+            text,
+            decoder,
+            root_tag,
+            head,
+            style_table,
+            data_only,
+            date_1904,
+            shared_strings,
+            rich_text,
         )
 
 
 _DATE_KINDS = {None: 0, "date": 1, "time": 2, "duration": 3}
 
 
-def _load_rows_native(sheet, stream, raw, root_tag, head, style_table,
-                      data_only, date_1904, shared_strings, rich_text):
+def _load_rows_native(sheet, stream, raw, root_tag, head, style_table, data_only, date_1904, shared_strings, rich_text):
     """The native scanner creates the cells of plain rows; the rows it leaves (formulas,
     row attributes, unusual markup) go through ElementTree as in ``_load_rows``."""
     kinds = [_DATE_KINDS[_date_kind(style.number_format)] for style in style_table.styles]
     rows = _accel._native_read_xlsx_worksheet(
-        stream, raw, shared_strings, kinds, date_1904,
+        stream,
+        raw,
+        shared_strings,
+        kinds,
+        date_1904,
         (Cell, CELL_SLOTS, sheet, sheet._cells, data_only, rich_text),
     )
     next_row = 1
@@ -68,9 +87,14 @@ def _load_rows_native(sheet, stream, raw, root_tag, head, style_table,
         # one that knows which number a row without r gets.
         expected = rows.next_row()
         row_number, row_max, column_max = _load_row(
-            sheet, root[0], next_row if expected is None else expected, style_table,
+            sheet,
+            root[0],
+            next_row if expected is None else expected,
+            style_table,
             data_only=data_only,
-            date_1904=date_1904, shared=shared, shared_strings=shared_strings,
+            date_1904=date_1904,
+            shared=shared,
+            shared_strings=shared_strings,
             rich_text=rich_text,
         )
         rows.resume(row_number)
@@ -80,11 +104,12 @@ def _load_rows_native(sheet, stream, raw, root_tag, head, style_table,
     loaded_rows, loaded_columns = rows.bounds()
     tail = rows.tail()
     end = tail.find(b"</sheetData>")
-    tail = tail[end + len(b"</sheetData>"):] if end >= 0 else b""
+    tail = tail[end + len(b"</sheetData>") :] if end >= 0 else b""
     tail += stream.read()
-    prefix = head[:head.rfind(b"<sheetData")]
+    prefix = head[: head.rfind(b"<sheetData")]
     return (
-        max(max_row, loaded_rows), max(max_column, loaded_columns),
+        max(max_row, loaded_rows),
+        max(max_column, loaded_columns),
         prefix + b"<sheetData/>" + tail,
     )
 
@@ -130,8 +155,9 @@ def _typed_value(kind: str, v: str | None, inline: str | None, rich_text: bool) 
     return data_type, value
 
 
-def _scan_rows(stream: Any, text: str, decoder: Any, fast_row: Callable[[str, str | None], None],
-               slow_row: Callable[[str], None]) -> str:
+def _scan_rows(
+    stream: Any, text: str, decoder: Any, fast_row: Callable[[str, str | None], None], slow_row: Callable[[str], None]
+) -> str:
     """Feed each <row> of the sheet data to ``fast_row``, or to ``slow_row`` when the
     fast path gives up; return the decoded XML after </sheetData>."""
     row_pattern = _xlsx_read._ROW
@@ -148,7 +174,7 @@ def _scan_rows(stream: Any, text: str, decoder: Any, fast_row: Callable[[str, st
                 slow_row(match.group(0))
         end = text.find("</sheetData>", pos)
         if end >= 0:
-            tail = text[end + len("</sheetData>"):]
+            tail = text[end + len("</sheetData>") :]
             break
         text = text[pos:]
         if not chunk:
@@ -160,8 +186,9 @@ def _scan_rows(stream: Any, text: str, decoder: Any, fast_row: Callable[[str, st
     return tail
 
 
-def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
-               data_only, date_1904, shared_strings, rich_text):
+def _load_rows(
+    sheet, stream, text, decoder, root_tag, head, style_table, data_only, date_1904, shared_strings, rich_text
+):
     columns: dict[str, int] = {}
     date_kinds: dict[int, str | None] = {}
     shared: dict = {}
@@ -221,7 +248,7 @@ def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
                         if col >= 16384:
                             raise _Fallback
                         columns[letters] = col
-                    digits = ref[len(letters):]
+                    digits = ref[len(letters) :]
                     if not (digits.isascii() and digits.isdigit()):
                         raise _Fallback
                     row = int(digits)
@@ -282,8 +309,14 @@ def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
     def slow_row(row_text):
         root = safe_fromstring((root_tag + row_text + "</worksheet>").encode("utf-8"))
         row_number, row_max, column_max = _load_row(
-            sheet, root[0], state["next_row"], style_table, data_only=data_only,
-            date_1904=date_1904, shared=shared, shared_strings=shared_strings,
+            sheet,
+            root[0],
+            state["next_row"],
+            style_table,
+            data_only=data_only,
+            date_1904=date_1904,
+            shared=shared,
+            shared_strings=shared_strings,
             rich_text=rich_text,
         )
         state["next_row"] = row_number + 1
@@ -291,6 +324,6 @@ def _load_rows(sheet, stream, text, decoder, root_tag, head, style_table,
         state["max_column"] = max(state["max_column"], column_max)
 
     tail = _scan_rows(stream, text, decoder, fast_row, slow_row)
-    prefix = head[:head.rfind(b"<sheetData")]
+    prefix = head[: head.rfind(b"<sheetData")]
     remainder = prefix + b"<sheetData/>" + tail.encode("utf-8")
     return state["max_row"], state["max_column"], remainder

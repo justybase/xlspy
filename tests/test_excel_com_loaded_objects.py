@@ -35,8 +35,9 @@ def _check_added_objects(book, *, existing_charts: int, existing_tables: set[str
     assert validation.Type == XL_VALIDATE_WHOLE_NUMBER and validation.Formula2 == "100"
     rules = sheet.Range("B2:B4").FormatConditions
     # Only cell-value rules have a font (a data bar does not).
-    bold = [rules(i) for i in range(1, rules.Count + 1)
-            if rules(i).Type == XL_CELL_VALUE and rules(i).Font.Bold is True]
+    bold = [
+        rules(i) for i in range(1, rules.Count + 1) if rules(i).Type == XL_CELL_VALUE and rules(i).Font.Bold is True
+    ]
     assert len(bold) == 1 and bold[0].Formula1 == "=15"
     # The value 30 is above 15: the new rule paints it, with its number format.
     # DisplayFormat.NumberFormat stays "General" in Excel, so read the text
@@ -97,8 +98,9 @@ def test_objects_added_to_a_loaded_excel_file_in_excel(tmp_path, excel, open_wor
     _check_added_objects(book, existing_charts=1, existing_tables={"OldTable"})
     sheet = book.Worksheets("Data")
     # Excel's own objects are kept: the data bar, the list validation and the chart.
-    kinds = [sheet.Range("B2:B4").FormatConditions(i).Type
-             for i in range(1, sheet.Range("B2:B4").FormatConditions.Count + 1)]
+    kinds = [
+        sheet.Range("B2:B4").FormatConditions(i).Type for i in range(1, sheet.Range("B2:B4").FormatConditions.Count + 1)
+    ]
     assert 4 in kinds  # xlDatabar
     assert sheet.Range("A2").Validation.Formula1 == "North,South,East"
     assert sheet.ChartObjects(1).Chart.ChartType == XL_CHART_TYPE_LINE

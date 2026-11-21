@@ -45,9 +45,11 @@ def _in_sheet_order(refs: Iterable[str]) -> list[str]:
 
     Pending edits are kept in sets; saving walks them in this order so the same
     edits always produce the same bytes (string hashes vary between runs)."""
+
     def position(ref: str) -> tuple[int, int]:
         column, row, _, _ = parse_cell_range(ref)
         return row, column
+
     return sorted(refs, key=position)
 
 
@@ -105,10 +107,7 @@ class CellRange(str):
             col, row, _, _ = parse_cell_range(item)
         except (TypeError, ValueError):
             return False
-        return (
-            self.min_col - 1 <= col <= self.max_col - 1
-            and self.min_row - 1 <= row <= self.max_row - 1
-        )
+        return self.min_col - 1 <= col <= self.max_col - 1 and self.min_row - 1 <= row <= self.max_row - 1
 
     @property
     def coord(self) -> str:
@@ -138,9 +137,7 @@ class CellRange(str):
         max_col = self.max_col + col_shift
         max_row = self.max_row + row_shift
         if min_col < 1 or min_row < 1 or max_col > 16384 or max_row > 1048576:
-            raise ValueError(
-                f"Invalid shift value: col_shift={col_shift}, row_shift={row_shift}"
-            )
+            raise ValueError(f"Invalid shift value: col_shift={col_shift}, row_shift={row_shift}")
         return CellRange(f"{column_label(min_col - 1)}{min_row}:{column_label(max_col - 1)}{max_row}")
 
     def expand(self, right: int = 0, down: int = 0, left: int = 0, up: int = 0) -> CellRange:
@@ -276,6 +273,7 @@ class _RangeList(list):
 
 class MultiCellRange:
     """Several cell ranges, such as a sheet's merged cells, in the order added."""
+
     def __init__(self, ranges: Iterable[str] | None = None) -> None:
         self._ranges = _RangeList()
         self._index = RangeIndex()

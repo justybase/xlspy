@@ -43,9 +43,7 @@ def test_replace_sheet_data_writes_formulas(tmp_path, stream):
     with ExcelReader(target) as reader:
         assert reader.read_all("Data")[4] == ["total", 60, 120]
     with ExcelReader(target) as reader:
-        assert reader.read_all("Data", data_only=False)[4] == [
-            "total", "=SUM(B2:B4)", "=B5*2"
-        ]
+        assert reader.read_all("Data", data_only=False)[4] == ["total", "=SUM(B2:B4)", "=B5*2"]
 
 
 def test_replace_sheet_data_keeps_formulas_in_later_rows(tmp_path):
@@ -64,7 +62,9 @@ def test_replace_sheet_data_keeps_formulas_in_later_rows(tmp_path):
 
     with ExcelReader(target) as reader:
         assert reader.read_all("Data", data_only=False) == [
-            ["Name", "Value"], ["alpha", "=1+1"], ["beta", "=A2*2"],
+            ["Name", "Value"],
+            ["alpha", "=1+1"],
+            ["beta", "=A2*2"],
         ]
 
 

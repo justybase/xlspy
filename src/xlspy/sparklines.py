@@ -104,11 +104,18 @@ class SparklineGroup:
             raise ValueError(f"sparkline kind must be one of {sorted(_KIND_TYPES)}, got {self.kind!r}")
         if self.empty_cells not in _EMPTY_CELLS:
             raise ValueError(f"empty_cells must be one of {sorted(_EMPTY_CELLS)}, got {self.empty_cells!r}")
-        if isinstance(self.line_width, bool) or not isinstance(self.line_width, (int, float)) \
-                or self.line_width <= 0:
+        if isinstance(self.line_width, bool) or not isinstance(self.line_width, (int, float)) or self.line_width <= 0:
             raise ValueError("line_width must be a positive number of points")
-        for name in ("color", "negative_color", "axis_color", "marker_color",
-                     "high_color", "low_color", "first_color", "last_color"):
+        for name in (
+            "color",
+            "negative_color",
+            "axis_color",
+            "marker_color",
+            "high_color",
+            "low_color",
+            "first_color",
+            "last_color",
+        ):
             _argb(getattr(self, name), name)
         for name in ("axis_min", "axis_max"):
             value = getattr(self, name)
@@ -136,8 +143,7 @@ def _expand(group: SparklineGroup, sheet_name: str) -> list[tuple[str, str]]:
                 f"has {dr2 - dr1 + 1} rows; a column of cells needs one data row each"
             )
         return [
-            (_cell_ref(lc1, lr1 + i),
-             f"{prefix}{_cell_ref(dc1, dr1 + i)}:{_cell_ref(dc2, dr1 + i)}")
+            (_cell_ref(lc1, lr1 + i), f"{prefix}{_cell_ref(dc1, dr1 + i)}:{_cell_ref(dc2, dr1 + i)}")
             for i in range(count)
         ]
     if lr1 == lr2:
@@ -148,13 +154,10 @@ def _expand(group: SparklineGroup, sheet_name: str) -> list[tuple[str, str]]:
                 f"has {dc2 - dc1 + 1} columns; a row of cells needs one data column each"
             )
         return [
-            (_cell_ref(lc1 + i, lr1),
-             f"{prefix}{_cell_ref(dc1 + i, dr1)}:{_cell_ref(dc1 + i, dr2)}")
+            (_cell_ref(lc1 + i, lr1), f"{prefix}{_cell_ref(dc1 + i, dr1)}:{_cell_ref(dc1 + i, dr2)}")
             for i in range(count)
         ]
-    raise ValueError(
-        f"location {group.location!r} must be one cell, or a single row or column of cells"
-    )
+    raise ValueError(f"location {group.location!r} must be one cell, or a single row or column of cells")
 
 
 def normalize_sparklines(sparklines: Any) -> list[SparklineGroup]:
@@ -180,10 +183,15 @@ def _sparkline_group_xml(group: SparklineGroup, sheet_name: str) -> str:
         attrs.append('negative="1"')
     if group.markers:
         attrs.append('markers="1"')
-    for flag, name in ((group.high_point, "high"), (group.low_point, "low"),
-                       (group.first_point, "first"), (group.last_point, "last"),
-                       (group.show_hidden, "displayHidden"), (group.show_axis, "displayXAxis"),
-                       (group.right_to_left, "rightToLeft")):
+    for flag, name in (
+        (group.high_point, "high"),
+        (group.low_point, "low"),
+        (group.first_point, "first"),
+        (group.last_point, "last"),
+        (group.show_hidden, "displayHidden"),
+        (group.show_axis, "displayXAxis"),
+        (group.right_to_left, "rightToLeft"),
+    ):
         if flag:
             attrs.append(f'{name}="1"')
     if group.line_width != _DEFAULT_LINE_WIDTH:
@@ -197,15 +205,18 @@ def _sparkline_group_xml(group: SparklineGroup, sheet_name: str) -> str:
             attrs.append(f'{name}AxisType="custom"')
             attrs.append(f'manual{name.capitalize()}="{value:g}"')
     colors = (
-        ("colorSeries", group.color), ("colorNegative", group.negative_color),
-        ("colorAxis", group.axis_color), ("colorMarkers", group.marker_color),
-        ("colorFirst", group.first_color), ("colorLast", group.last_color),
-        ("colorHigh", group.high_color), ("colorLow", group.low_color),
+        ("colorSeries", group.color),
+        ("colorNegative", group.negative_color),
+        ("colorAxis", group.axis_color),
+        ("colorMarkers", group.marker_color),
+        ("colorFirst", group.first_color),
+        ("colorLast", group.last_color),
+        ("colorHigh", group.high_color),
+        ("colorLow", group.low_color),
     )
     color_xml = "".join(f'<x14:{tag} rgb="{_argb(value, tag)}"/>' for tag, value in colors)
     sparkline_xml = "".join(
-        f"<x14:sparkline><xm:f>{saxutils.escape(formula)}</xm:f>"
-        f"<xm:sqref>{cell}</xm:sqref></x14:sparkline>"
+        f"<x14:sparkline><xm:f>{saxutils.escape(formula)}</xm:f><xm:sqref>{cell}</xm:sqref></x14:sparkline>"
         for cell, formula in _expand(group, sheet_name)
     )
     return (

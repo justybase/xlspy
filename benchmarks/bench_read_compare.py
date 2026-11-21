@@ -27,6 +27,7 @@ Usage (from the repository root):
 
 Requires openpyxl, xlsxwriter, python-calamine, fastexcel (with pyarrow), pyxlsb and psutil.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -92,6 +93,7 @@ XLSPY_READERS = ("xlspy_reader", "xlspy_load")
 
 def _rss_mb():
     import psutil
+
     return psutil.Process().memory_info().rss / (1024 * 1024)
 
 
@@ -133,6 +135,7 @@ def make_reader(name):
         def read(path, count_cells=True):
             with ExcelReader(path) as source:
                 return _walk(source.get_rows(SHEET), count_cells)
+
         return read
     if name == "xlspy_load":
         from xlspy import load_workbook
@@ -143,6 +146,7 @@ def make_reader(name):
                 return _walk(workbook[SHEET].iter_rows(values_only=True), count_cells)
             finally:
                 workbook.close()
+
         return read
     if name == "calamine":
         from python_calamine import CalamineWorkbook
@@ -151,6 +155,7 @@ def make_reader(name):
             # to_python() builds the whole sheet as Python lists before the walk.
             workbook = CalamineWorkbook.from_path(path)
             return _walk(workbook.get_sheet_by_name(SHEET).to_python(), count_cells)
+
         return read
     if name == "fastexcel":
         import fastexcel
@@ -163,14 +168,15 @@ def make_reader(name):
                 return batch.num_rows, None, None
             filled = sum(len(column) - column.null_count for column in batch.columns)
             return batch.num_rows, filled, None  # Arrow values are not digested.
+
         return read
     if name == "pyxlsb":
         from pyxlsb import open_workbook
 
         def read(path, count_cells=True):
             with open_workbook(path) as workbook, workbook.get_sheet(SHEET) as worksheet:
-                return _walk(([cell.v for cell in row] for row in worksheet.rows(sparse=False)),
-                             count_cells)
+                return _walk(([cell.v for cell in row] for row in worksheet.rows(sparse=False)), count_cells)
+
         return read
     if name == "openpyxl_readonly":
         import openpyxl
@@ -181,6 +187,7 @@ def make_reader(name):
                 return _walk(workbook[SHEET].iter_rows(values_only=True), count_cells)
             finally:
                 workbook.close()
+
         return read
     if name == "openpyxl_load":
         import openpyxl
@@ -191,6 +198,7 @@ def make_reader(name):
                 return _walk(workbook[SHEET].iter_rows(values_only=True), count_cells)
             finally:
                 workbook.close()
+
         return read
     raise SystemExit(f"unknown reader {name}")
 
@@ -280,6 +288,7 @@ def make_files(directory, rows, cols):
 
     import xlspy
     import xlsxwriter
+
     xlspy_xlsx = os.path.join(directory, FILES["xlspy_xlsx"])
     xlspy_xlsb = os.path.join(directory, FILES["xlspy_xlsb"])
     xlspy_xlsb_fixed = os.path.join(directory, FILES["xlspy_xlsb_fixed"])
@@ -305,13 +314,18 @@ def make_files(directory, rows, cols):
             elif value is not None:
                 sheet.write(index, column, value)
     book.close()
-    return {"xlspy_xlsx": xlspy_xlsx, "xlspy_xlsb": xlspy_xlsb,
-            "xlspy_xlsb_fixed": xlspy_xlsb_fixed, "xlsxwriter_xlsx": xlsxwriter_path,
-            "xlspy_entities": entities_path}
+    return {
+        "xlspy_xlsx": xlspy_xlsx,
+        "xlspy_xlsb": xlspy_xlsb,
+        "xlspy_xlsb_fixed": xlspy_xlsb_fixed,
+        "xlsxwriter_xlsx": xlsxwriter_path,
+        "xlspy_entities": entities_path,
+    }
 
 
 def _versions():
     import xlspy
+
     versions = {"python": platform.python_version(), "xlspy": getattr(xlspy, "__version__", None)}
     for dist in ("openpyxl", "xlsxwriter", "python-calamine", "fastexcel", "pyarrow", "pyxlsb", "psutil"):
         try:
@@ -336,9 +350,10 @@ def parent(args):
             runs = []
             for _ in range(args.repeat):
                 completed = subprocess.run(
-                    [sys.executable, os.path.abspath(__file__), "--child", reader,
-                     "--path", paths[file_key]],
-                    capture_output=True, text=True, env=dict(os.environ),
+                    [sys.executable, os.path.abspath(__file__), "--child", reader, "--path", paths[file_key]],
+                    capture_output=True,
+                    text=True,
+                    env=dict(os.environ),
                 )
                 if completed.returncode:
                     runs.append({"error": completed.stderr.strip().splitlines()[-1:]})
@@ -359,19 +374,27 @@ def parent(args):
             if len(digests) > 1:
                 print(f"WARNING: {label}: value digest differs between runs", file=sys.stderr)
             results[label] = merged
-            fallback = (f"  fallback {merged['fallback_rows']} rows"
-                        if "fallback_rows" in merged else "")
-            print(f"{label:42s} {merged['seconds']:7.2f} s (iqr {merged['iqr']:.2f})  "
-                  f"{merged['rows']} rows  {merged['non_empty_cells']} cells{fallback}", flush=True)
+            fallback = f"  fallback {merged['fallback_rows']} rows" if "fallback_rows" in merged else ""
+            print(
+                f"{label:42s} {merged['seconds']:7.2f} s (iqr {merged['iqr']:.2f})  "
+                f"{merged['rows']} rows  {merged['non_empty_cells']} cells{fallback}",
+                flush=True,
+            )
 
     counts = {(r["rows"], r["non_empty_cells"]) for r in results.values() if "error" not in r}
     if len(counts) > 1:
         print(f"WARNING: readers disagree on (rows, non-empty cells): {sorted(counts)}", file=sys.stderr)
     # The two xlspy readers must return the same values for the same file.
     for file_key in FILES:
-        digests = {results[label]["digest"] for label, key, reader in CASES
-                   if key == file_key and reader in XLSPY_READERS and label in results
-                   and "error" not in results[label] and results[label].get("digest")}
+        digests = {
+            results[label]["digest"]
+            for label, key, reader in CASES
+            if key == file_key
+            and reader in XLSPY_READERS
+            and label in results
+            and "error" not in results[label]
+            and results[label].get("digest")
+        }
         if len(digests) > 1:
             print(f"WARNING: xlspy readers disagree on the values of {file_key}", file=sys.stderr)
 

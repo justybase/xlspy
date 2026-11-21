@@ -7,13 +7,32 @@ from ._writer_common import FilterData as FilterData, WriterFrontEnd as WriterFr
 from .doc_properties import DocumentPropertiesMixin as DocumentPropertiesMixin
 from ._text import check_cell_text as check_cell_text, xstring_escape as xstring_escape
 from .charts import Chart as Chart
-from .data_validation import DataValidation as DataValidation, data_validation_xml as data_validation_xml, normalize_validations as normalize_validations
+from .data_validation import (
+    DataValidation as DataValidation,
+    data_validation_xml as data_validation_xml,
+    normalize_validations as normalize_validations,
+)
 from .excel_dates import datetime_to_serial as datetime_to_serial
 from ._widths import estimate_column_widths as estimate_column_widths, file_width as file_width
-from .formats import DEFAULT_DATE_FORMAT as DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT as DEFAULT_DATETIME_FORMAT, _is_formatted_cell as _is_formatted_cell
+from .formats import (
+    DEFAULT_DATE_FORMAT as DEFAULT_DATE_FORMAT,
+    DEFAULT_DATETIME_FORMAT as DEFAULT_DATETIME_FORMAT,
+    _is_formatted_cell as _is_formatted_cell,
+)
 from .formulas import Formula as Formula
-from .comments import Comment as Comment, normalize_comments as normalize_comments, comments_xml as comments_xml, vml_xml as vml_xml, COMMENTS_TYPE as COMMENTS_TYPE
-from ._metadata import DefinedName as DefinedName, SheetProtection as SheetProtection, WorkbookProtection as WorkbookProtection, replace_element as replace_element
+from .comments import (
+    Comment as Comment,
+    normalize_comments as normalize_comments,
+    comments_xml as comments_xml,
+    vml_xml as vml_xml,
+    COMMENTS_TYPE as COMMENTS_TYPE,
+)
+from ._metadata import (
+    DefinedName as DefinedName,
+    SheetProtection as SheetProtection,
+    WorkbookProtection as WorkbookProtection,
+    replace_element as replace_element,
+)
 from .ignored_errors import ignored_errors_xml as ignored_errors_xml
 from ._extlst import (
     CT_SLICER as CT_SLICER,
@@ -27,9 +46,18 @@ from ._extlst import (
     ext as ext,
     ext_list as ext_list,
 )
-from ._sheet_options import XLSX_OPTIONS as XLSX_OPTIONS, SheetOptions as SheetOptions, resolve_sheet_options as resolve_sheet_options
+from ._sheet_options import (
+    XLSX_OPTIONS as XLSX_OPTIONS,
+    SheetOptions as SheetOptions,
+    resolve_sheet_options as resolve_sheet_options,
+)
 from .shapes import Shape as Shape, normalize_shapes as normalize_shapes
-from .slicers import Slicer as Slicer, normalize_slicers as normalize_slicers, slicer_cache_xml as slicer_cache_xml, slicer_part_xml as slicer_part_xml
+from .slicers import (
+    Slicer as Slicer,
+    normalize_slicers as normalize_slicers,
+    slicer_cache_xml as slicer_cache_xml,
+    slicer_part_xml as slicer_part_xml,
+)
 from .sparklines import normalize_sparklines as normalize_sparklines, sparklines_ext as sparklines_ext
 from .pivots import (
     PivotFeeder as PivotFeeder,
@@ -139,7 +167,15 @@ from ._xlsx_writer_sheet_xml import (
 )
 
 
-class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetXmlMixin, WriterFrontEnd, StagedWriter, DocumentPropertiesMixin):
+class XlsxWriter(
+    _XlsxSheetMixin,
+    _XlsxStylesMixin,
+    _XlsxPartsMixin,
+    _XlsxSheetXmlMixin,
+    WriterFrontEnd,
+    StagedWriter,
+    DocumentPropertiesMixin,
+):
     """Write XLSX workbooks with a row-oriented API.
 
     A writer collects sheets, styles, tables, charts and other objects, then
@@ -177,8 +213,15 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
         `XlsbWriter` for the binary XLSB format with the same API, and
         `to_xlsx` for a DataFrame one-liner.
     """
-    def __init__(self, file: WriteTarget, compression_level: int = 3, use_shared_strings: bool = True,
-                 spool_max_bytes: int = DEFAULT_SPOOL_BYTES, **unknown: object) -> None:
+
+    def __init__(
+        self,
+        file: WriteTarget,
+        compression_level: int = 3,
+        use_shared_strings: bool = True,
+        spool_max_bytes: int = DEFAULT_SPOOL_BYTES,
+        **unknown: object,
+    ) -> None:
         reject_unknown_arguments(type(self).__name__, unknown)
         self._file = file
         self._worksheet_data: list[tuple[str, Iterable[list[Any]] | None, bool]] = []
@@ -325,12 +368,9 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
             self._check_unknown_cf_rule(rule)
             if not isinstance(
                 rule,
-                (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule,
-                 IconSetRule, *EXTRA_CF_RULES),
+                (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule, *EXTRA_CF_RULES),
             ):
-                raise TypeError(
-                    f"unsupported conditional formatting rule {type(rule).__name__}"
-                )
+                raise TypeError(f"unsupported conditional formatting rule {type(rule).__name__}")
             rule_dxf = getattr(rule, "dxf", None)
             if rule_dxf is not None and not isinstance(rule_dxf, DifferentialStyle):
                 raise TypeError("dxf must be a DifferentialStyle or None")
@@ -339,7 +379,4 @@ class XlsxWriter(_XlsxSheetMixin, _XlsxStylesMixin, _XlsxPartsMixin, _XlsxSheetX
     def _written_sheet_indexes(self) -> set[int]:
         return self._sheet_written
 
-
     _CHART_AXES_XML = chart_parts._CHART_AXES_XML
-
-

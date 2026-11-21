@@ -19,10 +19,14 @@ def test_named_style_added_and_applied(source, tmp_path):
     out = tmp_path / "out.xlsb"
     workbook = load_workbook(source)
     try:
-        workbook.add_named_style(NamedStyle(
-            "Highlight", font=Font(bold=True, color="FFFF0000"),
-            fill=PatternFill("solid", start_color="FFFFFF00", end_color="FFFFFF00"), number_format="0.00",
-        ))
+        workbook.add_named_style(
+            NamedStyle(
+                "Highlight",
+                font=Font(bold=True, color="FFFF0000"),
+                fill=PatternFill("solid", start_color="FFFFFF00", end_color="FFFFFF00"),
+                number_format="0.00",
+            )
+        )
         workbook.active["A1"].style = "Highlight"
         workbook.save(out)
     finally:

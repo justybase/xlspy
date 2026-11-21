@@ -11,18 +11,53 @@ from dataclasses import dataclass, field
 
 from ._text import check_xml_text
 from .refs import parse_cell_range
-from .chart_edit import LEGEND_POSITIONS as LEGEND_POSITIONS, get_axis_title, get_legend_position, get_series_titles, set_axis_title, set_chart_title, set_legend_position, set_series_color, set_series_title
+from .chart_edit import (
+    LEGEND_POSITIONS as LEGEND_POSITIONS,
+    get_axis_title,
+    get_legend_position,
+    get_series_titles,
+    set_axis_title,
+    set_chart_title,
+    set_legend_position,
+    set_series_color,
+    set_series_title,
+)
 
-CHART_TYPES = frozenset({
-    "area", "area3d", "bar", "bar3d", "barh", "bubble", "doughnut",
-    "line", "line3d", "pie", "pie3d", "projected_pie", "radar", "scatter",
-    "stock", "surface", "surface3d",
-})
+CHART_TYPES = frozenset(
+    {
+        "area",
+        "area3d",
+        "bar",
+        "bar3d",
+        "barh",
+        "bubble",
+        "doughnut",
+        "line",
+        "line3d",
+        "pie",
+        "pie3d",
+        "projected_pie",
+        "radar",
+        "scatter",
+        "stock",
+        "surface",
+        "surface3d",
+    }
+)
 # The types the DrawingML writer can serialise. The rest of CHART_TYPES is
 # refused when a chart is built, rather than being saved as some other chart.
-SUPPORTED_CHART_TYPES = frozenset({
-    "area", "bar", "barh", "doughnut", "line", "pie", "radar", "scatter",
-})
+SUPPORTED_CHART_TYPES = frozenset(
+    {
+        "area",
+        "bar",
+        "barh",
+        "doughnut",
+        "line",
+        "pie",
+        "radar",
+        "scatter",
+    }
+)
 # Chart.grouping values and the chart types that accept them.
 GROUPINGS = {"stacked": "stacked", "percent_stacked": "percentStacked"}
 _GROUPED_TYPES = frozenset({"area", "bar", "barh", "line"})
@@ -35,11 +70,18 @@ _NO_SERIES_EXTRAS_TYPES = _ROUND_TYPES | frozenset({"radar"})
 # Types a combined chart can mix, and that can use a secondary value axis.
 COMBINABLE_TYPES = frozenset({"area", "bar", "line"})
 TRENDLINE_TYPES = {
-    "linear": "linear", "exponential": "exp", "logarithmic": "log",
-    "polynomial": "poly", "power": "power", "moving_average": "movingAvg",
+    "linear": "linear",
+    "exponential": "exp",
+    "logarithmic": "log",
+    "polynomial": "poly",
+    "power": "power",
+    "moving_average": "movingAvg",
 }
 ERROR_BAR_KINDS = {
-    "fixed": "fixedVal", "percentage": "percentage", "std_dev": "stdDev", "std_err": "stdErr",
+    "fixed": "fixedVal",
+    "percentage": "percentage",
+    "std_dev": "stdDev",
+    "std_err": "stdErr",
 }
 ERROR_BAR_DIRECTIONS = frozenset({"both", "plus", "minus"})
 
@@ -47,10 +89,8 @@ _RGB_RE = re.compile(r"[0-9A-Fa-f]{6}")
 # Characters Excel forbids in a worksheet name. A chart range's sheet part is
 # rejected when it contains one, so a mistyped reference cannot be written as
 # a sheet name Excel will not resolve.
-_INVALID_SHEET_NAME_CHARS = frozenset('[]:*?/\\')
-MARKER_SYMBOLS = frozenset(
-    {"circle", "square", "diamond", "triangle", "x", "star", "dot", "dash", "plus", "none"}
-)
+_INVALID_SHEET_NAME_CHARS = frozenset("[]:*?/\\")
+MARKER_SYMBOLS = frozenset({"circle", "square", "diamond", "triangle", "x", "star", "dot", "dash", "plus", "none"})
 # User-facing label positions and their DrawingML spelling.
 LABEL_POSITIONS = {
     "center": "ctr",
@@ -92,8 +132,12 @@ def _validate_chart_range(reference: str, kind: str) -> tuple[int, int, int, int
             sheet = sheet[1:-1].replace("''", "'")
         if not sheet:
             raise ValueError(f"{kind} must name a sheet before '!' in {reference!r}")
-        if (len(sheet) > 31 or _INVALID_SHEET_NAME_CHARS.intersection(sheet)
-                or sheet.startswith("'") or sheet.endswith("'")):
+        if (
+            len(sheet) > 31
+            or _INVALID_SHEET_NAME_CHARS.intersection(sheet)
+            or sheet.startswith("'")
+            or sheet.endswith("'")
+        ):
             raise ValueError(f"{kind} names an invalid sheet {sheet!r}")
     else:
         cells = reference
@@ -227,10 +271,7 @@ class ChartMarker:
 
     def __post_init__(self):
         if self.symbol not in MARKER_SYMBOLS:
-            raise ValueError(
-                f"invalid marker symbol {self.symbol!r}; "
-                f"expected one of {sorted(MARKER_SYMBOLS)}"
-            )
+            raise ValueError(f"invalid marker symbol {self.symbol!r}; expected one of {sorted(MARKER_SYMBOLS)}")
         if isinstance(self.size, bool) or not isinstance(self.size, int):
             raise TypeError("marker size must be an int")
         if not 2 <= self.size <= 72:
@@ -284,10 +325,7 @@ class ChartLegend:
 
     def __post_init__(self):
         if self.position not in LEGEND_POSITIONS:
-            raise ValueError(
-                f"invalid legend position {self.position!r}; "
-                f"expected one of {sorted(LEGEND_POSITIONS)}"
-            )
+            raise ValueError(f"invalid legend position {self.position!r}; expected one of {sorted(LEGEND_POSITIONS)}")
         if not isinstance(self.overlay, bool):
             raise TypeError("legend overlay must be a bool")
 
@@ -302,14 +340,11 @@ class DataLabels:
     show_series_name: bool = False
 
     def __post_init__(self):
-        if self.number_format is not None and (
-            not isinstance(self.number_format, str) or not self.number_format
-        ):
+        if self.number_format is not None and (not isinstance(self.number_format, str) or not self.number_format):
             raise TypeError("data label number_format must be a non-empty string or None")
         if self.position is not None and self.position not in LABEL_POSITIONS:
             raise ValueError(
-                f"invalid data label position {self.position!r}; "
-                f"expected one of {sorted(LABEL_POSITIONS)}"
+                f"invalid data label position {self.position!r}; expected one of {sorted(LABEL_POSITIONS)}"
             )
         if not isinstance(self.show_category, bool) or not isinstance(self.show_series_name, bool):
             raise TypeError("data label show_category and show_series_name must be bools")
@@ -336,9 +371,7 @@ class Trendline:
 
     def __post_init__(self):
         if self.type not in TRENDLINE_TYPES:
-            raise ValueError(
-                f"invalid trendline type {self.type!r}; expected one of {sorted(TRENDLINE_TYPES)}"
-            )
+            raise ValueError(f"invalid trendline type {self.type!r}; expected one of {sorted(TRENDLINE_TYPES)}")
         if self.order is not None:
             if self.type != "polynomial":
                 raise ValueError("trendline order is only valid for a polynomial trendline")
@@ -383,9 +416,7 @@ class ErrorBars:
 
     def __post_init__(self):
         if self.kind not in ERROR_BAR_KINDS:
-            raise ValueError(
-                f"invalid error bar kind {self.kind!r}; expected one of {sorted(ERROR_BAR_KINDS)}"
-            )
+            raise ValueError(f"invalid error bar kind {self.kind!r}; expected one of {sorted(ERROR_BAR_KINDS)}")
         if self.kind == "std_err":
             if self.value is not None:
                 raise ValueError("standard error bars take no value")
@@ -442,13 +473,9 @@ class ChartSeries:
         if self.title_cell is not None:
             if not isinstance(self.title_cell, str):
                 raise TypeError("series title_cell must be an A1 cell or None")
-            first_col, first_row, last_col, last_row = _validate_chart_range(
-                self.title_cell, "series title_cell"
-            )
+            first_col, first_row, last_col, last_row = _validate_chart_range(self.title_cell, "series title_cell")
             if (first_col, first_row) != (last_col, last_row):
-                raise ValueError(
-                    f"series title_cell must be a single cell, got {self.title_cell!r}"
-                )
+                raise ValueError(f"series title_cell must be a single cell, got {self.title_cell!r}")
         if self.title is not None and self.title_cell is not None:
             raise ValueError("series title and title_cell are mutually exclusive")
         if self.categories is not None:
@@ -465,9 +492,7 @@ class ChartSeries:
         if self.line is not None and not isinstance(self.line, bool):
             raise TypeError("series line must be a bool or None")
         if self.chart_type is not None and self.chart_type not in COMBINABLE_TYPES:
-            raise ValueError(
-                f"a series can be drawn as {sorted(COMBINABLE_TYPES)}, not {self.chart_type!r}"
-            )
+            raise ValueError(f"a series can be drawn as {sorted(COMBINABLE_TYPES)}, not {self.chart_type!r}")
         if not isinstance(self.secondary_axis, bool):
             raise TypeError("series secondary_axis must be a bool")
         if self.trendline is not None and not isinstance(self.trendline, Trendline):
@@ -562,14 +587,10 @@ class Chart:
 
     def __post_init__(self):
         if self.chart_type not in CHART_TYPES:
-            raise ValueError(
-                f"invalid chart type {self.chart_type!r}; "
-                f"expected one of {sorted(CHART_TYPES)}"
-            )
+            raise ValueError(f"invalid chart type {self.chart_type!r}; expected one of {sorted(CHART_TYPES)}")
         if self.chart_type not in SUPPORTED_CHART_TYPES:
             raise ValueError(
-                f"chart type {self.chart_type!r} is not supported yet; "
-                f"use one of {sorted(SUPPORTED_CHART_TYPES)}"
+                f"chart type {self.chart_type!r} is not supported yet; use one of {sorted(SUPPORTED_CHART_TYPES)}"
             )
         if not isinstance(self.series, (list, tuple)) or not self.series:
             raise ValueError("a chart needs at least one series")
@@ -585,9 +606,7 @@ class Chart:
             check_xml_text(self.title, "chart title")
         if not isinstance(self.anchor, str):
             raise TypeError("chart anchor must be an A1 cell such as 'E2'")
-        first_col, first_row, last_col, last_row = _validate_chart_range(
-            self.anchor, "chart anchor"
-        )
+        first_col, first_row, last_col, last_row = _validate_chart_range(self.anchor, "chart anchor")
         if (first_col, first_row) != (last_col, last_row):
             raise ValueError(f"chart anchor must be a single cell, got {self.anchor!r}")
         for name in ("width", "height"):
@@ -604,50 +623,64 @@ class Chart:
         self._check_axes()
         self._check_legend()
         self._check_labels()
-        object.__setattr__(self, "title_size", _check_number(
-            self.title_size, "chart title_size", minimum=1, maximum=400,
-        ))
+        object.__setattr__(
+            self,
+            "title_size",
+            _check_number(
+                self.title_size,
+                "chart title_size",
+                minimum=1,
+                maximum=400,
+            ),
+        )
         if not isinstance(self.show_data_labels, bool):
             raise TypeError("show_data_labels must be a bool")
         if self.grouping is not None:
             if self.grouping not in GROUPINGS:
                 raise ValueError(
-                    f"invalid chart grouping {self.grouping!r}; "
-                    f"expected None, {', '.join(repr(g) for g in GROUPINGS)}"
+                    f"invalid chart grouping {self.grouping!r}; expected None, {', '.join(repr(g) for g in GROUPINGS)}"
                 )
             if self.chart_type not in _GROUPED_TYPES:
-                raise ValueError(
-                    f"grouping is only valid for {sorted(_GROUPED_TYPES)} charts, "
-                    f"not {self.chart_type!r}"
-                )
+                raise ValueError(f"grouping is only valid for {sorted(_GROUPED_TYPES)} charts, not {self.chart_type!r}")
         self._check_formatting()
 
     def _check_formatting(self) -> None:
         if self.gap_width is not None:
-            if isinstance(self.gap_width, bool) or not isinstance(self.gap_width, int) \
-                    or not 0 <= self.gap_width <= 500:
+            if (
+                isinstance(self.gap_width, bool)
+                or not isinstance(self.gap_width, int)
+                or not 0 <= self.gap_width <= 500
+            ):
                 raise ValueError("chart gap_width must be an int from 0 to 500")
             if not {"bar", "barh"} & set(self.series_types):
                 raise ValueError("gap_width is only valid for bar and horizontal bar charts")
         if self.hole_size is not None:
-            if isinstance(self.hole_size, bool) or not isinstance(self.hole_size, int) \
-                    or not 10 <= self.hole_size <= 90:
+            if (
+                isinstance(self.hole_size, bool)
+                or not isinstance(self.hole_size, int)
+                or not 10 <= self.hole_size <= 90
+            ):
                 raise ValueError("chart hole_size must be an int from 10 to 90")
             if self.chart_type != "doughnut":
                 raise ValueError("hole_size is only valid for doughnut charts")
         for name in ("fill", "border", "plot_fill", "font_color"):
             object.__setattr__(self, name, _normalize_rgb(getattr(self, name), f"chart {name}"))
-        object.__setattr__(self, "font_size", _check_number(
-            self.font_size, "chart font_size", minimum=1, maximum=400,
-        ))
+        object.__setattr__(
+            self,
+            "font_size",
+            _check_number(
+                self.font_size,
+                "chart font_size",
+                minimum=1,
+                maximum=400,
+            ),
+        )
 
     def _check_series_for_type(self, series) -> None:
         for item in series:
             kind = item.chart_type or self.chart_type
             if item.chart_type is not None and self.chart_type not in COMBINABLE_TYPES:
-                raise ValueError(
-                    f"series chart_type needs a bar, line or area chart, not {self.chart_type!r}"
-                )
+                raise ValueError(f"series chart_type needs a bar, line or area chart, not {self.chart_type!r}")
             if item.secondary_axis and kind not in COMBINABLE_TYPES:
                 raise ValueError(f"a secondary axis is only valid for bar, line and area series, not {kind!r}")
             if item.trendline is not None and kind in _NO_SERIES_EXTRAS_TYPES:
@@ -695,8 +728,7 @@ class Chart:
             for kind in self.series_types:
                 if self.data_labels.position not in _LABEL_POSITIONS_BY_TYPE[kind]:
                     raise ValueError(
-                        f"data label position {self.data_labels.position!r} is not valid "
-                        f"for {kind!r} charts"
+                        f"data label position {self.data_labels.position!r} is not valid for {kind!r} charts"
                     )
 
     @property
@@ -720,10 +752,18 @@ class Chart:
             return True
         if self.grouping is not None:
             return True
-        if any(value is not None for value in (
-            self.gap_width, self.hole_size, self.fill, self.border,
-            self.plot_fill, self.font_size, self.font_color,
-        )):
+        if any(
+            value is not None
+            for value in (
+                self.gap_width,
+                self.hole_size,
+                self.fill,
+                self.border,
+                self.plot_fill,
+                self.font_size,
+                self.font_color,
+            )
+        ):
             return True
         if self.x_axis is not None or self.y_axis is not None:
             return True
@@ -732,9 +772,13 @@ class Chart:
         if self.labels_enabled or self.title_size is not None or self.y2_axis is not None:
             return True
         return any(
-            item.x_values is not None or item.color is not None
-            or item.marker is not None or item.line is not None
-            or item.chart_type is not None or item.secondary_axis
-            or item.trendline is not None or item.error_bars is not None
+            item.x_values is not None
+            or item.color is not None
+            or item.marker is not None
+            or item.line is not None
+            or item.chart_type is not None
+            or item.secondary_axis
+            or item.trendline is not None
+            or item.error_bars is not None
             for item in self.series
         )

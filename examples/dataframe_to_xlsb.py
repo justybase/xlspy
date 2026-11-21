@@ -7,6 +7,7 @@ XLSB writer streams rows, which keeps memory usage low for big tables.
 Run:
     python examples/dataframe_to_xlsb.py [output_dir]
 """
+
 import os
 import sys
 
@@ -39,8 +40,6 @@ def main(output_dir: str) -> None:
 
 
 if __name__ == "__main__":
-    directory = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "output"
-    )
+    directory = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
     os.makedirs(directory, exist_ok=True)
     main(directory)

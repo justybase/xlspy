@@ -116,14 +116,41 @@ class _XlsbWriterHost:
         def _check_unknown_cf_rule(self, rule: Any) -> None: ...
         def _claim_cf_priority(self, rule: Any) -> int: ...
         def _check_sheet_options(
-            self, *, header_style: Any, show_grid_lines: Any, header_rows: Any, tab_color: Any, zoom: Any,
-            show_row_col_headers: Any, show_zero_values: Any, right_to_left: Any, styles: Any, merges: Any,
-            comments: Any, sheet_protection: Any, auto_filter_ref: Any, conditional_formats: Any, tables: Any,
-            sparklines: Any, slicers: Any, charts: Any, data_validations: Any, images: Any, shapes: Any,
-            print_settings: Any, column_widths: Any, hidden_columns: Any, row_heights: Any, hidden_rows: Any,
-            row_groups: Any, column_groups: Any, freeze_panes: Any,
-            autofit_rows: Any = 1000, autofit_padding: Any = 0.0,
-            check_style: Any | None = None, sort_state: Any | None = None,
+            self,
+            *,
+            header_style: Any,
+            show_grid_lines: Any,
+            header_rows: Any,
+            tab_color: Any,
+            zoom: Any,
+            show_row_col_headers: Any,
+            show_zero_values: Any,
+            right_to_left: Any,
+            styles: Any,
+            merges: Any,
+            comments: Any,
+            sheet_protection: Any,
+            auto_filter_ref: Any,
+            conditional_formats: Any,
+            tables: Any,
+            sparklines: Any,
+            slicers: Any,
+            charts: Any,
+            data_validations: Any,
+            images: Any,
+            shapes: Any,
+            print_settings: Any,
+            column_widths: Any,
+            hidden_columns: Any,
+            row_heights: Any,
+            hidden_rows: Any,
+            row_groups: Any,
+            column_groups: Any,
+            freeze_panes: Any,
+            autofit_rows: Any = 1000,
+            autofit_padding: Any = 0.0,
+            check_style: Any | None = None,
+            sort_state: Any | None = None,
         ) -> SheetSpec: ...
         def _claim_sheet_options(self, spec: SheetSpec) -> None: ...
         def _create_worksheet_rels(self, sheet_id: Any) -> str: ...
@@ -158,20 +185,101 @@ class _XlsbWriterHost:
         @staticmethod
         def _rich_str_payload(text: str, runs: tuple) -> bytes: ...
         @staticmethod
-        def _row_header_record(row_idx: int, last_col: int, height_twips: int | None=None, hidden: bool=False, outline_level: int=0, collapsed: bool=False) -> bytes: ...
+        def _row_header_record(
+            row_idx: int,
+            last_col: int,
+            height_twips: int | None = None,
+            hidden: bool = False,
+            outline_level: int = 0,
+            collapsed: bool = False,
+        ) -> bytes: ...
         @staticmethod
         def _row_height_twips(points: float) -> int: ...
         def _selection_record(self, freeze_panes: str) -> bytes: ...
         def _sheet_index_by_name(self, name: str) -> int | None: ...
         def _split_freeze_cell(self, ref: str) -> tuple[int, int]: ...
-        def _table_bin(self, table: Any, table_id: int, names: list[str], totals_cells: Any = None, formula_context: Any = None, sheet_name: Any = None) -> bytes: ...
-        def _write_cols_width(self, buffer: BytesIO, start_col: int, end_col: int, col_widths_array: list[float], widths: dict | None=None, hidden_cols: set | frozenset=frozenset(), col_outline: Any=None) -> Any: ...
+        def _table_bin(
+            self,
+            table: Any,
+            table_id: int,
+            names: list[str],
+            totals_cells: Any = None,
+            formula_context: Any = None,
+            sheet_name: Any = None,
+        ) -> bytes: ...
+        def _write_cols_width(
+            self,
+            buffer: BytesIO,
+            start_col: int,
+            end_col: int,
+            col_widths_array: list[float],
+            widths: dict | None = None,
+            hidden_cols: set | frozenset = frozenset(),
+            col_outline: Any = None,
+        ) -> Any: ...
         def _write_doc_props(self) -> None: ...
         def _write_empty_sheet(self, sheet_index: int) -> None: ...
         def _write_filter_defined_names(self, sw: bytearray) -> None: ...
         def _rich_runs(self, rich: CellRichText) -> tuple[str, tuple[Any, ...]]: ...
-        def _write_rich_str(self, buffer: Any, rich: CellRichText, shared_strings_dict: Any, shared_strings_append: Any, row_idx: Any, col_idx: Any, style_override: Any=None) -> Any: ...
+        def _write_rich_str(
+            self,
+            buffer: Any,
+            rich: CellRichText,
+            shared_strings_dict: Any,
+            shared_strings_append: Any,
+            row_idx: Any,
+            col_idx: Any,
+            style_override: Any = None,
+        ) -> Any: ...
         def _write_slicer_parts(self, sheet_id: Any, rel_id: Any, slicers: Any, table_columns: Any) -> None: ...
-        def _write_str(self, buffer: Any, cell: Any, shared_strings_dict: Any, shared_strings_append: Any, row_idx: Any, col_idx: Any, style_override: Any=None) -> Any: ...
-        def _write_worksheet_bin(self, part_name: str, worksheet_data: Iterable[list[Any]], worksheet_index: int, *, style_ranges: Any=(), header_style: Style | None=None, merge_refs: Any=(), widths: Any=None, autofit: Any=(1000, 0.0), hidden_cols: Any=frozenset(), heights: Any=None, hidden_row_set: Any=frozenset(), freeze_panes: str | None=None, auto_filter: bool | None=None, auto_filter_ref: str | None=None, sort_state: Any | None=None, drawing_rel: str | None=None, table_rel_ids: list[str] | None=None, cf_rules: list | None=None, row_outline: Any=None, col_outline: Any=None, sheet_protection: Any=None, comment_vml_rid: Any=None, show_grid_lines: Any=True, view: Any=(True, True, False), filter_cells: Any=(), header_rows: Any=1, tab_key: Any=None, zoom: Any=None, link_rids: dict | None=None, link_rid_start: int=2, print_spec: PrintSettings | None=None, validations: Any=(), sparklines: Any=(), slicer_rel: str | None=None, table_bounds: frozenset=frozenset(), ignored_errors: Any=None) -> Any: ...
+        def _write_str(
+            self,
+            buffer: Any,
+            cell: Any,
+            shared_strings_dict: Any,
+            shared_strings_append: Any,
+            row_idx: Any,
+            col_idx: Any,
+            style_override: Any = None,
+        ) -> Any: ...
+        def _write_worksheet_bin(
+            self,
+            part_name: str,
+            worksheet_data: Iterable[list[Any]],
+            worksheet_index: int,
+            *,
+            style_ranges: Any = (),
+            header_style: Style | None = None,
+            merge_refs: Any = (),
+            widths: Any = None,
+            autofit: Any = (1000, 0.0),
+            hidden_cols: Any = frozenset(),
+            heights: Any = None,
+            hidden_row_set: Any = frozenset(),
+            freeze_panes: str | None = None,
+            auto_filter: bool | None = None,
+            auto_filter_ref: str | None = None,
+            sort_state: Any | None = None,
+            drawing_rel: str | None = None,
+            table_rel_ids: list[str] | None = None,
+            cf_rules: list | None = None,
+            row_outline: Any = None,
+            col_outline: Any = None,
+            sheet_protection: Any = None,
+            comment_vml_rid: Any = None,
+            show_grid_lines: Any = True,
+            view: Any = (True, True, False),
+            filter_cells: Any = (),
+            header_rows: Any = 1,
+            tab_key: Any = None,
+            zoom: Any = None,
+            link_rids: dict | None = None,
+            link_rid_start: int = 2,
+            print_spec: PrintSettings | None = None,
+            validations: Any = (),
+            sparklines: Any = (),
+            slicer_rel: str | None = None,
+            table_bounds: frozenset = frozenset(),
+            ignored_errors: Any = None,
+        ) -> Any: ...
         def add_sheet(self, sheet_name: str, hidden: bool = False) -> None: ...

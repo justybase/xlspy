@@ -26,21 +26,23 @@ if TYPE_CHECKING:
 _XLSB_CHARTSHEET_TYPE = "application/vnd.ms-excel.chartsheet"
 # A chartsheet as Excel writes it: properties, one view, page setup, margins,
 # the drawing (relationship rId1) and an archive-id block.
-_SHEET = b"".join((
-    build_record(0x81),
-    build_record(0x28B, bytes.fromhex("0100004000000000000000000000")),
-    build_record(0x8B),
-    build_record(0x8D, bytes.fromhex("03000a00000000000000")),
-    build_record(0x8E),
-    build_record(0x8C),
-    build_record(0x29D, bytes(10)),
-    build_record(0x1DC, struct.pack("<6d", 0.7, 0.7, 0.75, 0.75, 0.3, 0.3)),
-    build_record(0x226, wide_string("rId1")),
-    build_record(0x25, bytes.fromhex("010000100080")),
-    build_record(0xC00, bytes.fromhex("67493498a1e88c4b87769e383fd428fd")),
-    build_record(0x26),
-    build_record(0x82),
-))
+_SHEET = b"".join(
+    (
+        build_record(0x81),
+        build_record(0x28B, bytes.fromhex("0100004000000000000000000000")),
+        build_record(0x8B),
+        build_record(0x8D, bytes.fromhex("03000a00000000000000")),
+        build_record(0x8E),
+        build_record(0x8C),
+        build_record(0x29D, bytes(10)),
+        build_record(0x1DC, struct.pack("<6d", 0.7, 0.7, 0.75, 0.75, 0.3, 0.3)),
+        build_record(0x226, wide_string("rId1")),
+        build_record(0x25, bytes.fromhex("010000100080")),
+        build_record(0xC00, bytes.fromhex("67493498a1e88c4b87769e383fd428fd")),
+        build_record(0x26),
+        build_record(0x82),
+    )
+)
 
 
 def add_chartsheets_xlsb(updater: XlsbUpdater, workbook: Workbook) -> None:

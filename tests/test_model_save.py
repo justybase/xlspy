@@ -1,4 +1,5 @@
 """Saving the workbook model: what edits and new sheets keep."""
+
 from __future__ import annotations
 
 import re
@@ -32,10 +33,12 @@ def test_custom_autofilter_survives_column_width_edit(tmp_path):
     for value in range(1, 6):
         sheet.append([value])
     sheet.auto_filter.ref = "A1:A6"
-    sheet.auto_filter.filterColumn.append(FilterColumn(
-        colId=0,
-        customFilters=CustomFilters(customFilter=[CustomFilter(operator="greaterThan", val="2")]),
-    ))
+    sheet.auto_filter.filterColumn.append(
+        FilterColumn(
+            colId=0,
+            customFilters=CustomFilters(customFilter=[CustomFilter(operator="greaterThan", val="2")]),
+        )
+    )
     book.save(source)
 
     out = tmp_path / "out.xlsx"
@@ -71,7 +74,7 @@ def test_style_only_column_survives_column_width_edit(tmp_path):
         workbook.close()
 
     xml = part_text(out, "xl/worksheets/sheet1.xml")
-    cols = xml[xml.index("<cols>"):xml.index("</cols>")]
+    cols = xml[xml.index("<cols>") : xml.index("</cols>")]
     assert 'min="2" max="2"' in cols
     assert ' style="' in cols
 
@@ -128,9 +131,7 @@ def test_named_style_on_new_workbook_is_written_and_applied(tmp_path, extension)
     path = tmp_path / f"new.{extension}"
     workbook = Workbook()
     workbook.active["A1"] = 1.25
-    workbook.add_named_style(
-        NamedStyle(name="Mine", font=Font(bold=True), number_format="0.00")
-    )
+    workbook.add_named_style(NamedStyle(name="Mine", font=Font(bold=True), number_format="0.00"))
     workbook.add_named_style(NamedStyle(name="Unused", font=Font(italic=True)))
     workbook.active["A1"].style = "Mine"
     workbook.save(path)

@@ -113,10 +113,7 @@ class Sheet:
 def _write_source(path, ext, seed):
     """A workbook of two sheets, and the record of what it holds."""
     rng = random.Random(f"{seed}:source")
-    rows = [
-        [rng.choice([*VALUES, None]) for _ in range(rng.randint(0, 6))]
-        for _ in range(rng.randint(0, 10))
-    ]
+    rows = [[rng.choice([*VALUES, None]) for _ in range(rng.randint(0, 6))] for _ in range(rng.randint(0, 10))]
     options: dict = {"auto_filter": False}
     data = Sheet()
     if rng.random() < 0.4:
@@ -177,7 +174,9 @@ def _updater_edit(rng: random.Random):
     if kind == "formula":
         return "update_cells", (sheet, {_ref(rng): Formula(rng.choice(FORMULAS))})
     if kind == "note":
-        notes = {_ref(rng, True): Comment(f"n{rng.randint(0, 99)}", rng.choice(AUTHORS)) for _ in range(rng.randint(1, 3))}
+        notes = {
+            _ref(rng, True): Comment(f"n{rng.randint(0, 99)}", rng.choice(AUTHORS)) for _ in range(rng.randint(1, 3))
+        }
         return "set_comments", (sheet, notes)
     if kind == "note_off":
         return "set_comments", (sheet, {_ref(rng): None for _ in range(rng.randint(1, 3))})
@@ -188,12 +187,14 @@ def _updater_edit(rng: random.Random):
         return "set_hyperlinks", (sheet, {_ref(rng): None for _ in range(rng.randint(1, 2))})
     if kind == "name":
         return "set_defined_name", (
-            rng.choice([
-                DefinedName("Rate", "Data!$A$1"),
-                DefinedName("Rate", "Data!$B$2"),
-                DefinedName("Scoped", "Other!$A$1", "Other"),
-                DefinedName("Hid", "Data!$C$3", hidden=True),
-            ]),
+            rng.choice(
+                [
+                    DefinedName("Rate", "Data!$A$1"),
+                    DefinedName("Rate", "Data!$B$2"),
+                    DefinedName("Scoped", "Other!$A$1", "Other"),
+                    DefinedName("Hid", "Data!$C$3", hidden=True),
+                ]
+            ),
         )
     if kind == "name_off":
         return "remove_defined_name", (rng.choice(["Rate", "Hid"]),)
@@ -203,17 +204,19 @@ def _updater_edit(rng: random.Random):
     if kind == "reopen":
         return "reopen", ()
     # Each of these has to be refused whole, the part that is fine with it.
-    return rng.choice([
-        ("update_cells", ("Missing", {"A1": 1})),
-        ("update_cells", (sheet, {"A1": 999, "not a ref": 1})),
-        ("update_cells", (sheet, {"A1": 999, "A1:B2": 1})),
-        ("update_cells", (sheet, {"A1": 999, "B1": "x" * 40000})),
-        ("set_comments", (sheet, {"A1": Comment("kept?", "Jan"), "B1": "text"})),
-        ("set_comments", ("Missing", {"A1": None})),
-        ("set_hyperlinks", (sheet, {"A1": Hyperlink("https://kept.example/"), "B1": "https://x/"})),
-        ("set_hyperlinks", ("Missing", {"A1": None})),
-        ("replace_sheet_data", (sheet, [[999, "x" * 40000]])),
-    ])
+    return rng.choice(
+        [
+            ("update_cells", ("Missing", {"A1": 1})),
+            ("update_cells", (sheet, {"A1": 999, "not a ref": 1})),
+            ("update_cells", (sheet, {"A1": 999, "A1:B2": 1})),
+            ("update_cells", (sheet, {"A1": 999, "B1": "x" * 40000})),
+            ("set_comments", (sheet, {"A1": Comment("kept?", "Jan"), "B1": "text"})),
+            ("set_comments", ("Missing", {"A1": None})),
+            ("set_hyperlinks", (sheet, {"A1": Hyperlink("https://kept.example/"), "B1": "https://x/"})),
+            ("set_hyperlinks", ("Missing", {"A1": None})),
+            ("replace_sheet_data", (sheet, [[999, "x" * 40000]])),
+        ]
+    )
 
 
 def _record_edit(sheets, names, method, args):
@@ -282,8 +285,11 @@ def _run_updater(tmp, ext, seed, steps=8):
                 trace.append((step, method, type(error).__name__))
                 if before is not None:
                     updater.save(str(tmp / f"after.{ext}"))
-                    changed = sorted(n for n in before.keys() | _parts(tmp / f"after.{ext}").keys()
-                                     if before.get(n) != _parts(tmp / f"after.{ext}").get(n))
+                    changed = sorted(
+                        n
+                        for n in before.keys() | _parts(tmp / f"after.{ext}").keys()
+                        if before.get(n) != _parts(tmp / f"after.{ext}").get(n)
+                    )
                     if changed:
                         problems.append(("refused edit changed the file", f"{method} {changed}"))
             except Exception as error:  # noqa: BLE001 - what the test is looking for
@@ -307,7 +313,8 @@ def _model_edit(rng: random.Random, wb, sheets, ext):
     ws = wb[title]
     sheet = sheets[title]
     kind = rng.choices(
-        ["value", "style", "note", "note_off", "link", "link_off", "merge", "unmerge", "append"], [8, 3, 3, 1, 3, 1, 2, 1, 2]
+        ["value", "style", "note", "note_off", "link", "link_off", "merge", "unmerge", "append"],
+        [8, 3, 3, 1, 3, 1, 2, 1, 2],
     )[0]
     ref = _ref(rng)
     hidden = {r for merge in sheet.merges for r in _inside(merge) if r != merge.split(":")[0]}
@@ -413,7 +420,9 @@ def _read_names(path):
     wb = load_workbook(str(path))
     try:
         # XLSB writes the sheet of a name in quotes whether it needs them or not.
-        return {(name.name, name.scope): (name.formula.replace("'", ""), bool(name.hidden)) for name in wb.defined_names}
+        return {
+            (name.name, name.scope): (name.formula.replace("'", ""), bool(name.hidden)) for name in wb.defined_names
+        }
     finally:
         wb.close()
 
@@ -442,7 +451,9 @@ def _check_file(path, sheets, ext):
         want = sheet.state()
         for part in ("cells", "notes", "links"):
             if state[title][part] != want[part]:
-                problems.append((f"{part} differ from the record {ext}", f"{title}: {_diff(want[part], state[title][part])}"))
+                problems.append(
+                    (f"{part} differ from the record {ext}", f"{title}: {_diff(want[part], state[title][part])}")
+                )
         if state[title]["merges"] != want["merges"]:
             problems.append((f"merges differ from the record {ext}", (title, want["merges"], state[title]["merges"])))
         formulas = {ref for ref, value in want["cells"].items() if isinstance(value, str) and value.startswith("=")}
@@ -460,7 +471,9 @@ def _check_file(path, sheets, ext):
                     expected = plain
                     got = {ref: value for ref, value in got.items() if ref not in formulas}
                 if got != expected:
-                    problems.append((f"reader {label} differs from the record {ext}", f"{title}: {_diff(expected, got)}"))
+                    problems.append(
+                        (f"reader {label} differs from the record {ext}", f"{title}: {_diff(expected, got)}")
+                    )
     return problems
 
 
@@ -573,7 +586,9 @@ def _lint_xlsx_sheets(data, bad):
                 column = c
                 if cell.get("t") == "s" and (table is None or int(cell.find(f"{{{MAIN}}}v").text) >= len(table)):
                     bad.append(f"{name}: shared string past the table")
-        ranks = [SHEET_ORDER.index(child.tag.split("}")[-1]) for child in root if child.tag.split("}")[-1] in SHEET_ORDER]
+        ranks = [
+            SHEET_ORDER.index(child.tag.split("}")[-1]) for child in root if child.tag.split("}")[-1] in SHEET_ORDER
+        ]
         if ranks != sorted(ranks):
             bad.append(f"{name}: elements out of order")
         rels = _rels_of(data, name)
@@ -608,12 +623,16 @@ def _lint_xlsb_sheets(data, bad):
             elif kind == 0x92:
                 in_data = False
             elif in_data and kind == 0:
-                number = int.from_bytes(body[record.data_start:record.data_start + 4], "little")
+                number = int.from_bytes(body[record.data_start : record.data_start + 4], "little")
                 if number <= last_row:
                     bad.append(f"{name}: rows out of order at {number}")
                 last_row, column = number, -1
             elif in_data and 1 <= kind <= 0x12:
-                c = column + 1 if kind >= 0xC else int.from_bytes(body[record.data_start:record.data_start + 4], "little")
+                c = (
+                    column + 1
+                    if kind >= 0xC
+                    else int.from_bytes(body[record.data_start : record.data_start + 4], "little")
+                )
                 if c <= column:
                     bad.append(f"{name}: cells out of order at column {c} of row {last_row}")
                 column = c
@@ -729,7 +748,12 @@ def test_excel_opens_edited_files(excel, tmp_path):
                             elif isinstance(value, str):
                                 assert ws.Range(ref).Value == value, (seed, ext, final.name, title, ref)
                             elif not isinstance(value, bool) and abs(value) < 1e15:
-                                assert ws.Range(ref).Value == pytest.approx(value, rel=1e-14, abs=1e-300), (seed, ext, final.name, ref)
+                                assert ws.Range(ref).Value == pytest.approx(value, rel=1e-14, abs=1e-300), (
+                                    seed,
+                                    ext,
+                                    final.name,
+                                    ref,
+                                )
                         assert ws.Comments.Count == len(sheet.notes), (seed, ext, final.name, title)
                         assert ws.Hyperlinks.Count == len(sheet.links), (seed, ext, final.name, title)
                 finally:

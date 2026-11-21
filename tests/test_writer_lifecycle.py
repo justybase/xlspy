@@ -1,4 +1,5 @@
 """Writer lifecycle: one write per sheet, sheets never written, recovery after a refused write."""
+
 from __future__ import annotations
 
 import zipfile

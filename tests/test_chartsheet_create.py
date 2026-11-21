@@ -1,6 +1,5 @@
 """Workbook.create_chartsheet() for XLSX files."""
 
-
 import pytest
 
 from xlspy import Chart, ChartSeries, Workbook, load_workbook

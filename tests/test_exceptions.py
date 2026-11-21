@@ -39,10 +39,14 @@ def test_openpyxl_invalid_file_exception_joins_the_hierarchy():
     assert issubclass(InvalidFileException, XlspyError)
 
 
-@pytest.mark.parametrize("opener", [
-    lambda path: ExcelReader(str(path)).__enter__(),
-    lambda path: load_workbook(str(path)),
-], ids=["ExcelReader", "load_workbook"])
+@pytest.mark.parametrize(
+    "opener",
+    [
+        lambda path: ExcelReader(str(path)).__enter__(),
+        lambda path: load_workbook(str(path)),
+    ],
+    ids=["ExcelReader", "load_workbook"],
+)
 def test_a_non_zip_file_raises_invalid_file_error(tmp_path, opener):
     path = tmp_path / "not-a-workbook.xlsx"
     path.write_bytes(b"this is plain text, not a ZIP package")

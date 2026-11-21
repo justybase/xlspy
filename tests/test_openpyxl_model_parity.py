@@ -62,7 +62,10 @@ def test_style_aliases_match_openpyxl_keywords():
     assert OFBorder(diagonalUp=True).diagonalUp is True
 
     alignment = Alignment(
-        wrapText=True, textRotation=45, shrinkToFit=True, readingOrder=2,
+        wrapText=True,
+        textRotation=45,
+        shrinkToFit=True,
+        readingOrder=2,
     )
     assert alignment.wrap_text is True
     assert alignment.textRotation == 45
@@ -141,9 +144,7 @@ def test_worksheet_iterates_like_openpyxl():
     rows = list(sheet)
     reference_rows = list(reference)
     assert [len(row) for row in rows] == [len(row) for row in reference_rows]
-    assert [[cell.value for cell in row] for row in rows] == [
-        [cell.value for cell in row] for row in reference_rows
-    ]
+    assert [[cell.value for cell in row] for row in rows] == [[cell.value for cell in row] for row in reference_rows]
 
 
 def test_assignment_of_none_clears_a_cell():
@@ -158,9 +159,7 @@ def test_worksheet_object_lists_use_openpyxl_names():
     workbook = Workbook()
     sheet = workbook.active
     assert sheet.data_validations.dataValidation == []
-    sheet.add_data_validation(
-        __import__("xlspy").DataValidation(type="list", formula1='"a,b"', sqref="A1")
-    )
+    sheet.add_data_validation(__import__("xlspy").DataValidation(type="list", formula1='"a,b"', sqref="A1"))
     assert len(sheet.data_validations.dataValidation) == 1
     # openpyxl's idiom appends through the property; the rule must survive a save.
     sheet.data_validations.dataValidation.append(
@@ -247,15 +246,13 @@ def test_named_style_and_lists_are_dict_like():
     assert workbook.named_styles.names[:1] == ["Normal"]
     assert workbook.named_styles.get("Fancy") is style
     assert workbook.named_styles.keys() == workbook.named_styles.names
-    assert [name for name, _style in workbook.named_styles.items()] == \
-        workbook.named_styles.names
+    assert [name for name, _style in workbook.named_styles.items()] == workbook.named_styles.names
 
     array = style.as_tuple()
     assert len(array) == 9
     assert array.fontId == array[0] == 0  # ids are assigned by the writer
     assert array.numFmtId == array[3]
-    font_id, fill_id, border_id, num_fmt_id, protection_id, alignment_id, \
-        pivot_button, quote_prefix, xf_id = array
+    font_id, fill_id, border_id, num_fmt_id, protection_id, alignment_id, pivot_button, quote_prefix, xf_id = array
     assert font_id == fill_id == border_id == 0
 
     definition = DefinedName("Rate", "'Sheet'!$A$1")
@@ -347,9 +344,16 @@ def test_chart_ranges_may_name_another_sheet(tmp_path):
     chart_sheet = workbook.create_sheet("Chart")
     chart_sheet["A1"] = "x"
     chart_sheet.add_chart(
-        Chart("bar", [ChartSeries(
-            "Data!B2:B3", categories="Data!A2:A3", title_cell="Data!B1",
-        )]),
+        Chart(
+            "bar",
+            [
+                ChartSeries(
+                    "Data!B2:B3",
+                    categories="Data!A2:A3",
+                    title_cell="Data!B1",
+                )
+            ],
+        ),
         "C2",
     )
     workbook.save(source)
@@ -431,9 +435,7 @@ def test_worksheet_defined_names_write_through(tmp_path):
     path = tmp_path / "names.xlsx"
     workbook = openpyxl.Workbook()
     workbook.active.title = "S"
-    workbook.active.defined_names["LOCAL"] = openpyxl.workbook.defined_name.DefinedName(
-        "LOCAL", attr_text="S!$A$1"
-    )
+    workbook.active.defined_names["LOCAL"] = openpyxl.workbook.defined_name.DefinedName("LOCAL", attr_text="S!$A$1")
     workbook.save(path)
 
     loaded = load_workbook(path)
@@ -457,8 +459,7 @@ def test_named_style_as_tuple_uses_openpyxl_style_array():
     assert len(array) == 9
     assert array.fontId == array[0] == 0  # the writer assigns the ids
     assert array.numFmtId == array[3]
-    font_id, fill_id, border_id, num_fmt_id, protection_id, alignment_id, \
-        pivot_button, quote_prefix, xf_id = array
+    font_id, fill_id, border_id, num_fmt_id, protection_id, alignment_id, pivot_button, quote_prefix, xf_id = array
     assert font_id == num_fmt_id == 0
 
 

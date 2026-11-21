@@ -25,10 +25,7 @@ def _source(path):
 def _names(path):
     workbook = load_workbook(path)
     try:
-        return [
-            (item.name, item.formula, item.scope, item.localSheetId)
-            for item in workbook.defined_names
-        ]
+        return [(item.name, item.formula, item.scope, item.localSheetId) for item in workbook.defined_names]
     finally:
         workbook.close()
 

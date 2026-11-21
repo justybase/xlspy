@@ -66,21 +66,17 @@ def _style_facts(cell):
     border = getattr(cell, "border", None)
     if border is not None:
         facts["border"] = {
-            side: getattr(getattr(border, side, None), "style", None)
-            for side in ("left", "right", "top", "bottom")
+            side: getattr(getattr(border, side, None), "style", None) for side in ("left", "right", "top", "bottom")
         }
     alignment = getattr(cell, "alignment", None)
     if alignment is not None:
         facts["alignment"] = {
             name: getattr(alignment, name, None)
-            for name in ("horizontal", "vertical", "wrap_text", "shrink_to_fit",
-                         "indent", "text_rotation")
+            for name in ("horizontal", "vertical", "wrap_text", "shrink_to_fit", "indent", "text_rotation")
         }
     protection = getattr(cell, "protection", None)
     if protection is not None:
-        facts["protection"] = {
-            name: getattr(protection, name, None) for name in ("locked", "hidden")
-        }
+        facts["protection"] = {name: getattr(protection, name, None) for name in ("locked", "hidden")}
     return facts
 
 
@@ -113,11 +109,13 @@ def compare(left_path, right_path, *, allow_missing=False):
     xsheets = list(xwb.sheetnames)
     osheets = list(owb.sheetnames)
     if xsheets != osheets:
-        differences.append({
-            "kind": "sheet_names",
-            "left": xsheets,
-            "right": osheets,
-        })
+        differences.append(
+            {
+                "kind": "sheet_names",
+                "left": xsheets,
+                "right": osheets,
+            }
+        )
 
     for name in osheets:
         if name not in xsheets:
@@ -133,49 +131,66 @@ def compare(left_path, right_path, *, allow_missing=False):
         omax_row = osheet.max_row
         omax_col = osheet.max_column
         if (xmax_row, xmax_col) != (omax_row, omax_col):
-            differences.append({
-                "sheet": name,
-                "kind": "dimensions",
-                "left": [xmax_row, xmax_col],
-                "right": [omax_row, omax_col],
-            })
+            differences.append(
+                {
+                    "sheet": name,
+                    "kind": "dimensions",
+                    "left": [xmax_row, xmax_col],
+                    "right": [omax_row, omax_col],
+                }
+            )
 
         for row in range(1, omax_row + 1):
             for column in range(1, omax_col + 1):
                 try:
                     xcell = xs.cell(row, column)
                 except Exception as exc:
-                    missing.append({
-                        "sheet": name, "kind": "cell",
-                        "where": f"R{row}C{column}",
-                        "error": f"{type(exc).__name__}: {exc}",
-                    })
+                    missing.append(
+                        {
+                            "sheet": name,
+                            "kind": "cell",
+                            "where": f"R{row}C{column}",
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    )
                     continue
                 ocell = osheet.cell(row, column)
                 xvalue = _norm(getattr(xcell, "value", None))
                 ovalue = _norm(ocell.value)
                 if xvalue != ovalue:
-                    differences.append({
-                        "sheet": name, "kind": "value",
-                        "where": f"R{row}C{column}",
-                        "left": xvalue, "right": ovalue,
-                    })
+                    differences.append(
+                        {
+                            "sheet": name,
+                            "kind": "value",
+                            "where": f"R{row}C{column}",
+                            "left": xvalue,
+                            "right": ovalue,
+                        }
+                    )
                 xfacts = _style_facts(xcell)
                 ofacts = _style_facts(ocell)
                 if xfacts != ofacts:
-                    differences.append({
-                        "sheet": name, "kind": "style",
-                        "where": f"R{row}C{column}",
-                        "left": xfacts, "right": ofacts,
-                    })
+                    differences.append(
+                        {
+                            "sheet": name,
+                            "kind": "style",
+                            "where": f"R{row}C{column}",
+                            "left": xfacts,
+                            "right": ofacts,
+                        }
+                    )
 
         xmerge = str(getattr(xs, "merged_cells", ""))
         omerge = str(osheet.merged_cells)
         if xmerge != omerge:
-            differences.append({
-                "sheet": name, "kind": "merged_cells",
-                "left": xmerge, "right": omerge,
-            })
+            differences.append(
+                {
+                    "sheet": name,
+                    "kind": "merged_cells",
+                    "left": xmerge,
+                    "right": omerge,
+                }
+            )
 
         xobjects = _objects(xs)
         oobjects = {
@@ -190,10 +205,14 @@ def compare(left_path, right_path, *, allow_missing=False):
             if xval == "<missing>":
                 missing.append({"sheet": name, "kind": key})
             elif xval != oval:
-                differences.append({
-                    "sheet": name, "kind": key,
-                    "left": xval, "right": oval,
-                })
+                differences.append(
+                    {
+                        "sheet": name,
+                        "kind": key,
+                        "left": xval,
+                        "right": oval,
+                    }
+                )
 
     owb.close()
     try:

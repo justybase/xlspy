@@ -91,42 +91,52 @@ def test_every_formula_of_the_fixture_round_trips_through_its_tokens(sheet):
         assert read_parsed(again)[:2] == read_parsed(compiled)[:2], address
 
 
-@pytest.mark.parametrize(("text", "expected"), [
-    ("=SUM(Tbl[[#Data],[#Data],[qty]])", "=SUM(Tbl[[#Data],[qty]])"),
-    ("=SUM(Tbl[[#Totals],[#Totals],[qty]])", "=SUM(Tbl[[#Totals],[qty]])"),
-    ("=SUM(Tbl[[#All],[#All]])", "=SUM(Tbl[#All])"),
-    ("=SUM(Tbl[[#This Row],[#This Row],[qty]])", "=SUM(Tbl[[#This Row],[qty]])"),
-    ("=SUM(Tbl[[#Data],[#Headers],[qty]])", "=SUM(Tbl[[#Headers],[#Data],[qty]])"),
-    ("=SUM(Tbl[[#Totals],[#Data],[qty]])", "=SUM(Tbl[[#Data],[#Totals],[qty]])"),
-])
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("=SUM(Tbl[[#Data],[#Data],[qty]])", "=SUM(Tbl[[#Data],[qty]])"),
+        ("=SUM(Tbl[[#Totals],[#Totals],[qty]])", "=SUM(Tbl[[#Totals],[qty]])"),
+        ("=SUM(Tbl[[#All],[#All]])", "=SUM(Tbl[#All])"),
+        ("=SUM(Tbl[[#This Row],[#This Row],[qty]])", "=SUM(Tbl[[#This Row],[qty]])"),
+        ("=SUM(Tbl[[#Data],[#Headers],[qty]])", "=SUM(Tbl[[#Headers],[#Data],[qty]])"),
+        ("=SUM(Tbl[[#Totals],[#Data],[qty]])", "=SUM(Tbl[[#Data],[#Totals],[qty]])"),
+    ],
+)
 def test_duplicate_row_keywords_are_removed_as_excel_removes_them(text, expected):
     context = _fixture_context()
-    assert decode_formula(compile_formula(text, context, sheet="Data"), context, sheet="Data") == \
-        expected.removeprefix("=")
+    assert decode_formula(compile_formula(text, context, sheet="Data"), context, sheet="Data") == expected.removeprefix(
+        "="
+    )
 
 
-@pytest.mark.parametrize("text", [
-    "=SUM(Tbl[[#All],[#Data]])",  # #All stands alone
-    "=SUM(Tbl[[#All],[#This Row]])",
-    "=SUM(Tbl[[#This Row],[#Data]])",  # #This Row stands alone
-    "=SUM(Tbl[[#Headers],[#Totals]])",  # the keywords meet only through #Data
-    "=SUM(Tbl[[#Headers],[#Data],[#Totals],[qty]])",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "=SUM(Tbl[[#All],[#Data]])",  # #All stands alone
+        "=SUM(Tbl[[#All],[#This Row]])",
+        "=SUM(Tbl[[#This Row],[#Data]])",  # #This Row stands alone
+        "=SUM(Tbl[[#Headers],[#Totals]])",  # the keywords meet only through #Data
+        "=SUM(Tbl[[#Headers],[#Data],[#Totals],[qty]])",
+    ],
+)
 def test_row_keyword_combinations_that_excel_refuses_are_refused(text):
     with pytest.raises(ValueError, match="keyword|#Headers and #Totals"):
         compile_formula(text, _fixture_context(), sheet="Data")
 
 
-@pytest.mark.parametrize(("text", "error"), [
-    ("=SUM([qty])", UnsupportedFeatureError),  # a bare column needs its table's name
-    ("=SUM(Nope[qty])", UnsupportedFeatureError),  # no such table
-    ("=SUM(Tbl[nope])", ValueError),  # no such column
-    ("=SUM(Tbl[#Bogus])", ValueError),  # no such row keyword
-    ("=SUM(Tbl[[qty]:[name]])", ValueError),  # the range runs backwards
-    ("=SUM(Tbl[[qty],[name]])", ValueError),  # two columns are not a range
-    ("=SUM(Tbl[a'x])", ValueError),  # an escape that escapes nothing
-    ("=SUM(Tbl[qty)", UnsupportedFeatureError),  # the bracket is not closed
-])
+@pytest.mark.parametrize(
+    ("text", "error"),
+    [
+        ("=SUM([qty])", UnsupportedFeatureError),  # a bare column needs its table's name
+        ("=SUM(Nope[qty])", UnsupportedFeatureError),  # no such table
+        ("=SUM(Tbl[nope])", ValueError),  # no such column
+        ("=SUM(Tbl[#Bogus])", ValueError),  # no such row keyword
+        ("=SUM(Tbl[[qty]:[name]])", ValueError),  # the range runs backwards
+        ("=SUM(Tbl[[qty],[name]])", ValueError),  # two columns are not a range
+        ("=SUM(Tbl[a'x])", ValueError),  # an escape that escapes nothing
+        ("=SUM(Tbl[qty)", UnsupportedFeatureError),  # the bracket is not closed
+    ],
+)
 def test_a_reference_that_cannot_be_written_is_refused(text, error):
     with pytest.raises(error):
         compile_formula(text, _fixture_context(), sheet="Data")
@@ -135,10 +145,14 @@ def test_a_reference_that_cannot_be_written_is_refused(text, error):
 def test_a_table_name_alone_and_the_display_form_are_written_as_the_file_form():
     context = _fixture_context()
     assert decode_formula(compile_formula("=Tbl", context, sheet="Data"), context, sheet="Data") == "Tbl"
-    assert decode_formula(compile_formula("=SUM(Tbl[@qty])", context, sheet="Data"), context, sheet="Data") == \
-        "SUM(Tbl[[#This Row],[qty]])"
-    assert decode_formula(compile_formula("=Tbl[@[my col]]", context, sheet="Data"), context, sheet="Data") == \
-        "Tbl[[#This Row],[my col]]"
+    assert (
+        decode_formula(compile_formula("=SUM(Tbl[@qty])", context, sheet="Data"), context, sheet="Data")
+        == "SUM(Tbl[[#This Row],[qty]])"
+    )
+    assert (
+        decode_formula(compile_formula("=Tbl[@[my col]]", context, sheet="Data"), context, sheet="Data")
+        == "Tbl[[#This Row],[my col]]"
+    )
 
 
 def _sales_workbook(path, *, formula_above_header=False, table_on_later_sheet=False):
@@ -179,6 +193,8 @@ def test_a_new_workbook_holds_formulas_that_refer_to_its_own_and_an_earlier_tabl
         assert reloaded["Calc"]["A1"].value == "=SUM(Tbl[qty])+1"
     finally:
         reloaded.close()
+
+
 def test_a_formula_above_the_header_of_its_table_is_refused_with_a_reason(tmp_path):
     with pytest.raises(UnsupportedFeatureError, match="header row is not written yet"):
         _sales_workbook(tmp_path / "above.xlsb", formula_above_header=True)

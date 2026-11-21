@@ -57,11 +57,7 @@ def cells(data: bytes, sheet: str, ref: str) -> list[list]:
 
 def parts(data: bytes) -> dict[str, str]:
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        return {
-            name: zf.read(name).decode("utf-8")
-            for name in zf.namelist()
-            if name.endswith((".xml", ".rels"))
-        }
+        return {name: zf.read(name).decode("utf-8") for name in zf.namelist() if name.endswith((".xml", ".rels"))}
 
 
 ROW_ONLY = [
@@ -167,7 +163,8 @@ def test_pivot_on_an_unwritten_sheet_is_placed_on_it():
 
 def test_column_field_cache_carries_numeric_range():
     cache = next(
-        body for name, body in parts(make([pivot(columns="Quarter")])).items()
+        body
+        for name, body in parts(make([pivot(columns="Quarter")])).items()
         if name.startswith("xl/pivotCache/pivotCacheDefinition")
     )
     assert 'minValue="1" maxValue="2"' in cache
@@ -176,21 +173,18 @@ def test_column_field_cache_carries_numeric_range():
 
 def test_pivot_parts_follow_the_cache_without_records():
     files = parts(make([pivot(), pivot(["Units"], name="Units_pivot", location="A20")]))
-    caches = [body for name, body in files.items() if "pivotCacheDefinition" in name
-              and name.endswith(".xml")]
+    caches = [body for name, body in files.items() if "pivotCacheDefinition" in name and name.endswith(".xml")]
     assert len(caches) == 2
     for cache in caches:
         assert 'saveData="0"' in cache
         assert 'refreshOnLoad="1"' in cache
         assert 'worksheetSource name="SalesTable"' in cache
     assert not any("pivotCacheRecords" in name for name in files)
-    assert 'Target="../pivotCache/pivotCacheDefinition1.xml"' in files[
-        "xl/pivotTables/_rels/pivotTable1.xml.rels"
-    ]
+    assert 'Target="../pivotCache/pivotCacheDefinition1.xml"' in files["xl/pivotTables/_rels/pivotTable1.xml.rels"]
     assert 'name="Units_pivot"' in files["xl/pivotTables/pivotTable2.xml"]
     assert 'hideValuesRow="1"' in files["xl/pivotTables/pivotTable1.xml"]
     workbook = files["xl/workbook.xml"]
-    assert workbook.count('<pivotCache cacheId=') == 2
+    assert workbook.count("<pivotCache cacheId=") == 2
     assert workbook.index("<calcPr") < workbook.index("<pivotCaches>")
     content_types = files["[Content_Types].xml"]
     assert "/xl/pivotTables/pivotTable1.xml" in content_types
@@ -260,8 +254,7 @@ def test_one_row_field_is_required():
 
 def test_one_column_field_at_most():
     with pytest.raises(ValueError, match="at most one column field"):
-        PivotTable(source="SalesTable", rows="Region", columns=["Quarter", "Product"],
-                   values="Sales")
+        PivotTable(source="SalesTable", rows="Region", columns=["Quarter", "Product"], values="Sales")
 
 
 def test_a_field_cannot_sit_on_two_axes():

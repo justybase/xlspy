@@ -9,6 +9,7 @@ next to them.
 Usage (from the repository root):
     py -3.14 benchmarks/profile_write_rows.py [--rows 50000] [--cols 20] [--repeat 3]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,6 +41,7 @@ def variant_rows(count, cols, variant):
     between a variant and its plain twin is the cost of the special cell's row path.
     """
     from xlspy import Formula, Hyperlink
+
     yield [f"Header_{j}" for j in range(cols)]
     for i in range(1, count):
         out = []
@@ -62,6 +64,7 @@ def variant_rows(count, cols, variant):
 
 def _write(path, data):
     from xlspy import XlsxWriter
+
     with XlsxWriter(path) as writer:
         writer.add_sheet("S")
         writer.write_sheet(data)
@@ -72,13 +75,21 @@ def main():
     parser.add_argument("--rows", type=int, default=50000)
     parser.add_argument("--cols", type=int, default=20)
     parser.add_argument("--repeat", type=int, default=3)
-    parser.add_argument("--data", choices=VARIANTS, default="plain",
-                        help="a row shape from variant_rows; 'plain' is bench_io's mixed rows")
-    parser.add_argument("--variants", action="store_true",
-                        help="time every variant without a profiler instead of profiling one")
-    parser.add_argument("--no-native-rows", action="store_true",
-                        help="write every row with the Python encoder (the pre-native baseline "
-                             "for rows that hold Formula or Hyperlink cells)")
+    parser.add_argument(
+        "--data",
+        choices=VARIANTS,
+        default="plain",
+        help="a row shape from variant_rows; 'plain' is bench_io's mixed rows",
+    )
+    parser.add_argument(
+        "--variants", action="store_true", help="time every variant without a profiler instead of profiling one"
+    )
+    parser.add_argument(
+        "--no-native-rows",
+        action="store_true",
+        help="write every row with the Python encoder (the pre-native baseline "
+        "for rows that hold Formula or Hyperlink cells)",
+    )
     parser.add_argument("--out")
     args = parser.parse_args()
 
@@ -106,14 +117,21 @@ def main():
                     start = time.perf_counter()
                     _write(path, built)
                     runs.append(time.perf_counter() - start)
-                timings[variant] = {"median_seconds": statistics.median(runs),
-                                    "runs": [round(r, 3) for r in runs]}
+                timings[variant] = {"median_seconds": statistics.median(runs), "runs": [round(r, 3) for r in runs]}
                 print(f"{variant:20s} {timings[variant]['median_seconds']:7.3f} s", flush=True)
         if args.out:
             with open(args.out, "w", encoding="utf-8") as handle:
-                json.dump({"rows": args.rows, "cols": args.cols, "repeat": args.repeat,
-                           "accel_backends": dict(_accel.ACCEL_BACKEND), "variants": timings},
-                          handle, indent=2)
+                json.dump(
+                    {
+                        "rows": args.rows,
+                        "cols": args.cols,
+                        "repeat": args.repeat,
+                        "accel_backends": dict(_accel.ACCEL_BACKEND),
+                        "variants": timings,
+                    },
+                    handle,
+                    indent=2,
+                )
         return 0
 
     built = list(data())
@@ -141,9 +159,14 @@ def main():
     trailer_cells = 0.0  # the sheet's <hyperlinks> and their relationships, written after the rows
     # The XLSX writer's methods live in its facade and the mixin modules it is split into.
     XLSX_WRITER_FILES = tuple(
-        f"{module}.py" for module in (
-            "xlsx_writer", "_xlsx_writer_xml", "_xlsx_writer_sheet",
-            "_xlsx_writer_styles", "_xlsx_writer_parts", "_xlsx_writer_sheet_xml",
+        f"{module}.py"
+        for module in (
+            "xlsx_writer",
+            "_xlsx_writer_xml",
+            "_xlsx_writer_sheet",
+            "_xlsx_writer_styles",
+            "_xlsx_writer_parts",
+            "_xlsx_writer_sheet_xml",
         )
     )
     for (filename, _line, name), (_cc, _nc, tottime, cumtime, _callers) in stats.items():
@@ -169,7 +192,9 @@ def main():
     result = {
         "data": args.data,
         "native_rows": not args.no_native_rows,
-        "rows": args.rows, "cols": args.cols, "repeat": args.repeat,
+        "rows": args.rows,
+        "cols": args.cols,
+        "repeat": args.repeat,
         "accel_backends": dict(_accel.ACCEL_BACKEND),
         "unprofiled_seconds": unprofiled,
         "profiled_write_sheet_seconds": total,

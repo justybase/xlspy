@@ -1,5 +1,6 @@
 """CellRange, MultiCellRange and the row/column dimension holders, checked against
 openpyxl where the API is meant to match it."""
+
 from __future__ import annotations
 
 import pytest
@@ -24,8 +25,10 @@ def test_a_single_cell_is_normalized_to_a_range() -> None:
     assert CellRange("B2:D5").coord == "B2:D5"
 
 
-@pytest.mark.parametrize(("cell", "inside"), [("B2", True), ("D5", True), ("C4", True), ("A1", False),
-                                              ("E5", False), ("D6", False), ("not a cell", False)])
+@pytest.mark.parametrize(
+    ("cell", "inside"),
+    [("B2", True), ("D5", True), ("C4", True), ("A1", False), ("E5", False), ("D6", False), ("not a cell", False)],
+)
 def test_contains_a_cell(cell: str, inside: bool) -> None:
     assert (cell in CellRange("B2:D5")) is inside
     assert 5 not in CellRange("B2:D5")
@@ -52,8 +55,10 @@ def test_moves_off_the_sheet_are_refused() -> None:
         CellRange("XFC1:XFD1").expand(right=1)
 
 
-@pytest.mark.parametrize(("left", "right"), [("B2:D5", "C4:F8"), ("A1:B2", "D4:E5"), ("B2:D5", "C3:C4"),
-                                             ("C3:C4", "B2:D5"), ("A1:A10", "A5:C5")])
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [("B2:D5", "C4:F8"), ("A1:B2", "D4:E5"), ("B2:D5", "C3:C4"), ("C3:C4", "B2:D5"), ("A1:A10", "A5:C5")],
+)
 def test_set_operations_match_openpyxl(left: str, right: str) -> None:
     ours, theirs = CellRange(left), OpenpyxlCellRange(left)
     other = OpenpyxlCellRange(right)

@@ -21,10 +21,14 @@ def _book(tmp_path, chart, name="out.xlsx"):
 
 
 def _combo(**kwargs):
-    return Chart("bar", [
-        ChartSeries("B2:B4", categories="A2:A4"),
-        ChartSeries("C2:C4", categories="A2:A4", chart_type="line", secondary_axis=True),
-    ], **kwargs)
+    return Chart(
+        "bar",
+        [
+            ChartSeries("B2:B4", categories="A2:A4"),
+            ChartSeries("C2:C4", categories="A2:A4", chart_type="line", secondary_axis=True),
+        ],
+        **kwargs,
+    )
 
 
 def test_bar_and_line_on_a_secondary_axis(tmp_path):
@@ -32,7 +36,7 @@ def test_bar_and_line_on_a_secondary_axis(tmp_path):
     assert xml.index("<barChart>") < xml.index("<lineChart>")
     assert xml.count('<axId val="200"/>') == 2  # the line group and the secondary value axis
     assert '<crosses val="max"/>' in xml and '<axPos val="r"/>' in xml
-    assert "<idx val=\"0\"/>" in xml and "<idx val=\"1\"/>" in xml
+    assert '<idx val="0"/>' in xml and '<idx val="1"/>' in xml
     workbook = load_workbook(path)
     try:
         chart = workbook.active.charts[0]
@@ -47,11 +51,17 @@ def test_single_type_chart_is_unchanged(tmp_path):
 
 
 def test_trendline_and_error_bars(tmp_path):
-    chart = Chart("line", [ChartSeries(
-        "B2:B4", categories="A2:A4",
-        trendline=Trendline("polynomial", order=3, forward=1, display_equation=True, color="#FF0000"),
-        error_bars=ErrorBars("percentage", 10, direction="plus", end_cap=False),
-    )])
+    chart = Chart(
+        "line",
+        [
+            ChartSeries(
+                "B2:B4",
+                categories="A2:A4",
+                trendline=Trendline("polynomial", order=3, forward=1, display_equation=True, color="#FF0000"),
+                error_bars=ErrorBars("percentage", 10, direction="plus", end_cap=False),
+            )
+        ],
+    )
     _path, xml = _book(tmp_path, chart)
     assert '<trendlineType val="poly"/><order val="3"/><forward val="1"/>' in xml
     assert '<dispRSqr val="0"/><dispEq val="1"/>' in xml
@@ -60,30 +70,40 @@ def test_trendline_and_error_bars(tmp_path):
 
 
 def test_scatter_series_with_x_error_bars(tmp_path):
-    chart = Chart("scatter", [ChartSeries(
-        "C2:C4", x_values="B2:B4", error_bars=ErrorBars("std_err", axis="x"),
-        trendline=Trendline("moving_average", period=2),
-    )])
+    chart = Chart(
+        "scatter",
+        [
+            ChartSeries(
+                "C2:C4",
+                x_values="B2:B4",
+                error_bars=ErrorBars("std_err", axis="x"),
+                trendline=Trendline("moving_average", period=2),
+            )
+        ],
+    )
     _path, xml = _book(tmp_path, chart)
     assert '<errDir val="x"/>' in xml and '<period val="2"/>' in xml
     assert xml.index("<errBars>") < xml.index("<xVal>")
 
 
-@pytest.mark.parametrize("build", [
-    lambda: Trendline("nope"),
-    lambda: Trendline("linear", order=2),
-    lambda: Trendline("polynomial", order=9),
-    lambda: Trendline("moving_average", period=1),
-    lambda: ErrorBars("fixed"),
-    lambda: ErrorBars("std_err", 1),
-    lambda: ErrorBars("fixed", 1, direction="up"),
-    lambda: ChartSeries("B2:B4", chart_type="pie"),
-    lambda: Chart("pie", [ChartSeries("B2:B4", chart_type="line")]),
-    lambda: Chart("barh", [ChartSeries("B2:B4", secondary_axis=True)]),
-    lambda: Chart("bar", [ChartSeries("B2:B4")], y2_axis=ChartAxis()),
-    lambda: Chart("pie", [ChartSeries("B2:B4", trendline=Trendline())]),
-    lambda: Chart("line", [ChartSeries("B2:B4", error_bars=ErrorBars("fixed", 1, axis="x"))]),
-])
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Trendline("nope"),
+        lambda: Trendline("linear", order=2),
+        lambda: Trendline("polynomial", order=9),
+        lambda: Trendline("moving_average", period=1),
+        lambda: ErrorBars("fixed"),
+        lambda: ErrorBars("std_err", 1),
+        lambda: ErrorBars("fixed", 1, direction="up"),
+        lambda: ChartSeries("B2:B4", chart_type="pie"),
+        lambda: Chart("pie", [ChartSeries("B2:B4", chart_type="line")]),
+        lambda: Chart("barh", [ChartSeries("B2:B4", secondary_axis=True)]),
+        lambda: Chart("bar", [ChartSeries("B2:B4")], y2_axis=ChartAxis()),
+        lambda: Chart("pie", [ChartSeries("B2:B4", trendline=Trendline())]),
+        lambda: Chart("line", [ChartSeries("B2:B4", error_bars=ErrorBars("fixed", 1, axis="x"))]),
+    ],
+)
 def test_invalid_options_are_refused(build):
     with pytest.raises((ValueError, TypeError)):
         build()

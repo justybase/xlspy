@@ -16,9 +16,20 @@ from ._xlsb_formulas import compile_formula, decode_formula, read_parsed
 from .biff_utils import build_record, iter_records
 from .refs import parse_cell_range, column_label
 from .styles import (
-    CF_BLANK_RULES, CF_TEXT_RULES, CF_TIME_PERIOD_FORMULAS,
-    AboveAverageRule, BlanksRule, CellIsRule, DifferentialStyle, DuplicateRule, FormulaRule,
-    GradientFill, TextRule, TimePeriodRule, TopBottomRule, _color_key,
+    CF_BLANK_RULES,
+    CF_TEXT_RULES,
+    CF_TIME_PERIOD_FORMULAS,
+    AboveAverageRule,
+    BlanksRule,
+    CellIsRule,
+    DifferentialStyle,
+    DuplicateRule,
+    FormulaRule,
+    GradientFill,
+    TextRule,
+    TimePeriodRule,
+    TopBottomRule,
+    _color_key,
 )
 from .styles import Alignment, Border, Font, PatternFill, Protection, Side
 from ._xlsb_validation import _format_sqref as format_sqref
@@ -52,37 +63,88 @@ _BLANK_TEMPLATES = {"blanks": 0x09, "no_blanks": 0x0A, "errors": 0x0B, "no_error
 _TEXT_OPERATORS = {"contains": 0, "notContains": 1, "beginsWith": 2, "endsWith": 3}
 # timePeriod -> (template, iParam)
 _TIME_PERIODS = {
-    "today": (0x0F, 0), "yesterday": (0x11, 1), "tomorrow": (0x10, 6), "last7Days": (0x12, 2),
-    "thisWeek": (0x15, 3), "lastWeek": (0x17, 4), "nextWeek": (0x16, 7),
-    "thisMonth": (0x18, 9), "lastMonth": (0x13, 5), "nextMonth": (0x14, 8),
+    "today": (0x0F, 0),
+    "yesterday": (0x11, 1),
+    "tomorrow": (0x10, 6),
+    "last7Days": (0x12, 2),
+    "thisWeek": (0x15, 3),
+    "lastWeek": (0x17, 4),
+    "nextWeek": (0x16, 7),
+    "thisMonth": (0x18, 9),
+    "lastMonth": (0x13, 5),
+    "nextMonth": (0x14, 8),
 }
 _CF_CELL_IS_CODES = {
-    "between": 1, "notBetween": 2, "equal": 3, "notEqual": 4,
-    "greaterThan": 5, "lessThan": 6, "greaterThanOrEqual": 7, "lessThanOrEqual": 8,
+    "between": 1,
+    "notBetween": 2,
+    "equal": 3,
+    "notEqual": 4,
+    "greaterThan": 5,
+    "lessThan": 6,
+    "greaterThanOrEqual": 7,
+    "lessThanOrEqual": 8,
 }
 # BrtBeginCFRule flags.
 _STOP_IF_TRUE, _ABOVE, _PERCENT, _BOTTOM = 0x02, 0x04, 0x08, 0x10
 
 FORMULA_RULES = (
-    CellIsRule, FormulaRule, TopBottomRule, AboveAverageRule, TextRule,
-    DuplicateRule, TimePeriodRule, BlanksRule,
+    CellIsRule,
+    FormulaRule,
+    TopBottomRule,
+    AboveAverageRule,
+    TextRule,
+    DuplicateRule,
+    TimePeriodRule,
+    BlanksRule,
 )
 
 _UNDERLINE_CODES = {"single": 0x01, "double": 0x02, "singleAccounting": 0x21, "doubleAccounting": 0x22}
 _HORIZONTAL_CODES = {
-    "general": 0, "left": 1, "center": 2, "right": 3, "fill": 4,
-    "justify": 5, "centerContinuous": 6, "distributed": 7,
+    "general": 0,
+    "left": 1,
+    "center": 2,
+    "right": 3,
+    "fill": 4,
+    "justify": 5,
+    "centerContinuous": 6,
+    "distributed": 7,
 }
 _BORDER_CODES = {
-    "none": 0x00, "thin": 0x01, "medium": 0x02, "dashed": 0x03, "dotted": 0x04, "thick": 0x05,
-    "double": 0x06, "hair": 0x07, "mediumDashed": 0x08, "dashDot": 0x09, "mediumDashDot": 0x0A,
-    "dashDotDot": 0x0B, "mediumDashDotDot": 0x0C, "slantDashDot": 0x0D,
+    "none": 0x00,
+    "thin": 0x01,
+    "medium": 0x02,
+    "dashed": 0x03,
+    "dotted": 0x04,
+    "thick": 0x05,
+    "double": 0x06,
+    "hair": 0x07,
+    "mediumDashed": 0x08,
+    "dashDot": 0x09,
+    "mediumDashDot": 0x0A,
+    "dashDotDot": 0x0B,
+    "mediumDashDotDot": 0x0C,
+    "slantDashDot": 0x0D,
 }
 _CF_PATTERN_CODES = {
-    "none": 0, "solid": 1, "mediumGray": 2, "darkGray": 3, "lightGray": 4, "darkHorizontal": 5,
-    "darkVertical": 6, "darkDown": 7, "darkUp": 8, "darkGrid": 9, "darkTrellis": 10,
-    "lightHorizontal": 11, "lightVertical": 12, "lightDown": 13, "lightUp": 14, "lightGrid": 15,
-    "lightTrellis": 16, "gray125": 17, "gray0625": 18,
+    "none": 0,
+    "solid": 1,
+    "mediumGray": 2,
+    "darkGray": 3,
+    "lightGray": 4,
+    "darkHorizontal": 5,
+    "darkVertical": 6,
+    "darkDown": 7,
+    "darkUp": 8,
+    "darkGrid": 9,
+    "darkTrellis": 10,
+    "lightHorizontal": 11,
+    "lightVertical": 12,
+    "lightDown": 13,
+    "lightUp": 14,
+    "lightGrid": 15,
+    "lightTrellis": 16,
+    "gray125": 17,
+    "gray0625": 18,
 }
 
 
@@ -172,8 +234,15 @@ def _border_props(border) -> list:
 
 
 def _alignment_props(alignment) -> list:
-    for name in ("vertical", "shrink_to_fit", "indent", "text_rotation", "relative_indent",
-                 "justify_last_line", "reading_order"):
+    for name in (
+        "vertical",
+        "shrink_to_fit",
+        "indent",
+        "text_rotation",
+        "relative_indent",
+        "justify_last_line",
+        "reading_order",
+    ):
         if getattr(alignment, name) is not None:
             raise _unsupported_cf_feature(f"Alignment.{name}")
     props = []
@@ -202,8 +271,9 @@ def dxf_payload(dxf: DifferentialStyle, register_numfmt) -> bytes:
             props.append(_prop(_HIDDEN, bytes((int(dxf.protection.hidden),))))
     if dxf.number_format is not None:
         # Excel writes the format id right before the format string.
-        props.append((_NUMBER_FORMAT - 0.5, struct.pack("<HHH", _NUMBER_FORMAT_ID, 6,
-                                                       register_numfmt(dxf.number_format))))
+        props.append(
+            (_NUMBER_FORMAT - 0.5, struct.pack("<HHH", _NUMBER_FORMAT_ID, 6, register_numfmt(dxf.number_format)))
+        )
         props.append(_prop(_NUMBER_FORMAT, _encode_wide_text(dxf.number_format)))
     props.sort(key=lambda item: item[0])
     return struct.pack("<HHH", _DXF_FLAGS, 0, len(props)) + b"".join(data for _, data in props)
@@ -232,8 +302,9 @@ def _rule_fields(rule, corner: str):
         flags |= (_PERCENT if rule.percent else 0) | (_BOTTOM if rule.bottom else 0)
         return _TOP10, _FILTER_TEMPLATE, rule.rank, flags, [], None
     if isinstance(rule, AboveAverageRule):
-        template = {(False, False): 0x19, (True, False): 0x1A,
-                    (False, True): 0x1D, (True, True): 0x1E}[(rule.below, rule.equal_average)]
+        template = {(False, False): 0x19, (True, False): 0x1A, (False, True): 0x1D, (True, True): 0x1E}[
+            (rule.below, rule.equal_average)
+        ]
         if not rule.below:
             flags |= _ABOVE
         return _EXPRESSION, template, rule.std_dev or 0, flags, [], None
@@ -268,7 +339,7 @@ _ABOVE_AVERAGE = {0x19: (False, False), 0x1A: (True, False), 0x1D: (False, True)
 
 def _decoded_text(data: bytes) -> str:
     length = struct.unpack_from("<H", data, 0)[0]
-    return data[2:2 + 2 * length].decode("utf-16-le")
+    return data[2 : 2 + 2 * length].decode("utf-16-le")
 
 
 def dxf_from_payload(payload: bytes) -> DifferentialStyle:
@@ -284,7 +355,7 @@ def dxf_from_payload(payload: bytes) -> DifferentialStyle:
     number_format: str | None = None
     for _ in range(count):
         kind, size = struct.unpack_from("<HH", payload, offset)
-        data = payload[offset + 4:offset + size]
+        data = payload[offset + 4 : offset + size]
         offset += size
         if kind == _FILL_PATTERN:
             fill["fill_type"] = _PATTERN_NAMES.get(data[0], "solid")
@@ -299,7 +370,8 @@ def dxf_from_payload(payload: bytes) -> DifferentialStyle:
             if style and style != "none":
                 color = color_at(data, 0)
                 sides[_BORDER_KINDS[kind]] = Side(
-                    style=style, color=None if color is not None and color.auto else color,
+                    style=style,
+                    color=None if color is not None and color.auto else color,
                 )
         elif kind == _HORIZONTAL:
             alignment["horizontal"] = _HORIZONTAL_NAMES.get(data[0])
@@ -364,19 +436,32 @@ def cf_rule(sqref: str, payload: bytes, context, style_table):
         operator = _CELL_IS_NAMES.get(param)
         return None if operator is None else CellIsRule(sqref, operator, formulas, dxf, stop, priority)
     if kind == _TOP10:
-        return TopBottomRule(sqref, rank=param, percent=bool(flags & _PERCENT),
-                             bottom=bool(flags & _BOTTOM), dxf=dxf, stop_if_true=stop, priority=priority)
+        return TopBottomRule(
+            sqref,
+            rank=param,
+            percent=bool(flags & _PERCENT),
+            bottom=bool(flags & _BOTTOM),
+            dxf=dxf,
+            stop_if_true=stop,
+            priority=priority,
+        )
     if kind != _EXPRESSION:
         return None
     if template == _FORMULA_TEMPLATE:
         return FormulaRule(sqref, formulas, dxf, stop, priority)
     if template in _ABOVE_AVERAGE:
         below, equal = _ABOVE_AVERAGE[template]
-        return AboveAverageRule(sqref, below=below, equal_average=equal, std_dev=param or None,
-                                dxf=dxf, stop_if_true=stop, priority=priority)
+        return AboveAverageRule(
+            sqref,
+            below=below,
+            equal_average=equal,
+            std_dev=param or None,
+            dxf=dxf,
+            stop_if_true=stop,
+            priority=priority,
+        )
     if template in (_UNIQUE, _DUPLICATE):
-        return DuplicateRule(sqref, unique=template == _UNIQUE, dxf=dxf, stop_if_true=stop,
-                             priority=priority)
+        return DuplicateRule(sqref, unique=template == _UNIQUE, dxf=dxf, stop_if_true=stop, priority=priority)
     if template == _CONTAINS_TEXT and param in _TEXT_NAMES:
         return TextRule(sqref, _TEXT_NAMES[param], text or "", dxf, stop, priority)
     if template in _TIME_PERIOD_NAMES:
@@ -446,23 +531,34 @@ def rule_bin(rule, priority: int, dxf_id: int, context, letters) -> bytes:
 
     first_col, first_row, _, _ = parse_cell_range(rule.sqref.split()[0])
     if isinstance(rule, (ColorScaleRule, DataBarRule, IconSetRule)):
-        kind = _ICON_SET if isinstance(rule, IconSetRule) else (
-            _DATA_BAR if isinstance(rule, DataBarRule) else _COLOR_SCALE)
+        kind = (
+            _ICON_SET
+            if isinstance(rule, IconSetRule)
+            else (_DATA_BAR if isinstance(rule, DataBarRule) else _COLOR_SCALE)
+        )
         # No dxf, no formula, no flags: Excel keeps everything in the sub-records.
         payload = struct.pack("<IIiIIII", kind, _SCALE_TEMPLATES[kind], -1, priority, 0, 0, 0)
         payload += struct.pack("<H3Ii", 0, 0, 0, 0, -1)
-        return (build_record(BRT_BEGIN_CF_RULE, payload)
-                + _scale_records(rule, context, (first_col, first_row))
-                + build_record(BRT_END_CF_RULE))
+        return (
+            build_record(BRT_BEGIN_CF_RULE, payload)
+            + _scale_records(rule, context, (first_col, first_row))
+            + build_record(BRT_END_CF_RULE)
+        )
     corner = f"{letters[first_col]}{first_row + 1}"
     kind, template, param, flags, formulas, text = _rule_fields(rule, corner)
     # Formulas are relative to the range's top-left cell, like XLSX.
     compiled, sizes = [], []
     for formula in formulas:
         stats: dict[str, int] = {}
-        compiled.append(compile_formula(
-            formula, context, origin=(first_col, first_row), cell_relative=True, stats=stats,
-        ))
+        compiled.append(
+            compile_formula(
+                formula,
+                context,
+                origin=(first_col, first_row),
+                cell_relative=True,
+                stats=stats,
+            )
+        )
         # cbFmla: Excel writes the token length plus two bytes per reference.
         sizes.append(struct.unpack_from("<I", compiled[-1])[0] + 2 * stats["references"])
     sizes += [0] * (3 - len(sizes))
@@ -483,20 +579,38 @@ BRT_BEGIN_ICON_SET, BRT_END_ICON_SET = 0x1D1, 0x1D2
 BRT_BEGIN_DATA_BAR, BRT_END_DATA_BAR = 0x1D3, 0x1D4
 BRT_BEGIN_COLOR_SCALE, BRT_END_COLOR_SCALE = 0x1D5, 0x1D6
 BRT_CFVO, BRT_COLOR = 0x1D7, 0x234
-SCALE_RECORDS = frozenset((
-    BRT_BEGIN_ICON_SET, BRT_BEGIN_DATA_BAR, BRT_BEGIN_COLOR_SCALE, BRT_CFVO, BRT_COLOR,
-))
+SCALE_RECORDS = frozenset(
+    (
+        BRT_BEGIN_ICON_SET,
+        BRT_BEGIN_DATA_BAR,
+        BRT_BEGIN_COLOR_SCALE,
+        BRT_CFVO,
+        BRT_COLOR,
+    )
+)
 _COLOR_SCALE, _DATA_BAR, _ICON_SET = 3, 4, 6
 _SCALE_TEMPLATES = {_COLOR_SCALE: 0x02, _DATA_BAR: 0x03, _ICON_SET: 0x04}
 _CFVO_CODES = {"num": 1, "min": 2, "max": 3, "percent": 4, "percentile": 5, "formula": 7}
 _CFVO_NAMES = {code: name for name, code in _CFVO_CODES.items()}
 # KPISets ([MS-XLSB] 2.5.94).
 ICON_SET_CODES = {
-    "3Arrows": 0, "3ArrowsGray": 1, "3Flags": 2, "3TrafficLights1": 3,
-    "3TrafficLights2": 4, "3Signs": 5, "3Symbols": 6, "3Symbols2": 7,
-    "4Arrows": 8, "4ArrowsGray": 9, "4RedToBlack": 10, "4Rating": 11,
-    "4TrafficLights": 12, "5Arrows": 13, "5ArrowsGray": 14,
-    "5Rating": 15, "5Quarters": 16,
+    "3Arrows": 0,
+    "3ArrowsGray": 1,
+    "3Flags": 2,
+    "3TrafficLights1": 3,
+    "3TrafficLights2": 4,
+    "3Signs": 5,
+    "3Symbols": 6,
+    "3Symbols2": 7,
+    "4Arrows": 8,
+    "4ArrowsGray": 9,
+    "4RedToBlack": 10,
+    "4Rating": 11,
+    "4TrafficLights": 12,
+    "5Arrows": 13,
+    "5ArrowsGray": 14,
+    "5Rating": 15,
+    "5Quarters": 16,
 }
 _ICON_SET_NAMES = {code: name for name, code in ICON_SET_CODES.items()}
 # BrtBeginIconSet flags as Excel writes them: fIcon hides the value,
@@ -525,8 +639,11 @@ def cfvo_bin(kind: str, value, context, origin, gte: bool = False) -> bytes:
         text = str(value)
         stats: dict[str, int] = {}
         formula = compile_formula(
-            text[1:] if text.startswith("=") else text, context,
-            origin=origin, cell_relative=True, stats=stats,
+            text[1:] if text.startswith("=") else text,
+            context,
+            origin=origin,
+            cell_relative=True,
+            stats=stats,
         )
         size = struct.unpack_from("<I", formula)[0] + 2 * stats["references"]
     else:
@@ -557,10 +674,16 @@ def _scale_records(rule, context, origin) -> bytes:
     if isinstance(rule, DataBarRule):
         # Without lengths Excel draws bars from 10% to 90% of the cell.
         flags = 0 if rule.show_value is False else _BAR_SHOW_VALUE
-        out = build_record(BRT_BEGIN_DATA_BAR, bytes((
-            10 if rule.min_length is None else rule.min_length,
-            90 if rule.max_length is None else rule.max_length, flags,
-        )))
+        out = build_record(
+            BRT_BEGIN_DATA_BAR,
+            bytes(
+                (
+                    10 if rule.min_length is None else rule.min_length,
+                    90 if rule.max_length is None else rule.max_length,
+                    flags,
+                )
+            ),
+        )
         out += threshold(rule.minimum, ("min", None)) + threshold(rule.maximum, ("max", None))
         out += build_record(BRT_COLOR, _scale_color(rule.color))
         return out + build_record(BRT_END_DATA_BAR)
@@ -605,16 +728,29 @@ def _scale_rule(sqref, kind, priority, stop, parts, context):
         return ColorScaleRule(sqref, cfvos[0], cfvos[1], cfvos[2], colors, priority)
     if kind == _DATA_BAR and head[0] == BRT_BEGIN_DATA_BAR and len(cfvos) == 2 and colors:
         low, high, flags = head[1][:3]
-        return DataBarRule(sqref, cfvos[0], cfvos[1], colors[0],
-                           show_value=False if not flags & _BAR_SHOW_VALUE else None,
-                           min_length=low, max_length=high, priority=priority)
+        return DataBarRule(
+            sqref,
+            cfvos[0],
+            cfvos[1],
+            colors[0],
+            show_value=False if not flags & _BAR_SHOW_VALUE else None,
+            min_length=low,
+            max_length=high,
+            priority=priority,
+        )
     if kind == _ICON_SET and head[0] == BRT_BEGIN_ICON_SET and cfvos:
         code, flags = struct.unpack_from("<IH", head[1], 0)
         values = [0 if item.value is None else item.value for item in cfvos]
-        return IconSetRule(sqref, _ICON_SET_NAMES[code], values, cfvo_type=cfvos[0].type,
-                           show_value=False if flags & _ICON_ONLY else None,
-                           reverse=True if flags & _ICON_REVERSE else None,
-                           stop_if_true=stop, priority=priority)
+        return IconSetRule(
+            sqref,
+            _ICON_SET_NAMES[code],
+            values,
+            cfvo_type=cfvos[0].type,
+            show_value=False if flags & _ICON_ONLY else None,
+            reverse=True if flags & _ICON_REVERSE else None,
+            stop_if_true=stop,
+            priority=priority,
+        )
     return None
 
 
@@ -669,8 +805,13 @@ def conditional_formats_bin(formats, context, dxf_id, links=None) -> bytes:
             data = rule_bin(rule, priority, dxf_id(getattr(rule, "dxf", None)), context, _Letters())
             if links and id(rule) in links:
                 end = build_record(BRT_END_CF_RULE)
-                data = (data[:-len(end)] + build_record(_FRT_BEGIN, _FRT_CF)
-                        + build_record(_CF_RULE_EXT, links[id(rule)]) + build_record(_FRT_END) + end)
+                data = (
+                    data[: -len(end)]
+                    + build_record(_FRT_BEGIN, _FRT_CF)
+                    + build_record(_CF_RULE_EXT, links[id(rule)])
+                    + build_record(_FRT_END)
+                    + end
+                )
             out.append(data)
         out.append(build_record(BRT_END_CONDITIONAL_FORMATTING))
     return b"".join(out)
@@ -692,7 +833,7 @@ def without_conditional_formats(data: bytes, keep=frozenset()):
     while index < len(records):
         record = records[index]
         kind = record.record_id
-        payload = data[record.data_start:record.data_end]
+        payload = data[record.data_start : record.data_end]
         if kind == BRT_BEGIN_CONDITIONAL_FORMATTING:
             depth += 1
         if depth:
@@ -702,25 +843,21 @@ def without_conditional_formats(data: bytes, keep=frozenset()):
                 depth -= 1
             index += 1
             continue
-        if (kind == _FRT_BEGIN and index + 1 < len(records)
-                and records[index + 1].record_id == _BEGIN_CF14_LIST):
+        if kind == _FRT_BEGIN and index + 1 < len(records) and records[index + 1].record_id == _BEGIN_CF14_LIST:
             end = index + 2
             start = None
             while end < len(records) and records[end].record_id != _FRT_END:
                 if records[end].record_id == _BEGIN_CF14:
                     start = records[end].header_start
                 elif records[end].record_id == _END_CF14 and start is not None:
-                    groups.append(data[start:records[end].data_end])
+                    groups.append(data[start : records[end].data_end])
                     start = None
                 end += 1
             index = end + 1
             continue
-        kept.append(data[record.header_start:record.data_end])
+        kept.append(data[record.header_start : record.data_end])
         index += 1
-    extension = [
-        group for group in groups
-        if all(payload in keep for guid, payload in linked.items() if guid in group)
-    ]
+    extension = [group for group in groups if all(payload in keep for guid, payload in linked.items() if guid in group)]
     return b"".join(kept), extension
 
 
@@ -743,5 +880,10 @@ def extension_block(groups) -> bytes:
     """The worksheet FRT block (BrtFRTBegin ... BrtFRTEnd) holding ``groups``."""
     if not groups:
         return b""
-    return (build_record(_FRT_BEGIN, _FRT_CF) + build_record(_BEGIN_CF14_LIST)
-            + b"".join(groups) + build_record(_END_CF14_LIST) + build_record(_FRT_END))
+    return (
+        build_record(_FRT_BEGIN, _FRT_CF)
+        + build_record(_BEGIN_CF14_LIST)
+        + b"".join(groups)
+        + build_record(_END_CF14_LIST)
+        + build_record(_FRT_END)
+    )

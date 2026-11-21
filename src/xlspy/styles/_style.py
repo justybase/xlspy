@@ -42,6 +42,7 @@ class Style:
         `Protection` for the structured properties, and `DifferentialStyle`
         for conditional formatting.
     """
+
     fill: str | PatternFill | GradientFill | None = None
     font_color: str | None = None
     bold: bool | None = None
@@ -62,9 +63,7 @@ class Style:
     def __post_init__(self) -> None:
         fill = self.fill
         if fill is not None:
-            if type(fill).__name__ == "GradientFill" and not isinstance(
-                fill, GradientFill
-            ):
+            if type(fill).__name__ == "GradientFill" and not isinstance(fill, GradientFill):
                 raise TypeError(
                     "fill must be a xlspy GradientFill, PatternFill, or color "
                     "string; openpyxl fills are not interchangeable"
@@ -72,23 +71,23 @@ class Style:
             if isinstance(fill, str):
                 object.__setattr__(self, "fill", normalize_color(fill))
             elif not isinstance(fill, (PatternFill, GradientFill)):
-                raise TypeError(
-                    "fill must be a color string, PatternFill, GradientFill, "
-                    "or None"
-                )
+                raise TypeError("fill must be a color string, PatternFill, GradientFill, or None")
         if self.font_color is not None:
-            object.__setattr__(
-                self, "font_color", normalize_color(self.font_color)
-            )
+            object.__setattr__(self, "font_color", normalize_color(self.font_color))
         if self.number_format is not None and not isinstance(self.number_format, str):
             raise TypeError("number_format must be a string or None")
         if self.horizontal is not None and self.horizontal not in {
-            "general", "left", "center", "right", "fill", "justify", "centerContinuous", "distributed"
+            "general",
+            "left",
+            "center",
+            "right",
+            "fill",
+            "justify",
+            "centerContinuous",
+            "distributed",
         }:
             raise ValueError("invalid horizontal alignment")
-        if self.vertical is not None and self.vertical not in {
-            "top", "center", "bottom", "justify", "distributed"
-        }:
+        if self.vertical is not None and self.vertical not in {"top", "center", "bottom", "justify", "distributed"}:
             raise ValueError("invalid vertical alignment")
         for name in ("bold", "italic", "underline", "wrap", "quote_prefix", "pivot_button"):
             value = getattr(self, name)
@@ -125,27 +124,15 @@ class DifferentialStyle:
         if self.font is not None and not isinstance(self.font, Font):
             raise TypeError("font must be a Font or None")
         if self.fill is not None:
-            if type(self.fill).__name__ == "GradientFill" and not isinstance(
-                self.fill, GradientFill
-            ):
-                raise TypeError(
-                    "fill must be a xlspy PatternFill or GradientFill"
-                )
+            if type(self.fill).__name__ == "GradientFill" and not isinstance(self.fill, GradientFill):
+                raise TypeError("fill must be a xlspy PatternFill or GradientFill")
             if not isinstance(self.fill, (PatternFill, GradientFill)):
-                raise TypeError(
-                    "fill must be a PatternFill, GradientFill, or None"
-                )
+                raise TypeError("fill must be a PatternFill, GradientFill, or None")
         if self.border is not None and not isinstance(self.border, Border):
             raise TypeError("border must be a Border or None")
-        if self.number_format is not None and not isinstance(
-            self.number_format, str
-        ):
+        if self.number_format is not None and not isinstance(self.number_format, str):
             raise TypeError("number_format must be a string or None")
-        if self.alignment is not None and not isinstance(
-            self.alignment, Alignment
-        ):
+        if self.alignment is not None and not isinstance(self.alignment, Alignment):
             raise TypeError("alignment must be an Alignment or None")
-        if self.protection is not None and not isinstance(
-            self.protection, Protection
-        ):
+        if self.protection is not None and not isinstance(self.protection, Protection):
             raise TypeError("protection must be a Protection or None")

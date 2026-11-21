@@ -8,9 +8,15 @@ from .refs import parse_cell_range
 
 # The ``ignoredError`` flags, as spelled in the file.
 FLAGS = (
-    "evalError", "twoDigitTextYear", "numberStoredAsText", "formula",
-    "formulaRange", "unlockedFormula", "emptyCellReference",
-    "listDataValidation", "calculatedColumn",
+    "evalError",
+    "twoDigitTextYear",
+    "numberStoredAsText",
+    "formula",
+    "formulaRange",
+    "unlockedFormula",
+    "emptyCellReference",
+    "listDataValidation",
+    "calculatedColumn",
 )
 
 
@@ -49,8 +55,7 @@ def ignored_errors_xml(items, prefix: str = "") -> str:
     entries = []
     for item in items:
         attrs = f' sqref="{item.sqref}"' + "".join(
-            f' {name}="{int(bool(getattr(item, name)))}"'
-            for name in FLAGS if getattr(item, name) is not None
+            f' {name}="{int(bool(getattr(item, name)))}"' for name in FLAGS if getattr(item, name) is not None
         )
         entries.append(f"<{prefix}ignoredError{attrs}/>")
     if not entries:

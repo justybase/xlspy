@@ -63,11 +63,20 @@ def test_inline_font_writes_every_run_property():
     )
     xml = font._xml("x:")
     for fragment in (
-        "<x:b/>", "<x:i/>", "<x:strike/>", "<x:condense/>", "<x:extend/>",
-        "<x:outline/>", "<x:shadow/>", '<x:u val="double"/>',
-        '<x:vertAlign val="superscript"/>', '<x:sz val="14"/>',
-        '<x:color indexed="3"/>', '<x:rFont val="Arial"/>',
-        '<x:family val="2"/>', '<x:charset val="1"/>',
+        "<x:b/>",
+        "<x:i/>",
+        "<x:strike/>",
+        "<x:condense/>",
+        "<x:extend/>",
+        "<x:outline/>",
+        "<x:shadow/>",
+        '<x:u val="double"/>',
+        '<x:vertAlign val="superscript"/>',
+        '<x:sz val="14"/>',
+        '<x:color indexed="3"/>',
+        '<x:rFont val="Arial"/>',
+        '<x:family val="2"/>',
+        '<x:charset val="1"/>',
         '<x:scheme val="minor"/>',
     ):
         assert fragment in xml
@@ -76,9 +85,7 @@ def test_inline_font_writes_every_run_property():
 
 def test_an_empty_inline_font_writes_no_run_properties():
     assert InlineFont()._xml("") == ""
-    assert InlineFont(u="single", vertAlign="subscript")._xml("") == (
-        '<rPr><u/><vertAlign val="subscript"/></rPr>'
-    )
+    assert InlineFont(u="single", vertAlign="subscript")._xml("") == ('<rPr><u/><vertAlign val="subscript"/></rPr>')
 
 
 def test_text_block_requires_a_font_and_text():
@@ -139,10 +146,7 @@ def test_runs_without_font_properties_stay_plain_strings():
 
 
 def test_phonetic_runs_are_skipped():
-    xml = (
-        "<si><r><t>base</t></r>"
-        "<rPh sb='0' eb='1'><t>phonetic</t></rPh></si>"
-    )
+    xml = "<si><r><t>base</t></r><rPh sb='0' eb='1'><t>phonetic</t></rPh></si>"
     assert rich_text_from_si(_si(xml)) == CellRichText("base")
 
 
@@ -159,14 +163,21 @@ def test_run_font_properties_are_read_back():
     font = run.font
     assert font.b is True and font.i is False
     assert (font.strike, font.outline, font.shadow, font.condense, font.extend) == (
-        True, True, True, True, True,
+        True,
+        True,
+        True,
+        True,
+        True,
     )
     assert font.u == "double"
     assert font.vertAlign == "superscript"
     assert font.sz == 14.0
     assert font.color == Color(rgb="FFC00000")
     assert (font.rFont, font.family, font.charset, font.scheme) == (
-        "Arial", 2, 1, "minor",
+        "Arial",
+        2,
+        1,
+        "minor",
     )
 
 
@@ -185,10 +196,7 @@ def test_run_font_edge_properties(properties, expected):
 
 
 def test_shared_string_table_reads_plain_and_rich_items():
-    xml = (
-        "<sst><si><t>plain</t></si>"
-        "<si><r><rPr><b/></rPr><t>bold</t></r></si></sst>"
-    )
+    xml = "<sst><si><t>plain</t></si><si><r><rPr><b/></rPr><t>bold</t></r></si></sst>"
     values = parse_rich_shared_strings(xml.encode("utf-8"))
     assert values[0] == "plain"
     assert isinstance(values[1], CellRichText)

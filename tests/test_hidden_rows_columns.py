@@ -1,4 +1,5 @@
 """Hidden rows and columns: argument rules and output, in both writers."""
+
 from __future__ import annotations
 
 import struct
@@ -20,7 +21,8 @@ def _xlsb_row_flags(path, part="xl/worksheets/sheet1.bin"):
     assert records[-1].data_end == len(blob), "sheet records must tile the buffer"
     return {
         struct.unpack_from("<I", blob, r.data_start)[0]: blob[r.data_start + 11]
-        for r in records if r.record_id == 0x0000
+        for r in records
+        if r.record_id == 0x0000
     }
 
 

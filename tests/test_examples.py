@@ -1,5 +1,6 @@
 """Every script in examples/ runs and writes its workbooks into the directory it is
 given, not into the repository."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -22,15 +23,22 @@ NOT_RUN = {
 }
 # Scripts that take an output directory as their only argument.
 TAKES_DIRECTORY = {
-    "dataframe_formats_and_index.py", "dataframe_roundtrip.py", "dataframe_to_xlsb.py",
-    "dataframe_to_xlsx.py", "dataframe_writer_methods.py", "format_demo.py",
+    "dataframe_formats_and_index.py",
+    "dataframe_roundtrip.py",
+    "dataframe_to_xlsb.py",
+    "dataframe_to_xlsx.py",
+    "dataframe_writer_methods.py",
+    "format_demo.py",
     "polars_to_xlsx_xlsb.py",
 }
 EXTRA_ARGS = {"xlsx_streaming_export.py": ["--rows", "2000"]}
 NEEDS = {
-    "dataframe_formats_and_index.py": "pandas", "dataframe_roundtrip.py": "pandas",
-    "dataframe_to_xlsb.py": "pandas", "dataframe_to_xlsx.py": "pandas",
-    "dataframe_writer_methods.py": "pandas", "polars_to_xlsx_xlsb.py": "polars",
+    "dataframe_formats_and_index.py": "pandas",
+    "dataframe_roundtrip.py": "pandas",
+    "dataframe_to_xlsb.py": "pandas",
+    "dataframe_to_xlsx.py": "pandas",
+    "dataframe_writer_methods.py": "pandas",
+    "polars_to_xlsx_xlsb.py": "polars",
 }
 
 
@@ -57,7 +65,10 @@ def test_example_runs(tmp_path: Path, script: str) -> None:
     args = [str(tmp_path)] if script in TAKES_DIRECTORY else EXTRA_ARGS.get(script, [])
     result = subprocess.run(
         [sys.executable, str(EXAMPLES / script), *args],
-        cwd=tmp_path, capture_output=True, text=True, timeout=240,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=240,
     )
     assert result.returncode == 0, result.stderr[-2000:]
     assert sorted(path.name for path in EXAMPLES.iterdir()) == before, "the example wrote into examples/"

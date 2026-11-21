@@ -18,12 +18,26 @@ SORT_METHODS = ("stroke", "pinYin")
 # Icon set name -> number of icons.  The last three are the sets Excel writes
 # as BrtBeginSortCond14 (CFFlag14) in XLSB; XLSX names them the same way.
 ICON_SET_SIZES = {
-    "3Arrows": 3, "3ArrowsGray": 3, "3Flags": 3, "3TrafficLights1": 3,
-    "3TrafficLights2": 3, "3Signs": 3, "3Symbols": 3, "3Symbols2": 3,
-    "4Arrows": 4, "4ArrowsGray": 4, "4RedToBlack": 4, "4Rating": 4,
+    "3Arrows": 3,
+    "3ArrowsGray": 3,
+    "3Flags": 3,
+    "3TrafficLights1": 3,
+    "3TrafficLights2": 3,
+    "3Signs": 3,
+    "3Symbols": 3,
+    "3Symbols2": 3,
+    "4Arrows": 4,
+    "4ArrowsGray": 4,
+    "4RedToBlack": 4,
+    "4Rating": 4,
     "4TrafficLights": 4,
-    "5Arrows": 5, "5ArrowsGray": 5, "5Rating": 5, "5Quarters": 5,
-    "3Stars": 3, "3Triangles": 3, "5Boxes": 5,
+    "5Arrows": 5,
+    "5ArrowsGray": 5,
+    "5Rating": 5,
+    "5Quarters": 5,
+    "3Stars": 3,
+    "3Triangles": 3,
+    "5Boxes": 5,
 }
 
 # Icon sets stored in a CFFlag14 record rather than the classic CFFlag.
@@ -74,14 +88,9 @@ def _check_condition(condition: Any) -> None:
         if icon_set is None:
             raise UnsupportedFeatureError("sorting by icon needs an iconSet and iconId")
         if icon_set not in ICON_SET_SIZES:
-            raise UnsupportedFeatureError(
-                f"unsupported icon set {icon_set!r} for a sort condition"
-            )
+            raise UnsupportedFeatureError(f"unsupported icon set {icon_set!r} for a sort condition")
         icon_id = getattr(condition, "iconId", None)
-        if (
-            not isinstance(icon_id, int) or isinstance(icon_id, bool)
-            or not 0 <= icon_id < ICON_SET_SIZES[icon_set]
-        ):
+        if not isinstance(icon_id, int) or isinstance(icon_id, bool) or not 0 <= icon_id < ICON_SET_SIZES[icon_set]:
             raise ValueError(f"invalid iconId {icon_id!r}")
 
 

@@ -47,12 +47,12 @@ from .hyperlinks import Hyperlink
 from .rich_text import CellRichText
 
 _CHART_AXES_XML = (
-    "<catAx><axId val=\"10\"/><scaling><orientation val=\"minMax\"/></scaling>"
-    "<axPos val=\"l\"/><majorTickMark val=\"none\"/><minorTickMark val=\"none\"/>"
-    "<crossAx val=\"100\"/><lblOffset val=\"100\"/></catAx>"
-    "<valAx><axId val=\"100\"/><scaling><orientation val=\"minMax\"/></scaling>"
-    "<axPos val=\"l\"/><majorGridlines/><majorTickMark val=\"none\"/>"
-    "<minorTickMark val=\"none\"/><crossAx val=\"10\"/></valAx>"
+    '<catAx><axId val="10"/><scaling><orientation val="minMax"/></scaling>'
+    '<axPos val="l"/><majorTickMark val="none"/><minorTickMark val="none"/>'
+    '<crossAx val="100"/><lblOffset val="100"/></catAx>'
+    '<valAx><axId val="100"/><scaling><orientation val="minMax"/></scaling>'
+    '<axPos val="l"/><majorGridlines/><majorTickMark val="none"/>'
+    '<minorTickMark val="none"/><crossAx val="10"/></valAx>'
 )
 
 # The XLSB loader in Excel does not apply the same attribute defaults as the
@@ -61,14 +61,14 @@ _CHART_AXES_XML = (
 # out, so the XLSB path mirrors them. The XLSX path stays byte-identical to
 # the openpyxl oracle, which renders correctly without them.
 _XLSB_CHART_AXES_XML = (
-    "<catAx><axId val=\"10\"/><scaling><orientation val=\"minMax\"/></scaling>"
-    "<delete val=\"0\"/><axPos val=\"b\"/>"
-    "<majorTickMark val=\"none\"/><minorTickMark val=\"none\"/>"
-    "<tickLblPos val=\"nextTo\"/><crossAx val=\"100\"/><lblOffset val=\"100\"/></catAx>"
-    "<valAx><axId val=\"100\"/><scaling><orientation val=\"minMax\"/></scaling>"
-    "<delete val=\"0\"/><axPos val=\"l\"/><majorGridlines/>"
-    "<majorTickMark val=\"none\"/><minorTickMark val=\"none\"/>"
-    "<tickLblPos val=\"nextTo\"/><crossAx val=\"10\"/></valAx>"
+    '<catAx><axId val="10"/><scaling><orientation val="minMax"/></scaling>'
+    '<delete val="0"/><axPos val="b"/>'
+    '<majorTickMark val="none"/><minorTickMark val="none"/>'
+    '<tickLblPos val="nextTo"/><crossAx val="100"/><lblOffset val="100"/></catAx>'
+    '<valAx><axId val="100"/><scaling><orientation val="minMax"/></scaling>'
+    '<delete val="0"/><axPos val="l"/><majorGridlines/>'
+    '<majorTickMark val="none"/><minorTickMark val="none"/>'
+    '<tickLblPos val="nextTo"/><crossAx val="10"/></valAx>'
 )
 
 # [MS-ODRAWXML] 2.7.3.5: the modern c14 style value is the legacy value plus
@@ -114,8 +114,7 @@ def _split_sheet_ref(reference: str) -> tuple[str | None, str]:
     return sheet, cells
 
 
-def chart_ref(letters: list[str], sheet_name: str, ref: str, *,
-              absolute: bool = True) -> str:
+def chart_ref(letters: list[str], sheet_name: str, ref: str, *, absolute: bool = True) -> str:
     owning_sheet, ref = _split_sheet_ref(ref)
     first_col, first_row, last_col, last_row = parse_cell_range(ref)
     if absolute:
@@ -125,10 +124,7 @@ def chart_ref(letters: list[str], sheet_name: str, ref: str, *,
     elif (first_col, first_row) == (last_col, last_row):
         range_ref = f"{letters[first_col]}{first_row + 1}"
     else:
-        range_ref = (
-            f"{letters[first_col]}{first_row + 1}"
-            f":{letters[last_col]}{last_row + 1}"
-        )
+        range_ref = f"{letters[first_col]}{first_row + 1}:{letters[last_col]}{last_row + 1}"
     return f"{quote_sheet_name(owning_sheet or sheet_name)}!{range_ref}"
 
 
@@ -148,8 +144,7 @@ def chart_cell_spans(charts) -> dict[int, tuple[int, int]]:
     spans: dict[int, tuple[int, int]] = {}
     for chart in charts:
         for series in chart.series:
-            for ref in (series.values, series.categories, series.x_values,
-                        series.title_cell):
+            for ref in (series.values, series.categories, series.x_values, series.title_cell):
                 local = _local_ref(ref) if ref is not None else None
                 if local is None:
                     continue
@@ -163,8 +158,7 @@ def chart_cell_spans(charts) -> dict[int, tuple[int, int]]:
 def new_cell_store(spans: dict[int, tuple[int, int]]) -> dict[int, tuple[int, list]]:
     """Empty capture store: column -> (first row, one slot per row in the span)."""
     return {
-        col_idx: (first_row, [None] * (last_row - first_row + 1))
-        for col_idx, (first_row, last_row) in spans.items()
+        col_idx: (first_row, [None] * (last_row - first_row + 1)) for col_idx, (first_row, last_row) in spans.items()
     }
 
 
@@ -238,11 +232,8 @@ def _chart_text(value) -> str:
 
 
 def _str_cache_xml(values: list) -> str:
-    points = "".join(
-        f"<pt idx=\"{i}\"><v>{saxutils.escape(_chart_text(v))}</v></pt>"
-        for i, v in enumerate(values)
-    )
-    return f"<strCache><ptCount val=\"{len(values)}\"/>{points}</strCache>"
+    points = "".join(f'<pt idx="{i}"><v>{saxutils.escape(_chart_text(v))}</v></pt>' for i, v in enumerate(values))
+    return f'<strCache><ptCount val="{len(values)}"/>{points}</strCache>'
 
 
 def _num_cache_xml(values: list) -> str:
@@ -259,12 +250,9 @@ def _num_cache_xml(values: list) -> str:
                 text = "0"
         else:
             text = _chart_number_text(value)
-        points.append(f"<pt idx=\"{i}\"><v>{text}</v></pt>")
+        points.append(f'<pt idx="{i}"><v>{text}</v></pt>')
     joined = "".join(points)
-    return (
-        "<numCache><formatCode>General</formatCode>"
-        f"<ptCount val=\"{len(values)}\"/>{joined}</numCache>"
-    )
+    return f'<numCache><formatCode>General</formatCode><ptCount val="{len(values)}"/>{joined}</numCache>'
 
 
 def _is_numeric_range(values: list) -> bool:
@@ -296,27 +284,17 @@ def _formula_text(letters, sheet_name: str, ref: str, *, absolute: bool = True) 
 def _series_title_xml(letters, series, sheet_name, cells, xlsb: bool) -> str:
     if series.title_cell is not None:
         formula = _formula_text(
-            letters, sheet_name, series.title_cell, absolute=False,
+            letters,
+            sheet_name,
+            series.title_cell,
+            absolute=False,
         )
         if xlsb:
             title_value = _range_values(cells, series.title_cell)[0]
-            return (
-                "<tx><strRef><f>"
-                f"{formula}"
-                "</f>"
-                f"{_str_cache_xml([title_value])}</strRef></tx>"
-            )
-        return (
-            "<tx><strRef><f>"
-            f"{formula}"
-            "</f></strRef></tx>"
-        )
+            return f"<tx><strRef><f>{formula}</f>{_str_cache_xml([title_value])}</strRef></tx>"
+        return f"<tx><strRef><f>{formula}</f></strRef></tx>"
     if series.title is not None:
-        return (
-            "<tx><v>"
-            f"{saxutils.escape(series.title)}"
-            "</v></tx>"
-        )
+        return f"<tx><v>{saxutils.escape(series.title)}</v></tx>"
     return ""
 
 
@@ -342,10 +320,7 @@ def _line_sp_xml(color, line_on: bool) -> str:
         return '<spPr><a:ln w="19050"><a:noFill/></a:ln></spPr>'
     if color is None:
         return '<spPr><a:ln><a:prstDash val="solid"/></a:ln></spPr>'
-    return (
-        f'<spPr><a:ln w="28575">{_solid(color)}'
-        '<a:prstDash val="solid"/></a:ln></spPr>'
-    )
+    return f'<spPr><a:ln w="28575">{_solid(color)}<a:prstDash val="solid"/></a:ln></spPr>'
 
 
 def _marker_xml(marker, color) -> str:
@@ -354,10 +329,7 @@ def _marker_xml(marker, color) -> str:
     sp_pr = ""
     if color is not None:
         sp_pr = f'<spPr>{_solid(color)}<a:ln w="9525">{_solid(color)}</a:ln></spPr>'
-    return (
-        f'<marker><symbol val="{marker.symbol}"/><size val="{marker.size}"/>'
-        f"{sp_pr}</marker>"
-    )
+    return f'<marker><symbol val="{marker.symbol}"/><size val="{marker.size}"/>{sp_pr}</marker>'
 
 
 def _series_style_xml(series, chart_type: str, index: int, cells, xlsb: bool):
@@ -371,23 +343,23 @@ def _series_style_xml(series, chart_type: str, index: int, cells, xlsb: bool):
             if line_on:
                 sp_pr = (
                     "<spPr><a:ln>"
-                    f"<a:solidFill><a:srgbClr val=\"{color}\"/></a:solidFill>"
-                    "<a:prstDash val=\"solid\"/></a:ln></spPr>"
+                    f'<a:solidFill><a:srgbClr val="{color}"/></a:solidFill>'
+                    '<a:prstDash val="solid"/></a:ln></spPr>'
                 )
             else:
                 sp_pr = '<spPr><a:ln w="19050"><a:noFill/></a:ln></spPr>'
         else:
             sp_pr = (
-                f"<spPr><a:solidFill><a:srgbClr val=\"{color}\"/></a:solidFill>"
-                "<a:ln><a:prstDash val=\"solid\"/></a:ln></spPr>"
+                f'<spPr><a:solidFill><a:srgbClr val="{color}"/></a:solidFill>'
+                '<a:ln><a:prstDash val="solid"/></a:ln></spPr>'
             )
         points = ""
         if chart_type in ("pie", "doughnut"):
             value_count = len(_range_values(cells, series.values))
             points = "".join(
-                f"<dPt><idx val=\"{point}\"/><spPr><a:solidFill>"
-                f"<a:srgbClr val=\"{_LEGACY_ACCENTS[point % len(_LEGACY_ACCENTS)]}\"/>"
-                "</a:solidFill><a:ln><a:prstDash val=\"solid\"/></a:ln></spPr></dPt>"
+                f'<dPt><idx val="{point}"/><spPr><a:solidFill>'
+                f'<a:srgbClr val="{_LEGACY_ACCENTS[point % len(_LEGACY_ACCENTS)]}"/>'
+                '</a:solidFill><a:ln><a:prstDash val="solid"/></a:ln></spPr></dPt>'
                 for point in range(value_count)
             )
         marker = ""
@@ -395,10 +367,7 @@ def _series_style_xml(series, chart_type: str, index: int, cells, xlsb: bool):
             marker = _marker_xml(series.marker or ChartMarker(), color)
         elif chart_type == "line":
             if series.marker is None:
-                marker = (
-                    "<marker><symbol val=\"none\"/>"
-                    "<spPr><a:ln><a:prstDash val=\"solid\"/></a:ln></spPr></marker>"
-                )
+                marker = '<marker><symbol val="none"/><spPr><a:ln><a:prstDash val="solid"/></a:ln></spPr></marker>'
             else:
                 marker = _marker_xml(series.marker, color)
         return sp_pr, points, marker
@@ -410,24 +379,18 @@ def _series_style_xml(series, chart_type: str, index: int, cells, xlsb: bool):
         if color is None:
             sp_pr = '<spPr><a:ln><a:prstDash val="solid"/></a:ln></spPr>'
         else:
-            sp_pr = (
-                f'<spPr>{_solid(color)}'
-                '<a:ln><a:prstDash val="solid"/></a:ln></spPr>'
-            )
+            sp_pr = f'<spPr>{_solid(color)}<a:ln><a:prstDash val="solid"/></a:ln></spPr>'
     elif chart_type == "line":
         sp_pr = _line_sp_xml(color, series.line is not False)
         if series.marker is None:
-            marker = (
-                "<marker><symbol val=\"none\"/>"
-                "<spPr><a:ln><a:prstDash val=\"solid\"/></a:ln></spPr></marker>"
-            )
+            marker = '<marker><symbol val="none"/><spPr><a:ln><a:prstDash val="solid"/></a:ln></spPr></marker>'
         else:
             marker = _marker_xml(series.marker, color)
     elif chart_type == "scatter":
         sp_pr = _line_sp_xml(color, series.line is True)
         marker = _marker_xml(series.marker or ChartMarker(), color)
     else:
-        sp_pr = "<spPr><a:ln><a:prstDash val=\"solid\"/></a:ln></spPr>"
+        sp_pr = '<spPr><a:ln><a:prstDash val="solid"/></a:ln></spPr>'
     return sp_pr, points, marker
 
 
@@ -436,10 +399,7 @@ def _trendline_xml(trendline) -> str:
     if trendline.name is not None:
         parts.append(f"<name>{saxutils.escape(trendline.name)}</name>")
     if trendline.color is not None:
-        parts.append(
-            f'<spPr><a:ln w="19050">{_solid(trendline.color)}'
-            '<a:prstDash val="solid"/></a:ln></spPr>'
-        )
+        parts.append(f'<spPr><a:ln w="19050">{_solid(trendline.color)}<a:prstDash val="solid"/></a:ln></spPr>')
     parts.append(f'<trendlineType val="{TRENDLINE_TYPES[trendline.type]}"/>')
     if trendline.order is not None:
         parts.append(f'<order val="{trendline.order}"/>')
@@ -467,9 +427,7 @@ def _error_bars_xml(bars) -> str:
     if bars.value is not None and bars.kind != "std_err":
         parts.append(f'<val val="{_chart_number_text(bars.value)}"/>')
     if bars.color is not None:
-        parts.append(
-            f'<spPr><a:ln w="9525">{_solid(bars.color)}<a:prstDash val="solid"/></a:ln></spPr>'
-        )
+        parts.append(f'<spPr><a:ln w="9525">{_solid(bars.color)}<a:prstDash val="solid"/></a:ln></spPr>')
     parts.append("</errBars>")
     return "".join(parts)
 
@@ -484,9 +442,9 @@ def _series_extras_xml(series) -> str:
     return extras
 
 
-def chart_series_xml(letters: list[str], series, sheet_name: str,
-                     index: int, chart_type: str, cells=None,
-                     xlsb: bool = False) -> str:
+def chart_series_xml(
+    letters: list[str], series, sheet_name: str, index: int, chart_type: str, cells=None, xlsb: bool = False
+) -> str:
     title = _series_title_xml(letters, series, sheet_name, cells, xlsb)
     sp_pr, points, marker = _series_style_xml(series, chart_type, index, cells, xlsb)
     extras = _series_extras_xml(series)
@@ -499,29 +457,35 @@ def chart_series_xml(letters: list[str], series, sheet_name: str,
                 x_xml = _ref_xml("xVal", letters, sheet_name, series.x_values)
         if xlsb:
             y_xml = _ref_xml(
-                "yVal", letters, sheet_name, series.values,
+                "yVal",
+                letters,
+                sheet_name,
+                series.values,
                 cache=_num_cache_xml(_range_values(cells, series.values)),
             )
         else:
             y_xml = _ref_xml("yVal", letters, sheet_name, series.values)
         return (
-            f"<ser><idx val=\"{index}\"/><order val=\"{index}\"/>{title}"
-            f"{sp_pr}{marker}{extras}{x_xml}{y_xml}<smooth val=\"0\"/></ser>"
+            f'<ser><idx val="{index}"/><order val="{index}"/>{title}'
+            f'{sp_pr}{marker}{extras}{x_xml}{y_xml}<smooth val="0"/></ser>'
         )
     categories = _categories_xml(letters, series, sheet_name, cells, xlsb)
     smooth = ""
     if xlsb:
         values_xml = _ref_xml(
-            "val", letters, sheet_name, series.values,
+            "val",
+            letters,
+            sheet_name,
+            series.values,
             cache=_num_cache_xml(_range_values(cells, series.values)),
         )
         if chart_type == "line":
             # The XLSB loader smooths a line series that does not say otherwise.
-            smooth = "<smooth val=\"0\"/>"
+            smooth = '<smooth val="0"/>'
     else:
         values_xml = _ref_xml("val", letters, sheet_name, series.values)
     return (
-        f"<ser><idx val=\"{index}\"/><order val=\"{index}\"/>{title}"
+        f'<ser><idx val="{index}"/><order val="{index}"/>{title}'
         f"{sp_pr}{points}{marker}{extras}{categories}"
         f"{values_xml}{smooth}</ser>"
     )
@@ -530,9 +494,7 @@ def chart_series_xml(letters: list[str], series, sheet_name: str,
 def _dlbls_xml(labels) -> str:
     parts = ["<dLbls>"]
     if labels.number_format is not None:
-        parts.append(
-            f'<numFmt formatCode="{_attr(labels.number_format)}" sourceLinked="0"/>'
-        )
+        parts.append(f'<numFmt formatCode="{_attr(labels.number_format)}" sourceLinked="0"/>')
     if labels.position is not None:
         parts.append(f'<dLblPos val="{LABEL_POSITIONS[labels.position]}"/>')
     parts.append(
@@ -554,9 +516,17 @@ def _axis_title_xml(text: str) -> str:
     )
 
 
-def _axis_xml(kind: str, ax_id: int, cross_id: int, position: str, axis,
-              default_gridlines: bool, cross_between: str = "between",
-              xlsb: bool = False, crosses: str | None = None) -> str:
+def _axis_xml(
+    kind: str,
+    ax_id: int,
+    cross_id: int,
+    position: str,
+    axis,
+    default_gridlines: bool,
+    cross_between: str = "between",
+    xlsb: bool = False,
+    crosses: str | None = None,
+) -> str:
     """One ``catAx`` or ``valAx`` element for the extended chart model.
 
     The XLSB loader draws an axis only with an explicit ``delete val="0"``
@@ -583,9 +553,7 @@ def _axis_xml(kind: str, ax_id: int, cross_id: int, position: str, axis,
     if axis.number_format is not None:
         parts.append(f'<numFmt formatCode="{_attr(axis.number_format)}" sourceLinked="0"/>')
     parts.append(
-        '<majorTickMark val="none"/><minorTickMark val="none"/>'
-        '<tickLblPos val="nextTo"/>'
-        f'<crossAx val="{cross_id}"/>'
+        f'<majorTickMark val="none"/><minorTickMark val="none"/><tickLblPos val="nextTo"/><crossAx val="{cross_id}"/>'
     )
     if crosses is not None:
         parts.append(f'<crosses val="{crosses}"/>')
@@ -607,23 +575,19 @@ def _axes_xml(chart, xlsb: bool) -> str:
         return _XLSB_CHART_AXES_XML if xlsb else _CHART_AXES_XML
     if kind == "area":
         # Excel's own area charts start the plot at the value axis.
-        return (
-            _axis_xml("catAx", 10, 100, "b", chart.x_axis, False, xlsb=xlsb)
-            + _axis_xml("valAx", 100, 10, "l", chart.y_axis, True, "midCat", xlsb)
+        return _axis_xml("catAx", 10, 100, "b", chart.x_axis, False, xlsb=xlsb) + _axis_xml(
+            "valAx", 100, 10, "l", chart.y_axis, True, "midCat", xlsb
         )
     if kind == "scatter":
-        return (
-            _axis_xml("valAx", 10, 100, "b", chart.x_axis, False, "midCat", xlsb)
-            + _axis_xml("valAx", 100, 10, "l", chart.y_axis, True, "midCat", xlsb)
+        return _axis_xml("valAx", 10, 100, "b", chart.x_axis, False, "midCat", xlsb) + _axis_xml(
+            "valAx", 100, 10, "l", chart.y_axis, True, "midCat", xlsb
         )
     if kind == "barh":
-        return (
-            _axis_xml("catAx", 10, 100, "l", chart.x_axis, False, xlsb=xlsb)
-            + _axis_xml("valAx", 100, 10, "b", chart.y_axis, True, xlsb=xlsb)
+        return _axis_xml("catAx", 10, 100, "l", chart.x_axis, False, xlsb=xlsb) + _axis_xml(
+            "valAx", 100, 10, "b", chart.y_axis, True, xlsb=xlsb
         )
-    return (
-        _axis_xml("catAx", 10, 100, "b", chart.x_axis, False, xlsb=xlsb)
-        + _axis_xml("valAx", 100, 10, "l", chart.y_axis, True, xlsb=xlsb)
+    return _axis_xml("catAx", 10, 100, "b", chart.x_axis, False, xlsb=xlsb) + _axis_xml(
+        "valAx", 100, 10, "l", chart.y_axis, True, xlsb=xlsb
     )
 
 
@@ -634,10 +598,7 @@ def _legend_xml(legend) -> str:
         return '<legend><legendPos val="r"/><overlay val="0"/></legend>'
     # An absent overlay element means the legend covers the plot in Excel.
     overlay = '<overlay val="1"/>' if legend.overlay else '<overlay val="0"/>'
-    return (
-        f'<legend><legendPos val="{LEGEND_POSITIONS[legend.position]}"/>'
-        f"{overlay}</legend>"
-    )
+    return f'<legend><legendPos val="{LEGEND_POSITIONS[legend.position]}"/>{overlay}</legend>'
 
 
 def _font_size_hundredths(points: float) -> str:
@@ -651,10 +612,10 @@ def _chart_title_xml(chart, xlsb: bool) -> str:
         size = "1800" if chart.title_size is None else _font_size_hundredths(chart.title_size)
         return (
             "<title><tx><rich><a:bodyPr/><a:p>"
-            f"<a:pPr><a:defRPr sz=\"{size}\" b=\"1\"/></a:pPr>"
-            f"<a:r><a:rPr lang=\"en-US\" sz=\"{size}\" b=\"1\"/>"
+            f'<a:pPr><a:defRPr sz="{size}" b="1"/></a:pPr>'
+            f'<a:r><a:rPr lang="en-US" sz="{size}" b="1"/>'
             f"<a:t>{title_text}</a:t></a:r>"
-            "</a:p></rich></tx><overlay val=\"0\"/></title>"
+            '</a:p></rich></tx><overlay val="0"/></title>'
         )
     if chart.title_size is None:
         return (
@@ -671,20 +632,19 @@ def _chart_title_xml(chart, xlsb: bool) -> str:
     )
 
 
-def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
-              xlsb: bool = False) -> str:
+def chart_xml(letters: list[str], chart, sheet_name: str, cells=None, xlsb: bool = False) -> str:
     parts = []
     if chart.style is not None:
         if xlsb:
             parts.append(
-                f"<mc:AlternateContent xmlns:mc=\"{_MC_NS}\">"
-                f"<mc:Choice Requires=\"c14\" xmlns:c14=\"{_C14_NS}\">"
-                f"<c14:style val=\"{chart.style + 100}\"/></mc:Choice>"
-                f"<mc:Fallback><style val=\"{chart.style}\"/></mc:Fallback>"
+                f'<mc:AlternateContent xmlns:mc="{_MC_NS}">'
+                f'<mc:Choice Requires="c14" xmlns:c14="{_C14_NS}">'
+                f'<c14:style val="{chart.style + 100}"/></mc:Choice>'
+                f'<mc:Fallback><style val="{chart.style}"/></mc:Fallback>'
                 "</mc:AlternateContent>"
             )
         else:
-            parts.append(f"<style val=\"{chart.style}\"/>")
+            parts.append(f'<style val="{chart.style}"/>')
     parts.append("<chart>")
     if chart.title is not None:
         parts.append(_chart_title_xml(chart, xlsb))
@@ -693,9 +653,9 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
         # saves it as an empty title; with autoTitleDeleted alone an XLSB
         # opened while another workbook is open usually loses it.
         if len(chart.series) == 1:
-            parts.append("<title><overlay val=\"0\"/></title>")
-        parts.append("<autoTitleDeleted val=\"0\"/>")
-    vary = "<varyColors val=\"0\"/>" if xlsb else ""
+            parts.append('<title><overlay val="0"/></title>')
+        parts.append('<autoTitleDeleted val="0"/>')
+    vary = '<varyColors val="0"/>' if xlsb else ""
     labels = ""
     if chart.labels_enabled:
         labels = _dlbls_xml(chart.data_labels or DataLabels())
@@ -709,8 +669,13 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
         for (kind, secondary), indexes in groups.items():
             group_xml = "".join(
                 chart_series_xml(
-                    letters, chart.series[index], sheet_name, index, kind,
-                    cells=cells, xlsb=xlsb,
+                    letters,
+                    chart.series[index],
+                    sheet_name,
+                    index,
+                    kind,
+                    cells=cells,
+                    xlsb=xlsb,
                 )
                 for index in indexes
             )
@@ -720,53 +685,55 @@ def chart_xml(letters: list[str], chart, sheet_name: str, cells=None,
         return _finish_chart(parts, chart)
     series_xml = "".join(
         chart_series_xml(
-            letters, item, sheet_name, index, chart.chart_type,
-            cells=cells, xlsb=xlsb,
+            letters,
+            item,
+            sheet_name,
+            index,
+            chart.chart_type,
+            cells=cells,
+            xlsb=xlsb,
         )
         for index, item in enumerate(chart.series)
     )
     if chart.chart_type in ("bar", "barh"):
         bar_dir = "col" if chart.chart_type == "bar" else "bar"
         # Stacked bars sit on top of each other: overlap 100%.
-        overlap = "<overlap val=\"100\"/>" if grouping else ""
+        overlap = '<overlap val="100"/>' if grouping else ""
         parts.append(
-            f"<barChart><barDir val=\"{bar_dir}\"/>"
-            f"<grouping val=\"{grouping or 'clustered'}\"/>"
+            f'<barChart><barDir val="{bar_dir}"/>'
+            f'<grouping val="{grouping or "clustered"}"/>'
             f"{vary}{series_xml}{labels}"
-            f"<gapWidth val=\"{gap}\"/>{overlap}<axId val=\"10\"/><axId val=\"100\"/></barChart>"
+            f'<gapWidth val="{gap}"/>{overlap}<axId val="10"/><axId val="100"/></barChart>'
             f"{_axes_xml(chart, xlsb)}"
         )
     elif chart.chart_type in ("line", "area"):
         tag = f"{chart.chart_type}Chart"
         parts.append(
-            f"<{tag}><grouping val=\"{grouping or 'standard'}\"/>"
+            f'<{tag}><grouping val="{grouping or "standard"}"/>'
             f"{vary}{series_xml}{labels}"
-            f"<axId val=\"10\"/><axId val=\"100\"/></{tag}>"
+            f'<axId val="10"/><axId val="100"/></{tag}>'
             f"{_axes_xml(chart, xlsb)}"
         )
     elif chart.chart_type == "scatter":
         parts.append(
-            "<scatterChart><scatterStyle val=\"lineMarker\"/>"
-            f"<varyColors val=\"0\"/>{series_xml}{labels}"
-            "<axId val=\"10\"/><axId val=\"100\"/></scatterChart>"
+            '<scatterChart><scatterStyle val="lineMarker"/>'
+            f'<varyColors val="0"/>{series_xml}{labels}'
+            '<axId val="10"/><axId val="100"/></scatterChart>'
             f"{_axes_xml(chart, xlsb)}"
         )
     elif chart.chart_type == "doughnut":
         parts.append(
-            f"<doughnutChart><varyColors val=\"1\"/>{series_xml}{labels}"
-            f"<firstSliceAng val=\"0\"/><holeSize val=\"{hole}\"/></doughnutChart>"
+            f'<doughnutChart><varyColors val="1"/>{series_xml}{labels}'
+            f'<firstSliceAng val="0"/><holeSize val="{hole}"/></doughnutChart>'
         )
     elif chart.chart_type == "radar":
         parts.append(
-            f"<radarChart><radarStyle val=\"marker\"/>{vary}{series_xml}{labels}"
-            "<axId val=\"10\"/><axId val=\"100\"/></radarChart>"
+            f'<radarChart><radarStyle val="marker"/>{vary}{series_xml}{labels}'
+            '<axId val="10"/><axId val="100"/></radarChart>'
             f"{_axes_xml(chart, xlsb)}"
         )
     elif chart.chart_type == "pie":
-        parts.append(
-            f"<pieChart><varyColors val=\"1\"/>{series_xml}{labels}"
-            "<firstSliceAng val=\"0\"/></pieChart>"
-        )
+        parts.append(f'<pieChart><varyColors val="1"/>{series_xml}{labels}<firstSliceAng val="0"/></pieChart>')
     else:
         # Never fall through to a pie: a type without a serialiser must fail.
         raise ValueError(f"chart type {chart.chart_type!r} cannot be written yet")
@@ -781,32 +748,26 @@ def _series_groups(chart) -> dict[tuple[str, bool], list[int]]:
     return groups
 
 
-def _chart_group_xml(kind: str, series_xml: str, grouping, vary: str, labels: str, axes: str,
-               *, gap: int = 150) -> str:
+def _chart_group_xml(kind: str, series_xml: str, grouping, vary: str, labels: str, axes: str, *, gap: int = 150) -> str:
     if kind == "bar":
-        overlap = "<overlap val=\"100\"/>" if grouping else ""
+        overlap = '<overlap val="100"/>' if grouping else ""
         return (
-            f"<barChart><barDir val=\"col\"/><grouping val=\"{grouping or 'clustered'}\"/>"
-            f"{vary}{series_xml}{labels}<gapWidth val=\"{gap}\"/>{overlap}{axes}</barChart>"
+            f'<barChart><barDir val="col"/><grouping val="{grouping or "clustered"}"/>'
+            f'{vary}{series_xml}{labels}<gapWidth val="{gap}"/>{overlap}{axes}</barChart>'
         )
     tag = f"{kind}Chart"
-    return (
-        f"<{tag}><grouping val=\"{grouping or 'standard'}\"/>"
-        f"{vary}{series_xml}{labels}{axes}</{tag}>"
-    )
+    return f'<{tag}><grouping val="{grouping or "standard"}"/>{vary}{series_xml}{labels}{axes}</{tag}>'
 
 
 def _combined_axes_xml(chart, groups, xlsb: bool) -> str:
     only_areas = all(kind == "area" for kind, _secondary in groups)
     cross_between = "midCat" if only_areas else "between"
-    xml = (
-        _axis_xml("catAx", 10, 100, "b", chart.x_axis, False, xlsb=xlsb)
-        + _axis_xml("valAx", 100, 10, "l", chart.y_axis, True, cross_between, xlsb)
+    xml = _axis_xml("catAx", 10, 100, "b", chart.x_axis, False, xlsb=xlsb) + _axis_xml(
+        "valAx", 100, 10, "l", chart.y_axis, True, cross_between, xlsb
     )
     if any(secondary for _kind, secondary in groups):
-        xml += (
-            _axis_xml("valAx", 200, 20, "r", chart.y2_axis, False, cross_between, xlsb, crosses="max")
-            + _axis_xml("catAx", 20, 200, "b", ChartAxis(visible=False), False, xlsb=xlsb, crosses="autoZero")
+        xml += _axis_xml("valAx", 200, 20, "r", chart.y2_axis, False, cross_between, xlsb, crosses="max") + _axis_xml(
+            "catAx", 20, 200, "b", ChartAxis(visible=False), False, xlsb=xlsb, crosses="autoZero"
         )
     return xml
 
@@ -816,7 +777,8 @@ def _shape_props_xml(fill: str | None, border: str | None = None) -> str:
     fill_xml = f'<a:solidFill><a:srgbClr val="{fill}"/></a:solidFill>' if fill else "<a:noFill/>"
     line_xml = (
         f'<a:ln w="9525"><a:solidFill><a:srgbClr val="{border}"/></a:solidFill></a:ln>'
-        if border else "<a:ln><a:noFill/></a:ln>"
+        if border
+        else "<a:ln><a:noFill/></a:ln>"
     )
     return f"<spPr>{fill_xml}{line_xml}</spPr>"
 
@@ -827,7 +789,7 @@ def _chart_text_xml(size: float | None, color: str | None) -> str:
     fill_xml = f'<a:solidFill><a:srgbClr val="{color}"/></a:solidFill>' if color else ""
     return (
         "<txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>"
-        f'<a:defRPr{size_attr}>{fill_xml}</a:defRPr></a:pPr>'
+        f"<a:defRPr{size_attr}>{fill_xml}</a:defRPr></a:pPr>"
         '<a:endParaRPr lang="en-US"/></a:p></txPr>'
     )
 
@@ -836,10 +798,7 @@ def _finish_chart(parts: list, chart) -> str:
     if chart.plot_fill is not None:
         parts.append(_shape_props_xml(chart.plot_fill))
     parts.append("</plotArea>")
-    parts.append(
-        f"{_legend_xml(chart.legend)}"
-        "<plotVisOnly val=\"1\"/><dispBlanksAs val=\"gap\"/>"
-    )
+    parts.append(f'{_legend_xml(chart.legend)}<plotVisOnly val="1"/><dispBlanksAs val="gap"/>')
     parts.append("</chart>")
     # Chart-space formatting follows </chart>: its spPr, then the default text.
     if chart.fill is not None or chart.border is not None:
@@ -848,8 +807,8 @@ def _finish_chart(parts: list, chart) -> str:
         parts.append(_chart_text_xml(chart.font_size, chart.font_color))
     return (
         "<chartSpace "
-        "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
-        "xmlns=\"http://schemas.openxmlformats.org/drawingml/2006/chart\">"
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns="http://schemas.openxmlformats.org/drawingml/2006/chart">'
         f"{''.join(parts)}</chartSpace>"
     )
 
@@ -862,13 +821,13 @@ def _chart_frame_xml(chart, position: int) -> str:
         "<oneCellAnchor>"
         f"<from><col>{first_col}</col><colOff>0</colOff>"
         f"<row>{first_row}</row><rowOff>0</rowOff></from>"
-        f"<ext cx=\"{width_emu}\" cy=\"{height_emu}\"/>"
+        f'<ext cx="{width_emu}" cy="{height_emu}"/>'
         "<graphicFrame><nvGraphicFramePr>"
-        f"<cNvPr id=\"{position}\" name=\"Chart {position}\"/>"
+        f'<cNvPr id="{position}" name="Chart {position}"/>'
         "<cNvGraphicFramePr/></nvGraphicFramePr><xfrm/>"
         "<a:graphic><a:graphicData "
-        "uri=\"http://schemas.openxmlformats.org/drawingml/2006/chart\">"
-        f"<c:chart r:id=\"rId{position}\"/>"
+        'uri="http://schemas.openxmlformats.org/drawingml/2006/chart">'
+        f'<c:chart r:id="rId{position}"/>'
         "</a:graphicData></a:graphic></graphicFrame>"
         "<clientData/></oneCellAnchor>"
     )
@@ -879,22 +838,20 @@ def _picture_frame_xml(image, position: int) -> str:
     first_col, first_row, _, _ = parse_cell_range(image.anchor)
     cx = image.pixel_width * EMU_PER_PIXEL
     cy = image.pixel_height * EMU_PER_PIXEL
-    descr = (
-        f' descr="{_attr(image.description)}"' if image.description is not None else ""
-    )
+    descr = f' descr="{_attr(image.description)}"' if image.description is not None else ""
     return (
         "<oneCellAnchor>"
         f"<from><col>{first_col}</col><colOff>0</colOff>"
         f"<row>{first_row}</row><rowOff>0</rowOff></from>"
-        f"<ext cx=\"{cx}\" cy=\"{cy}\"/>"
+        f'<ext cx="{cx}" cy="{cy}"/>'
         "<pic><nvPicPr>"
-        f"<cNvPr id=\"{position}\" name=\"Picture {position}\"{descr}/>"
-        "<cNvPicPr><a:picLocks noChangeAspect=\"1\"/></cNvPicPr></nvPicPr>"
-        f"<blipFill><a:blip r:embed=\"rId{position}\"/>"
+        f'<cNvPr id="{position}" name="Picture {position}"{descr}/>'
+        '<cNvPicPr><a:picLocks noChangeAspect="1"/></cNvPicPr></nvPicPr>'
+        f'<blipFill><a:blip r:embed="rId{position}"/>'
         "<a:stretch><a:fillRect/></a:stretch></blipFill>"
-        "<spPr><a:xfrm><a:off x=\"0\" y=\"0\"/>"
-        f"<a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm>"
-        "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></spPr>"
+        '<spPr><a:xfrm><a:off x="0" y="0"/>'
+        f'<a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></spPr>'
         "</pic><clientData/></oneCellAnchor>"
     )
 
@@ -907,30 +864,20 @@ def drawing_xml(charts: list, chart_ids: list[int], images=(), shapes=(), slicer
     ``cNvPr`` id, in the order charts, pictures, shapes, slicers.
     """
     frames = [
-        _chart_frame_xml(chart, position)
-        for position, (chart, _chart_id) in enumerate(zip(charts, chart_ids), start=1)
+        _chart_frame_xml(chart, position) for position, (chart, _chart_id) in enumerate(zip(charts, chart_ids), start=1)
     ]
     offset = len(charts)
-    frames.extend(
-        _picture_frame_xml(image, offset + position)
-        for position, image in enumerate(images, start=1)
-    )
+    frames.extend(_picture_frame_xml(image, offset + position) for position, image in enumerate(images, start=1))
     offset += len(images)
-    frames.extend(
-        shape_frame_xml(shape, offset + position)
-        for position, shape in enumerate(shapes, start=1)
-    )
+    frames.extend(shape_frame_xml(shape, offset + position) for position, shape in enumerate(shapes, start=1))
     offset += len(shapes)
-    frames.extend(
-        slicer_frame_xml(slicer, offset + position)
-        for position, slicer in enumerate(slicers, start=1)
-    )
+    frames.extend(slicer_frame_xml(slicer, offset + position) for position, slicer in enumerate(slicers, start=1))
     return (
         "<wsDr "
-        "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
-        "xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" "
-        "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" "
-        "xmlns=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\">"
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+        'xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">'
         f"{''.join(frames)}</wsDr>"
     )
 
@@ -949,10 +896,10 @@ def drawing_rels_xml(chart_ids: list[int], image_names=()) -> str:
         f'Target="../media/{name}"/>'
         for position, name in enumerate(image_names, start=1)
     )
-    return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 {parts}
-</Relationships>'''
+</Relationships>"""
 
 
 # Standard Office theme (Excel 365) bundled with chart-enabled workbooks.

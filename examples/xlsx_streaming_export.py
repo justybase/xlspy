@@ -11,6 +11,7 @@ database driver (for example a pyodbc or nzpy cursor).
 Usage:
     python examples/xlsx_streaming_export.py [--rows 200000] [--xlsb]
 """
+
 import argparse
 import os
 import sqlite3

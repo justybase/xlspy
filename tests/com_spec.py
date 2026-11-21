@@ -77,8 +77,10 @@ def _same(expected, actual) -> bool:
     if isinstance(expected, bool):
         return isinstance(actual, bool) and actual is expected
     if isinstance(expected, (int, float)):
-        return isinstance(actual, (int, float)) and not isinstance(actual, bool) and math.isclose(
-            float(expected), float(actual), rel_tol=1e-9, abs_tol=1e-12
+        return (
+            isinstance(actual, (int, float))
+            and not isinstance(actual, bool)
+            and math.isclose(float(expected), float(actual), rel_tol=1e-9, abs_tol=1e-12)
         )
     return expected == actual
 
@@ -158,9 +160,7 @@ def write_case_with_excel(excel, path: Path, case: dict, fmt: str) -> None:
                 worksheet.Visible = XL_SHEET_HIDDEN
             if sheet.get("autoFilter") and rows:
                 width = max(len(row) for row in rows)
-                worksheet.Range(
-                    worksheet.Cells(1, 1), worksheet.Cells(len(rows), width)
-                ).AutoFilter()
+                worksheet.Range(worksheet.Cells(1, 1), worksheet.Cells(len(rows), width)).AutoFilter()
         book.SaveAs(str(path), XL_FILE_XLSB if fmt == "xlsb" else XL_FILE_XLSX)
     finally:
         book.Close(False)
@@ -274,8 +274,7 @@ def verify_in_excel(book, case: dict, fmt: str) -> list[dict]:
 
 def format_failures(checks: list[dict]) -> str:
     return "\n".join(
-        f"{check['sheet']} {check['check']}: expected {check['expected']!r}, "
-        f"got {check['actual']!r} {check['message']}"
+        f"{check['sheet']} {check['check']}: expected {check['expected']!r}, got {check['actual']!r} {check['message']}"
         for check in checks
         if not check["pass"]
     )

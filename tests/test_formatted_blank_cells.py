@@ -3,6 +3,7 @@
 Both writers used to fall through to ``str(None)`` and store the text "None". The cell is now
 written like a blank with a range style: no value, the format or style kept.
 """
+
 import zipfile
 
 import pytest

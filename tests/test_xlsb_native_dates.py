@@ -23,8 +23,26 @@ STYLES = [{"xfId": 0, "numFmtId": 0}, {"xfId": 0, "numFmtId": 14}]  # xf 1 is a 
 DATE_FMTS = {14}
 DATE_XF = 1
 EDGES = [
-    0.0, 0.5, 1.0, 1.5, 59.0, 59.999999999, 60.0, 61.0, -0.5, -1.0, -1.5,
-    25569.0, 2958465.0, 2958466.0, 1e9, -1e9, 1e10, float("nan"), float("inf"), float("-inf"),
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    59.0,
+    59.999999999,
+    60.0,
+    61.0,
+    -0.5,
+    -1.0,
+    -1.5,
+    25569.0,
+    2958465.0,
+    2958466.0,
+    1e9,
+    -1e9,
+    1e10,
+    float("nan"),
+    float("inf"),
+    float("-inf"),
 ]
 
 
@@ -63,8 +81,7 @@ def test_date_cells_match_reference(date_1904):
     rng = random.Random(20261030)
     uniform = [rng.uniform(-70000.0, 2960000.0) for _ in range(2000)]
     # Serials whose fraction is a few microseconds: the rounding decides the result.
-    micro = [rng.randint(-5000, 2958000) + rng.randint(0, 86399999999) / 86400000000.0
-             for _ in range(2000)]
+    micro = [rng.randint(-5000, 2958000) + rng.randint(0, 86399999999) / 86400000000.0 for _ in range(2000)]
     values = EDGES + uniform + micro
 
     valid = [v for v in values if not isinstance(_reference(v, date_1904), Exception)]

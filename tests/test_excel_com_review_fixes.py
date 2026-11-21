@@ -10,8 +10,17 @@ import zlib
 import pytest
 
 from xlspy import (
-    Comment, DefinedName, ExcelReader, Font, Formula, Group, XlsbUpdater, XlsbWriter,
-    XlsxUpdater, XlsxWriter, load_workbook,
+    Comment,
+    DefinedName,
+    ExcelReader,
+    Font,
+    Formula,
+    Group,
+    XlsbUpdater,
+    XlsbWriter,
+    XlsxUpdater,
+    XlsxWriter,
+    load_workbook,
 )
 
 pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
@@ -55,9 +64,14 @@ def open_workbook(excel):
 def _png(path):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
     raw = b"".join(b"\0" + b"\xff\0\0" * 4 for _ in range(4))
-    path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 4, 8, 2, 0, 0, 0))
-                     + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 4, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
     return path
 
 
@@ -80,9 +94,13 @@ def _vml_parts(path):
         return {name: archive.read(name) for name in archive.namelist() if name.endswith(".vml")}
 
 
-@pytest.mark.parametrize("extension, updater_class, file_format", [
-    ("xlsx", XlsxUpdater, None), ("xlsb", XlsbUpdater, XL_XLSB),
-])
+@pytest.mark.parametrize(
+    "extension, updater_class, file_format",
+    [
+        ("xlsx", XlsxUpdater, None),
+        ("xlsb", XlsbUpdater, XL_XLSB),
+    ],
+)
 @pytest.mark.printer
 def test_notes_keep_excel_header_picture(tmp_path, excel, open_workbook, extension, updater_class, file_format):
     picture = _png(tmp_path / "logo.png")
@@ -249,14 +267,26 @@ def test_read_only_xlsx_coordinates_match_excel(tmp_path, excel):
 
 def test_binary_local_name_array_dates_and_row_options(tmp_path, open_workbook):
     import datetime
+
     path = tmp_path / "formulas.xlsb"
     with XlsbWriter(path) as writer:
         writer.add_sheet("Data")
         writer.write_sheet(
-            [[Formula("Data!Rate*2"), 3],
-             [None, None, 1, Formula("C2:C5*2", array_ref="D2:D5"), None,
-              Formula("B1:C1", array_ref="F2:G2"), datetime.date(2020, 1, 1)]],
-            row_heights={3: 30}, hidden_rows=[4], row_groups=[Group(2, 3)],
+            [
+                [Formula("Data!Rate*2"), 3],
+                [
+                    None,
+                    None,
+                    1,
+                    Formula("C2:C5*2", array_ref="D2:D5"),
+                    None,
+                    Formula("B1:C1", array_ref="F2:G2"),
+                    datetime.date(2020, 1, 1),
+                ],
+            ],
+            row_heights={3: 30},
+            hidden_rows=[4],
+            row_groups=[Group(2, 3)],
         )
         writer.set_defined_name(DefinedName("Rate", "Data!$B$1", "Data"))
     book = open_workbook(path)
@@ -303,6 +333,7 @@ def test_strict_open_xml_reading(tmp_path, excel):
     with zipfile.ZipFile(path) as archive:
         assert b"http://purl.oclc.org/ooxml/spreadsheetml/main" in archive.read("xl/workbook.xml")
     import datetime
+
     with ExcelReader(str(path)) as reader:
         assert reader.get_sheet_names() == ["Data"]
         rows = reader.read_all("Data")
@@ -421,7 +452,9 @@ def test_binary_sparse_edit_dimension_matches_excel(tmp_path, open_workbook):
     book = open_workbook(updated)
     book.Application.CalculateFull()
     excel_sheet = book.Worksheets("Data")
-    assert excel_sheet.UsedRange.Address == "$" + dimensions.replace(":", ":$").replace("A", "A$", 1).replace("C", "C$", 1)
+    assert excel_sheet.UsedRange.Address == "$" + dimensions.replace(":", ":$").replace("A", "A$", 1).replace(
+        "C", "C$", 1
+    )
     excel_values = excel_sheet.Range(dimensions).Value
     assert [tuple(row) for row in excel_values][:2] == [("a", 2, 4), (4, None, None)]
     assert values[0][:2] == ("a", 2) and values[1][0] == 4 and values[3][1] == 9
@@ -429,8 +462,16 @@ def test_binary_sparse_edit_dimension_matches_excel(tmp_path, open_workbook):
 
 
 # Excel constants for HorizontalAlignment / VerticalAlignment / ReadingOrder.
-_XL_HORIZONTAL = {"general": 1, "left": -4131, "center": -4108, "right": -4152, "fill": 5,
-                  "justify": -4130, "centerContinuous": 7, "distributed": -4117}
+_XL_HORIZONTAL = {
+    "general": 1,
+    "left": -4131,
+    "center": -4108,
+    "right": -4152,
+    "fill": 5,
+    "justify": -4130,
+    "centerContinuous": 7,
+    "distributed": -4117,
+}
 _XL_VERTICAL = {"top": -4160, "center": -4108, "bottom": -4107, "justify": -4130, "distributed": -4117}
 _XL_READING_ORDER = {0: -5002, 1: -5003, 2: -5004}
 _ALIGNMENT_CASES = {
@@ -470,6 +511,7 @@ def _assert_alignment_in_excel(cell, options):
 @pytest.mark.parametrize("writer_class, extension", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
 def test_alignment_options_in_excel(tmp_path, open_workbook, writer_class, extension):
     from xlspy import Alignment, Style
+
     path = tmp_path / f"alignment.{extension}"
     with writer_class(path) as writer:
         writer.add_sheet("Data")
@@ -485,6 +527,7 @@ def test_alignment_options_in_excel(tmp_path, open_workbook, writer_class, exten
 
 def test_workbook_cell_alignment_round_trip_in_excel(tmp_path, excel, open_workbook):
     from xlspy import Alignment, Workbook
+
     created = tmp_path / "created.xlsx"
     workbook = Workbook()
     sheet = workbook.active

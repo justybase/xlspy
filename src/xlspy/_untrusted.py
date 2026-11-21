@@ -43,8 +43,7 @@ class SafeZipFile(zipfile.ZipFile):
     about its size is cut off there and fails its CRC check.
     """
 
-    def __init__(self, file: Any, mode: Literal["r", "w", "x", "a"] = "r", *args: Any,
-                 **kwargs: Any) -> None:
+    def __init__(self, file: Any, mode: Literal["r", "w", "x", "a"] = "r", *args: Any, **kwargs: Any) -> None:
         # Report a non-ZIP input as InvalidFileError, which is also a BadZipFile.
         try:
             super().__init__(file, mode, *args, **kwargs)
@@ -55,12 +54,17 @@ class SafeZipFile(zipfile.ZipFile):
             if total > MAX_PACKAGE_BYTES:
                 self.close()
                 raise ValueError(
-                    f"package declares {total} bytes uncompressed, over the "
-                    f"{MAX_PACKAGE_BYTES}-byte limit"
+                    f"package declares {total} bytes uncompressed, over the {MAX_PACKAGE_BYTES}-byte limit"
                 )
 
-    def open(self, name: str | zipfile.ZipInfo, mode: Literal["r", "w"] = "r",
-             pwd: bytes | None = None, *, force_zip64: bool = False) -> IO[bytes]:
+    def open(
+        self,
+        name: str | zipfile.ZipInfo,
+        mode: Literal["r", "w"] = "r",
+        pwd: bytes | None = None,
+        *,
+        force_zip64: bool = False,
+    ) -> IO[bytes]:
         if mode == "r":
             info = name if isinstance(name, zipfile.ZipInfo) else self.getinfo(name)
             if info.file_size > MAX_PART_BYTES:

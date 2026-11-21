@@ -23,7 +23,9 @@ from .updater_utils import escape_xml_text, replace_or_add_xml_attribute
 
 # Opening tags, to walk a worksheet a tag at a time: ``.*?`` through 25 MB of cells
 # is what these spare. ``number`` is the usual form of a row's ``r`` attribute.
-_ROW_OPENING = re.compile(r'<(?P<prefix>[A-Za-z_][\w.-]*:)?row\b(?:\s+r="(?P<number>[0-9]+)")?[^>]*?(?:(?P<empty>/>)|>)')
+_ROW_OPENING = re.compile(
+    r'<(?P<prefix>[A-Za-z_][\w.-]*:)?row\b(?:\s+r="(?P<number>[0-9]+)")?[^>]*?(?:(?P<empty>/>)|>)'
+)
 _SHEET_DATA_OPENING = re.compile(r"<(?P<prefix>[A-Za-z_][\w.-]*:)?sheetData\b[^>]*?(?:(?P<empty>/>)|>)")
 _DIMENSION = re.compile(r"<(?:[A-Za-z_][\w.-]*:)?dimension\b[^>]*>")
 _WORKSHEET = re.compile(r"<(?:[A-Za-z_][\w.-]*:)?worksheet\b[^>]*>")
@@ -62,7 +64,7 @@ class SheetDataElement:
     @overload
     def __getitem__(self, key: Literal["prefix"]) -> str | None: ...
     def __getitem__(self, key: int | str) -> str | None:
-        return self._xml[self._start:self._end] if key == 0 else self._prefix
+        return self._xml[self._start : self._end] if key == 0 else self._prefix
 
 
 def _element_end(xml: str, tag: str, opening: re.Match[str]) -> int:
@@ -72,13 +74,13 @@ def _element_end(xml: str, tag: str, opening: re.Match[str]) -> int:
     if opening["empty"]:
         return opening.end()
     prefix = opening["prefix"]
-    for closing in ((f"</{prefix}{tag}", f"</{tag}") if prefix else (f"</{tag}",)):
+    for closing in (f"</{prefix}{tag}", f"</{tag}") if prefix else (f"</{tag}",):
         position = xml.find(closing, opening.end())
         while position >= 0:
             end = position + len(closing)
-            while xml[end:end + 1].isspace():
+            while xml[end : end + 1].isspace():
                 end += 1
-            if xml[end:end + 1] == ">":
+            if xml[end : end + 1] == ">":
                 return end + 1
             position = xml.find(closing, end)
     return -1
@@ -113,7 +115,7 @@ def replace_sheet_data_body(sheet_xml: str, rows_xml: str) -> str:
         body_start = element.index(">") + 1
         body_end = element.rindex("</")
         replacement = element[:body_start] + rows_xml + element[body_end:]
-    return sheet_xml[:match.start()] + replacement + sheet_xml[match.end():]
+    return sheet_xml[: match.start()] + replacement + sheet_xml[match.end() :]
 
 
 def _iter_rows(element: str) -> Iterator[tuple[int, int, int]]:
@@ -209,10 +211,10 @@ def patch_cells(xml: str, patch: Callable[[str, str], str], rows: Collection[int
             next_column = parse_cell_range(ref)[0] + 1
             return patch(ref, cell_xml)
 
-        return opening + _CELL_ELEMENT.sub(patch_cell, row_xml[len(opening):])
+        return opening + _CELL_ELEMENT.sub(patch_cell, row_xml[len(opening) :])
 
     body = patch_rows(match[0], patch_row, rows)
-    return xml[:match.start()] + body + xml[match.end():]
+    return xml[: match.start()] + body + xml[match.end() :]
 
 
 def set_dimension_ref(sheet_xml: str, ref: str) -> str:
@@ -224,7 +226,7 @@ def set_dimension_ref(sheet_xml: str, ref: str) -> str:
     match = _DIMENSION.search(sheet_xml)
     if match:
         opening = replace_or_add_xml_attribute(match[0], "ref", ref)
-        return sheet_xml[:match.start()] + opening + sheet_xml[match.end():]
+        return sheet_xml[: match.start()] + opening + sheet_xml[match.end() :]
     worksheet = _WORKSHEET.search(sheet_xml)
     if worksheet is None:
         raise ValueError("Worksheet root element was not found")

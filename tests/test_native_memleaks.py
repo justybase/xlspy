@@ -13,6 +13,7 @@ missed reference release would leak), and end-to-end workbook cycles:
 Thresholds are generous ( allocator arenas make RSS noisy); a real leak of
 a per-call result (tens of KB-MBs) trips them within seconds.
 """
+
 import datetime
 import gc
 import io
@@ -47,13 +48,14 @@ XLSX_HEAD = None
 XLSX_REST = None
 XLSX_SHARED = None
 XLSX_FLAGS = None
-_XLSX_ROOT = ('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">')
+_XLSX_ROOT = '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
 _XLSX_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
 
 def _xlsx_stub():
-    return SimpleNamespace(_shared_string_array=[], _styles_cell_xfs_array=[],
-                           _number_formats_type_dict={}, _date_1904=False)
+    return SimpleNamespace(
+        _shared_string_array=[], _styles_cell_xfs_array=[], _number_formats_type_dict={}, _date_1904=False
+    )
 
 
 def _mixed_row(i):
@@ -85,6 +87,7 @@ def workbook_parts(tmp_path_factory):
         SHARED = list(r._shared_string_array)
         STYLES = list(r._styles_cell_xfs_array)
         from xlspy.reader import _get_date_num_fmt_ids
+
         DATE_FMTS = set(_get_date_num_fmt_ids(r._number_formats_type_dict))
     return path
 
@@ -101,7 +104,7 @@ def xlsx_parts(tmp_path_factory):
     stream = io.BytesIO(blob)
     probe = _xlsx_read._probe_fast(stream)
     XLSX_HEAD = probe[4]
-    XLSX_REST = blob[stream.tell():]
+    XLSX_REST = blob[stream.tell() :]
     with ExcelReader(path) as r:
         XLSX_SHARED = list(r._shared_string_array)
         XLSX_FLAGS = _xlsx_read._date_style_flags(r)
@@ -122,9 +125,7 @@ def assert_no_rss_growth(fn, *, iters=40, warmup=8, allowance_mb=5.0):
         fn()
     gc.collect()
     after = _rss_mb()
-    assert after - before < allowance_mb, (
-        f"RSS grew by {after - before:.1f} MB over {iters} iterations"
-    )
+    assert after - before < allowance_mb, f"RSS grew by {after - before:.1f} MB over {iters} iterations"
 
 
 def assert_no_tracemalloc_growth(fn, *, iters=30, warmup=5, allowance_kb=128.0):
@@ -138,11 +139,7 @@ def assert_no_tracemalloc_growth(fn, *, iters=30, warmup=5, allowance_kb=128.0):
             fn()
         gc.collect()
         snap2 = tracemalloc.take_snapshot()
-        growth = sum(
-            stat.size_diff
-            for stat in snap2.compare_to(snap1, "filename")
-            if stat.size_diff > 0
-        )
+        growth = sum(stat.size_diff for stat in snap2.compare_to(snap1, "filename") if stat.size_diff > 0)
         assert growth / 1e3 < allowance_kb, (
             f"traced Python memory grew by {growth / 1e3:.0f} KB over {iters} iterations"
         )
@@ -165,9 +162,7 @@ def assert_no_gc_growth(fn, *, iters=100, warmup=5, allowance=10):
         fn()
     gc.collect()
     after = len(gc.get_objects())
-    assert after - before <= allowance, (
-        f"GC-tracked objects grew by {after - before} over {iters} iterations"
-    )
+    assert after - before <= allowance, f"GC-tracked objects grew by {after - before} over {iters} iterations"
 
 
 @needs_native
@@ -182,8 +177,8 @@ def test_sst_read_error_paths_no_growth(workbook_parts):
     bad_blobs = [
         SST_BLOB[:7],
         SST_BLOB[: len(SST_BLOB) // 2],
-        b"\x13\x02\x00\x00",          # short item record
-        b"\x9f\x01\x02\x00\x00",      # short BeginSst
+        b"\x13\x02\x00\x00",  # short item record
+        b"\x9f\x01\x02\x00\x00",  # short BeginSst
         b"\x13\x08\x00\x01\x00\x00\x00abc",  # odd string bytes
         b"\xff\xff\xff\xff\xff\x04" + b"\x00" * 8,  # hostile lengths
     ]
@@ -201,12 +196,8 @@ def test_sst_read_error_paths_no_growth(workbook_parts):
 
 @needs_native
 def test_encode_sst_no_growth(workbook_parts):
-    assert_no_rss_growth(
-        lambda: encode_xlsb_sst(SHARED, len(SHARED) * 2, len(SHARED))
-    )
-    assert_no_tracemalloc_growth(
-        lambda: encode_xlsb_sst(SHARED, len(SHARED) * 2, len(SHARED))
-    )
+    assert_no_rss_growth(lambda: encode_xlsb_sst(SHARED, len(SHARED) * 2, len(SHARED)))
+    assert_no_tracemalloc_growth(lambda: encode_xlsb_sst(SHARED, len(SHARED) * 2, len(SHARED)))
     # error path: lone surrogate must raise without leaking
     bad = ["ok", "bad\ud800"]
     for _ in range(200):
@@ -251,9 +242,23 @@ def test_width_meter_no_growth():
     from xlspy._widths import ColumnWidthMeter
 
     bold = Style(bold=True)
-    extra = ["Zażółć\nline", chr(0xD800), "日本", 1e300, -0.0, 10 ** 30, float("nan"), Decimal("1.25"),
-             (1.5, "0.00%"), (-2.5, "#,##0.00;(#,##0.00)"), ("x", bold), (3, Style(number_format="0.0E+00")),
-             (7, "*@"), Formula("=1+1", 2), Hyperlink("https://example.com", "link")]
+    extra = [
+        "Zażółć\nline",
+        chr(0xD800),
+        "日本",
+        1e300,
+        -0.0,
+        10**30,
+        float("nan"),
+        Decimal("1.25"),
+        (1.5, "0.00%"),
+        (-2.5, "#,##0.00;(#,##0.00)"),
+        ("x", bold),
+        (3, Style(number_format="0.0E+00")),
+        (7, "*@"),
+        Formula("=1+1", 2),
+        Hyperlink("https://example.com", "link"),
+    ]
     rows = [_mixed_row(i) + extra for i in range(200)]
     styles = {1: bold, 3: Style(number_format="0.00"), 4: Style(wrap=True), 8: Style(number_format="0%")}
 
@@ -392,8 +397,7 @@ def _formatted_row(i):
     ]
 
 
-FMT_XF = {"@": 10, "#,##0": 11, "0.00": 12, "0": 13, "yyyy-mm-dd": 14, "0.0": 15,
-          (20, "0.00"): 21}
+FMT_XF = {"@": 10, "#,##0": 11, "0.00": 12, "0": 13, "yyyy-mm-dd": 14, "0.0": 15, (20, "0.00"): 21}
 
 
 @needs_native
@@ -429,10 +433,10 @@ def test_encoders_with_format_ids_fall_back_cleanly():
         pass
 
     fallbacks = [
-        ["a", ("v", "unknown format")],   # format not recorded yet
+        ["a", ("v", "unknown format")],  # format not recorded yet
         ["a", (CellRichText(["r"]), "0.00")],  # rich text: the Python path
-        ["a", Tup((1, "0.00"))],          # XLSB borrows items of exact tuples only
-        ["a", ((1, 2), "0.00")],          # nested tuple
+        ["a", Tup((1, "0.00"))],  # XLSB borrows items of exact tuples only
+        ["a", ((1, 2), "0.00")],  # nested tuple
     ]
     d0, l0 = {"pre": 0}, ["pre"]
 
@@ -477,8 +481,10 @@ def test_xlsx_worksheet_iterator_abandoned_no_growth(xlsx_parts):
 
 @needs_native
 def test_xlsx_fallback_rows_no_growth():
-    head = (b'<row r="1"><c r="A1" t="inlineStr"><is><r><t>a</t></r></is></c></row>'
-            b'<row r="2"><c r="A2" t="str"><v>a &amp; b</v></c></row>')
+    head = (
+        b'<row r="1"><c r="A1" t="inlineStr"><is><r><t>a</t></r></is></c></row>'
+        b'<row r="2"><c r="A2" t="str"><v>a &amp; b</v></c></row>'
+    )
 
     def run():
         rows = read_xlsx_worksheet(io.BytesIO(b""), head, [], [])
@@ -493,8 +499,7 @@ def test_xlsx_fallback_rows_no_growth():
 @needs_native
 def test_xlsx_iterator_error_path_no_growth():
     def run():
-        rows = read_xlsx_worksheet(
-            io.BytesIO(b""), b'<row r="1"><c r="A1"><v>abc</v></c></row>', [], [])
+        rows = read_xlsx_worksheet(io.BytesIO(b""), b'<row r="1"><c r="A1"><v>abc</v></c></row>', [], [])
         with pytest.raises(ValueError):
             list(rows)
 
@@ -509,8 +514,9 @@ def test_encoders_with_row_attributes_no_growth():
     row = ["a", 1, 2.5]
 
     def run():
-        xml, _uniq, _all, _links = encode_xlsx_row(row, {}, [], 0, 0, 3, True, None, None,
-                                           ' ht="20" customHeight="1" hidden="1"')
+        xml, _uniq, _all, _links = encode_xlsx_row(
+            row, {}, [], 0, 0, 3, True, None, None, ' ht="20" customHeight="1" hidden="1"'
+        )
         assert isinstance(xml, bytes)
         assert xml.startswith(b'<row r="4" ht="20" customHeight="1" hidden="1"><c')
         data, _uniq, _all = encode_xlsb_row(row, {}, [], 0, 0, 3, None, None, header)
@@ -552,8 +558,7 @@ def test_xlsb_reader_cycle_is_collected(workbook_parts):
 
 @needs_native
 def test_xlsx_reader_cycle_is_collected(xlsx_parts):
-    assert _cycle_is_collected(
-        lambda shared: read_xlsx_worksheet(io.BytesIO(XLSX_REST), XLSX_HEAD, shared, XLSX_FLAGS))
+    assert _cycle_is_collected(lambda shared: read_xlsx_worksheet(io.BytesIO(XLSX_REST), XLSX_HEAD, shared, XLSX_FLAGS))
 
 
 @needs_native
@@ -564,8 +569,12 @@ def test_registering_a_type_again_takes_no_reference():
     from xlspy._accel import _native
     from xlspy._errors import CellError
 
-    for setter, cls in (("set_style_type", Style), ("set_formula_type", Formula),
-                        ("set_hyperlink_type", Hyperlink), ("set_error_type", CellError)):
+    for setter, cls in (
+        ("set_style_type", Style),
+        ("set_formula_type", Formula),
+        ("set_hyperlink_type", Hyperlink),
+        ("set_error_type", CellError),
+    ):
         before = sys.getrefcount(cls)
         for _ in range(100):
             getattr(_native, setter)(cls)

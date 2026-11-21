@@ -94,8 +94,9 @@ class _UpdaterBase:
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None,
-                 exc_tb: TracebackType | None) -> Literal[False]:
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+    ) -> Literal[False]:
         # Leaving the block releases the updater's files; changes are kept only by save().
         self.close()
         return False
@@ -221,9 +222,7 @@ class _UpdaterBase:
         """``(rows, columns)`` of the replacement region, the header row included."""
 
         width = max(
-            [len(row) for row in materialized]
-            + ([len(header_values)] if header_values is not None else [])
-            + [0]
+            [len(row) for row in materialized] + ([len(header_values)] if header_values is not None else []) + [0]
         )
         return len(materialized) + (1 if header_values is not None else 0), width
 

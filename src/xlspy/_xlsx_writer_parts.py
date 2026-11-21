@@ -1,4 +1,5 @@
 """XlsxWriter package methods: workbook, relationships, content types, charts, shared strings."""
+
 from __future__ import annotations
 
 import io
@@ -35,6 +36,7 @@ from ._xlsx_writer_host import _XlsxWriterHost
 # tab or a line break, sits next to a NUL or at an end of the chunk.
 _NEEDS_PRESERVE = re.compile(r"[\t\n\r]|\A\s|\s\Z|\s\x00|\x00\s")
 
+
 class _XlsxPartsMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
@@ -53,15 +55,10 @@ class _XlsxPartsMixin(_XlsxWriterHost):
                 self._write_empty_sheet(sheet_index)
         if self._pending_pivots:
             names = ", ".join(sorted(self._pending_pivots))
-            raise ValueError(
-                f"pivot target sheet(s) {names} were never added to the workbook"
-            )
+            raise ValueError(f"pivot target sheet(s) {names} were never added to the workbook")
 
         for render in self._pivot_renders:
-            render.numfmt_ids = [
-                self._number_format_id(spec.number_format)
-                for spec in render.pivot.value_specs
-            ]
+            render.numfmt_ids = [self._number_format_id(spec.number_format) for spec in render.pivot.value_specs]
             cache_path = f"xl/pivotCache/pivotCacheDefinition{render.cache_id}.xml"
             table_path = f"xl/pivotTables/pivotTable{render.pivot_id}.xml"
             self._zf.writestr(cache_path, pivot_cache_xml(render))
@@ -88,9 +85,13 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             self._sheet_chart_ids[sheet_id] = chart_ids
             self._zf.writestr(
                 f"xl/drawings/drawing{sheet_id}.xml",
-                chart_parts.drawing_xml(charts, chart_ids, images=images,
-                                        shapes=self._sheet_shapes.get(sheet_id, []),
-                                        slicers=self._sheet_slicers.get(sheet_id, [])),
+                chart_parts.drawing_xml(
+                    charts,
+                    chart_ids,
+                    images=images,
+                    shapes=self._sheet_shapes.get(sheet_id, []),
+                    slicers=self._sheet_slicers.get(sheet_id, []),
+                ),
             )
             self._zf.writestr(
                 f"xl/drawings/_rels/drawing{sheet_id}.xml.rels",
@@ -141,10 +142,10 @@ class _XlsxPartsMixin(_XlsxWriterHost):
                 f'<Relationship Id="{rid}" Type="{rel_type}" '
                 f'Target="{saxutils.escape(target, {chr(34): "&quot;"})}"{mode}/>'
             )
-        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 {"".join(parts)}
-</Relationships>'''
+</Relationships>"""
 
     def _create_content_types(self) -> str:
         parts = "".join(
@@ -174,12 +175,14 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
 
         shared_strings_part = ""
-        comment_parts = ''.join(
+        comment_parts = "".join(
             f'<Override PartName="/xl/comments/comment{sheet_id}.xml" ContentType="{COMMENTS_TYPE}"/>'
             for sheet_id in self._sheet_comments
         )
         if self._sheet_comments:
-            comment_parts += '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
+            comment_parts += (
+                '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
+            )
         if self._use_shared_strings and self._shared_strings:
             shared_strings_part = '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
         slicer_parts = "".join(
@@ -192,7 +195,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             for render in self._pivot_renders
         )
 
-        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
@@ -210,31 +213,37 @@ class _XlsxPartsMixin(_XlsxWriterHost):
 {slicer_parts}
 {pivot_parts}
 {self._doc_props_content_types()}
-</Types>'''
+</Types>"""
 
     def _create_root_rels(self) -> str:
-        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
 {self._doc_props_root_rels()}
-</Relationships>'''
+</Relationships>"""
 
     def _create_workbook_rels(self) -> str:
         relationships = [
             f'<Relationship Id="rId{i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i + 1}.xml"/>'
             for i in range(self._sheet_count)
         ]
-        
+
         style_rid = self._sheet_count + 1
-        relationships.append(f'<Relationship Id="rId{style_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>')
-        
+        relationships.append(
+            f'<Relationship Id="rId{style_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+        )
+
         if self._use_shared_strings and self._shared_strings:
             shared_strings_rid = self._sheet_count + 2
-            relationships.append(f'<Relationship Id="rId{shared_strings_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>')
+            relationships.append(
+                f'<Relationship Id="rId{shared_strings_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>'
+            )
 
         if self._sheet_drawings:
             theme_rid = len(relationships) + 1
-            relationships.append(f'<Relationship Id="rId{theme_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>')
+            relationships.append(
+                f'<Relationship Id="rId{theme_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>'
+            )
 
         # Cache i is the (i+1)th relationship after the base count; see _workbook_rel_base.
         for index in range(len(self._slicer_cache_names)):
@@ -257,16 +266,16 @@ class _XlsxPartsMixin(_XlsxWriterHost):
                 'Target="metadata.xml"/>'
             )
 
-        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 {"".join(relationships)}
-</Relationships>'''
+</Relationships>"""
 
     def _create_workbook_xml(self) -> str:
         sheets = ""
         for i, (sheet_name, _, hidden) in enumerate(self._worksheet_data):
             sheet_id = i + 1
-            hidden_attr = ' state="hidden"' if hidden else ''
+            hidden_attr = ' state="hidden"' if hidden else ""
             sheets += f'<sheet name="{saxutils.escape(sheet_name, _ATTR_ENTITIES)}" sheetId="{sheet_id}"{hidden_attr} r:id="rId{sheet_id}"/>'
 
         names = []
@@ -280,7 +289,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             )
             names.append(
                 f'<definedName name="_xlnm._FilterDatabase" localSheetId="{filter_data.sheet_index}" hidden="1">'
-                f'{saxutils.escape(range_ref)}</definedName>'
+                f"{saxutils.escape(range_ref)}</definedName>"
             )
         for sheet_index in sorted(self._sheet_print):
             settings = self._sheet_print[sheet_index]
@@ -288,13 +297,13 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             if settings.print_area is not None:
                 names.append(
                     f'<definedName name="_xlnm.Print_Area" localSheetId="{sheet_index}">'
-                    f'{saxutils.escape(print_area_name(sheet_name, settings.print_area))}</definedName>'
+                    f"{saxutils.escape(print_area_name(sheet_name, settings.print_area))}</definedName>"
                 )
             titles = print_titles_name(sheet_name, settings)
             if titles is not None:
                 names.append(
                     f'<definedName name="_xlnm.Print_Titles" localSheetId="{sheet_index}">'
-                    f'{saxutils.escape(titles)}</definedName>'
+                    f"{saxutils.escape(titles)}</definedName>"
                 )
         sheet_titles = [name for name, _, _ in self._worksheet_data]
         names.extend(definition.to_xml(sheet_titles) for definition in self._defined_names.values())
@@ -310,13 +319,12 @@ class _XlsxPartsMixin(_XlsxWriterHost):
         if self._pivot_renders:
             pivot_base = self._workbook_rel_base() + len(self._slicer_cache_names)
             entries = "".join(
-                f'<pivotCache cacheId="{render.cache_id}" '
-                f'r:id="rId{pivot_base + index + 1}"/>'
+                f'<pivotCache cacheId="{render.cache_id}" r:id="rId{pivot_base + index + 1}"/>'
                 for index, render in enumerate(self._pivot_renders)
             )
             pivot_caches = f"<pivotCaches>{entries}</pivotCaches>"
 
-        return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <fileVersion appName="xl" lastEdited="4" lowestEdited="4" rupBuild="4505"/>
 <workbookPr defaultThemeVersion="124226"/>
@@ -327,7 +335,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
 <calcPr calcId="124519" fullCalcOnLoad="1"/>
 {pivot_caches}
 {workbook_ext}
-</workbook>'''
+</workbook>"""
 
     def _workbook_extensions(self) -> str:
         """The workbook ``extLst``: the list of slicer caches, one relationship each."""
@@ -335,43 +343,49 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             return ""
         base = self._workbook_rel_base()
         caches = "".join(
-            f'<x14:slicerCache r:id="rId{base + index + 1}"/>'
-            for index in range(len(self._slicer_cache_names))
+            f'<x14:slicerCache r:id="rId{base + index + 1}"/>' for index in range(len(self._slicer_cache_names))
         )
-        return ext_list([
-            ext(EXT_WORKBOOK_SLICER_CACHES, f"<x15:slicerCaches>{caches}</x15:slicerCaches>",
-                ("x15", X15), ("x14", X14)),
-        ])
+        return ext_list(
+            [
+                ext(
+                    EXT_WORKBOOK_SLICER_CACHES,
+                    f"<x15:slicerCaches>{caches}</x15:slicerCaches>",
+                    ("x15", X15),
+                    ("x14", X14),
+                ),
+            ]
+        )
 
     def _write_shared_strings_xml(self, sst_file: io.BufferedWriter) -> None:
         # Written in chunks: the table can hold millions of strings, and one
         # growing string would keep the whole encoded part in memory.
-        header = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-                  f'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-                  f'count="{self._sst_all_count}" uniqueCount="{self._sst_unique_count}">')
-        sst_file.write(header.encode('utf-8'))
+        header = (
+            f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            f'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            f'count="{self._sst_all_count}" uniqueCount="{self._sst_unique_count}">'
+        )
+        sst_file.write(header.encode("utf-8"))
         strings = self._shared_strings
         for start in range(0, len(strings), _SST_CHUNK_STRINGS):
-            chunk: Any = strings[start:start + _SST_CHUNK_STRINGS]
+            chunk: Any = strings[start : start + _SST_CHUNK_STRINGS]
             # Plain-text chunks are escaped in one pass: joined on NUL (which a
             # string could only hold as a control character), then split again.
             # Rich runs (tuples) make join() fail; those chunks go item by item,
             # and so do chunks with a text that needs xml:space="preserve".
             try:
-                joined = '\0'.join(chunk)
+                joined = "\0".join(chunk)
             except TypeError:
                 joined = None
-            if (joined is None or joined.count('\0') != len(chunk) - 1
-                    or _NEEDS_PRESERVE.search(joined)):
+            if joined is None or joined.count("\0") != len(chunk) - 1 or _NEEDS_PRESERVE.search(joined):
                 self._write_shared_strings_items(sst_file, chunk)
                 continue
-            body = '</t></si><si><t>'.join(
-                joined.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').split('\0')
+            body = "</t></si><si><t>".join(
+                joined.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").split("\0")
             )
             # Escaped text holds no '<', so "<si><t>" only ever starts an item.
-            body = '<si><t>' + body + '</t></si>'
-            sst_file.write(xstring_escape(body).encode('utf-8'))
-        sst_file.write(b'</sst>')
+            body = "<si><t>" + body + "</t></si>"
+            sst_file.write(xstring_escape(body).encode("utf-8"))
+        sst_file.write(b"</sst>")
 
     def _write_shared_strings_items(self, sst_file: io.BufferedWriter, strings: list[Any]) -> None:
         parts: list[str] = []
@@ -380,13 +394,13 @@ class _XlsxPartsMixin(_XlsxWriterHost):
                 # The runs already carry their _xHHHH_ escapes: escaping them
                 # with the chunk again would turn "_x000D_" into "_x005F_x000D_".
                 if parts:
-                    sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))
+                    sst_file.write(xstring_escape("".join(parts)).encode("utf-8"))
                     parts.clear()
-                sst_file.write(f'<si>{s[1]}</si>'.encode())
+                sst_file.write(f"<si>{s[1]}</si>".encode())
                 continue
             # The same three replacements as xml.sax.saxutils.escape, minus its call overhead.
-            text = s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            parts.append(f'<si><t{xml_space_attribute(s)}>{text}</t></si>')
+            text = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            parts.append(f"<si><t{xml_space_attribute(s)}>{text}</t></si>")
         if parts:
             # The markup holds no escapable characters, so a chunk is escaped at once.
-            sst_file.write(xstring_escape(''.join(parts)).encode('utf-8'))
+            sst_file.write(xstring_escape("".join(parts)).encode("utf-8"))

@@ -48,5 +48,5 @@ def test_xlsb_table_ids_differ_per_table():
         first, second = (archive.read(f"xl/tables/table{i}.bin") for i in (1, 2))
     # FRTBegin (0x0C00, written as 0x80 0x18) holds the revision GUID.
     marker = b"\x80\x18\x10"
-    guids = {part[part.index(marker) + 3:part.index(marker) + 19] for part in (first, second)}
+    guids = {part[part.index(marker) + 3 : part.index(marker) + 19] for part in (first, second)}
     assert len(guids) == 2

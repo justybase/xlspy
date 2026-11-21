@@ -120,9 +120,17 @@ def test_escape(value):
 
 def test_units():
     for name in (
-        "EMU_to_cm", "cm_to_EMU", "EMU_to_inch", "inch_to_EMU",
-        "EMU_to_pixels", "pixels_to_EMU", "pixels_to_points",
-        "points_to_pixels", "dxa_to_cm", "cm_to_dxa", "dxa_to_inch",
+        "EMU_to_cm",
+        "cm_to_EMU",
+        "EMU_to_inch",
+        "inch_to_EMU",
+        "EMU_to_pixels",
+        "pixels_to_EMU",
+        "pixels_to_points",
+        "points_to_pixels",
+        "dxa_to_cm",
+        "cm_to_dxa",
+        "dxa_to_inch",
         "inch_to_dxa",
     ):
         assert getattr(units, name)(1000) == getattr(ounits, name)(1000)
@@ -131,8 +139,12 @@ def test_units():
 
 def test_exception_hierarchy():
     for name in (
-        "CellCoordinatesException", "IllegalCharacterError", "InvalidFileException",
-        "NamedRangeException", "ReadOnlyWorkbookException", "SheetTitleException",
+        "CellCoordinatesException",
+        "IllegalCharacterError",
+        "InvalidFileException",
+        "NamedRangeException",
+        "ReadOnlyWorkbookException",
+        "SheetTitleException",
         "WorkbookAlreadySaved",
     ):
         assert issubclass(getattr(xlspy.utils.exceptions, name), Exception)
@@ -141,8 +153,19 @@ def test_exception_hierarchy():
 @pytest.mark.parametrize(
     "fmt",
     [
-        "General", "0", "0.00", "#,##0.00", "0%", "yyyy-mm-dd", "mm-dd-yy",
-        "h:mm:ss", "[h]:mm:ss", "[hh]:mm:ss", '"yyyy"0.00', "0.00E+00", "@",
+        "General",
+        "0",
+        "0.00",
+        "#,##0.00",
+        "0%",
+        "yyyy-mm-dd",
+        "mm-dd-yy",
+        "h:mm:ss",
+        "[h]:mm:ss",
+        "[hh]:mm:ss",
+        '"yyyy"0.00',
+        "0.00E+00",
+        "@",
     ],
 )
 def test_number_format_helpers(fmt):
@@ -205,9 +228,8 @@ def test_formula_tokenizer(formula):
     ],
 )
 def test_formula_translator(formula, origin, dest):
-    assert (
-        Translator(formula, origin).translate_formula(dest)
-        == OpenpyxlTranslator(formula, origin).translate_formula(dest)
+    assert Translator(formula, origin).translate_formula(dest) == OpenpyxlTranslator(formula, origin).translate_formula(
+        dest
     )
 
 

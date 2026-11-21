@@ -23,28 +23,37 @@ def test_widths_match_excel_autofit(tmp_path, excel, open_workbook):
     cells = [(text, None) for text, _r, _b in EXCEL_AUTOFIT_100]
     cells += [(text, Style(bold=True)) for text, _r, _b in EXCEL_AUTOFIT_100]
     for value, number_format, size, bold, _width in EXCEL_AUTOFIT_SAMPLES:
-        cells.append((value, Style(number_format=number_format,
-                                   font=Font(name="Calibri", size=size or 11, bold=bold))))
+        cells.append((value, Style(number_format=number_format, font=Font(name="Calibri", size=size or 11, bold=bold))))
     cells += [
-        (1234567.891, Style(number_format="#,##0.00")), (-98765.4321, None), (0.4567, Style(number_format="0.00%")),
-        (49062358930.42197, None), (-9.623203e-05, None), (True, None), ("Środa, 30 października", None),
-        (datetime.date(2024, 9, 30), None), (datetime.datetime(2024, 12, 31, 23, 45), None),
+        (1234567.891, Style(number_format="#,##0.00")),
+        (-98765.4321, None),
+        (0.4567, Style(number_format="0.00%")),
+        (49062358930.42197, None),
+        (-9.623203e-05, None),
+        (True, None),
+        ("Środa, 30 października", None),
+        (datetime.date(2024, 9, 30), None),
+        (datetime.datetime(2024, 12, 31, 23, 45), None),
     ]
     path = tmp_path / "autofit.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Probe")
         row = [value if style is None else (value, style) for value, style in cells]
         # Row 1 stays empty: the writer bolds it.
-        writer.write_sheet([[None] * len(row), row], auto_filter=False,
-                           column_widths=dict.fromkeys(range(len(row)), 8.43))
+        writer.write_sheet(
+            [[None] * len(row), row], auto_filter=False, column_widths=dict.fromkeys(range(len(row)), 8.43)
+        )
     sheet = open_workbook(path).Worksheets(1)
     sheet.Range(f"A1:{column_label(len(cells) - 1)}2").Columns.AutoFit()
     for i, (value, style) in enumerate(cells):
         excel_width = sheet.Columns(i + 1).ColumnWidth
         font = style.font if style is not None else None
-        ours = cell_width(value, style.number_format if style is not None else None,
-                          bold=bool(style is not None and (style.bold or (font is not None and font.bold))),
-                          size=font.size if font is not None else None)
+        ours = cell_width(
+            value,
+            style.number_format if style is not None else None,
+            bold=bool(style is not None and (style.bold or (font is not None and font.bold))),
+            size=font.size if font is not None else None,
+        )
         shown = sheet.Cells(2, i + 1).Text
         if isinstance(value, (datetime.date, bool)):
             assert ours >= excel_width, (value, ours, excel_width, shown)
@@ -60,9 +69,13 @@ def test_filter_button_widths_match_excel_autofit(tmp_path, excel, open_workbook
     # Centred headers (Excel keeps them clear of the button on both sides),
     # on one line and on two.
     centred = Style(font=Font(bold=True), alignment=Alignment(horizontal="center", wrap_text=True))
-    headers = plain + ["Szacowana kwota premii* łącznie MTD", "łącznie\nSzacowana kwota premii* łącznie MTD",
-                       "Kwota brutto", "MTD"]
-    first_row = plain + [(text, centred) for text in headers[len(plain):]]
+    headers = plain + [
+        "Szacowana kwota premii* łącznie MTD",
+        "łącznie\nSzacowana kwota premii* łącznie MTD",
+        "Kwota brutto",
+        "MTD",
+    ]
+    first_row = plain + [(text, centred) for text in headers[len(plain) :]]
     path = tmp_path / "filtered.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Probe")
@@ -83,15 +96,25 @@ def test_indented_outline_widths_match_excel_autofit(tmp_path, excel, open_workb
     and AutoFit makes the column that much wider."""
     if _system_dpi() != 96:
         pytest.skip("Excel's AutoFit depends on the display scaling; needs 100% (96 DPI)")
-    labels = [("Total", 0), ("REGION 01 - Lidia Badach", 1), ("Okręg Mazowsze Północ", 2),
-              ("0577 Warszawa, ul. Gen. Bora Komorowskiego Tadeusza 37", 3), ("0889 Warszawa", 3)]
+    labels = [
+        ("Total", 0),
+        ("REGION 01 - Lidia Badach", 1),
+        ("Okręg Mazowsze Północ", 2),
+        ("0577 Warszawa, ul. Gen. Bora Komorowskiego Tadeusza 37", 3),
+        ("0889 Warszawa", 3),
+    ]
     styles = [Style(alignment=Alignment(indent=level)) for level in range(4)]
-    centred = [Style(alignment=Alignment(horizontal="center", indent=level), font=Font(size=14))
-               for level in range(4)]
+    centred = [Style(alignment=Alignment(horizontal="center", indent=level), font=Font(size=14)) for level in range(4)]
     rows = [[None] * 4]
     for text, level in labels:
-        rows.append([(text, styles[level]), "\t" * level + text, (text, centred[level]),
-                     (12345.5 * level, Style(number_format="#,##0.00", alignment=Alignment(indent=level)))])
+        rows.append(
+            [
+                (text, styles[level]),
+                "\t" * level + text,
+                (text, centred[level]),
+                (12345.5 * level, Style(number_format="#,##0.00", alignment=Alignment(indent=level))),
+            ]
+        )
     path = tmp_path / f"outline.{ext}"
     with writer_cls(path) as writer:
         writer.add_sheet("Probe")
@@ -121,18 +144,28 @@ def test_font_widths_match_excel_autofit(tmp_path, excel, open_workbook):
     from xlspy.rich_text import CellRichText, InlineFont, TextBlock
 
     text = "Kraków, al. Jana Pawła II 12/3"
-    exact = [(text, Style(font=Font(name=name, size=size, bold=bold, italic=italic)))
-             for name, _packed in _metrics.FAMILIES.values()
-             for bold in (False, True) for italic in (False, True) for size in (9, 11, 16)]
-    at_least = [(text, Style(font=Font(name=name, bold=bold)))
-                for name in ("Book Antiqua", "Garamond", "Century", "Bookman Old Style", "Cascadia Mono")
-                for bold in (False, True)]
+    exact = [
+        (text, Style(font=Font(name=name, size=size, bold=bold, italic=italic)))
+        for name, _packed in _metrics.FAMILIES.values()
+        for bold in (False, True)
+        for italic in (False, True)
+        for size in (9, 11, 16)
+    ]
+    at_least = [
+        (text, Style(font=Font(name=name, bold=bold)))
+        for name in ("Book Antiqua", "Garamond", "Century", "Bookman Old Style", "Cascadia Mono")
+        for bold in (False, True)
+    ]
     at_least += [
         CellRichText("ab ", TextBlock(InlineFont(sz=20), text)),
         CellRichText("Kwota: ", TextBlock(InlineFont(b=True, sz=14, rFont="Verdana"), "1 234 567,89 zł")),
         (CellRichText(TextBlock(InlineFont(b=True), text)), Style(font=Font(size=16))),
         (CellRichText("plain ", TextBlock(InlineFont(i=True), text)), Style(font=Font(name="Georgia", italic=True))),
-        "  " + text, "😀👍 " + text, "➜ ✈ ☎ ↔ ⇔ ═║", "∑∫√∞≈≠≤≥ № ℃ ⅓", "soft\xadhyphen" * 3,
+        "  " + text,
+        "😀👍 " + text,
+        "➜ ✈ ☎ ↔ ⇔ ═║",
+        "∑∫√∞≈≠≤≥ № ℃ ⅓",
+        "soft\xadhyphen" * 3,
     ]
     path = tmp_path / "fonts.xlsx"
     with XlsxWriter(path) as writer:

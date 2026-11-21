@@ -15,7 +15,7 @@ from xlspy.workbook._shift import translate_formula as moved_formula_text
 @pytest.mark.parametrize(
     "formula,rows,cols,expected",
     [
-        ("=A1+$B$2+B$3+$C4+Sheet2!D5+\"A1\"", 2, 1, "=B3+$B$2+C$3+$C6+Sheet2!E7+\"A1\""),
+        ('=A1+$B$2+B$3+$C4+Sheet2!D5+"A1"', 2, 1, '=B3+$B$2+C$3+$C6+Sheet2!E7+"A1"'),
         ("=SUM(A1:B2)+LOG10(A1)", 1, 0, "=SUM(A2:B3)+LOG10(A2)"),
         ("=SUM(A:A)", 1, 1, "=SUM(B:B)"),
         ("=SUM($A:$A)", 1, 1, "=SUM($A:$A)"),
@@ -51,6 +51,6 @@ def test_matches_openpyxl_translator(formula, rows, cols):
 
 
 def test_moved_cells_and_shared_formulas_share_the_rule():
-    formula = "=SUM(A:A)+A1+\"A1\""
+    formula = '=SUM(A:A)+A1+"A1"'
     assert moved_formula_text(formula, 1, 1) == shared_formula_text(formula, "B2", "C3")
-    assert shared_formula_text(formula, "B2", "C3") == "=SUM(B:B)+B2+\"A1\""
+    assert shared_formula_text(formula, "B2", "C3") == '=SUM(B:B)+B2+"A1"'

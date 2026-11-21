@@ -85,8 +85,7 @@ class CustomPropertyList(list):
 class DefinedNameList:
     """A list/dict hybrid of ``DefinedName`` entries."""
 
-    def __init__(self, workbook: Workbook | None = None,
-                 definitions: Iterable[DefinedName] | None = None) -> None:
+    def __init__(self, workbook: Workbook | None = None, definitions: Iterable[DefinedName] | None = None) -> None:
         self._workbook = workbook
         self._items: list[DefinedName] = []
         for definition in definitions or []:
@@ -157,9 +156,9 @@ class DefinedNameList:
         if not isinstance(definition, DefinedName):
             raise TypeError("defined names must be DefinedName instances")
         self._items = [
-            item for item in self._items
-            if not (item.name.casefold() == definition.name.casefold()
-                    and item.scope == definition.scope)
+            item
+            for item in self._items
+            if not (item.name.casefold() == definition.name.casefold() and item.scope == definition.scope)
         ]
         self._items.append(definition)
         if stage and self._workbook is not None:
@@ -179,9 +178,7 @@ class DefinedNameList:
         folded = name.casefold()
         target = None
         for definition in self._items:
-            if definition.name.casefold() == folded and (
-                scope is None or definition.scope == scope
-            ):
+            if definition.name.casefold() == folded and (scope is None or definition.scope == scope):
                 target = definition
                 break
         if target is None:
@@ -208,11 +205,7 @@ class _SheetDefinedNames(MutableMapping[str, DefinedName]):
         self._sheet = sheet
 
     def _scoped(self) -> list[DefinedName]:
-        return [
-            definition
-            for definition in self._workbook.defined_names
-            if definition.scope == self._sheet.title
-        ]
+        return [definition for definition in self._workbook.defined_names if definition.scope == self._sheet.title]
 
     def __getitem__(self, name: str) -> DefinedName:
         for definition in self._scoped():
@@ -225,17 +218,13 @@ class _SheetDefinedNames(MutableMapping[str, DefinedName]):
             raise TypeError("value must be a DefinedName")
         if definition.name != name:
             raise ValueError("key must be the same as the name")
-        self._workbook.defined_names.add(
-            replace(definition, scope=self._sheet.title, localSheetId=None)
-        )
+        self._workbook.defined_names.add(replace(definition, scope=self._sheet.title, localSheetId=None))
 
     def add(self, definition: DefinedName) -> None:
         """Add a name scoped to this sheet, replacing one with the same name."""
         if not isinstance(definition, DefinedName):
             raise TypeError("value must be a DefinedName")
-        self._workbook.defined_names.add(
-            replace(definition, scope=self._sheet.title, localSheetId=None)
-        )
+        self._workbook.defined_names.add(replace(definition, scope=self._sheet.title, localSheetId=None))
 
     def __delitem__(self, name: str) -> None:
         for definition in self._scoped():
@@ -430,17 +419,13 @@ class AutoFilter:
 
         ``blank=True`` also shows blank cells.
         """
-        self.filterColumn.append(
-            FilterColumn(colId=col_id, vals=list(vals or []), blank=bool(blank))
-        )
+        self.filterColumn.append(FilterColumn(colId=col_id, vals=list(vals or []), blank=bool(blank)))
 
     def add_sort_condition(self, ref: str, descending: bool = False) -> None:
         """Sort by the cells of ``ref``, descending when asked."""
         if self.sortState is None:
             self.sortState = SortState(ref=self.ref)
-        self.sortState.sortCondition.append(
-            SortCondition(ref=ref, descending=bool(descending))
-        )
+        self.sortState.sortCondition.append(SortCondition(ref=ref, descending=bool(descending)))
 
 
 @dataclass
@@ -507,14 +492,12 @@ class WorksheetProtection:
     def __setattr__(self, name, value):
         # As in openpyxl, a password set directly is stored as its legacy hash.
         if name == "password" and value is not None:
-
             value = password_hash(value)
         object.__setattr__(self, name, value)
 
     def set_password(self, value: str | None = "", already_hashed: bool = False) -> None:
         """Set the password, stored as its legacy hash unless ``already_hashed``."""
         if value is not None and not already_hashed:
-
             value = password_hash(value)
         object.__setattr__(self, "password", value)
 
@@ -542,9 +525,13 @@ def _as_model_protection(value) -> WorksheetProtection:
     if isinstance(value, WorksheetProtection):
         return value
     if isinstance(value, PublicSheetProtection):
-        model = WorksheetProtection(sheet=value.enabled, objects=value.enabled, scenarios=value.enabled,
-                                    selectLockedCells=not value.select_locked_cells,
-                                    selectUnlockedCells=not value.select_unlocked_cells)
+        model = WorksheetProtection(
+            sheet=value.enabled,
+            objects=value.enabled,
+            scenarios=value.enabled,
+            selectLockedCells=not value.select_locked_cells,
+            selectUnlockedCells=not value.select_unlocked_cells,
+        )
         if value.password_hash is not None:
             model.set_password(value.password_hash, already_hashed=True)
         return model
@@ -556,8 +543,9 @@ def _as_model_page_margins(value) -> WorksheetPageMargins:
     if isinstance(value, WorksheetPageMargins):
         return value
     if isinstance(value, PublicPageMargins):
-        return WorksheetPageMargins(**{name: getattr(value, name) for name in
-                                       ("left", "right", "top", "bottom", "header", "footer")})
+        return WorksheetPageMargins(
+            **{name: getattr(value, name) for name in ("left", "right", "top", "bottom", "header", "footer")}
+        )
     raise TypeError("page_margins must be an xlspy.PageMargins or a WorksheetPageMargins")
 
 

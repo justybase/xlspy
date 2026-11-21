@@ -96,10 +96,13 @@ def test_unsupported_shared_strings_still_read_through_the_other_parsers(tmp_pat
 
 
 @pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
-@pytest.mark.parametrize("declaration", [
-    '<?xml version="1.0" encoding="UTF-16"?>',
-    '<?xml version="1.0" encoding = "utf-8"?>',
-])
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        '<?xml version="1.0" encoding="UTF-16"?>',
+        '<?xml version="1.0" encoding = "utf-8"?>',
+    ],
+)
 def test_native_parser_declines_other_declarations(declaration):
     assert _accel.read_xlsx_shared_strings(_sst(SUPPORTED["plain"], decl=declaration)) is None
 

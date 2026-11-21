@@ -50,11 +50,7 @@ def border_xml(key: Any) -> str:
     # Excel reads <start>/<end> as the left/right edges (in a left-to-right
     # sheet), so an empty <start/> would hide <left>: write them only when
     # set, like <vertical>/<horizontal>.
-    parts = [
-        border_side_xml(tag, getattr(key, tag))
-        for tag in ("start", "end")
-        if getattr(key, tag) != (None, None)
-    ]
+    parts = [border_side_xml(tag, getattr(key, tag)) for tag in ("start", "end") if getattr(key, tag) != (None, None)]
     parts += [
         border_side_xml("left", key.left),
         border_side_xml("right", key.right),

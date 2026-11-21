@@ -58,9 +58,7 @@ def test_random_sheet_structure_edits_stay_readable(tmp_path, ext):
                 visible = [name for name in names if states[name] == "visible"]
                 candidate = rng.choice(names)
                 if len(visible) > 1 or states[candidate] != "visible":
-                    updater.set_sheet_state(
-                        candidate, rng.choice(["hidden", "veryHidden", "visible"])
-                    )
+                    updater.set_sheet_state(candidate, rng.choice(["hidden", "veryHidden", "visible"]))
             elif action == 5:
                 updater.set_active_sheet(rng.randrange(len(names)))
             updater.save(path)

@@ -5,7 +5,7 @@ from collections.abc import Generator
 
 import xlsxwriter
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from xlspy import XlsbWriter
 
@@ -23,6 +23,7 @@ XLSX_FILENAME = "benchmark_output.xlsx"
 
 def _ensure_import(package_name: str, import_name: str | None = None):
     import importlib, subprocess, sys
+
     try:
         return importlib.import_module(import_name or package_name)
     except ImportError:
@@ -64,7 +65,7 @@ def run_xlsxwriter_benchmark(cursor):
 
     start_time = time.time()
     cursor.execute(QUERY)
-    workbook = xlsxwriter.Workbook(XLSX_FILENAME, {'constant_memory': True})
+    workbook = xlsxwriter.Workbook(XLSX_FILENAME, {"constant_memory": True})
     worksheet = workbook.add_worksheet("Benchmark Data")
     for row_num, row in enumerate(row_generator(cursor)):
         worksheet.write_row(row_num, 0, row)
@@ -125,5 +126,5 @@ def main():
         print("Done.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

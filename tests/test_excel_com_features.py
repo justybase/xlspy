@@ -21,9 +21,18 @@ XL_VALIDATE_WHOLE_NUMBER = 1
 XL_VALIDATE_LIST = 3
 XL_LANDSCAPE = 2
 MSO_PICTURE = 13
-SPECIAL = ["bell\x07", "crlf\r\nend", "lf\nonly", "tab\tx", "lit _x0041_ text", "_x005F_",
-           "ctl\x01\x1f", "ff￾", "a&b<c>d"]
-AT_LIMIT = ["a" * 32767, "\U0001D11E" * 16383 + "a", "ż" * 32767, "é" * 16383]
+SPECIAL = [
+    "bell\x07",
+    "crlf\r\nend",
+    "lf\nonly",
+    "tab\tx",
+    "lit _x0041_ text",
+    "_x005F_",
+    "ctl\x01\x1f",
+    "ff￾",
+    "a&b<c>d",
+]
+AT_LIMIT = ["a" * 32767, "\U0001d11e" * 16383 + "a", "ż" * 32767, "é" * 16383]
 
 
 @pytest.fixture(scope="module")
@@ -63,11 +72,11 @@ def test_combined_report_in_excel(tmp_path, open_workbook):
     assert [workbook.Worksheets(i).Name for i in range(1, 4)] == ["Summary", "Q1 Sales", "Data"]
     sheet = workbook.Worksheets("Summary")
 
-    assert sheet.Range("D3").Value == 1500           # B3*C3 = 120 * 12.5
-    assert sheet.Range("B7").Value == 545            # SUM(B3:B6)
+    assert sheet.Range("D3").Value == 1500  # B3*C3 = 120 * 12.5
+    assert sheet.Range("B7").Value == 545  # SUM(B3:B6)
     assert sheet.Range("D7").Value == pytest.approx(3207)
-    assert sheet.Range("B9").Value == 31             # SUM('Q1 Sales'!B2:B4)
-    assert sheet.Range("B10").Value == 46023         # Data!A2, 2026-01-01 as a serial
+    assert sheet.Range("B9").Value == 31  # SUM('Q1 Sales'!B2:B4)
+    assert sheet.Range("B10").Value == 46023  # Data!A2, 2026-01-01 as a serial
 
     assert sheet.Range("A1").MergeArea.Address == "$A$1:$F$1"
     assert sheet.Hyperlinks.Count == 4
@@ -124,8 +133,7 @@ def test_tables_open_with_names_from_their_headers(tmp_path, open_workbook, writ
     headers = ["Product", "lit _x0041_", "two\nlines", "a&b"]
     with writer_cls(path) as writer:
         writer.add_sheet("Top")
-        writer.write_sheet([headers, ["Tea", 1, 2, 3], ["Cocoa", 4, 5, 6]],
-                           tables=[ExcelTable("TopTable", "A1:D3")])
+        writer.write_sheet([headers, ["Tea", 1, 2, 3], ["Cocoa", 4, 5, 6]], tables=[ExcelTable("TopTable", "A1:D3")])
         writer.add_sheet("Late")
         rows = [[f"filler {i}", i] for i in range(150)] + [["Name", "Qty"], ["a", 1], ["b", 2]]
         writer.write_sheet(rows, tables=[ExcelTable("LateTable", "A151:B153", columns=["NAME", "qty"])])
@@ -150,10 +158,16 @@ def test_file_object_output_opens_in_excel(tmp_path, open_workbook, writer_cls, 
     assert sheet.Range("B501").Value == 500
 
 
-@pytest.mark.parametrize("writer_cls,ext,shared", [
-    (XlsxWriter, "xlsx", True), (XlsxWriter, "xlsx", False),
-    (XlsbWriter, "xlsb", True), (XlsbWriter, "xlsb", False),
-], ids=["xlsx-shared", "xlsx-inline", "xlsb-shared", "xlsb-inline"])
+@pytest.mark.parametrize(
+    "writer_cls,ext,shared",
+    [
+        (XlsxWriter, "xlsx", True),
+        (XlsxWriter, "xlsx", False),
+        (XlsbWriter, "xlsb", True),
+        (XlsbWriter, "xlsb", False),
+    ],
+    ids=["xlsx-shared", "xlsx-inline", "xlsb-shared", "xlsb-inline"],
+)
 def test_cell_text_reads_back_exactly_in_excel(tmp_path, open_workbook, writer_cls, ext, shared):
     path = tmp_path / f"text.{ext}"
     with writer_cls(path, use_shared_strings=shared) as writer:
@@ -184,8 +198,8 @@ def test_row_and_column_groups_in_excel(tmp_path, open_workbook, writer_cls, ext
     assert [r for r in range(1, 13) if sheet.Rows(r).Hidden] == [6, 7]
     assert [int(sheet.Columns(c).OutlineLevel) for c in range(1, 8)] == [1, 1, 2, 3, 3, 2, 1]
     assert [c for c in range(1, 11) if sheet.Columns(c).Hidden] == [4, 5]
-    assert sheet.Outline.SummaryRow == 1             # xlSummaryBelow
-    assert sheet.Outline.SummaryColumn == -4152      # xlSummaryOnRight
+    assert sheet.Outline.SummaryRow == 1  # xlSummaryBelow
+    assert sheet.Outline.SummaryColumn == -4152  # xlSummaryOnRight
     # Expanding the collapsed groups from Excel shows their rows and columns again.
     sheet.Rows(8).ShowDetail = True
     sheet.Columns(6).ShowDetail = True

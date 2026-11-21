@@ -11,8 +11,18 @@ import zipfile
 import pytest
 
 from xlspy import (
-    CellIsRule, Chart, ChartSeries, DataValidation, DifferentialStyle, ExcelTable, Font, Shape,
-    Slicer, SparklineGroup, XlsbWriter, XlsxWriter,
+    CellIsRule,
+    Chart,
+    ChartSeries,
+    DataValidation,
+    DifferentialStyle,
+    ExcelTable,
+    Font,
+    Shape,
+    Slicer,
+    SparklineGroup,
+    XlsbWriter,
+    XlsxWriter,
 )
 from xlspy.biff_utils import iter_records
 from xlspy.workbook import load_workbook

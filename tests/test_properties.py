@@ -35,7 +35,7 @@ _text = st.text(st.characters(blacklist_categories=("Cs", "Cc")), min_size=1, ma
 _cells = st.one_of(
     st.none(),
     st.booleans(),
-    st.integers(min_value=-2**53, max_value=2**53),
+    st.integers(min_value=-(2**53), max_value=2**53),
     st.floats(allow_nan=False, allow_infinity=False, width=64),
     _text,
     st.dates(min_value=FIRST_DATE.date(), max_value=LAST_DATE.date()),
@@ -101,8 +101,7 @@ def _assert_same_grid(actual, expected, label):
         )
         for column_index, (actual_cell, expected_cell) in enumerate(zip(actual_row, expected_row)):
             assert _same_cell(actual_cell, expected_cell), (
-                f"{label} row {row_index} column {column_index}: "
-                f"{actual_cell!r} != {expected_cell!r}"
+                f"{label} row {row_index} column {column_index}: {actual_cell!r} != {expected_cell!r}"
             )
 
 
@@ -119,9 +118,7 @@ def test_xlsb_roundtrip(tmp_path_factory, rows):
     path = write_workbook(tmp_path_factory.mktemp("xlsb") / "grid.xlsb", rows)
     _assert_same_grid(_read(path), rows, "xlsb roundtrip")
     if xlspy_reader.HAVE_NATIVE:
-        _assert_same_grid(
-            _read(path, force_python_xlsb=True), rows, "xlsb roundtrip (python path)"
-        )
+        _assert_same_grid(_read(path, force_python_xlsb=True), rows, "xlsb roundtrip (python path)")
 
 
 @SMOKE
@@ -134,7 +131,12 @@ def test_xlsx_and_xlsb_writers_agree(tmp_path_factory, rows):
 
 
 @SMOKE
-@given(value=st.one_of(st.dates(min_value=FIRST_DATE.date(), max_value=LAST_DATE.date()), st.datetimes(min_value=FIRST_DATE, max_value=LAST_DATE)))
+@given(
+    value=st.one_of(
+        st.dates(min_value=FIRST_DATE.date(), max_value=LAST_DATE.date()),
+        st.datetimes(min_value=FIRST_DATE, max_value=LAST_DATE),
+    )
+)
 def test_date_serial_roundtrip(value):
     moment = _normalize(value)
     restored = serial_to_datetime(datetime_to_serial(value))
@@ -151,8 +153,6 @@ def test_serial_to_datetime_matches_openpyxl(serial):
     # available microsecond precision.
     assert abs((actual - reference).total_seconds()) <= 1e-3
     if serial < 100:
-        reference = openpyxl_datetime.from_excel(
-            serial, epoch=openpyxl_datetime.CALENDAR_MAC_1904
-        )
+        reference = openpyxl_datetime.from_excel(serial, epoch=openpyxl_datetime.CALENDAR_MAC_1904)
         actual = serial_to_datetime(serial, date_1904=True)
         assert abs((actual - reference).total_seconds()) <= 1e-3

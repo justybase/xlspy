@@ -1,4 +1,5 @@
 """XLSB row records as the readers see them: row indexes and the end of the stream."""
+
 from __future__ import annotations
 
 import struct

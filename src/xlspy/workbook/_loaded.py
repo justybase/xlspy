@@ -31,13 +31,19 @@ from ..formulas import ArrayFormula, DataTableFormula, Formula
 from ..ignored_errors import ignored_errors_xml, snapshot as ignored_errors_snapshot
 from ._drawings import check_removals, remove_drawing_objects, save_chart_edits
 from ._objects import (
-    add_objects, check_object_rewrites, has_pending_objects, mark_objects_saved, sync_objects,
+    add_objects,
+    check_object_rewrites,
+    has_pending_objects,
+    mark_objects_saved,
+    sync_objects,
 )
 from ..refs import parse_cell_range, sort_state_ref
 from .._sort_state import check_sort_state
 from ..styles import _coerce_color, _color_key
 from ..updater_utils import (
-    renamed_chart_parts, renamed_sparkline_parts, replace_or_add_xml_attribute,
+    renamed_chart_parts,
+    renamed_sparkline_parts,
+    replace_or_add_xml_attribute,
 )
 from ._model import Workbook, Worksheet, _coordinate, _normalize_range
 from ._styles import XlsxStyleTable
@@ -88,11 +94,16 @@ def _snapshot(obj) -> tuple:
 
 def _header_footer_snapshot(footer) -> tuple:
     return (
-        footer.differentFirst, footer.differentOddEven,
-        footer.scaleWithDoc, footer.alignWithMargins,
-        footer.oddHeader.code(), footer.oddFooter.code(),
-        footer.evenHeader.code(), footer.evenFooter.code(),
-        footer.firstHeader.code(), footer.firstFooter.code(),
+        footer.differentFirst,
+        footer.differentOddEven,
+        footer.scaleWithDoc,
+        footer.alignWithMargins,
+        footer.oddHeader.code(),
+        footer.oddFooter.code(),
+        footer.evenHeader.code(),
+        footer.evenFooter.code(),
+        footer.firstHeader.code(),
+        footer.firstFooter.code(),
     )
 
 
@@ -105,15 +116,22 @@ def _auto_filter_snapshot(filter_) -> tuple:
     return (
         filter_.ref,
         tuple((column.colId, tuple(column.vals), column.blank) for column in filter_.filterColumn),
-        None if sort is None else (
+        None
+        if sort is None
+        else (
             sort.ref,
             sort.columnSort,
             sort.caseSensitive,
             sort.sortMethod,
             tuple(
                 (
-                    item.ref, item.descending, item.sortBy, item.customList,
-                    item.dxfId, item.iconSet, item.iconId,
+                    item.ref,
+                    item.descending,
+                    item.sortBy,
+                    item.customList,
+                    item.dxfId,
+                    item.iconSet,
+                    item.iconId,
                 )
                 for item in sort.sortCondition
             ),
@@ -124,53 +142,83 @@ def _auto_filter_snapshot(filter_) -> tuple:
 def _meta_signature(sheet: Worksheet):
     """A hashable snapshot of the sheet metadata edited through this model."""
     cols = tuple(
-        (letter, dim.width, dim.hidden, dim.outlineLevel, dim.collapsed,
-         dim.bestFit, dim.autoSize, dim.style)
+        (letter, dim.width, dim.hidden, dim.outlineLevel, dim.collapsed, dim.bestFit, dim.autoSize, dim.style)
         for letter, dim in sorted(
             sheet.column_dimensions.items(),
             key=lambda item: parse_cell_range(f"{item[0]}1")[0],
         )
     )
     rows = tuple(
-        (row, dim.height, dim.hidden, dim.outlineLevel, dim.collapsed,
-         dim.bestFit, dim.style)
+        (row, dim.height, dim.hidden, dim.outlineLevel, dim.collapsed, dim.bestFit, dim.style)
         for row, dim in sorted(sheet.row_dimensions.items())
     )
     view = sheet.sheet_view
-    pane = None if view.pane is None else (
-        view.pane.xSplit, view.pane.ySplit, view.pane.topLeftCell,
-        view.pane.activePane, view.pane.state,
+    pane = (
+        None
+        if view.pane is None
+        else (
+            view.pane.xSplit,
+            view.pane.ySplit,
+            view.pane.topLeftCell,
+            view.pane.activePane,
+            view.pane.state,
+        )
     )
-    selection = tuple(
-        (item.pane, item.activeCell, item.activeCellId, item.sqref)
-        for item in view.selection
-    )
+    selection = tuple((item.pane, item.activeCell, item.activeCellId, item.sqref) for item in view.selection)
     properties = sheet.sheet_properties
     return (
-        cols, rows, sheet.freeze_panes,
+        cols,
+        rows,
+        sheet.freeze_panes,
         _auto_filter_snapshot(sheet.auto_filter),
         tuple(sorted(str(value) for value in sheet.merged_cells.ranges)),
-        repr(properties.tabColor), properties.codeName,
-        properties.filterMode, properties.published, properties.syncHorizontal,
-        properties.syncRef, properties.syncVertical, properties.transitionEvaluation,
-        properties.transitionEntry, properties.enableFormatConditionsCalculation,
-        _snapshot(properties.outlinePr), _snapshot(properties.pageSetUpPr),
+        repr(properties.tabColor),
+        properties.codeName,
+        properties.filterMode,
+        properties.published,
+        properties.syncHorizontal,
+        properties.syncRef,
+        properties.syncVertical,
+        properties.transitionEvaluation,
+        properties.transitionEntry,
+        properties.enableFormatConditionsCalculation,
+        _snapshot(properties.outlinePr),
+        _snapshot(properties.pageSetUpPr),
         _snapshot(sheet.sheet_format),
         (
-            view.windowProtection, view.showFormulas, view.showGridLines,
-            view.showRowColHeaders, view.showZeros, view.rightToLeft,
-            view.tabSelected, view.showRuler, view.showOutlineSymbols,
-            view.defaultGridColor, view.showWhiteSpace, view.view,
-            view.topLeftCell, view.colorId, view.zoomScale, view.zoomScaleNormal,
-            view.zoomScaleSheetLayoutView, view.zoomScalePageLayoutView,
-            view.workbookViewId, pane, selection,
+            view.windowProtection,
+            view.showFormulas,
+            view.showGridLines,
+            view.showRowColHeaders,
+            view.showZeros,
+            view.rightToLeft,
+            view.tabSelected,
+            view.showRuler,
+            view.showOutlineSymbols,
+            view.defaultGridColor,
+            view.showWhiteSpace,
+            view.view,
+            view.topLeftCell,
+            view.colorId,
+            view.zoomScale,
+            view.zoomScaleNormal,
+            view.zoomScaleSheetLayoutView,
+            view.zoomScalePageLayoutView,
+            view.workbookViewId,
+            pane,
+            selection,
         ),
-        _snapshot(sheet.page_setup), _snapshot(sheet.print_options),
-        _snapshot(sheet.page_margins), _header_footer_snapshot(sheet.HeaderFooter),
+        _snapshot(sheet.page_setup),
+        _snapshot(sheet.print_options),
+        _snapshot(sheet.page_margins),
+        _header_footer_snapshot(sheet.HeaderFooter),
         _snapshot(sheet.protection),
-        _break_snapshot(sheet.row_breaks), _break_snapshot(sheet.col_breaks),
+        _break_snapshot(sheet.row_breaks),
+        _break_snapshot(sheet.col_breaks),
         ignored_errors_snapshot(sheet.ignored_errors),
-        sheet.print_area, sheet.print_title_rows, sheet.print_title_cols,
+        sheet.print_area,
+        sheet.print_title_rows,
+        sheet.print_title_cols,
     )
 
 
@@ -190,9 +238,17 @@ def _sheet_views_xml(sheet: Worksheet, prefix: str) -> str:
     attrs = []
     view = sheet.sheet_view
     for name in (
-        "showFormulas", "showGridLines", "showRowColHeaders", "showZeros",
-        "rightToLeft", "tabSelected", "showRuler", "showOutlineSymbols",
-        "defaultGridColor", "showWhiteSpace", "windowProtection",
+        "showFormulas",
+        "showGridLines",
+        "showRowColHeaders",
+        "showZeros",
+        "rightToLeft",
+        "tabSelected",
+        "showRuler",
+        "showOutlineSymbols",
+        "defaultGridColor",
+        "showWhiteSpace",
+        "windowProtection",
     ):
         value = getattr(view, name, None)
         if value is not None:
@@ -202,7 +258,10 @@ def _sheet_views_xml(sheet: Worksheet, prefix: str) -> str:
         if value is not None:
             attrs.append(f'{name}="{value}"')
     for name in (
-        "colorId", "zoomScale", "zoomScaleNormal", "zoomScaleSheetLayoutView",
+        "colorId",
+        "zoomScale",
+        "zoomScaleNormal",
+        "zoomScaleSheetLayoutView",
         "zoomScalePageLayoutView",
     ):
         value = getattr(view, name, None)
@@ -220,7 +279,7 @@ def _sheet_views_xml(sheet: Worksheet, prefix: str) -> str:
             pane_attrs.append(f'topLeftCell="{view.pane.topLeftCell}"')
         pane_attrs.append(f'activePane="{view.pane.activePane}"')
         pane_attrs.append(f'state="{view.pane.state}"')
-        pane = f'<{prefix}pane {" ".join(pane_attrs)}/>'
+        pane = f"<{prefix}pane {' '.join(pane_attrs)}/>"
     elif sheet.freeze_panes:
         col, row, _, _ = parse_cell_range(sheet.freeze_panes)
         split = []
@@ -237,11 +296,11 @@ def _sheet_views_xml(sheet: Worksheet, prefix: str) -> str:
             active = "bottomLeft"
         split.append(f'activePane="{active}"')
         split.append('state="frozen"')
-        pane = f'<{prefix}pane {" ".join(split)}/>'
+        pane = f"<{prefix}pane {' '.join(split)}/>"
 
     if view.selection:
         selection = "".join(
-            f'<{prefix}selection'
+            f"<{prefix}selection"
             + (f' pane="{item.pane}"' if item.pane is not None else "")
             + f' activeCell="{item.activeCell}" sqref="{item.sqref}"'
             + (f' activeCellId="{item.activeCellId}"' if item.activeCellId is not None else "")
@@ -252,14 +311,13 @@ def _sheet_views_xml(sheet: Worksheet, prefix: str) -> str:
         col, row, _, _ = parse_cell_range(sheet.freeze_panes)
         active = "bottomRight" if col and row else ("topRight" if col else "bottomLeft")
         selection = (
-            f'<{prefix}selection pane="{active}" '
-            f'activeCell="{sheet.freeze_panes}" sqref="{sheet.freeze_panes}"/>'
+            f'<{prefix}selection pane="{active}" activeCell="{sheet.freeze_panes}" sqref="{sheet.freeze_panes}"/>'
         )
     else:
         selection = ""
     view_attrs = (" " + " ".join(attrs)) if attrs else ""
     return (
-        f'<{prefix}sheetViews><{prefix}sheetView{view_attrs} '
+        f"<{prefix}sheetViews><{prefix}sheetView{view_attrs} "
         f'workbookViewId="{view.workbookViewId}">'
         f"{pane}{selection}</{prefix}sheetView></{prefix}sheetViews>"
     )
@@ -297,18 +355,14 @@ def _cols_xml(sheet: Worksheet, prefix: str) -> str:
             attrs.append(f'autoSize="{1 if dimension.autoSize else 0}"')
         if getattr(dimension, "style", None) is not None:
             attrs.append(f'style="{dimension.style}"')
-        parts.append(f'<{prefix}col {" ".join(attrs)}/>')
+        parts.append(f"<{prefix}col {' '.join(attrs)}/>")
     if not parts:
         return ""
-    return f'<{prefix}cols>{"".join(parts)}</{prefix}cols>'
+    return f"<{prefix}cols>{''.join(parts)}</{prefix}cols>"
 
 
 def _patch_xml_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
-    dimensions = {
-        row: dimension
-        for row, dimension in sheet.row_dimensions.items()
-        if _row_dimension_attrs(dimension)
-    }
+    dimensions = {row: dimension for row, dimension in sheet.row_dimensions.items() if _row_dimension_attrs(dimension)}
     match = sheet_data_match(xml)
     if match is None:
         return xml
@@ -334,18 +388,18 @@ def _patch_xml_rows(xml: str, sheet: Worksheet, prefix: str) -> str:
         if dimension is not None:
             for name, value in _row_dimension_attrs(dimension).items():
                 new_opening = _set_attr(new_opening, name, value)
-        return new_opening + row_xml[len(opening):]
+        return new_opening + row_xml[len(opening) :]
 
     body = patch_rows(body, patch_row)
     new_rows = {}
     for row, dimension in dimensions.items():
         if row not in seen:
             attrs = {"r": str(row), **_row_dimension_attrs(dimension)}
-            new_rows[row] = f'<{prefix}row ' + " ".join(
-                f"{key}={quoteattr(value)}" for key, value in attrs.items()
-            ) + "/>"
+            new_rows[row] = (
+                f"<{prefix}row " + " ".join(f"{key}={quoteattr(value)}" for key, value in attrs.items()) + "/>"
+            )
     body = insert_rows(body, new_rows)
-    return xml[:match.start()] + body + xml[match.end():]
+    return xml[: match.start()] + body + xml[match.end() :]
 
 
 def _tab_color_xml(sheet: Worksheet, prefix: str) -> str:
@@ -358,7 +412,7 @@ def _tab_color_xml(sheet: Worksheet, prefix: str) -> str:
         return ""
     if key is None:
         return ""
-    return f'<{prefix}tabColor {XlsxStyleTable._color_attrs(key)}/>'
+    return f"<{prefix}tabColor {XlsxStyleTable._color_attrs(key)}/>"
 
 
 def _merge_xml(sheet: Worksheet, prefix: str) -> str:
@@ -390,7 +444,7 @@ def _sheet_format_xml(sheet: Worksheet, prefix: str) -> str:
             attrs.append(f'{name}="{int(bool(value))}"')
     if not attrs:
         return ""
-    return f'<{prefix}sheetFormatPr {" ".join(attrs)}/>'
+    return f"<{prefix}sheetFormatPr {' '.join(attrs)}/>"
 
 
 def _sheet_pr_xml(sheet: Worksheet, prefix: str) -> str:
@@ -401,8 +455,13 @@ def _sheet_pr_xml(sheet: Worksheet, prefix: str) -> str:
         if value is not None:
             attrs.append(f"{name}={quoteattr(str(value))}")
     for name in (
-        "enableFormatConditionsCalculation", "filterMode", "published",
-        "syncHorizontal", "syncVertical", "transitionEvaluation", "transitionEntry",
+        "enableFormatConditionsCalculation",
+        "filterMode",
+        "published",
+        "syncHorizontal",
+        "syncVertical",
+        "transitionEvaluation",
+        "transitionEntry",
     ):
         value = getattr(properties, name)
         if value is not None:
@@ -418,26 +477,37 @@ def _sheet_pr_xml(sheet: Worksheet, prefix: str) -> str:
         if value is not None:
             outline_attrs.append(f'{name}="{int(bool(value))}"')
     if outline_attrs:
-        children.append(f'<{prefix}outlinePr {" ".join(outline_attrs)}/>')
+        children.append(f"<{prefix}outlinePr {' '.join(outline_attrs)}/>")
     page_attrs = []
     if properties.pageSetUpPr.fitToPage is not None:
         page_attrs.append(f'fitToPage="{int(bool(properties.pageSetUpPr.fitToPage))}"')
     if page_attrs:
-        children.append(f'<{prefix}pageSetUpPr {" ".join(page_attrs)}/>')
+        children.append(f"<{prefix}pageSetUpPr {' '.join(page_attrs)}/>")
     if not attrs and not children:
         return ""
     attr_text = (" " + " ".join(attrs)) if attrs else ""
     body = "".join(children)
-    return f'<{prefix}sheetPr{attr_text}>{body}</{prefix}sheetPr>'
+    return f"<{prefix}sheetPr{attr_text}>{body}</{prefix}sheetPr>"
 
 
 def _page_setup_xml(sheet: Worksheet, prefix: str) -> str:
     setup = sheet.page_setup
     attrs = []
     for name in (
-        "orientation", "paperSize", "scale", "firstPageNumber", "fitToHeight",
-        "fitToWidth", "paperHeight", "paperWidth", "pageOrder", "cellComments",
-        "errors", "horizontalDpi", "verticalDpi", "copies",
+        "orientation",
+        "paperSize",
+        "scale",
+        "firstPageNumber",
+        "fitToHeight",
+        "fitToWidth",
+        "paperHeight",
+        "paperWidth",
+        "pageOrder",
+        "cellComments",
+        "errors",
+        "horizontalDpi",
+        "verticalDpi",
+        "copies",
     ):
         value = getattr(setup, name)
         if value is not None:
@@ -461,7 +531,7 @@ def _print_options_xml(sheet: Worksheet, prefix: str) -> str:
             attrs.append(f'{name}="{int(bool(value))}"')
     if not attrs:
         return ""
-    return f'<{prefix}printOptions {" ".join(attrs)}/>'
+    return f"<{prefix}printOptions {' '.join(attrs)}/>"
 
 
 def _page_margins_xml(sheet: Worksheet, prefix: str) -> str:
@@ -488,7 +558,7 @@ def _header_footer_xml(sheet: Worksheet, prefix: str) -> str:
     if not attrs and not children:
         return ""
     attr_text = (" " + " ".join(attrs)) if attrs else ""
-    return f'<{prefix}headerFooter{attr_text}>{"".join(children)}</{prefix}headerFooter>'
+    return f"<{prefix}headerFooter{attr_text}>{''.join(children)}</{prefix}headerFooter>"
 
 
 def _breaks_xml(container, tag: str, prefix: str, default_max: int) -> str:
@@ -498,9 +568,7 @@ def _breaks_xml(container, tag: str, prefix: str, default_max: int) -> str:
     for item in container.brk:
         items.append(
             f'<{prefix}brk id="{item.id}" min="{item.min}" max="{item.max or default_max}"'
-            f' man="{1 if item.man else 0}"'
-            + (f' pt="{item.pt}"' if item.pt is not None else "")
-            + "/>"
+            f' man="{1 if item.man else 0}"' + (f' pt="{item.pt}"' if item.pt is not None else "") + "/>"
         )
     return (
         f'<{prefix}{tag} count="{len(container.brk)}" '
@@ -513,20 +581,27 @@ def _sheet_protection_xml(sheet: Worksheet, prefix: str) -> str:
     if not protection.sheet and protection.password is None:
         return ""
     original_hash = sheet._original_protection_hash
-    if (
-        original_hash is not None
-        and original_hash[2] is not None
-        and protection.spinCount != original_hash[3]
-    ):
+    if original_hash is not None and original_hash[2] is not None and protection.spinCount != original_hash[3]:
         raise UnsupportedFeatureError(
             "changing the spin count of a hashed sheet protection cannot be saved without the password"
         )
     attrs = [f'sheet="{1 if protection.sheet else 0}"']
     for name in (
-        "objects", "scenarios", "formatCells", "formatRows", "formatColumns",
-        "insertColumns", "insertRows", "insertHyperlinks", "deleteColumns",
-        "deleteRows", "selectLockedCells", "selectUnlockedCells", "sort",
-        "autoFilter", "pivotTables",
+        "objects",
+        "scenarios",
+        "formatCells",
+        "formatRows",
+        "formatColumns",
+        "insertColumns",
+        "insertRows",
+        "insertHyperlinks",
+        "deleteColumns",
+        "deleteRows",
+        "selectLockedCells",
+        "selectUnlockedCells",
+        "sort",
+        "autoFilter",
+        "pivotTables",
     ):
         attrs.append(f'{name}="{1 if getattr(protection, name) else 0}"')
     if protection.password is not None:
@@ -537,7 +612,7 @@ def _sheet_protection_xml(sheet: Worksheet, prefix: str) -> str:
             attrs.append(f"{name}={quoteattr(str(value))}")
     if protection.spinCount is not None:
         attrs.append(f'spinCount="{protection.spinCount}"')
-    return f'<{prefix}sheetProtection {" ".join(attrs)}/>'
+    return f"<{prefix}sheetProtection {' '.join(attrs)}/>"
 
 
 def _auto_filter_xml(sheet: Worksheet, prefix: str) -> str:
@@ -556,40 +631,38 @@ def _auto_filter_xml(sheet: Worksheet, prefix: str) -> str:
             # Read criteria replace the value list: a column holds one kind of criterion.
             values = "".join(column.criteria)
         else:
-            values = "".join(
-                f'<{prefix}filter val={quoteattr(str(value))}/>' for value in column.vals
-            )
+            values = "".join(f"<{prefix}filter val={quoteattr(str(value))}/>" for value in column.vals)
             if values or column.blank:
                 blank = ' blank="1"' if column.blank else ""
-                values = f'<{prefix}filters{blank}>{values}</{prefix}filters>'
-        children.append(f'<{prefix}filterColumn {" ".join(column_attrs)}>{values}</{prefix}filterColumn>')
+                values = f"<{prefix}filters{blank}>{values}</{prefix}filters>"
+        children.append(f"<{prefix}filterColumn {' '.join(column_attrs)}>{values}</{prefix}filterColumn>")
     sort = filter_.sortState
     if sort is not None:
         conditions = check_sort_state(sort, filter_.ref)
         sort_attrs = []
         sort_ref = sort_state_ref(filter_.ref, sort.ref)
         if sort_ref:
-            sort_attrs.append(f'ref={quoteattr(sort_ref)}')
+            sort_attrs.append(f"ref={quoteattr(sort_ref)}")
         if sort.columnSort is not None:
             sort_attrs.append(f'columnSort="{int(bool(sort.columnSort))}"')
         if sort.caseSensitive is not None:
             sort_attrs.append(f'caseSensitive="{int(bool(sort.caseSensitive))}"')
         if sort.sortMethod is not None:
-            sort_attrs.append(f'sortMethod={quoteattr(sort.sortMethod)}')
+            sort_attrs.append(f"sortMethod={quoteattr(sort.sortMethod)}")
         condition_xml = "".join(
-            f'<{prefix}sortCondition ref={quoteattr(item.ref)}'
+            f"<{prefix}sortCondition ref={quoteattr(item.ref)}"
             + (f' descending="{int(bool(item.descending))}"' if item.descending is not None else "")
-            + (f' sortBy={quoteattr(item.sortBy)}' if item.sortBy is not None else "")
+            + (f" sortBy={quoteattr(item.sortBy)}" if item.sortBy is not None else "")
             + (f' dxfId="{item.dxfId}"' if item.dxfId is not None else "")
-            + (f' customList={quoteattr(item.customList)}' if item.customList is not None else "")
-            + (f' iconSet={quoteattr(item.iconSet)}' if item.iconSet is not None else "")
+            + (f" customList={quoteattr(item.customList)}" if item.customList is not None else "")
+            + (f" iconSet={quoteattr(item.iconSet)}" if item.iconSet is not None else "")
             + (f' iconId="{item.iconId}"' if item.iconId is not None else "")
             + "/>"
             for item in conditions
         )
-        children.append(f'<{prefix}sortState {" ".join(sort_attrs)}>{condition_xml}</{prefix}sortState>')
+        children.append(f"<{prefix}sortState {' '.join(sort_attrs)}>{condition_xml}</{prefix}sortState>")
     body = "".join(children)
-    return f'<{prefix}autoFilter{attrs}>{body}</{prefix}autoFilter>' if body else f'<{prefix}autoFilter{attrs}/>'
+    return f"<{prefix}autoFilter{attrs}>{body}</{prefix}autoFilter>" if body else f"<{prefix}autoFilter{attrs}/>"
 
 
 def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
@@ -597,15 +670,21 @@ def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
     path, xml = handle.sheet_xml(name)
     prefix = tag_prefix(xml, "sheetData")
     xml = replace_element(
-        xml, "sheetPr", _sheet_pr_xml(sheet, prefix),
+        xml,
+        "sheetPr",
+        _sheet_pr_xml(sheet, prefix),
         before=("dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData"),
     )
     xml = replace_element(
-        xml, "sheetViews", _sheet_views_xml(sheet, prefix),
+        xml,
+        "sheetViews",
+        _sheet_views_xml(sheet, prefix),
         before=("sheetFormatPr", "cols", "sheetData"),
     )
     xml = replace_element(
-        xml, "sheetFormatPr", _sheet_format_xml(sheet, prefix),
+        xml,
+        "sheetFormatPr",
+        _sheet_format_xml(sheet, prefix),
         before=("cols", "sheetData"),
     )
     cols = _cols_xml(sheet, prefix)
@@ -613,54 +692,125 @@ def patch_sheet_metadata(updater, sheet: Worksheet, name: str) -> None:
     xml = _patch_xml_rows(xml, sheet, prefix)
     xml = set_dimension_ref(xml, _dimension_ref(sheet))
     xml = replace_element(
-        xml, "sheetProtection", _sheet_protection_xml(sheet, prefix),
-        before=("protectedRanges", "scenarios", "autoFilter", "sortState",
-                "mergeCells", "conditionalFormatting", "dataValidations",
-                "hyperlinks", "printOptions", "pageMargins", "pageSetup",
-                "headerFooter", "drawing", "legacyDrawing", "tableParts", "extLst"),
+        xml,
+        "sheetProtection",
+        _sheet_protection_xml(sheet, prefix),
+        before=(
+            "protectedRanges",
+            "scenarios",
+            "autoFilter",
+            "sortState",
+            "mergeCells",
+            "conditionalFormatting",
+            "dataValidations",
+            "hyperlinks",
+            "printOptions",
+            "pageMargins",
+            "pageSetup",
+            "headerFooter",
+            "drawing",
+            "legacyDrawing",
+            "tableParts",
+            "extLst",
+        ),
     )
     xml = replace_element(
-        xml, "autoFilter", _auto_filter_xml(sheet, prefix),
-        before=("sortState", "mergeCells", "conditionalFormatting", "dataValidations",
-                "hyperlinks", "printOptions", "pageMargins", "pageSetup",
-                "headerFooter", "drawing", "legacyDrawing", "tableParts", "extLst"),
+        xml,
+        "autoFilter",
+        _auto_filter_xml(sheet, prefix),
+        before=(
+            "sortState",
+            "mergeCells",
+            "conditionalFormatting",
+            "dataValidations",
+            "hyperlinks",
+            "printOptions",
+            "pageMargins",
+            "pageSetup",
+            "headerFooter",
+            "drawing",
+            "legacyDrawing",
+            "tableParts",
+            "extLst",
+        ),
     )
     xml = replace_element(
-        xml, "mergeCells", _merge_xml(sheet, prefix),
-        before=("conditionalFormatting", "dataValidations", "hyperlinks",
-                "printOptions", "pageMargins", "pageSetup", "headerFooter",
-                "drawing", "legacyDrawing", "tableParts", "extLst"),
+        xml,
+        "mergeCells",
+        _merge_xml(sheet, prefix),
+        before=(
+            "conditionalFormatting",
+            "dataValidations",
+            "hyperlinks",
+            "printOptions",
+            "pageMargins",
+            "pageSetup",
+            "headerFooter",
+            "drawing",
+            "legacyDrawing",
+            "tableParts",
+            "extLst",
+        ),
     )
     xml = replace_element(
-        xml, "printOptions", _print_options_xml(sheet, prefix),
-        before=("pageMargins", "pageSetup", "headerFooter", "rowBreaks",
-                "colBreaks", "drawing", "legacyDrawing", "tableParts", "extLst"),
+        xml,
+        "printOptions",
+        _print_options_xml(sheet, prefix),
+        before=(
+            "pageMargins",
+            "pageSetup",
+            "headerFooter",
+            "rowBreaks",
+            "colBreaks",
+            "drawing",
+            "legacyDrawing",
+            "tableParts",
+            "extLst",
+        ),
     )
     xml = replace_element(
-        xml, "pageMargins", _page_margins_xml(sheet, prefix),
-        before=("pageSetup", "headerFooter", "rowBreaks", "colBreaks",
-                "drawing", "legacyDrawing", "tableParts", "extLst"),
+        xml,
+        "pageMargins",
+        _page_margins_xml(sheet, prefix),
+        before=(
+            "pageSetup",
+            "headerFooter",
+            "rowBreaks",
+            "colBreaks",
+            "drawing",
+            "legacyDrawing",
+            "tableParts",
+            "extLst",
+        ),
     )
     xml = replace_element(
-        xml, "pageSetup", _page_setup_xml(sheet, prefix),
-        before=("headerFooter", "rowBreaks", "colBreaks", "drawing",
-                "legacyDrawing", "tableParts", "extLst"),
+        xml,
+        "pageSetup",
+        _page_setup_xml(sheet, prefix),
+        before=("headerFooter", "rowBreaks", "colBreaks", "drawing", "legacyDrawing", "tableParts", "extLst"),
     )
     xml = replace_element(
-        xml, "headerFooter", _header_footer_xml(sheet, prefix),
-        before=("rowBreaks", "colBreaks", "drawing", "legacyDrawing",
-                "tableParts", "extLst"),
+        xml,
+        "headerFooter",
+        _header_footer_xml(sheet, prefix),
+        before=("rowBreaks", "colBreaks", "drawing", "legacyDrawing", "tableParts", "extLst"),
     )
     xml = replace_element(
-        xml, "rowBreaks", _breaks_xml(sheet.row_breaks, "rowBreaks", prefix, 16383),
+        xml,
+        "rowBreaks",
+        _breaks_xml(sheet.row_breaks, "rowBreaks", prefix, 16383),
         before=("colBreaks", "drawing", "legacyDrawing", "tableParts", "extLst"),
     )
     xml = replace_element(
-        xml, "colBreaks", _breaks_xml(sheet.col_breaks, "colBreaks", prefix, 1048575),
+        xml,
+        "colBreaks",
+        _breaks_xml(sheet.col_breaks, "colBreaks", prefix, 1048575),
         before=("ignoredErrors", "drawing", "legacyDrawing", "tableParts", "extLst"),
     )
     xml = replace_element(
-        xml, "ignoredErrors", ignored_errors_xml(sheet.ignored_errors, prefix),
+        xml,
+        "ignoredErrors",
+        ignored_errors_xml(sheet.ignored_errors, prefix),
         before=("smartTags", "drawing", "legacyDrawing", "tableParts", "extLst"),
     )
     handle.apply_parts({path: xml})
@@ -690,7 +840,7 @@ def patch_cell_styles(updater, name: str, styles: dict[str, int]) -> None:
         if ref not in styles:
             return cell_xml
         opening = _required_match(re.match(r"<[^>]+>", cell_xml), "cell element")[0]
-        return _set_attr(opening, "s", styles[ref]) + cell_xml[len(opening):]
+        return _set_attr(opening, "s", styles[ref]) + cell_xml[len(opening) :]
 
     patched = patch_cells(xml, patch_cell, rows)
     missing = [ref for ref in styles if ref not in existing]
@@ -743,26 +893,21 @@ def _sheet_xml(sheet: Worksheet, date_1904: bool, *, prefix: str = "") -> str:
             if kind:
                 attrs.append(f't="{kind}"')
             if content:
-                cells.append(f'<{prefix}c {" ".join(attrs)}>{content}</{prefix}c>')
+                cells.append(f"<{prefix}c {' '.join(attrs)}>{content}</{prefix}c>")
             elif cell._style_id:
-                cells.append(f'<{prefix}c {" ".join(attrs)}/>')
+                cells.append(f"<{prefix}c {' '.join(attrs)}/>")
         row_attrs = [f'r="{row_number}"']
         dimension = sheet.row_dimensions.get(row_number)
         if dimension is not None:
             for key, value in _row_dimension_attrs(dimension).items():
                 row_attrs.append(f"{key}={quoteattr(value)}")
         if cells:
-            rows.append(
-                f'<{prefix}row {" ".join(row_attrs)}>{"".join(cells)}</{prefix}row>'
-            )
+            rows.append(f"<{prefix}row {' '.join(row_attrs)}>{''.join(cells)}</{prefix}row>")
         elif dimension is not None and _row_dimension_attrs(dimension):
-            rows.append(f'<{prefix}row {" ".join(row_attrs)}/>')
-    sheet_data = (
-        f'<{prefix}sheetData>{"".join(rows)}</{prefix}sheetData>'
-        if rows else f'<{prefix}sheetData/>'
-    )
+            rows.append(f"<{prefix}row {' '.join(row_attrs)}/>")
+    sheet_data = f"<{prefix}sheetData>{''.join(rows)}</{prefix}sheetData>" if rows else f"<{prefix}sheetData/>"
     tab = _tab_color_xml(sheet, prefix)
-    sheet_pr = f'<{prefix}sheetPr>{tab}</{prefix}sheetPr>' if tab else ""
+    sheet_pr = f"<{prefix}sheetPr>{tab}</{prefix}sheetPr>" if tab else ""
     dimension = f'<{prefix}dimension ref="{_dimension_ref(sheet)}"/>'
     views = _sheet_views_xml(sheet, prefix)
     cols = _cols_xml(sheet, prefix)
@@ -777,7 +922,7 @@ def _sheet_xml(sheet: Worksheet, date_1904: bool, *, prefix: str = "") -> str:
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<{prefix}worksheet xmlns="{MAIN}" xmlns:r="{REL}">'
         f"{sheet_pr}{dimension}{views}{sheet_format}"
-        f"{cols}{sheet_data}{protection}{auto}{merges}<{prefix}pageMargins left=\"0.7\" right=\"0.7\" "
+        f'{cols}{sheet_data}{protection}{auto}{merges}<{prefix}pageMargins left="0.7" right="0.7" '
         f'top="0.75" bottom="0.75" header="0.3" footer="0.3"/>'
         f"{row_breaks}{col_breaks}{ignored}"
         f"</{prefix}worksheet>"
@@ -815,7 +960,7 @@ def _insert_sheet_fragment(workbook_xml: str, fragment: str, index: int) -> str:
         if position < 0:
             position = len(body)
     body = body[:position] + fragment + body[position:]
-    return workbook_xml[:match.start()] + body + workbook_xml[match.end():]
+    return workbook_xml[: match.start()] + body + workbook_xml[match.end() :]
 
 
 def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None:
@@ -827,7 +972,8 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
 
     content_types = safe_fromstring(package.get("[Content_Types].xml"))
     ET.SubElement(
-        content_types, f"{{{CT}}}Override",
+        content_types,
+        f"{{{CT}}}Override",
         {"PartName": "/" + path, "ContentType": _CONTENT_WORKSHEET},
     )
     package.set("[Content_Types].xml", _bytes(content_types))
@@ -836,7 +982,8 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
     rels = safe_fromstring(package.get(book_rels))
     rid = _next_rel_id(rels)
     ET.SubElement(
-        rels, f"{{{PKG_REL}}}Relationship",
+        rels,
+        f"{{{PKG_REL}}}Relationship",
         {
             "Id": rid,
             "Type": REL + "/worksheet",
@@ -848,17 +995,11 @@ def add_sheet(updater, workbook: Workbook, sheet: Worksheet, index: int) -> None
     workbook_path = "xl/workbook.xml"
     workbook_xml = package.get(workbook_path).decode("utf-8")
     root = safe_fromstring(workbook_xml)
-    existing_ids = [
-        int(node.get("sheetId", "0") or 0)
-        for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")
-    ]
+    existing_ids = [int(node.get("sheetId", "0") or 0) for node in root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")]
     sheet_id = max(existing_ids, default=0) + 1
     # The fragment is spliced into a workbook.xml that may not declare xmlns:r at
     # the root, so the prefix is declared on the element itself (as openpyxl does).
-    fragment = (
-        f'<sheet xmlns:r="{REL}" name={quoteattr(sheet.title)} sheetId="{sheet_id}" '
-        f'r:id="{rid}"/>'
-    )
+    fragment = f'<sheet xmlns:r="{REL}" name={quoteattr(sheet.title)} sheetId="{sheet_id}" r:id="{rid}"/>'
     workbook_xml = _insert_sheet_fragment(workbook_xml, fragment, index)
     package.set(workbook_path, workbook_xml.encode("utf-8"))
     handle.sheets[sheet.title] = path
@@ -875,7 +1016,7 @@ def _remove_sheet_node(workbook_xml: str, name: str) -> tuple[str, str | None]:
             continue
         # Attribute keys keep their source prefix (usually ``r:id``).
         rid = next((value for key, value in attrs.items() if key.rsplit(":", 1)[-1] == "id"), None)
-        return workbook_xml[:match.start()] + workbook_xml[match.end():], rid
+        return workbook_xml[: match.start()] + workbook_xml[match.end() :], rid
     return workbook_xml, None
 
 
@@ -888,15 +1029,11 @@ def remove_sheet(updater, workbook: Workbook, name: str) -> None:
     # A slicer's cache lives in the workbook, outside the sheet: removing the sheet would
     # leave the cache pointing at a table that no longer exists, which Excel repairs away.
     if sheet_has_slicers(package, path):
-        raise UnsupportedFeatureError(
-            f"sheet {name!r} holds table slicers; removing it is not supported yet"
-        )
+        raise UnsupportedFeatureError(f"sheet {name!r} holds table slicers; removing it is not supported yet")
     # A pivot table, its cache and the workbook's pivotCaches entry would be left
     # dangling too, so removing a pivot-bearing sheet is not supported yet.
     if sheet_has_pivots(package, path):
-        raise UnsupportedFeatureError(
-            f"sheet {name!r} holds pivot tables; removing it is not supported yet"
-        )
+        raise UnsupportedFeatureError(f"sheet {name!r} holds pivot tables; removing it is not supported yet")
     workbook_path = "xl/workbook.xml"
     workbook_xml = package.get(workbook_path).decode("utf-8")
     workbook_xml, rid = _remove_sheet_node(workbook_xml, name)
@@ -937,20 +1074,19 @@ def rename_sheet(updater, old: str, new: str) -> None:
             fragment,
             count=1,
         )
-        workbook_xml = workbook_xml[:match.start()] + fragment + workbook_xml[match.end():]
+        workbook_xml = workbook_xml[: match.start()] + fragment + workbook_xml[match.end() :]
         break
 
     def rename_references(match):
         fragment = match[0]
         opening = _required_match(re.match(r"<[^>]+>", fragment), "fragment element")[0]
-        body = fragment[len(opening):]
+        body = fragment[len(opening) :]
         return opening + rename_sheet_references(body, old, new)
 
     # Formulas of defined names hold sheet titles (the cells' were updated in the model).
     workbook_xml = element_pattern("definedName").sub(rename_references, workbook_xml)
     package.set(workbook_path, workbook_xml.encode("utf-8"))
-    for part, data in {**renamed_chart_parts(package, old, new),
-                       **renamed_sparkline_parts(package, old, new)}.items():
+    for part, data in {**renamed_chart_parts(package, old, new), **renamed_sparkline_parts(package, old, new)}.items():
         package.set(part, data)
     path = handle.sheets.pop(old, None)
     if path is not None:
@@ -972,10 +1108,13 @@ def _reorder_and_state(workbook: Workbook, updater) -> None:
         if name:
             existing[name] = node
         sheets_parent.remove(node)
-    next_id = max(
-        (int(node.get("sheetId", "0") or 0) for node in existing.values()),
-        default=0,
-    ) + 1
+    next_id = (
+        max(
+            (int(node.get("sheetId", "0") or 0) for node in existing.values()),
+            default=0,
+        )
+        + 1
+    )
     worksheet_nodes = []
     for sheet in workbook._sheets:
         node = existing.get(sheet.title)
@@ -1041,7 +1180,7 @@ def _remap_local_names(updater, before: list[str], renamed: dict[str, str]) -> N
         title = renamed.get(title, title) if title is not None else None
         if title not in after:
             return ""
-        return _set_attr(opening, "localSheetId", after.index(title)) + fragment[len(opening):]
+        return _set_attr(opening, "localSheetId", after.index(title)) + fragment[len(opening) :]
 
     updated = element_pattern("definedName").sub(remap, xml)
     if not element_pattern("definedName").search(updated):
@@ -1066,9 +1205,14 @@ def _workbook_protection_xml(workbook, prefix: str) -> str:
         if value is not None:
             attrs.append(f'{name}="{int(bool(value))}"')
     for name in (
-        "workbookPassword", "revisionsPassword",
-        "workbookAlgorithmName", "workbookHashValue", "workbookSaltValue",
-        "revisionsAlgorithmName", "revisionsHashValue", "revisionsSaltValue",
+        "workbookPassword",
+        "revisionsPassword",
+        "workbookAlgorithmName",
+        "workbookHashValue",
+        "workbookSaltValue",
+        "revisionsAlgorithmName",
+        "revisionsHashValue",
+        "revisionsSaltValue",
     ):
         value = getattr(security, name)
         if value is not None:
@@ -1079,7 +1223,7 @@ def _workbook_protection_xml(workbook, prefix: str) -> str:
             attrs.append(f'{name}="{value}"')
     if not attrs:
         return ""
-    return f'<{prefix}workbookProtection {" ".join(attrs)}/>'
+    return f"<{prefix}workbookProtection {' '.join(attrs)}/>"
 
 
 def _calc_properties_xml(workbook, prefix: str) -> str:
@@ -1092,8 +1236,13 @@ def _calc_properties_xml(workbook, prefix: str) -> str:
     if calc.iterateDelta is not None:
         attrs.append(f'iterateDelta="{_cell_number_text(calc.iterateDelta)}"')
     for name in (
-        "fullCalcOnLoad", "iterate", "fullPrecision", "calcCompleted",
-        "calcOnSave", "concurrentCalc", "forceFullCalc",
+        "fullCalcOnLoad",
+        "iterate",
+        "fullPrecision",
+        "calcCompleted",
+        "calcOnSave",
+        "concurrentCalc",
+        "forceFullCalc",
     ):
         value = getattr(calc, name)
         if value is not None:
@@ -1104,7 +1253,7 @@ def _calc_properties_xml(workbook, prefix: str) -> str:
             attrs.append(f"{name}={quoteattr(str(value))}")
     if not attrs:
         return ""
-    return f'<{prefix}calcPr {" ".join(attrs)}/>'
+    return f"<{prefix}calcPr {' '.join(attrs)}/>"
 
 
 def _book_views_xml(workbook, prefix: str) -> str:
@@ -1114,19 +1263,27 @@ def _book_views_xml(workbook, prefix: str) -> str:
     for view in workbook.views:
         attrs = [f"visibility={quoteattr(str(view.visibility))}"]
         for name in (
-            "minimized", "showHorizontalScroll", "showVerticalScroll",
-            "showSheetTabs", "autoFilterDateGrouping",
+            "minimized",
+            "showHorizontalScroll",
+            "showVerticalScroll",
+            "showSheetTabs",
+            "autoFilterDateGrouping",
         ):
             attrs.append(f'{name}="{int(bool(getattr(view, name)))}"')
         for name in (
-            "xWindow", "yWindow", "windowWidth", "windowHeight",
-            "tabRatio", "firstSheet", "activeTab",
+            "xWindow",
+            "yWindow",
+            "windowWidth",
+            "windowHeight",
+            "tabRatio",
+            "firstSheet",
+            "activeTab",
         ):
             value = getattr(view, name)
             if value is not None:
                 attrs.append(f'{name}="{value}"')
-        views.append(f'<{prefix}workbookView {" ".join(attrs)}/>')
-    return f'<{prefix}bookViews>{"".join(views)}</{prefix}bookViews>'
+        views.append(f"<{prefix}workbookView {' '.join(attrs)}/>")
+    return f"<{prefix}bookViews>{''.join(views)}</{prefix}bookViews>"
 
 
 def patch_workbook_metadata(updater, workbook: Workbook) -> None:
@@ -1135,21 +1292,53 @@ def patch_workbook_metadata(updater, workbook: Workbook) -> None:
     xml = handle.package.get(path).decode("utf-8")
     prefix = handle.tag_prefix(xml, "sheets")
     xml = replace_element(
-        xml, "workbookProtection", _workbook_protection_xml(workbook, prefix),
-        before=("bookViews", "sheets", "functionGroups", "externalReferences",
-                "definedNames", "calcPr", "oleSize", "customWorkbookViews",
-                "pivotCaches", "extLst"),
+        xml,
+        "workbookProtection",
+        _workbook_protection_xml(workbook, prefix),
+        before=(
+            "bookViews",
+            "sheets",
+            "functionGroups",
+            "externalReferences",
+            "definedNames",
+            "calcPr",
+            "oleSize",
+            "customWorkbookViews",
+            "pivotCaches",
+            "extLst",
+        ),
     )
     xml = replace_element(
-        xml, "bookViews", _book_views_xml(workbook, prefix),
-        before=("sheets", "functionGroups", "externalReferences", "definedNames",
-                "calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "extLst"),
+        xml,
+        "bookViews",
+        _book_views_xml(workbook, prefix),
+        before=(
+            "sheets",
+            "functionGroups",
+            "externalReferences",
+            "definedNames",
+            "calcPr",
+            "oleSize",
+            "customWorkbookViews",
+            "pivotCaches",
+            "extLst",
+        ),
     )
     xml = replace_element(
-        xml, "calcPr", _calc_properties_xml(workbook, prefix),
-        before=("oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr",
-                "smartTagTypes", "webPublishing", "fileRecoveryPr",
-                "webPublishObjects", "extLst"),
+        xml,
+        "calcPr",
+        _calc_properties_xml(workbook, prefix),
+        before=(
+            "oleSize",
+            "customWorkbookViews",
+            "pivotCaches",
+            "smartTagPr",
+            "smartTagTypes",
+            "webPublishing",
+            "fileRecoveryPr",
+            "webPublishObjects",
+            "extLst",
+        ),
     )
     handle.package.set(path, xml.encode("utf-8"))
 
@@ -1169,19 +1358,14 @@ def save_loaded(workbook: Workbook, filename) -> None:
         handle.package.set("xl/styles.xml", workbook._styles.to_bytes())
         workbook._styles_dirty = False
 
-    if (
-        getattr(workbook, "_loaded_workbook_meta", None)
-        != _workbook_meta_signature(workbook)
-    ):
+    if getattr(workbook, "_loaded_workbook_meta", None) != _workbook_meta_signature(workbook):
         patch_workbook_metadata(updater, workbook)
         workbook._loaded_workbook_meta = _workbook_meta_signature(workbook)
 
     sheet_order = _sheet_order(updater)
     original_states = _sheet_states(updater)
     original_active = _active_tab(updater)
-    original_loaded_order = [
-        name for name in sheet_order if name in workbook._loaded_worksheet_names
-    ]
+    original_loaded_order = [name for name in sheet_order if name in workbook._loaded_worksheet_names]
     renamed = {sheet._original_title: sheet.title for sheet in workbook._sheets}
     current_titles = {sheet.title for sheet in workbook._sheets}
     keep = current_titles | {sheet._original_title for sheet in workbook._sheets}
@@ -1196,19 +1380,14 @@ def save_loaded(workbook: Workbook, filename) -> None:
         removed_parts: list[str] = []
         handle.recalculate(updates, removed_parts)
         handle.apply_parts(updates, removed_parts)
-    workbook._loaded_worksheet_names -= {
-        name for name in workbook._loaded_worksheet_names if name not in keep
-    }
+    workbook._loaded_worksheet_names -= {name for name in workbook._loaded_worksheet_names if name not in keep}
 
     added = set()
     for index, sheet in enumerate(workbook._sheets):
         if sheet._original_title not in handle.sheets and sheet.title not in handle.sheets:
             add_sheet(updater, workbook, sheet, index)
             added.add(sheet.title)
-        elif (
-            sheet.title != sheet._original_title
-            and sheet._original_title in handle.sheets
-        ):
+        elif sheet.title != sheet._original_title and sheet._original_title in handle.sheets:
             rename_sheet(updater, sheet._original_title, sheet.title)
 
     for sheet in workbook._sheets:
@@ -1256,27 +1435,22 @@ def save_loaded(workbook: Workbook, filename) -> None:
                 updater.set_comments(name, comments)
             # A new sheet's part has no links yet: write all of them.
             sheet._dirty_hyperlinks.update(
-                cell.coordinate for cells in sheet._cells.values() for cell in cells.values()
+                cell.coordinate
+                for cells in sheet._cells.values()
+                for cell in cells.values()
                 if cell._hyperlink is not None
             )
             _save_hyperlinks(updater, sheet, name)
 
     desired_order = [sheet._original_title for sheet in workbook._sheets]
     state_changed = any(
-        sheet.sheet_state != original_states.get(sheet._original_title, "visible")
-        for sheet in workbook._sheets
+        sheet.sheet_state != original_states.get(sheet._original_title, "visible") for sheet in workbook._sheets
     )
     renamed_any = any(sheet.title != sheet._original_title for sheet in workbook._sheets)
-    active_changed = workbook._active_index != getattr(
-        workbook, "_loaded_active_index", original_active
-    )
+    active_changed = workbook._active_index != getattr(workbook, "_loaded_active_index", original_active)
     order_changed = desired_order != original_loaded_order
     changed_sheets = added or removed_any or renamed_any or order_changed
-    if (
-        changed_sheets
-        or state_changed
-        or active_changed
-    ):
+    if changed_sheets or state_changed or active_changed:
         _reorder_and_state(workbook, updater)
     if removed_any or renamed_any or order_changed:
         _remap_local_names(updater, sheet_order, renamed)
@@ -1303,9 +1477,7 @@ def save_loaded(workbook: Workbook, filename) -> None:
         sheets_now = _sheet_order(updater)
         valid_scopes = set(sheets_now)
         renamed_sheets = {s._original_title: s.title for s in workbook._sheets}
-        previous_pairs = {
-            (name.casefold(), scope) for name, _f, scope, _h, _c in previous
-        }
+        previous_pairs = {(name.casefold(), scope) for name, _f, scope, _h, _c in previous}
         kept = []
         for definition in current:
             if definition.scope is None:
@@ -1319,18 +1491,13 @@ def save_loaded(workbook: Workbook, filename) -> None:
                 # loaded from a sheet that has since been removed is dropped, as
                 # Excel drops it with the sheet.
                 raise KeyError(f"Worksheet not found: {definition.scope}")
-        current_set = {
-            (d.name, d.formula, d.scope, d.hidden, d.comment) for d in kept
-        }
+        current_set = {(d.name, d.formula, d.scope, d.hidden, d.comment) for d in kept}
         if current_set != previous:
             current_pairs = {(d.name.casefold(), d.scope) for d in kept}
             to_remove = []
             for name, _formula, scope, _hidden, _comment in previous:
                 mapped = renamed_sheets.get(scope, scope) if scope is not None else None
-                if (
-                    (name.casefold(), mapped) not in current_pairs
-                    and (mapped is None or mapped in valid_scopes)
-                ):
+                if (name.casefold(), mapped) not in current_pairs and (mapped is None or mapped in valid_scopes):
                     to_remove.append((name, mapped))
             if to_remove:
                 updater.remove_defined_names(to_remove)

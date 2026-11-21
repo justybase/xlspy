@@ -55,16 +55,11 @@ class ExcelTable:
     totals_row_functions: tuple[str | None, ...] | None = None
 
     def __post_init__(self):
-        if not isinstance(self.display_name, str) or _TABLE_NAME_RE.fullmatch(
-            self.display_name
-        ) is None:
-            raise ValueError(
-                f"invalid table display name {self.display_name!r}"
-            )
+        if not isinstance(self.display_name, str) or _TABLE_NAME_RE.fullmatch(self.display_name) is None:
+            raise ValueError(f"invalid table display name {self.display_name!r}")
         if _is_reference_like(self.display_name):
             raise ValueError(
-                f"invalid table display name {self.display_name!r}: "
-                "it reads as a cell reference, which Excel refuses"
+                f"invalid table display name {self.display_name!r}: it reads as a cell reference, which Excel refuses"
             )
         first_col, _, last_col, _ = parse_cell_range(self.ref)
         if self.columns is not None:
@@ -75,14 +70,15 @@ class ExcelTable:
                 if not isinstance(column, str):
                     raise TypeError("columns must be a list of strings or None")
             if self.header_row and len(columns) != last_col - first_col + 1:
-                raise ValueError(
-                    "len(columns) must match the table ref width"
-                )
+                raise ValueError("len(columns) must match the table ref width")
             object.__setattr__(self, "columns", columns)
         for name in (
-            "header_row", "totals_row",
-            "show_first_column", "show_last_column",
-            "show_row_stripes", "show_column_stripes",
+            "header_row",
+            "totals_row",
+            "show_first_column",
+            "show_last_column",
+            "show_row_stripes",
+            "show_column_stripes",
         ):
             value = getattr(self, name)
             if not isinstance(value, bool):
@@ -90,9 +86,7 @@ class ExcelTable:
         if self.totals_row:
             _, first_row, _, last_row = parse_cell_range(self.ref)
             if last_row - first_row + 1 <= (1 if self.header_row else 0) + 1:
-                raise ValueError(
-                    f"table {self.display_name!r}: a totals row needs at least one data row"
-                )
+                raise ValueError(f"table {self.display_name!r}: a totals row needs at least one data row")
         if self.totals_row_functions is not None:
             if not self.totals_row:
                 raise ValueError("totals_row_functions needs totals_row=True")
@@ -100,14 +94,11 @@ class ExcelTable:
                 raise TypeError("totals_row_functions must be a list or tuple")
             functions = tuple(self.totals_row_functions)
             if len(functions) != last_col - first_col + 1:
-                raise ValueError(
-                    "len(totals_row_functions) must match the table ref width"
-                )
+                raise ValueError("len(totals_row_functions) must match the table ref width")
             for function in functions:
                 if function is not None and function not in TOTALS_FUNCTION_NAMES:
                     raise ValueError(
-                        f"invalid totals function {function!r}; expected one of "
-                        f"{sorted(TOTALS_FUNCTION_NAMES)} or None"
+                        f"invalid totals function {function!r}; expected one of {sorted(TOTALS_FUNCTION_NAMES)} or None"
                     )
             object.__setattr__(self, "totals_row_functions", functions)
         if not isinstance(self.style_name, str):
@@ -182,7 +173,6 @@ def capture_table_headers(rows, tables, store: dict):
     for row_idx, row in enumerate(rows):
         header_tables = by_row.get(row_idx)
         if header_tables is not None:
-
             # A (value, format) or (value, Style) header is its value.
             cells = [_unwrap_cell(cell) for cell in row]
             store[row_idx] = cells
@@ -198,9 +188,7 @@ def capture_table_totals(rows, tables, store: dict):
     formula, so it needs the cells after the row streams past (``store``: row
     index -> cells).
     """
-    by_row: set[int] = {
-        parse_cell_range(table.ref)[3] for table in tables if table.totals_row
-    }
+    by_row: set[int] = {parse_cell_range(table.ref)[3] for table in tables if table.totals_row}
     if not by_row:
         yield from rows
         return

@@ -1,4 +1,5 @@
 """XlsbWriter sheet methods: write_sheet, the sheet loop and the dataframe entry point."""
+
 from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
@@ -15,7 +16,11 @@ from .styles import (
 )
 from .images import Image
 from .pivots import (
-    PivotFeeder, append_rows, normalize_pivots, overlay_rows, tee_rows,
+    PivotFeeder,
+    append_rows,
+    normalize_pivots,
+    overlay_rows,
+    tee_rows,
 )
 from .printing import PrintSettings
 from .data_validation import DataValidation
@@ -33,8 +38,7 @@ if TYPE_CHECKING:
 class _XlsbSheetMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
-    def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None,
-                    **kwargs: Any) -> None:
+    def write_sheet(self, data: Iterable[list[Any]], *, options: SheetOptions | None = None, **kwargs: Any) -> None:
         """Write rows to the current sheet.
 
         Sheet settings come from ``options`` (a ``SheetOptions``) or from keyword
@@ -86,17 +90,39 @@ class _XlsbSheetMixin(_XlsbWriterHost):
     ) -> None:
         self._require_writable()
         spec = self._check_sheet_options(
-            header_style=header_style, show_grid_lines=show_grid_lines, header_rows=header_rows,
-            tab_color=tab_color, zoom=zoom, show_row_col_headers=show_row_col_headers,
-            show_zero_values=show_zero_values, right_to_left=right_to_left, styles=styles,
-            merges=merges, comments=comments, sheet_protection=sheet_protection,
-            auto_filter_ref=auto_filter_ref, conditional_formats=conditional_formats, tables=tables,
-            sparklines=sparklines, slicers=slicers, charts=charts, data_validations=data_validations,
-            images=images, shapes=shapes, print_settings=print_settings, column_widths=column_widths,
-            hidden_columns=hidden_columns, row_heights=row_heights, hidden_rows=hidden_rows,
-            row_groups=row_groups, column_groups=column_groups, freeze_panes=freeze_panes,
-            autofit_rows=autofit_rows, autofit_padding=autofit_padding,
-            check_style=self._reject_rich_style, sort_state=sort_state,
+            header_style=header_style,
+            show_grid_lines=show_grid_lines,
+            header_rows=header_rows,
+            tab_color=tab_color,
+            zoom=zoom,
+            show_row_col_headers=show_row_col_headers,
+            show_zero_values=show_zero_values,
+            right_to_left=right_to_left,
+            styles=styles,
+            merges=merges,
+            comments=comments,
+            sheet_protection=sheet_protection,
+            auto_filter_ref=auto_filter_ref,
+            conditional_formats=conditional_formats,
+            tables=tables,
+            sparklines=sparklines,
+            slicers=slicers,
+            charts=charts,
+            data_validations=data_validations,
+            images=images,
+            shapes=shapes,
+            print_settings=print_settings,
+            column_widths=column_widths,
+            hidden_columns=hidden_columns,
+            row_heights=row_heights,
+            hidden_rows=hidden_rows,
+            row_groups=row_groups,
+            column_groups=column_groups,
+            freeze_panes=freeze_panes,
+            autofit_rows=autofit_rows,
+            autofit_padding=autofit_padding,
+            check_style=self._reject_rich_style,
+            sort_state=sort_state,
         )
         current_sheet = self._worksheet_data[-1][0] if self._worksheet_data else "Sheet1"
         pivot_names = set(self._pivot_names)
@@ -118,7 +144,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         self._claim_sheet_options(spec)
         if not self._worksheet_data:
             self.add_sheet("Sheet1")
-        sheet_name,_, hidden = self._worksheet_data[self._sheet_count - 1]
+        sheet_name, _, hidden = self._worksheet_data[self._sheet_count - 1]
         self._worksheet_data[self._sheet_count - 1] = (sheet_name, data, hidden)
         sheet_id = self._sheet_count
         if spec.comments:
@@ -186,32 +212,60 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         self._sheet_table_scope = (sheet_name, spec.tables, table_ids, table_header_cells) if spec.tables else None
         try:
             self._write_worksheet_bin(
-                f"xl/worksheets/sheet{sheet_id}.bin", data, self._sheet_count - 1,
-                style_ranges=spec.style_ranges, header_style=spec.header_style,
-                merge_refs=spec.merge_refs, widths=spec.widths, autofit=spec.autofit, hidden_cols=spec.hidden_cols,
-                heights=spec.heights, hidden_row_set=spec.hidden_rows,
-                freeze_panes=freeze_panes, auto_filter=auto_filter,
-                auto_filter_ref=auto_filter_ref, sort_state=spec.sort_state,
-                drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
-                cf_rules=spec.cf_rules, row_outline=spec.row_outline, col_outline=spec.col_outline,
+                f"xl/worksheets/sheet{sheet_id}.bin",
+                data,
+                self._sheet_count - 1,
+                style_ranges=spec.style_ranges,
+                header_style=spec.header_style,
+                merge_refs=spec.merge_refs,
+                widths=spec.widths,
+                autofit=spec.autofit,
+                hidden_cols=spec.hidden_cols,
+                heights=spec.heights,
+                hidden_row_set=spec.hidden_rows,
+                freeze_panes=freeze_panes,
+                auto_filter=auto_filter,
+                auto_filter_ref=auto_filter_ref,
+                sort_state=spec.sort_state,
+                drawing_rel=drawing_rel,
+                table_rel_ids=table_rel_ids,
+                cf_rules=spec.cf_rules,
+                row_outline=spec.row_outline,
+                col_outline=spec.col_outline,
                 sheet_protection=sheet_protection,
-                show_grid_lines=show_grid_lines, view=spec.view,
-                header_rows=spec.header_rows, tab_key=spec.tab_key, zoom=spec.zoom,
+                show_grid_lines=show_grid_lines,
+                view=spec.view,
+                header_rows=spec.header_rows,
+                tab_key=spec.tab_key,
+                zoom=spec.zoom,
                 filter_cells=[
-                    (r1, c1, c2) for table in spec.tables if table.header_row
+                    (r1, c1, c2)
+                    for table in spec.tables
+                    if table.header_row
                     for c1, r1, c2, _r2 in (parse_cell_range(table.ref),)
                 ],
                 table_bounds=frozenset(parse_cell_range(table.ref) for table in spec.tables),
-                comment_vml_rid=(f'rId{3 + len(table_ids) + int(has_drawing)}' if spec.comments else None),
-                link_rids=link_rids, link_rid_start=link_rid_start,
-                print_spec=spec.print_settings, validations=spec.validations,
-                sparklines=spec.sparklines, slicer_rel=slicer_rid,
+                comment_vml_rid=(f"rId{3 + len(table_ids) + int(has_drawing)}" if spec.comments else None),
+                link_rids=link_rids,
+                link_rid_start=link_rid_start,
+                print_spec=spec.print_settings,
+                validations=spec.validations,
+                sparklines=spec.sparklines,
+                slicer_rel=slicer_rid,
                 ignored_errors=ignored_errors,
             )
             self._sheet_link_rels[sheet_id] = link_rids
             self._register_sheet_parts(
-                sheet_id, sheet_name, spec, pivot_renders, pending_pivots, pivot_names,
-                table_ids, table_header_cells, table_totals_cells, slicer_rid,
+                sheet_id,
+                sheet_name,
+                spec,
+                pivot_renders,
+                pending_pivots,
+                pivot_names,
+                table_ids,
+                table_header_cells,
+                table_totals_cells,
+                slicer_rid,
             )
             self._zf.writestr(f"xl/worksheets/_rels/sheet{sheet_id}.bin.rels", self._create_worksheet_rels(sheet_id))
             self._zf.writestr(f"xl/worksheets/binaryIndex{sheet_id}.bin", self._binaryIndexBin)
@@ -223,9 +277,17 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             self._sheet_table_scope = None
 
     def _register_sheet_parts(
-        self, sheet_id: int, sheet_name: str, spec: SheetSpec, pivot_renders: list[Any],
-        pending_pivots: list[Any], pivot_names: set[str], table_ids: list[int],
-        table_header_cells: dict, table_totals_cells: dict, slicer_rid: str | None,
+        self,
+        sheet_id: int,
+        sheet_name: str,
+        spec: SheetSpec,
+        pivot_renders: list[Any],
+        pending_pivots: list[Any],
+        pivot_names: set[str],
+        table_ids: list[int],
+        table_header_cells: dict,
+        table_totals_cells: dict,
+        slicer_rid: str | None,
     ) -> None:
         """After the sheet part is written: number its pivots and queue those for
         later sheets, encode its table parts from the header and totals cells seen,
@@ -248,18 +310,29 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             names = table_column_names(table, table_header_cells.get(first_row))
             totals = table_totals_cells.get(last_row)
             if totals is not None:
-                totals = totals[first_col:last_col + 1]
+                totals = totals[first_col : last_col + 1]
             self._table_registry[table_id] = (table.display_name, names, sheet_name)
             self._tables_bin[table_id] = self._table_bin(
-                table, table_id, names, totals, self._formula_context(), sheet_name,
+                table,
+                table_id,
+                names,
+                totals,
+                self._formula_context(),
+                sheet_name,
             )
             table_columns[table.display_name.casefold()] = (table_id, names)
         if slicer_rid is not None:
             self._write_slicer_parts(sheet_id, slicer_rid, spec.slicers, table_columns)
 
     def write_dataframe(
-        self, df: Any, include_index: bool = False, na_rep: Any = None, formats: dict | None = None,
-        *, header_style: Style | None = None, styles: dict[str, Style] | None = None,
+        self,
+        df: Any,
+        include_index: bool = False,
+        na_rep: Any = None,
+        formats: dict | None = None,
+        *,
+        header_style: Style | None = None,
+        styles: dict[str, Style] | None = None,
         merges: list[str] | tuple[str, ...] | None = None,
         column_widths: dict | None = None,
         autofit_rows: int | None = 1000,

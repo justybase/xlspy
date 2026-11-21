@@ -36,7 +36,8 @@ def compare(before_root, after_root):
             old_names, new_names = set(old.namelist()), set(new.namelist())
             changed = sorted(old_names ^ new_names)
             changed += [
-                name for name in sorted(old_names & new_names)
+                name
+                for name in sorted(old_names & new_names)
                 if name not in IGNORED and old.read(name) != new.read(name)
             ]
         if changed:

@@ -40,7 +40,7 @@ def _read_records(data):
     while pos < len(data):
         rec_id, pos = _read_vint(data, pos)
         rec_len, pos = _read_vint(data, pos)
-        records.append((rec_id, data[pos:pos + rec_len]))
+        records.append((rec_id, data[pos : pos + rec_len]))
         pos += rec_len
     return records
 
@@ -65,9 +65,7 @@ def _write_records(records):
 
 
 def _rewrite_sheet(source, destination, transform):
-    with zipfile.ZipFile(source) as zin, zipfile.ZipFile(
-        destination, "w", zipfile.ZIP_DEFLATED
-    ) as zout:
+    with zipfile.ZipFile(source) as zin, zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as zout:
         for name in zin.namelist():
             payload = zin.read(name)
             if name == SHEET_PART:
@@ -82,10 +80,7 @@ def test_a_writable_sheet_buffer_is_copied_before_the_reader_reads_it(tmp_path):
         writer.write_sheet([[1, 2], [3, 4]])
     with zipfile.ZipFile(path) as archive:
         original = archive.read(SHEET_PART)
-    expected = [
-        list(row)
-        for row in _accel.read_xlsb_worksheet(bytes(original), [], [], set(), False)
-    ]
+    expected = [list(row) for row in _accel.read_xlsb_worksheet(bytes(original), [], [], set(), False)]
     mutable = bytearray(original)
     reader = _accel.read_xlsb_worksheet(mutable, [], [], set(), False)
     mutable[:] = b"\x00" * len(mutable)
@@ -230,8 +225,7 @@ def test_native_reader_keeps_out_of_range_1904_date_as_number_like_python(tmp_pa
     path = tmp_path / "far-date.xlsb"
     with XlsbWriter(str(path)) as writer:
         writer.add_sheet("S")
-        writer.write_sheet([[(dt.datetime(9999, 12, 31, 23, 59, 59, 999999),
-                              "yyyy-mm-dd hh:mm:ss")]])
+        writer.write_sheet([[(dt.datetime(9999, 12, 31, 23, 59, 59, 999999), "yyyy-mm-dd hh:mm:ss")]])
     _set_1904_date_system(path)
 
     native = _read(path, monkeypatch=monkeypatch)

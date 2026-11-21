@@ -1,4 +1,5 @@
 """Module-level constants and record helpers of the XLSB writer (BIFF12 record ids)."""
+
 from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from typing import Any
@@ -54,8 +55,10 @@ def _hlink_payload(row: int, col: int, link: Hyperlink, rid: str | None) -> byte
         relationship, location, display = rid or "", "", link.target or ""
     return (
         struct.pack("<4I", row, row, col, col)
-        + wide_string(relationship) + wide_string(location)
-        + wide_string(link.tooltip or "") + wide_string(display)
+        + wide_string(relationship)
+        + wide_string(location)
+        + wide_string(link.tooltip or "")
+        + wide_string(display)
     )
 
 

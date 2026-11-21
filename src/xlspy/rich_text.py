@@ -54,8 +54,9 @@ class InlineFont:
             raise ValueError(f"u must be one of {sorted(_RICH_UNDERLINES)}, got {self.u!r}")
         if self.vertAlign is not None and self.vertAlign not in _VERT_ALIGNS:
             raise ValueError(f"vertAlign must be one of {sorted(_VERT_ALIGNS)}")
-        if self.sz is not None and (isinstance(self.sz, bool) or not isinstance(self.sz, (int, float))
-                                    or not 1 <= self.sz <= 409):
+        if self.sz is not None and (
+            isinstance(self.sz, bool) or not isinstance(self.sz, (int, float)) or not 1 <= self.sz <= 409
+        ):
             raise ValueError("sz must be a font size between 1 and 409 points")
         # Normalized, so a font read back from a file compares equal.
         if self.sz is not None:
@@ -68,7 +69,7 @@ class InlineFont:
             if getattr(self, flag):
                 parts.append(f"<{prefix}{flag}/>")
         if self.u:
-            parts.append(f'<{prefix}u/>' if self.u == "single" else f'<{prefix}u val="{self.u}"/>')
+            parts.append(f"<{prefix}u/>" if self.u == "single" else f'<{prefix}u val="{self.u}"/>')
         if self.vertAlign:
             parts.append(f'<{prefix}vertAlign val="{self.vertAlign}"/>')
         if self.sz is not None:
@@ -77,13 +78,13 @@ class InlineFont:
         if key is not None:
             parts.append(f"<{prefix}color {_color_attrs(key)}/>")
         if self.rFont:
-            parts.append(f'<{prefix}rFont val={_quote(self.rFont)}/>')
+            parts.append(f"<{prefix}rFont val={_quote(self.rFont)}/>")
         if self.family is not None:
             parts.append(f'<{prefix}family val="{int(self.family)}"/>')
         if self.charset is not None:
             parts.append(f'<{prefix}charset val="{int(self.charset)}"/>')
         if self.scheme:
-            parts.append(f'<{prefix}scheme val={_quote(self.scheme)}/>')
+            parts.append(f"<{prefix}scheme val={_quote(self.scheme)}/>")
         return f"<{prefix}rPr>{''.join(parts)}</{prefix}rPr>" if parts else ""
 
 
@@ -168,9 +169,7 @@ class CellRichText(list["str | TextBlock"]):
             if not text:
                 continue
             space = ' xml:space="preserve"' if text != text.strip() else ""
-            runs.append(
-                f"<{prefix}r>{font}<{prefix}t{space}>{xstring_escape(escape(text))}</{prefix}t></{prefix}r>"
-            )
+            runs.append(f"<{prefix}r>{font}<{prefix}t{space}>{xstring_escape(escape(text))}</{prefix}t></{prefix}r>")
         return "".join(runs) or f"<{prefix}t/>"
 
 
@@ -221,8 +220,7 @@ def _font_from_rpr(rpr) -> InlineFont:
                 values["color"] = Color(rgb=child.get("rgb"))
             elif child.get("theme"):
                 tint = child.get("tint")
-                values["color"] = Color(theme=int(child.get("theme")),
-                                        tint=float(tint) if tint else None)
+                values["color"] = Color(theme=int(child.get("theme")), tint=float(tint) if tint else None)
             elif child.get("indexed"):
                 values["color"] = Color(indexed=int(child.get("indexed")))
     return InlineFont(**values)

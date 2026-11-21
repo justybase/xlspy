@@ -134,9 +134,7 @@ class BiffReader:
         if record_length > 0:
             read = self._stream.readinto(buf)
             if read != record_length:
-                raise InvalidFileError(
-                    f"XLSB record 0x{record_id:X} is cut short: {read} of {record_length} bytes"
-                )
+                raise InvalidFileError(f"XLSB record 0x{record_id:X} is cut short: {read} of {record_length} bytes")
         return True, record_id, bytes(buf)
 
     @staticmethod
@@ -155,7 +153,7 @@ class BiffReader:
     @staticmethod
     def _get_string(buffer, offset, length):
         end = offset + 2 * length
-        return buffer[offset:end].decode('utf-16-le', errors='surrogatepass')
+        return buffer[offset:end].decode("utf-16-le", errors="surrogatepass")
 
     @staticmethod
     def _get_nullable_string(buffer, offset):
@@ -164,25 +162,25 @@ class BiffReader:
         if length == 0xFFFFFFFF:
             return None, offset
         end = offset + length * 2
-        return buffer[offset:end].decode('utf-16-le', errors='surrogatepass'), end
+        return buffer[offset:end].decode("utf-16-le", errors="surrogatepass"), end
 
     @staticmethod
     def _get_rk_number(buffer, offset):
         flags = buffer[offset]
-        val = struct.unpack_from('<I', buffer, offset)[0]
+        val = struct.unpack_from("<I", buffer, offset)[0]
         if (flags & 0x02) != 0:
             result = float(BiffReader._get_int32(buffer, offset) >> 2)
         else:
             masked = val & 0xFFFFFFFC
-            packed = struct.pack('<Q', masked << 32)
-            result = struct.unpack('<d', packed)[0]
+            packed = struct.pack("<Q", masked << 32)
+            result = struct.unpack("<d", packed)[0]
         if (flags & 0x01) != 0:
             result /= 100
         return result
 
     @staticmethod
     def _get_double(buffer, offset):
-        return struct.unpack_from('<d', buffer, offset)[0]
+        return struct.unpack_from("<d", buffer, offset)[0]
 
     def read_styles(self):
         ok, record_id, buffer = self._read_record()
@@ -278,7 +276,7 @@ class BiffReader:
                 self.cell_type = CellType.doubleVal
         elif record_id in (self._bool, self._formulaBool):
             if len(buffer) >= 9:
-                self.bool_value = (buffer[8] == 1)
+                self.bool_value = buffer[8] == 1
                 self.read_cell = True
                 self.cell_type = CellType.boolVal
         elif record_id in (self._formulaNumber, self._float):

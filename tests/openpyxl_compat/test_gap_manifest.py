@@ -31,8 +31,7 @@ def documented_open_gaps() -> set[str]:
 
 def test_manifest_lists_every_documented_open_gap():
     assert set(GAPS) == documented_open_gaps(), (
-        "tests/openpyxl_compat/expected_gaps.toml and docs/openpyxl-parity.md "
-        "disagree; update both"
+        "tests/openpyxl_compat/expected_gaps.toml and docs/openpyxl-parity.md disagree; update both"
     )
 
 

@@ -125,14 +125,11 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
         if self._use_shared_strings:
             self._shared_strings_total = max(
                 0,
-                self._shared_strings_total
-                - self._shared_string_ref_count(old_sheet_xml),
+                self._shared_strings_total - self._shared_string_ref_count(old_sheet_xml),
             )
             self._shared_strings_dirty = True
 
-        header_styles, data_styles = self._collect_styles(
-            old_sheet_xml, headers_provided=header_values is not None
-        )
+        header_styles, data_styles = self._collect_styles(old_sheet_xml, headers_provided=header_values is not None)
         date_style = self._find_date_style() if style_fallback == "inherit" else None
         worksheet_prefix = self._tag_prefix(old_sheet_xml, "sheetData")
         total_rows, width = self._region_size(materialized, header_values)
@@ -151,9 +148,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
         # Array and spill ranges reach past the data rows and columns.
         total_rows = max(total_rows, writer.formula_rows)
         dimension_ref = self._dimension_ref(total_rows, max(width, writer.formula_cols) - 1)
-        updated_sheet_xml = self._patch_sheet_xml(
-            old_sheet_xml, b"".join(rows_xml).decode("utf-8"), dimension_ref
-        )
+        updated_sheet_xml = self._patch_sheet_xml(old_sheet_xml, b"".join(rows_xml).decode("utf-8"), dimension_ref)
         self._drop_stale_calc_chain(
             had_formulas=_FORMULA_TAG.search(old_sheet_xml) is not None,
             has_formulas=writer.formulas,
@@ -186,29 +181,18 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
         original_sheet = self._stage_part_copy(sheet_path, ".xml")
 
         self._ensure_stream_shared_strings()
-        with original_sheet.open("rb") as stream, mmap.mmap(
-            stream.fileno(), 0, access=mmap.ACCESS_READ
-        ) as mapped:
-            header_styles, data_styles = self._collect_styles_stream(
-                mapped, headers_provided=headers is not None
-            )
+        with original_sheet.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as mapped:
+            header_styles, data_styles = self._collect_styles_stream(mapped, headers_provided=headers is not None)
             if self._stream_shared_strings is not None:
                 self._stream_shared_strings.total_count = max(
                     0,
-                    self._stream_shared_strings.total_count
-                    - self._shared_string_ref_count_stream(mapped),
+                    self._stream_shared_strings.total_count - self._shared_string_ref_count_stream(mapped),
                 )
                 self._stream_shared_strings.dirty = True
             date_style = self._find_date_style() if style_fallback == "inherit" else None
             old_had_formulas = _FORMULA_TAG_BYTES.search(mapped) is not None
-            sheet_data_match = re.search(
-                rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?sheetData\b", mapped
-            )
-            worksheet_prefix = (
-                (sheet_data_match.group("prefix") or b"").decode("ascii")
-                if sheet_data_match
-                else ""
-            )
+            sheet_data_match = re.search(rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?sheetData\b", mapped)
+            worksheet_prefix = (sheet_data_match.group("prefix") or b"").decode("ascii") if sheet_data_match else ""
 
         rows_file = self._package.temporary_path(suffix=".rows")
 
@@ -239,9 +223,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
                 trimmer.kept_rows + (1 if header_values is not None else 0),
                 writer.formula_rows,
             )
-            dimension_ref = self._dimension_ref(
-                total_rows, max(trimmer.width, writer.formula_cols) - 1
-            )
+            dimension_ref = self._dimension_ref(total_rows, max(trimmer.width, writer.formula_cols) - 1)
             updated_sheet = self._package.temporary_path(suffix=".xml")
             self._patch_sheet_file(
                 original_sheet,
@@ -417,13 +399,9 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
 
         xml_data = self._package.get("xl/sharedStrings.xml")
         self._shared_strings_values = parse_shared_strings_xml(xml_data)
-        self._shared_string_indices = {
-            value: index for index, value in enumerate(self._shared_strings_values)
-        }
+        self._shared_string_indices = {value: index for index, value in enumerate(self._shared_strings_values)}
         decoded_xml = xml_data.decode("utf-8")
-        opening_match = re.search(
-            r"<(?P<prefix>(?:[A-Za-z_][\w.-]*:)?)sst\b[^>]*>", decoded_xml
-        )
+        opening_match = re.search(r"<(?P<prefix>(?:[A-Za-z_][\w.-]*:)?)sst\b[^>]*>", decoded_xml)
         if opening_match:
             count_value = _tag_attribute(opening_match.group(0), "count")
             self._shared_strings_total = int(count_value) if count_value else len(self._shared_strings_values)
@@ -433,9 +411,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
         self._use_shared_strings = True
 
     def _commit_shared_strings(self) -> None:
-        if not self._use_shared_strings or (
-            not self._shared_strings_pending and not self._shared_strings_dirty
-        ):
+        if not self._use_shared_strings or (not self._shared_strings_pending and not self._shared_strings_dirty):
             return
         xml_data = self._package.get("xl/sharedStrings.xml").decode("utf-8")
         opening_match = re.search(r"<(?P<tag>(?:[A-Za-z_][\w.-]*:)?sst\b[^>]*)>", xml_data)
@@ -444,17 +420,13 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
             raise ValueError("Malformed XLSX sharedStrings.xml")
 
         opening_tag = opening_match.group(0)
-        opening_tag = replace_or_add_xml_attribute(
-            opening_tag, "count", self._shared_strings_total
-        )
-        opening_tag = replace_or_add_xml_attribute(
-            opening_tag, "uniqueCount", len(self._shared_strings_values)
-        )
+        opening_tag = replace_or_add_xml_attribute(opening_tag, "count", self._shared_strings_total)
+        opening_tag = replace_or_add_xml_attribute(opening_tag, "uniqueCount", len(self._shared_strings_values))
         items = "".join(
-            f'<{self._shared_strings_prefix}si>'
-            f'<{self._shared_strings_prefix}t{xml_space_attribute(value)}>'
-            f'{escape_xml_text(value)}</{self._shared_strings_prefix}t>'
-            f'</{self._shared_strings_prefix}si>'
+            f"<{self._shared_strings_prefix}si>"
+            f"<{self._shared_strings_prefix}t{xml_space_attribute(value)}>"
+            f"{escape_xml_text(value)}</{self._shared_strings_prefix}t>"
+            f"</{self._shared_strings_prefix}si>"
             for value in self._shared_strings_pending
         )
         xml_data = (
@@ -478,9 +450,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
             return "A1"
         return f"A1:{column_index_to_letter(last_col)}{total_rows}"
 
-    def _collect_styles(
-        self, sheet_xml: str, *, headers_provided: bool
-    ) -> tuple[dict[int, int], dict[int, int]]:
+    def _collect_styles(self, sheet_xml: str, *, headers_provided: bool) -> tuple[dict[int, int], dict[int, int]]:
         return _xml_cell_styles((sheet_xml.encode("utf-8"),), headers_provided=headers_provided)
 
     def _cell_xf_number_formats(self) -> tuple[list[int], dict[int, str]] | None:
@@ -545,7 +515,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
         if isinstance(formula, ArrayFormula):
             return (
                 f"{cell_prefix}>"
-                f"<{prefix}f t=\"array\" ref=\"{escape_xml_text(formula.ref)}\">"
+                f'<{prefix}f t="array" ref="{escape_xml_text(formula.ref)}">'
                 f"{escape_xml_text(formula.text)}</{prefix}f></{prefix}c>"
             )
         if isinstance(formula, DataTableFormula):
@@ -573,15 +543,13 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
         if spill:
             assert formula.spill_ref is not None
             return (
-                f"{cell_prefix}{type_attribute} cm=\"1\">"
-                f"<{prefix}f t=\"array\" ref=\"{escape_xml_text(formula.spill_ref)}\">"
+                f'{cell_prefix}{type_attribute} cm="1">'
+                f'<{prefix}f t="array" ref="{escape_xml_text(formula.spill_ref)}">'
                 f"{escape_xml_text(formula.text)}</{prefix}f>"
                 f"{cached_xml}</{prefix}c>"
             )
         array_attribute = (
-            f' t="array" ref="{escape_xml_text(formula.array_ref)}"'
-            if formula.array_ref is not None
-            else ""
+            f' t="array" ref="{escape_xml_text(formula.array_ref)}"' if formula.array_ref is not None else ""
         )
         return (
             f"{cell_prefix}{type_attribute}>"
@@ -655,17 +623,11 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
 
         sheet_xml = set_dimension_ref(sheet_xml, dimension_ref)
 
-        auto_filter_match = re.search(
-            r"<(?P<prefix>[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>", sheet_xml
-        )
+        auto_filter_match = re.search(r"<(?P<prefix>[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>", sheet_xml)
         if auto_filter_match:
             opening = auto_filter_match.group(0)
             replacement = replace_or_add_xml_attribute(opening, "ref", dimension_ref)
-            sheet_xml = (
-                sheet_xml[: auto_filter_match.start()]
-                + replacement
-                + sheet_xml[auto_filter_match.end() :]
-            )
+            sheet_xml = sheet_xml[: auto_filter_match.start()] + replacement + sheet_xml[auto_filter_match.end() :]
         return sheet_xml
 
     @staticmethod
@@ -696,9 +658,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
                     prefix = empty_match.group("prefix") or b""
                     opening = b"<" + prefix + b"sheetData" + empty_match.group("attrs") + b">"
                     closing = b"</" + prefix + b"sheetData>"
-                    rows_replacement = [
-                        (empty_match.start(), empty_match.end(), (opening, True, closing))
-                    ]
+                    rows_replacement = [(empty_match.start(), empty_match.end(), (opening, True, closing))]
                 else:
                     opening_match = re.search(
                         rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?sheetData\b[^>]*>",
@@ -707,59 +667,45 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
                     if not opening_match:
                         raise ValueError("Worksheet sheetData element was not found")
                     prefix = opening_match.group("prefix") or b""
-                    closing_match = re.compile(
-                        b"</" + re.escape(prefix) + rb"sheetData\s*>"
-                    ).search(source, opening_match.end())
+                    closing_match = re.compile(b"</" + re.escape(prefix) + rb"sheetData\s*>").search(
+                        source, opening_match.end()
+                    )
                     if not closing_match:
                         raise ValueError("Worksheet sheetData closing element was not found")
-                    rows_replacement = [
-                        (opening_match.end(), closing_match.start(), (b"", True, b""))
-                    ]
+                    rows_replacement = [(opening_match.end(), closing_match.start(), (b"", True, b""))]
 
-                replacements: list[tuple[int, int, bytes | tuple[bytes, bool, bytes]]] = list(
-                    rows_replacement
-                )
-                dimension_match = re.search(
-                    rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?dimension\b[^>]*>", source
-                )
+                replacements: list[tuple[int, int, bytes | tuple[bytes, bool, bytes]]] = list(rows_replacement)
+                dimension_match = re.search(rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?dimension\b[^>]*>", source)
                 if dimension_match:
                     dimension_opening = dimension_match.group(0).decode("utf-8")
                     replacements.append(
                         (
                             dimension_match.start(),
                             dimension_match.end(),
-                            replace_or_add_xml_attribute(dimension_opening, "ref", dimension_ref).encode(
-                                "utf-8"
-                            ),
+                            replace_or_add_xml_attribute(dimension_opening, "ref", dimension_ref).encode("utf-8"),
                         )
                     )
                 else:
-                    worksheet_match = re.search(
-                        rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?worksheet\b[^>]*>", source
-                    )
+                    worksheet_match = re.search(rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?worksheet\b[^>]*>", source)
                     if not worksheet_match:
                         raise ValueError("Worksheet root element was not found")
                     prefix = worksheet_match.group("prefix") or b""
                     dimension = (
-                        b"<" + prefix + b"dimension ref=\"" + escape_xml_text(dimension_ref).encode("utf-8") + b"\"/>"
+                        b"<" + prefix + b'dimension ref="' + escape_xml_text(dimension_ref).encode("utf-8") + b'"/>'
                     )
                     # Same position rule as the in-memory path (see _patch_sheet_xml).
                     following = _AFTER_DIMENSION_BYTES.search(source)
                     position = following.start() if following else worksheet_match.end()
                     replacements.append((position, position, dimension))
 
-                auto_filter_match = re.search(
-                    rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>", source
-                )
+                auto_filter_match = re.search(rb"<(?P<prefix>[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>", source)
                 if auto_filter_match:
                     filter_opening = auto_filter_match.group(0).decode("utf-8")
                     replacements.append(
                         (
                             auto_filter_match.start(),
                             auto_filter_match.end(),
-                            replace_or_add_xml_attribute(filter_opening, "ref", dimension_ref).encode(
-                                "utf-8"
-                            ),
+                            replace_or_add_xml_attribute(filter_opening, "ref", dimension_ref).encode("utf-8"),
                         )
                     )
 
@@ -780,19 +726,13 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
                         cursor = end
                     copy_file_range(original_path, target, cursor, source_size)
 
-    def _patch_pivot_metadata(
-        self, sheet_name: str, record_count: int, dimension_ref: str
-    ) -> None:
+    def _patch_pivot_metadata(self, sheet_name: str, record_count: int, dimension_ref: str) -> None:
         pivot_cache_paths = sorted(
-            name
-            for name in self._package_names()
-            if re.fullmatch(r"xl/pivotCache/pivotCacheDefinition\d*\.xml", name)
+            name for name in self._package_names() if re.fullmatch(r"xl/pivotCache/pivotCacheDefinition\d*\.xml", name)
         )
         for path in pivot_cache_paths:
             xml_data = self._package.get(path).decode("utf-8")
-            source_match = re.search(
-                r"<(?P<prefix>[A-Za-z_][\w.-]*:)?worksheetSource\b[^>]*>", xml_data
-            )
+            source_match = re.search(r"<(?P<prefix>[A-Za-z_][\w.-]*:)?worksheetSource\b[^>]*>", xml_data)
             if not source_match:
                 continue
             source_tag = source_match.group(0)
@@ -802,33 +742,19 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
             if source_sheet != sheet_name:
                 continue
             source_tag = replace_or_add_xml_attribute(source_tag, "ref", dimension_ref)
-            xml_data = (
-                xml_data[: source_match.start()]
-                + source_tag
-                + xml_data[source_match.end() :]
-            )
+            xml_data = xml_data[: source_match.start()] + source_tag + xml_data[source_match.end() :]
             root_match = re.search(
                 r"<(?P<prefix>[A-Za-z_][\w.-]*:)?pivotCacheDefinition\b[^>]*>",
                 xml_data,
             )
             if root_match:
-                root_tag = replace_or_add_xml_attribute(
-                    root_match.group(0), "recordCount", record_count
-                )
-                root_tag = replace_or_add_xml_attribute(
-                    root_tag, "refreshOnLoad", 1
-                )
-                xml_data = (
-                    xml_data[: root_match.start()]
-                    + root_tag
-                    + xml_data[root_match.end() :]
-                )
+                root_tag = replace_or_add_xml_attribute(root_match.group(0), "recordCount", record_count)
+                root_tag = replace_or_add_xml_attribute(root_tag, "refreshOnLoad", 1)
+                xml_data = xml_data[: root_match.start()] + root_tag + xml_data[root_match.end() :]
             self._package.set(path, xml_data.encode("utf-8"))
 
         for path in sorted(
-            name
-            for name in self._package_names()
-            if re.fullmatch(r"xl/pivotTables/pivotTable\d*\.xml", name)
+            name for name in self._package_names() if re.fullmatch(r"xl/pivotTables/pivotTable\d*\.xml", name)
         ):
             xml_data = self._package.get(path).decode("utf-8")
             root_match = re.search(
@@ -838,11 +764,7 @@ class XlsxUpdater(_UpdaterBase, XlsxEditMixin, XlsxSheetsMixin):
             if not root_match:
                 continue
             root_tag = replace_or_add_xml_attribute(root_match.group(0), "refreshOnLoad", 1)
-            xml_data = (
-                xml_data[: root_match.start()]
-                + root_tag
-                + xml_data[root_match.end() :]
-            )
+            xml_data = xml_data[: root_match.start()] + root_tag + xml_data[root_match.end() :]
             self._package.set(path, xml_data.encode("utf-8"))
 
 
@@ -858,8 +780,15 @@ class _XlsxRowWriter:
     through ``XlsxUpdater._value_cell``, one at a time. ``formulas`` turns true
     at the first formula in a data row."""
 
-    def __init__(self, updater: XlsxUpdater, header_styles: dict[int, int], data_styles: dict[int, int],
-                 date_style: int | None, style_fallback: StyleFallback, prefix: str) -> None:
+    def __init__(
+        self,
+        updater: XlsxUpdater,
+        header_styles: dict[int, int],
+        data_styles: dict[int, int],
+        date_style: int | None,
+        style_fallback: StyleFallback,
+        prefix: str,
+    ) -> None:
         self._updater = updater
         self._styles = (header_styles, data_styles)
         self._date_style = date_style
@@ -898,18 +827,33 @@ class _XlsxRowWriter:
             self.formula_cols = max(self.formula_cols, bounds[2] + 1)
         header_styles, data_styles = self._styles
         return self._updater._value_cell(
-            value, column, self._row_number, header_styles, data_styles, self._date_style,
-            self._style_fallback, header=self._header, prefix=self._prefix,
+            value,
+            column,
+            self._row_number,
+            header_styles,
+            data_styles,
+            self._date_style,
+            self._style_fallback,
+            header=self._header,
+            prefix=self._prefix,
         )
 
     def row(self, row: Sequence[Any], row_number: int, *, header: bool) -> bytes:
         check_row_columns(row)
         self._row_number, self._header = row_number, header
         if encode_update_xlsx_row is not None:
-            return bytes(encode_update_xlsx_row(
-                row, row_number, self._style_lists[0 if header else 1], self._native_date_style,
-                self._prefix, self._string_index, self._cell, self._updater._date_1904,
-            ))
+            return bytes(
+                encode_update_xlsx_row(
+                    row,
+                    row_number,
+                    self._style_lists[0 if header else 1],
+                    self._native_date_style,
+                    self._prefix,
+                    self._string_index,
+                    self._cell,
+                    self._updater._date_1904,
+                )
+            )
         cells = [self._cell(value, column) for column, value in enumerate(row)]
         return XlsxUpdater._row_xml(row_number, cells, self._prefix).encode("utf-8")
 
@@ -920,8 +864,11 @@ def _chunks(data: Any, size: int = 64 * 1024) -> Iterator[Any]:
         yield data[offset : offset + size]
 
 
-def _parse_chunks(chunks: Iterable[Any], start_element: Callable[[str, dict[str, str]], None],
-                  end_element: Callable[[str], None] | None = None) -> None:
+def _parse_chunks(
+    chunks: Iterable[Any],
+    start_element: Callable[[str, dict[str, str]], None],
+    end_element: Callable[[str], None] | None = None,
+) -> None:
     parser = harden_expat(expat.ParserCreate())
     parser.StartElementHandler = start_element
     if end_element is not None:
@@ -967,18 +914,12 @@ def _xml_cell_styles(chunks: Iterable[Any], *, headers_provided: bool) -> tuple[
         elif local == "c" and current_row is not None:
             style_value = xml_attribute(attrs, "s")
             reference = xml_attribute(attrs, "r")
-            column = (
-                column_letter_to_index(reference) if reference else current_column
-            )
+            column = column_letter_to_index(reference) if reference else current_column
             current_column = column + 1
             if style_value:
                 style = int(style_value)
                 if style > 0:
-                    target = (
-                        header_counts
-                        if headers_provided and current_row == 1
-                        else data_counts
-                    )
+                    target = header_counts if headers_provided and current_row == 1 else data_counts
                     counts = target.setdefault(column, {})
                     counts[style] = counts.get(style, 0) + 1
 

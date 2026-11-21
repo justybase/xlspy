@@ -40,9 +40,16 @@ def _view(path):
     workbook = load_workbook(path)
     try:
         return [
-            (t.displayName, t.ref, [c.name for c in t.tableColumns], t.headerRowCount, t.totalsRowCount or 0,
-             t.tableStyleInfo.name, bool(t.tableStyleInfo.showRowStripes),
-             t.autoFilter.ref if t.autoFilter else None)
+            (
+                t.displayName,
+                t.ref,
+                [c.name for c in t.tableColumns],
+                t.headerRowCount,
+                t.totalsRowCount or 0,
+                t.tableStyleInfo.name,
+                bool(t.tableStyleInfo.showRowStripes),
+                t.autoFilter.ref if t.autoFilter else None,
+            )
             for t in workbook.active.tables
         ]
     finally:
@@ -108,7 +115,9 @@ def test_all_tables_can_be_removed_and_one_added_again(tmp_path):
     out = _edit(path, tmp_path, lambda sheet: [sheet.tables.remove(n) for n in ("First", "Second")])
     assert not any(n.startswith("xl/tables/") for n in _parts(out))
     assert _view(out) == []
-    again = _edit(out, tmp_path / "x" if False else tmp_path, lambda sheet: sheet.add_table(ExcelTable("First", "A1:B3")))
+    again = _edit(
+        out, tmp_path / "x" if False else tmp_path, lambda sheet: sheet.add_table(ExcelTable("First", "A1:B3"))
+    )
     assert [t[:2] for t in _view(again)] == [("First", "A1:B3")]
 
 
@@ -146,10 +155,17 @@ def test_a_new_number_of_columns_is_refused(tmp_path):
 
 def test_overlap_and_duplicate_names_are_refused(tmp_path):
     with pytest.raises(ValueError, match="overlaps"):
-        _edit(_source(tmp_path, "xlsb"), tmp_path, lambda sheet: setattr(sheet.tables["First"], "ref", "A1:B6") or
-              setattr(sheet.tables["Second"], "ref", "B1:C6"))
+        _edit(
+            _source(tmp_path, "xlsb"),
+            tmp_path,
+            lambda sheet: (
+                setattr(sheet.tables["First"], "ref", "A1:B6") or setattr(sheet.tables["Second"], "ref", "B1:C6")
+            ),
+        )
     with pytest.raises(ValueError, match="already exists"):
-        _edit(_source(tmp_path, "xlsb"), tmp_path, lambda sheet: setattr(sheet.tables["Second"], "displayName", "first"))
+        _edit(
+            _source(tmp_path, "xlsb"), tmp_path, lambda sheet: setattr(sheet.tables["Second"], "displayName", "first")
+        )
 
 
 def test_a_refused_edit_writes_nothing(tmp_path):

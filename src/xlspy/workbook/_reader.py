@@ -142,6 +142,7 @@ def _date_kind(format_code: str | None) -> str | None:
         return None
     stripped = re.sub(r'"[^"]*"', "", format_code)
     stripped = re.sub(r"\\.", "", stripped)
+
     # Keep elapsed-time brackets; drop colours, locales and conditions.
     def keep(match):
         inner = match.group(0)[1:-1]
@@ -182,15 +183,13 @@ def _number_value(number: float, date_kind: str | None, date_1904: bool):
     return int(number) if number.is_integer() else number
 
 
-def _read_cell_value(cell: ET.Element, style, *, date_1904: bool, shared_strings: list[str],
-           rich_text: bool = False):
+def _read_cell_value(cell: ET.Element, style, *, date_1904: bool, shared_strings: list[str], rich_text: bool = False):
     kind = cell.get("t", "n")
     if kind == "inlineStr":
         inline = cell.find(_Q_IS)
         if inline is None:
             return None
         if rich_text:
-
             return rich_text_from_si(inline)
         return xstring_unescape("".join(node.text or "" for node in inline.iter(qname("t"))))
     raw = cell.findtext(_Q_V, "")
@@ -221,9 +220,16 @@ def _read_cell_value(cell: ET.Element, style, *, date_1904: bool, shared_strings
     return _number_value(number, _date_kind(format_code), date_1904)
 
 
-def _cell_data(cell: ET.Element, style_table: XlsxStyleTable, *, data_only: bool,
-               date_1904: bool, shared: dict[str, tuple[str, str]],
-               shared_strings: list[str], rich_text: bool = False):
+def _cell_data(
+    cell: ET.Element,
+    style_table: XlsxStyleTable,
+    *,
+    data_only: bool,
+    date_1904: bool,
+    shared: dict[str, tuple[str, str]],
+    shared_strings: list[str],
+    rich_text: bool = False,
+):
     style_id = int(cell.get("s", "0") or 0)
     style = style_table.style_at(style_id)
     formula = cell.find(_Q_F)
@@ -243,16 +249,21 @@ def _cell_data(cell: ET.Element, style_table: XlsxStyleTable, *, data_only: bool
                 pass
         elif kind == "dataTable" and (table_ref := formula.get("ref")) is not None:
             try:
-                return None, "f", DataTableFormula(
-                    table_ref,
-                    ca=_bool_attr(formula, "ca", False),
-                    dt2D=_bool_attr(formula, "dt2D", False),
-                    dtr=_bool_attr(formula, "dtr", False),
-                    r1=formula.get("r1"),
-                    r2=formula.get("r2"),
-                    del1=_bool_attr(formula, "del1", False),
-                    del2=_bool_attr(formula, "del2", False),
-                ), style_id
+                return (
+                    None,
+                    "f",
+                    DataTableFormula(
+                        table_ref,
+                        ca=_bool_attr(formula, "ca", False),
+                        dt2D=_bool_attr(formula, "dt2D", False),
+                        dtr=_bool_attr(formula, "dtr", False),
+                        r1=formula.get("r1"),
+                        r2=formula.get("r2"),
+                        del1=_bool_attr(formula, "del1", False),
+                        del2=_bool_attr(formula, "del2", False),
+                    ),
+                    style_id,
+                )
             except (TypeError, ValueError):
                 pass
         if kind == "shared":
@@ -269,7 +280,10 @@ def _cell_data(cell: ET.Element, style_table: XlsxStyleTable, *, data_only: bool
                 text = ""
         return None, "f", text, style_id
     value = _read_cell_value(
-        cell, style, date_1904=date_1904, shared_strings=shared_strings,
+        cell,
+        style,
+        date_1904=date_1904,
+        shared_strings=shared_strings,
         rich_text=rich_text,
     )
     kind = cell.get("t", "n")
@@ -374,9 +388,14 @@ def _read_workbook_metadata(workbook: Workbook, root, package) -> None:
             if protection.get(name) is not None:
                 setattr(security, name, _bool_attr(protection, name, None))
         for name in (
-            "workbookPassword", "revisionsPassword",
-            "workbookAlgorithmName", "workbookHashValue", "workbookSaltValue",
-            "revisionsAlgorithmName", "revisionsHashValue", "revisionsSaltValue",
+            "workbookPassword",
+            "revisionsPassword",
+            "workbookAlgorithmName",
+            "workbookHashValue",
+            "workbookSaltValue",
+            "revisionsAlgorithmName",
+            "revisionsHashValue",
+            "revisionsSaltValue",
         ):
             if protection.get(name) is not None:
                 setattr(security, name, protection.get(name))
@@ -391,8 +410,13 @@ def _read_workbook_metadata(workbook: Workbook, root, package) -> None:
             if calc.get(name) is not None:
                 setattr(calculation, name, int(calc.get(name)))
         for name in (
-            "fullCalcOnLoad", "iterate", "fullPrecision", "calcCompleted",
-            "calcOnSave", "concurrentCalc", "forceFullCalc",
+            "fullCalcOnLoad",
+            "iterate",
+            "fullPrecision",
+            "calcCompleted",
+            "calcOnSave",
+            "concurrentCalc",
+            "forceFullCalc",
         ):
             if calc.get(name) is not None:
                 setattr(calculation, name, _bool_attr(calc, name, None))
@@ -408,14 +432,22 @@ def _read_workbook_metadata(workbook: Workbook, root, package) -> None:
         if node.get("visibility") is not None:
             view.visibility = node.get("visibility")
         for name in (
-            "minimized", "showHorizontalScroll", "showVerticalScroll",
-            "showSheetTabs", "autoFilterDateGrouping",
+            "minimized",
+            "showHorizontalScroll",
+            "showVerticalScroll",
+            "showSheetTabs",
+            "autoFilterDateGrouping",
         ):
             if node.get(name) is not None:
                 setattr(view, name, _bool_attr(node, name, None))
         for name in (
-            "xWindow", "yWindow", "windowWidth", "windowHeight",
-            "tabRatio", "firstSheet", "activeTab",
+            "xWindow",
+            "yWindow",
+            "windowWidth",
+            "windowHeight",
+            "tabRatio",
+            "firstSheet",
+            "activeTab",
         ):
             if (value := node.get(name)) is not None:
                 setattr(view, name, int(value))
@@ -436,9 +468,7 @@ def _read_sheet_relationships(package, sheet_path: str) -> dict[str, tuple[str, 
         rid = node.get("Id")
         target = node.get("Target")
         if rid and target:
-            result[rid] = (
-                target, node.get("TargetMode"), node.get("Type", "")
-            )
+            result[rid] = (target, node.get("TargetMode"), node.get("Type", ""))
     return result
 
 
@@ -485,10 +515,7 @@ def _read_data_validations(sheet: Worksheet, node) -> None:
             note_unread(sheet, "data_validations")
             continue
         kind = _OXML_VALIDATION_TYPES.get(child.get("type", "custom"), "custom")
-        operator = (
-            _OXML_OPERATORS.get(child.get("operator"))
-            if child.get("operator") is not None else None
-        )
+        operator = _OXML_OPERATORS.get(child.get("operator")) if child.get("operator") is not None else None
         prompt = child.get("prompt")
         error = child.get("error")
         show_input = _bool_attr(child, "showInputMessage", False)
@@ -536,9 +563,7 @@ def _parse_table(xml: bytes) -> Table:
         headerRowCount=int(attrs.get("headerRowCount", "1") or 1),
         insertRow=_bool_attr(root, "insertRow", None),
         insertRowShift=_bool_attr(root, "insertRowShift", None),
-        totalsRowCount=(
-            int(attrs["totalsRowCount"]) if attrs.get("totalsRowCount") is not None else None
-        ),
+        totalsRowCount=(int(attrs["totalsRowCount"]) if attrs.get("totalsRowCount") is not None else None),
         totalsRowShown=_bool_attr(root, "totalsRowShown", None),
         published=_bool_attr(root, "published", None),
     )
@@ -631,14 +656,13 @@ def _cf_rule(sqref: str, node, style_table):
         if len(cfvos) < 2 or color is None:
             return None
         return DataBarRule(
-            sqref, cfvos[0], cfvos[1], color,
+            sqref,
+            cfvos[0],
+            cfvos[1],
+            color,
             show_value=_bool_attr(bar, "showValue", None),
-            min_length=(
-                int(bar.get("minLength")) if bar.get("minLength") is not None else None
-            ),
-            max_length=(
-                int(bar.get("maxLength")) if bar.get("maxLength") is not None else None
-            ),
+            min_length=(int(bar.get("minLength")) if bar.get("minLength") is not None else None),
+            max_length=(int(bar.get("maxLength")) if bar.get("maxLength") is not None else None),
             priority=priority,
         )
     if rule_type == "iconSet":
@@ -767,8 +791,7 @@ def _apply_row_attributes(sheet: Worksheet, row_number: int, attrs) -> None:
     """Row height, visibility, outline and style from a ``<row>`` element's attributes."""
     # A group's summary row carries collapsed="1" alone; it has to
     # be loaded too, or saving row metadata would drop the flag.
-    if not ("ht" in attrs or "hidden" in attrs or "outlineLevel" in attrs
-            or "collapsed" in attrs):
+    if not ("ht" in attrs or "hidden" in attrs or "outlineLevel" in attrs or "collapsed" in attrs):
         return
     dimension = sheet.row_dimensions[row_number]
     if "ht" in attrs:
@@ -782,9 +805,18 @@ def _apply_row_attributes(sheet: Worksheet, row_number: int, attrs) -> None:
         dimension.style = int(attrs["s"])
 
 
-def _load_row(sheet: Worksheet, node: ET.Element, next_row: int, style_table: XlsxStyleTable,
-              *, data_only: bool, date_1904: bool, shared, shared_strings: list[str],
-              rich_text: bool):
+def _load_row(
+    sheet: Worksheet,
+    node: ET.Element,
+    next_row: int,
+    style_table: XlsxStyleTable,
+    *,
+    data_only: bool,
+    date_1904: bool,
+    shared,
+    shared_strings: list[str],
+    rich_text: bool,
+):
     """Load one ``<row>`` element into the sheet; return ``(row, max_row, max_column)``."""
     row_number = int(node.get("r", next_row) or next_row)
     max_row = 0  # A row without cells has no place in the sheet's size, as in XLSB.
@@ -801,15 +833,22 @@ def _load_row(sheet: Worksheet, node: ET.Element, next_row: int, style_table: Xl
             col, row = next_column, row_number - 1
         next_column = col + 1
         value, data_type, formula_text, style_id = _cell_data(
-            cell, style_table, data_only=data_only,
-            date_1904=date_1904, shared=shared,
-            shared_strings=shared_strings, rich_text=rich_text,
+            cell,
+            style_table,
+            data_only=data_only,
+            date_1904=date_1904,
+            shared=shared,
+            shared_strings=shared_strings,
+            rich_text=rich_text,
         )
         if value is None and formula_text is None and style_id == 0:
             continue
         sheet._set_cell_raw(
-            row + 1, col + 1, value,
-            style_id=style_id, data_type=data_type,
+            row + 1,
+            col + 1,
+            value,
+            style_id=style_id,
+            data_type=data_type,
             formula_text=formula_text,
         )
         max_row = max(max_row, row + 1)
@@ -828,16 +867,10 @@ def _read_auto_filter(sheet: Worksheet, node: ET.Element) -> None:
         )
         filters = child.find(qname("filters"))
         if filters is not None:
-            column.vals = [
-                value
-                for item in filters.findall(qname("filter"))
-                if (value := item.get("val")) is not None
-            ]
+            column.vals = [value for item in filters.findall(qname("filter")) if (value := item.get("val")) is not None]
             column.blank = _bool_attr(filters, "blank", False)
         # Any other criterion is kept verbatim: the model does not interpret it.
-        column.criteria = [
-            _element_xml(item) for item in child if item.tag != qname("filters")
-        ]
+        column.criteria = [_element_xml(item) for item in child if item.tag != qname("filters")]
         filter_.filterColumn.append(column)
     sort = node.find(qname("sortState"))
     if sort is not None:
@@ -927,17 +960,30 @@ def _read_header_footer_flags(sheet: Worksheet, node: ET.Element) -> None:
 def _read_sheet_view(sheet: Worksheet, node: ET.Element) -> None:
     view = sheet._sheet_view
     for name in (
-        "showFormulas", "showGridLines", "showRowColHeaders", "showZeros",
-        "rightToLeft", "tabSelected", "showRuler", "showOutlineSymbols",
-        "defaultGridColor", "showWhiteSpace", "windowProtection",
+        "showFormulas",
+        "showGridLines",
+        "showRowColHeaders",
+        "showZeros",
+        "rightToLeft",
+        "tabSelected",
+        "showRuler",
+        "showOutlineSymbols",
+        "defaultGridColor",
+        "showWhiteSpace",
+        "windowProtection",
     ):
         if node.get(name) is not None:
             setattr(view, name, _bool_attr(node, name, None))
     view.view = node.get("view")
     view.topLeftCell = node.get("topLeftCell")
-    for name in ("colorId", "zoomScale", "zoomScaleNormal",
-                 "zoomScaleSheetLayoutView", "zoomScalePageLayoutView",
-                 "workbookViewId"):
+    for name in (
+        "colorId",
+        "zoomScale",
+        "zoomScaleNormal",
+        "zoomScaleSheetLayoutView",
+        "zoomScalePageLayoutView",
+        "workbookViewId",
+    ):
         if (value := node.get(name)) is not None:
             setattr(view, name, int(value))
 
@@ -995,47 +1041,65 @@ def _read_ignored_errors(sheet: Worksheet, node: ET.Element) -> None:
         if not sqref:
             continue
         try:
-            sheet.ignored_errors.append(IgnoredError(
-                sqref,
-                **{name: _bool_attr(item, name, None) for name in IGNORED_ERROR_FLAGS},
-            ))
+            sheet.ignored_errors.append(
+                IgnoredError(
+                    sqref,
+                    **{name: _bool_attr(item, name, None) for name in IGNORED_ERROR_FLAGS},
+                )
+            )
         except ValueError:
             continue  # a range this library cannot parse; the check stays as saved
 
 
 def _read_row_breaks(sheet: Worksheet, node: ET.Element) -> None:
-    sheet.row_breaks = RowBreak([
-        Break(
-            id=int(item.get("id", "0") or 0),
-            min=int(item.get("min", "0") or 0),
-            max=int(item.get("max", "16383") or 16383),
-            man=_bool_attr(item, "man", True),
-            pt=_int_attr(item, "pt"),
-        )
-        for item in node.findall(qname("brk"))
-    ])
+    sheet.row_breaks = RowBreak(
+        [
+            Break(
+                id=int(item.get("id", "0") or 0),
+                min=int(item.get("min", "0") or 0),
+                max=int(item.get("max", "16383") or 16383),
+                man=_bool_attr(item, "man", True),
+                pt=_int_attr(item, "pt"),
+            )
+            for item in node.findall(qname("brk"))
+        ]
+    )
 
 
 def _read_col_breaks(sheet: Worksheet, node: ET.Element) -> None:
-    sheet.col_breaks = ColBreak([
-        Break(
-            id=int(item.get("id", "0") or 0),
-            min=int(item.get("min", "0") or 0),
-            max=int(item.get("max", "1048575") or 1048575),
-            man=_bool_attr(item, "man", True),
-            pt=_int_attr(item, "pt"),
-        )
-        for item in node.findall(qname("brk"))
-    ])
+    sheet.col_breaks = ColBreak(
+        [
+            Break(
+                id=int(item.get("id", "0") or 0),
+                min=int(item.get("min", "0") or 0),
+                max=int(item.get("max", "1048575") or 1048575),
+                man=_bool_attr(item, "man", True),
+                pt=_int_attr(item, "pt"),
+            )
+            for item in node.findall(qname("brk"))
+        ]
+    )
 
 
 def _read_sheet_protection(sheet: Worksheet, node: ET.Element) -> None:
     protection = sheet.protection
     for name in (
-        "sheet", "objects", "scenarios", "formatCells", "formatRows",
-        "formatColumns", "insertColumns", "insertRows", "insertHyperlinks",
-        "deleteColumns", "deleteRows", "selectLockedCells", "sort",
-        "autoFilter", "pivotTables", "selectUnlockedCells",
+        "sheet",
+        "objects",
+        "scenarios",
+        "formatCells",
+        "formatRows",
+        "formatColumns",
+        "insertColumns",
+        "insertRows",
+        "insertHyperlinks",
+        "deleteColumns",
+        "deleteRows",
+        "selectLockedCells",
+        "sort",
+        "autoFilter",
+        "pivotTables",
+        "selectUnlockedCells",
     ):
         if node.get(name) is not None:
             setattr(protection, name, _bool_attr(node, name, None))
@@ -1142,10 +1206,17 @@ _ELEMENT_READERS: dict[str, Callable[[Worksheet, ET.Element], None]] = {
 }
 
 
-def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
-                     *, data_only: bool, date_1904: bool, package,
-                     sheet_path: str, shared_strings: list[str],
-                     rich_text: bool = False):
+def _read_core_sheet(
+    sheet: Worksheet,
+    style_table: XlsxStyleTable,
+    *,
+    data_only: bool,
+    date_1904: bool,
+    package,
+    sheet_path: str,
+    shared_strings: list[str],
+    rich_text: bool = False,
+):
     shared_formulas: dict[str, tuple[str, str]] = {}
     hyperlinks: list[dict] = []
     table_parts: list[str] = []
@@ -1157,8 +1228,14 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
         from ._fast_sheet import read_sheet_data
 
         fast = read_sheet_data(
-            sheet, package, sheet_path, style_table, data_only=data_only,
-            date_1904=date_1904, shared_strings=shared_strings, rich_text=rich_text,
+            sheet,
+            package,
+            sheet_path,
+            style_table,
+            data_only=data_only,
+            date_1904=date_1904,
+            shared_strings=shared_strings,
+            rich_text=rich_text,
         )
     if fast is None:
         source = package.open_entry(sheet_path)
@@ -1174,9 +1251,15 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
             tag = _local(node.tag)
             if tag == "row" and len(stack) >= 2 and _local(stack[-2].tag) == "sheetData":
                 row_number, row_max, column_max = _load_row(
-                    sheet, node, next_row, style_table, data_only=data_only,
-                    date_1904=date_1904, shared=shared_formulas,
-                    shared_strings=shared_strings, rich_text=rich_text,
+                    sheet,
+                    node,
+                    next_row,
+                    style_table,
+                    data_only=data_only,
+                    date_1904=date_1904,
+                    shared=shared_formulas,
+                    shared_strings=shared_strings,
+                    rich_text=rich_text,
                 )
                 next_row = row_number + 1
                 max_row = max(max_row, row_max)
@@ -1190,8 +1273,11 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
                     sheet._merged_cells.add(_normalize_range(node.get("ref")))
                 except ValueError:
                     pass
-            elif tag in ("oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter") \
-                    and len(stack) >= 2 and _local(stack[-2].tag) == "headerFooter":
+            elif (
+                tag in ("oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter")
+                and len(stack) >= 2
+                and _local(stack[-2].tag) == "headerFooter"
+            ):
                 getattr(sheet.HeaderFooter, tag).load_code(node.text)
             elif tag == "hyperlink":
                 hyperlinks.append(dict(node.attrib))
@@ -1222,8 +1308,7 @@ def _read_core_sheet(sheet: Worksheet, style_table: XlsxStyleTable,
     _attach_comments(sheet, package, sheet_path)
 
 
-def _read_only_bounds(archive: zipfile.ZipFile,
-                      sheet_path: str) -> tuple[int, int, int, int] | None:
+def _read_only_bounds(archive: zipfile.ZipFile, sheet_path: str) -> tuple[int, int, int, int] | None:
     """Return ``(min_col, min_row, max_col, max_row)`` from a worksheet
     ``dimension`` ref, or None when the sheet is unsized (as openpyxl)."""
     if not sheet_path.endswith(".xml"):
@@ -1278,8 +1363,11 @@ class ReadOnlyCell:
         return isinstance(self.value, (_datetime.date, _datetime.time, _datetime.timedelta))
 
     def __eq__(self, other):
-        return (isinstance(other, ReadOnlyCell)
-                and (self.row, self.column, self.value) == (other.row, other.column, other.value))
+        return isinstance(other, ReadOnlyCell) and (self.row, self.column, self.value) == (
+            other.row,
+            other.column,
+            other.value,
+        )
 
     def __repr__(self):
         return f"<ReadOnlyCell {self.coordinate}>"
@@ -1309,8 +1397,9 @@ class ReadOnlyWorksheet(Worksheet):
     ``max_column`` are None and rows are as wide as their last cell.
     """
 
-    def __init__(self, workbook: Workbook, title: str, *, reader: ExcelReader, data_only: bool,
-                 index: int | None = None) -> None:
+    def __init__(
+        self, workbook: Workbook, title: str, *, reader: ExcelReader, data_only: bool, index: int | None = None
+    ) -> None:
         super().__init__(workbook, title, index=index)
         self._reader = reader
         self._data_only = data_only
@@ -1364,8 +1453,7 @@ class ReadOnlyWorksheet(Worksheet):
             if not force:
                 raise ValueError("Worksheet is unsized, use calculate_dimension(force=True)")
             self._calculate_dimension()
-        return (f"{_coordinate(self._min_row, self._min_column)}:"
-                f"{_coordinate(self._max_row, self._max_column)}")
+        return f"{_coordinate(self._min_row, self._min_column)}:{_coordinate(self._max_row, self._max_column)}"
 
     def _calculate_dimension(self):
         max_row = max_column = 0
@@ -1382,12 +1470,15 @@ class ReadOnlyWorksheet(Worksheet):
     def _indexed_rows(self):
         if self._reader._is_xlsb:
             from .._xlsb_read import iter_xlsb_indexed_rows as iter_xlsb_rows
+
             return iter_xlsb_rows(self._reader, self.title, data_only=self._data_only)
         from .._xlsx_read import iter_xlsx_indexed_rows as iter_xlsx_rows
+
         return iter_xlsx_rows(self._reader, self.title, self._data_only)
 
-    def _cells_by_row(self, min_col: int, min_row: int, max_col: int | None, max_row: int | None,
-                      values_only: bool) -> Iterator[tuple[Any, ...]]:
+    def _cells_by_row(
+        self, min_col: int, min_row: int, max_col: int | None, max_row: int | None, values_only: bool
+    ) -> Iterator[tuple[Any, ...]]:
         filler = None if values_only else EMPTY_CELL
         empty_row = (filler,) * (max_col + 1 - min_col) if max_col is not None else ()
         counter = min_row
@@ -1422,16 +1513,41 @@ class ReadOnlyWorksheet(Worksheet):
         return tuple(row)
 
     @overload
-    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | str | None = None,
-                  max_col: int | str | None = None, values_only: Literal[False] = False) -> Iterator[tuple[Any, ...]]: ...
+    def iter_rows(
+        self,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        min_col: int | str | None = None,
+        max_col: int | str | None = None,
+        values_only: Literal[False] = False,
+    ) -> Iterator[tuple[Any, ...]]: ...
     @overload
-    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | str | None = None,
-                  max_col: int | str | None = None, *, values_only: Literal[True]) -> Iterator[tuple[Any, ...]]: ...
+    def iter_rows(
+        self,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        min_col: int | str | None = None,
+        max_col: int | str | None = None,
+        *,
+        values_only: Literal[True],
+    ) -> Iterator[tuple[Any, ...]]: ...
     @overload
-    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | str | None = None,
-                  max_col: int | str | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]: ...
-    def iter_rows(self, min_row: int | None = None, max_row: int | None = None, min_col: int | str | None = None,
-                  max_col: int | str | None = None, values_only: bool = False) -> Iterator[tuple[Any, ...]]:
+    def iter_rows(
+        self,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        min_col: int | str | None = None,
+        max_col: int | str | None = None,
+        values_only: bool = False,
+    ) -> Iterator[tuple[Any, ...]]: ...
+    def iter_rows(
+        self,
+        min_row: int | None = None,
+        max_row: int | None = None,
+        min_col: int | str | None = None,
+        max_col: int | str | None = None,
+        values_only: bool = False,
+    ) -> Iterator[tuple[Any, ...]]:
         """Stream the rows of a range as tuples of read-only cells, or of values with
         ``values_only``.
 
@@ -1447,8 +1563,12 @@ class ReadOnlyWorksheet(Worksheet):
         """Not available in read-only mode: raises AttributeError."""
         raise AttributeError("iter_cols is not available in read-only mode")
 
-    def cell(self, row: int, column: int | str,  # type: ignore[override]  # read-only cells
-             value: Any = None) -> ReadOnlyCell | EmptyCell:
+    def cell(
+        self,
+        row: int,
+        column: int | str,  # type: ignore[override]  # read-only cells
+        value: Any = None,
+    ) -> ReadOnlyCell | EmptyCell:
         """Return the read-only cell at ``row`` and ``column``, or an empty cell.
 
         Each call scans the sheet; use ``iter_rows`` to read many cells.
@@ -1485,15 +1605,24 @@ class ReadOnlyWorksheet(Worksheet):
         if min_row is None:
             return tuple(self.iter_cols(min_col, max_col))
         if min_col is None:
-            rows = tuple(self.iter_rows(
-                min_row=min_row, max_row=max_row, max_col=self.max_column,
-            ))
+            rows = tuple(
+                self.iter_rows(
+                    min_row=min_row,
+                    max_row=max_row,
+                    max_col=self.max_column,
+                )
+            )
             return rows[0] if min_row == max_row else rows
         if ":" not in key:
             return self.cell(min_row, min_col)
-        return tuple(self.iter_rows(
-            min_row=min_row, min_col=min_col, max_row=max_row, max_col=max_col,
-        ))
+        return tuple(
+            self.iter_rows(
+                min_row=min_row,
+                min_col=min_col,
+                max_row=max_row,
+                max_col=max_col,
+            )
+        )
 
     def __setitem__(self, key: str, value: Any) -> NoReturn:
         raise AttributeError("read-only worksheets cannot be modified")
@@ -1503,9 +1632,15 @@ class ReadOnlyWorksheet(Worksheet):
         raise AttributeError("read-only worksheets cannot be modified")
 
 
-def load_workbook(filename: str | os.PathLike[str] | IO[bytes], *, read_only: bool = False, data_only: bool = False,
-                  keep_vba: bool = False, rich_text: bool = False,
-                  keep_links: bool = True) -> Workbook:
+def load_workbook(
+    filename: str | os.PathLike[str] | IO[bytes],
+    *,
+    read_only: bool = False,
+    data_only: bool = False,
+    keep_vba: bool = False,
+    rich_text: bool = False,
+    keep_links: bool = True,
+) -> Workbook:
     """Load an XLSX/XLSM workbook, or stream an XLSB/XLSX with ``read_only``.
 
     The fast ``ExcelReader`` remains the best choice for raw value extraction.
@@ -1576,16 +1711,20 @@ def load_workbook(filename: str | os.PathLike[str] | IO[bytes], *, read_only: bo
         source_label, path = _source_label(filename), staged
     with reading(source_label):
         try:
-            workbook = _load_workbook(path, read_only=read_only, data_only=data_only,
-                                      keep_vba=keep_vba, rich_text=rich_text, keep_links=keep_links)
+            workbook = _load_workbook(
+                path,
+                read_only=read_only,
+                data_only=data_only,
+                keep_vba=keep_vba,
+                rich_text=rich_text,
+                keep_links=keep_links,
+            )
         except BaseException:
             if staged_directory is not None:
                 shutil.rmtree(staged_directory, ignore_errors=True)
             raise
     if staged_directory is not None:
-        workbook._source_staging = weakref.finalize(
-            workbook, shutil.rmtree, staged_directory, ignore_errors=True
-        )
+        workbook._source_staging = weakref.finalize(workbook, shutil.rmtree, staged_directory, ignore_errors=True)
     return workbook
 
 
@@ -1602,11 +1741,10 @@ def _read_only_workbook(reader: ExcelReader, path: str, *, data_only: bool) -> W
     for index, name in enumerate(reader.get_sheet_names()):
         if name in cellless:
             continue  # as in a full load, chartsheets are not worksheets
-        sheet = ReadOnlyWorksheet(
-            workbook, name, reader=reader, data_only=data_only, index=index
-        )
+        sheet = ReadOnlyWorksheet(workbook, name, reader=reader, data_only=data_only, index=index)
         if reader._is_xlsb:
             from .._xlsb_read import sheet_dimension
+
             sheet._set_bounds(sheet_dimension(reader, name))
         else:
             part = reader._sheet_part(name)
@@ -1618,8 +1756,9 @@ def _read_only_workbook(reader: ExcelReader, path: str, *, data_only: bool) -> W
     return workbook
 
 
-def _load_workbook(path: str, *, read_only: bool, data_only: bool, keep_vba: bool, rich_text: bool,
-                   keep_links: bool) -> Workbook:
+def _load_workbook(
+    path: str, *, read_only: bool, data_only: bool, keep_vba: bool, rich_text: bool, keep_links: bool
+) -> Workbook:
     if read_only:
         reader = ExcelReader(path)
         reader.open(path)
@@ -1636,9 +1775,7 @@ def _load_workbook(path: str, *, read_only: bool, data_only: bool, keep_vba: boo
 
     updater = XlsxUpdater(path)
     try:
-        workbook = _load_xlsx_workbook(
-            updater, path, data_only=data_only, rich_text=rich_text
-        )
+        workbook = _load_xlsx_workbook(updater, path, data_only=data_only, rich_text=rich_text)
         if keep_vba:
             # As openpyxl: the source package, from which a new workbook
             # saved as .xlsm takes its VBA project. A loaded workbook keeps
@@ -1711,9 +1848,7 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
         elif rel_type.endswith("/chartsheet"):
             chartsheet_entries.append((name, target, sheet_node.get("state", "visible")))
 
-    style_table = XlsxStyleTable.from_xml(
-        package.get("xl/styles.xml") if package.has("xl/styles.xml") else None
-    )
+    style_table = XlsxStyleTable.from_xml(package.get("xl/styles.xml") if package.has("xl/styles.xml") else None)
     workbook._styles = style_table
     named_styles: list[Any] = list(style_table.named_style_defs.values())
     if not named_styles:
@@ -1724,12 +1859,10 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
     shared_strings: list = []
     if package.has("xl/sharedStrings.xml"):
         if rich_text:
-
             shared_strings = parse_rich_shared_strings(package.get("xl/sharedStrings.xml"))
         else:
             shared_strings = [
-                xstring_unescape(value)
-                for value in parse_shared_strings_xml(package.get("xl/sharedStrings.xml"))
+                xstring_unescape(value) for value in parse_shared_strings_xml(package.get("xl/sharedStrings.xml"))
             ]
 
     for index, (name, sheet_path, state) in enumerate(worksheet_entries):
@@ -1772,14 +1905,11 @@ def _load_xlsx_workbook(updater, path: str, *, data_only: bool, rich_text: bool)
     try:
         # localSheetId counts every <sheet>, including chartsheets.
         all_sheets = [node.get("name", "") for node in workbook_root.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet")]
-        workbook._defined_names = DefinedNameList(
-            workbook, read_defined_names(workbook_xml, all_sheets)
-        )
+        workbook._defined_names = DefinedNameList(workbook, read_defined_names(workbook_xml, all_sheets))
     except (TypeError, ValueError, IndexError, ET.ParseError):
         workbook._defined_names = DefinedNameList(workbook)
     workbook._loaded_defined_names = {
-        (item.name, item.formula, item.scope, item.hidden, item.comment)
-        for item in workbook._defined_names
+        (item.name, item.formula, item.scope, item.hidden, item.comment) for item in workbook._defined_names
     }
     workbook._defined_names_dirty = False
     return workbook

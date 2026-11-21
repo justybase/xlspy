@@ -73,9 +73,7 @@ def _importorskip_openpyxl_datetime():
     return CALENDAR_MAC_1904, from_excel, to_excel
 
 
-@pytest.mark.parametrize(
-    "serial", [1, 1.5, 2, 59, 59.5, 60, 60.5, 61, 61.5, 45306, 45306.4375]
-)
+@pytest.mark.parametrize("serial", [1, 1.5, 2, 59, 59.5, 60, 60.5, 61, 61.5, 45306, 45306.4375])
 def test_serial_to_datetime_matches_openpyxl(serial):
     _, from_excel, _ = _importorskip_openpyxl_datetime()
     assert serial_to_datetime(serial) == from_excel(serial)
@@ -112,17 +110,13 @@ def test_datetime_to_serial_matches_openpyxl(value):
 @pytest.mark.parametrize("value", [dt.datetime(1904, 1, 1), dt.date(2024, 1, 15)])
 def test_datetime_to_serial_matches_openpyxl_1904(value):
     mac_epoch, _, to_excel = _importorskip_openpyxl_datetime()
-    assert datetime_to_serial(value, date_1904=True) == pytest.approx(
-        to_excel(value, epoch=mac_epoch), rel=1e-12
-    )
+    assert datetime_to_serial(value, date_1904=True) == pytest.approx(to_excel(value, epoch=mac_epoch), rel=1e-12)
 
 
 @pytest.mark.parametrize("ext", [".xlsx", ".xlsb"])
 def test_writers_store_excel_compatible_serials(tmp_path, ext):
     """1900-01-01 is serial 1: Excel counts the fictitious 1900-02-29."""
-    path = _write_workbook(
-        tmp_path / f"early{ext}", [[(value, F.DATE_SHORT)] for value in EARLY_DATES]
-    )
+    path = _write_workbook(tmp_path / f"early{ext}", [[(value, F.DATE_SHORT)] for value in EARLY_DATES])
     expected_values = [dt.datetime(v.year, v.month, v.day) for v in EARLY_DATES]
 
     if ext == ".xlsx":

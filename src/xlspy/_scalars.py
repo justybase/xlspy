@@ -9,6 +9,7 @@ here: a scalar is recognised by its class's module and its dtype.
 pandas' ``NaT`` and ``NA`` are empty cells, as in the DataFrame path (``NaT``
 is a ``datetime`` whose fields are NaN, ``NA`` would be the text ``<NA>``).
 """
+
 from __future__ import annotations
 from typing import Any
 

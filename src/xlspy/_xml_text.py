@@ -33,7 +33,7 @@ def escape_xml_text(value: Any) -> str:
 
     text = str(value)
     check_cell_text(text)
-    return saxutils.escape(xstring_escape(text), {"\"": "&quot;", "'": "&apos;"})
+    return saxutils.escape(xstring_escape(text), {'"': "&quot;", "'": "&apos;"})
 
 
 def unescape_xml_text(value: str) -> str:

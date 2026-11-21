@@ -58,27 +58,43 @@ def _sparkline_axis_code(value: str | float | None, bits: Mapping[str | None, in
 
 def _group_payload(group: SparklineGroup) -> bytes:
     first = _XLSB_EMPTY_CELL_CODES[group.empty_cells] << 1
-    for flag, bit in ((group.markers, 0x08), (group.high_point, 0x10), (group.low_point, 0x20),
-                      (group.first_point, 0x40), (group.last_point, 0x80)):
+    for flag, bit in (
+        (group.markers, 0x08),
+        (group.high_point, 0x10),
+        (group.low_point, 0x20),
+        (group.first_point, 0x40),
+        (group.last_point, 0x80),
+    ):
         if flag:
             first |= bit
     min_bits, min_value = _sparkline_axis_code(group.axis_min, _MIN_AXIS)
     max_bits, max_value = _sparkline_axis_code(group.axis_max, _MAX_AXIS)
     second = min_bits | max_bits
-    for flag, bit in ((group.negative_points, 0x01), (group.show_axis, 0x02),
-                      (group.show_hidden, 0x04), (group.right_to_left, 0x80)):
+    for flag, bit in (
+        (group.negative_points, 0x01),
+        (group.show_axis, 0x02),
+        (group.show_hidden, 0x04),
+        (group.right_to_left, 0x80),
+    ):
         if flag:
             second |= bit
     colors = (
-        ("color", group.color), ("negative_color", group.negative_color),
-        ("axis_color", group.axis_color), ("marker_color", group.marker_color),
-        ("first_color", group.first_color), ("last_color", group.last_color),
-        ("high_color", group.high_color), ("low_color", group.low_color),
+        ("color", group.color),
+        ("negative_color", group.negative_color),
+        ("axis_color", group.axis_color),
+        ("marker_color", group.marker_color),
+        ("first_color", group.first_color),
+        ("last_color", group.last_color),
+        ("high_color", group.high_color),
+        ("low_color", group.low_color),
     )
-    return (b"\x00" * 4 + bytes((first, second))
-            + b"".join(_sparkline_color_record(value, name) for name, value in colors)
-            + struct.pack("<dddH", max_value, min_value, float(group.line_width), _XLSB_SPARKLINE_KIND_CODES[group.kind])
-            + b"\x00\x00")
+    return (
+        b"\x00" * 4
+        + bytes((first, second))
+        + b"".join(_sparkline_color_record(value, name) for name, value in colors)
+        + struct.pack("<dddH", max_value, min_value, float(group.line_width), _XLSB_SPARKLINE_KIND_CODES[group.kind])
+        + b"\x00\x00"
+    )
 
 
 def _unquote(sheet: str) -> str:
@@ -93,8 +109,12 @@ def _sparkline_payload(cell: str, formula: str, context: FormulaContext) -> byte
     rgce = encode_reference(ref, _unquote(sheet), context, "R", (0, 0), False)
     # FRT header (fSqref | fFormula), one sqref (fDoAdjust) of one cell range, then
     # one formula: flags, cce, an empty cb and the tokens.
-    return (struct.pack("<IIII", 0x06, 1, 0x02, 1) + struct.pack("<IIII", row, row, column, column)
-            + struct.pack("<IIII", 1, 0x02, len(rgce), 0) + rgce)
+    return (
+        struct.pack("<IIII", 0x06, 1, 0x02, 1)
+        + struct.pack("<IIII", row, row, column, column)
+        + struct.pack("<IIII", 1, 0x02, len(rgce), 0)
+        + rgce
+    )
 
 
 def sparklines_bin(groups: list[SparklineGroup], sheet_name: str, context: FormulaContext) -> bytes:
@@ -109,8 +129,10 @@ def sparklines_bin(groups: list[SparklineGroup], sheet_name: str, context: Formu
     for group in groups:
         parts.append(build_record(_BEGIN_GROUP, _group_payload(group)))
         parts.append(build_record(_BEGIN_SPARKLINES))
-        parts.extend(build_record(_SPARKLINE, _sparkline_payload(cell, formula, context))
-                     for cell, formula in _expand(group, sheet_name))
+        parts.extend(
+            build_record(_SPARKLINE, _sparkline_payload(cell, formula, context))
+            for cell, formula in _expand(group, sheet_name)
+        )
         parts.append(build_record(_END_SPARKLINES))
         parts.append(build_record(_END_GROUP))
     parts += [build_record(_END_GROUPS), build_record(_FRT_END)]

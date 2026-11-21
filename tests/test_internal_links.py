@@ -1,4 +1,5 @@
 """Hyperlinks to places in the workbook: sheet names, quoting, order."""
+
 from __future__ import annotations
 
 import pytest

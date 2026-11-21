@@ -1,4 +1,5 @@
 """The public SheetProtection and PageMargins applied to the workbook model."""
+
 from __future__ import annotations
 
 import zipfile
@@ -49,16 +50,12 @@ def test_loaded_hashed_protection_rejects_spin_count_change(tmp_path):
     source = tmp_path / "hashed.xlsx"
     wb.save(source)
     patched = tmp_path / "hashed-patched.xlsx"
-    with zipfile.ZipFile(source) as original, zipfile.ZipFile(
-        patched, "w", zipfile.ZIP_DEFLATED
-    ) as output:
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(patched, "w", zipfile.ZIP_DEFLATED) as output:
         for item in original.infolist():
             data = original.read(item.filename)
             if item.filename == "xl/worksheets/sheet1.xml":
                 root = ET.fromstring(data)
-                protection = root.find(
-                    "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheetProtection"
-                )
+                protection = root.find("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheetProtection")
                 protection.set("sheet", "1")
                 protection.set("algorithmName", "SHA-512")
                 protection.set("saltValue", "AQID")

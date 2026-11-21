@@ -46,9 +46,7 @@ def _assert_dropped(updater, part, rels_path):
     package = updater._package
     assert not package.has(part)
     rels = ET.fromstring(package.get(rels_path))
-    assert not any(
-        node.get("Type", "").endswith("/calcChain") for node in rels
-    )
+    assert not any(node.get("Type", "").endswith("/calcChain") for node in rels)
     types = ET.fromstring(package.get("[Content_Types].xml"))
     assert all(node.get("PartName") != "/" + part for node in types)
 
@@ -66,7 +64,7 @@ def test_xlsx_reorder_drops_calc_chain(tmp_path):
         )
         updater.reorder_sheets(["Two", "One"])
         _assert_dropped(updater, "xl/calcChain.xml", "xl/_rels/workbook.xml.rels")
-        assert b"fullCalcOnLoad=\"1\"" in updater._package.get("xl/workbook.xml")
+        assert b'fullCalcOnLoad="1"' in updater._package.get("xl/workbook.xml")
         updater.save(path)
     finally:
         updater.close()

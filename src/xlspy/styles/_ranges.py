@@ -59,9 +59,7 @@ class StyleRanges(tuple):
         if changed:
             self._open.sort()
             self._expires = min((self[i][3] for i in self._open), default=None)
-            self._active = tuple(
-                (self[i][0], self[i][2], self[i][4]) for i in self._open
-            )
+            self._active = tuple((self[i][0], self[i][2], self[i][4]) for i in self._open)
         self._row = row_index
         return self._active
 
@@ -82,8 +80,7 @@ def parse_style_range(reference: str) -> tuple[int, int, int, int]:
         match = _OPEN_COLUMNS_RE.fullmatch(reference)
         if match is not None:
             first, row, last = match.groups()
-            bounds = (_column_index(first), int(row) - 1 if row else 0,
-                      _column_index(last), _LAST_ROW)
+            bounds = (_column_index(first), int(row) - 1 if row else 0, _column_index(last), _LAST_ROW)
         else:
             match = _OPEN_ROWS_RE.fullmatch(reference)
             if match is not None:
@@ -143,8 +140,11 @@ def check_zoom(zoom) -> int | None:
 
 def check_sheet_view(show_row_col_headers, show_zero_values, right_to_left) -> tuple[bool, bool, bool]:
     """The sheet view switches as ``(headers, zeros, right_to_left)``; each must be a bool."""
-    for name, value in (("show_row_col_headers", show_row_col_headers),
-                        ("show_zero_values", show_zero_values), ("right_to_left", right_to_left)):
+    for name, value in (
+        ("show_row_col_headers", show_row_col_headers),
+        ("show_zero_values", show_zero_values),
+        ("right_to_left", right_to_left),
+    ):
         if not isinstance(value, bool):
             raise TypeError(f"{name} must be a bool")
     return show_row_col_headers, show_zero_values, right_to_left
@@ -168,11 +168,14 @@ def merge_styles(base: Style | None, overlay: Style | None) -> Style | None:
         return overlay
     if overlay is None:
         return base
-    return replace(base, **{
-        field: getattr(overlay, field)
-        for field in Style.__dataclass_fields__
-        if getattr(overlay, field) is not None
-    })
+    return replace(
+        base,
+        **{
+            field: getattr(overlay, field)
+            for field in Style.__dataclass_fields__
+            if getattr(overlay, field) is not None
+        },
+    )
 
 
 @lru_cache(maxsize=128)
@@ -204,8 +207,7 @@ def styles_for_row(row_index: int, row_length: int, ranges, header_style: Style 
         return _uniform_row_styles(row_length, merge_styles(Style(bold=True), header_style))
     if len(ranges) == 1 and header_style is None:
         first_col, first_row, last_col, last_row, style = ranges[0]
-        if (first_row <= row_index <= last_row and first_col == 0
-                and last_col >= row_length - 1):
+        if first_row <= row_index <= last_row and first_col == 0 and last_col >= row_length - 1:
             return _uniform_row_styles(row_length, style)
     if isinstance(ranges, StyleRanges):
         active = ranges.active(row_index)

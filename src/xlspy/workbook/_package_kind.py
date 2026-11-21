@@ -23,8 +23,7 @@ _VBA_TYPE = "application/vnd.ms-office.vbaProject"
 _VBA_REL = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
 
 
-def set_package_kind(updater: XlsxUpdater, extension: str,
-                     vba_archive: zipfile.ZipFile | None = None) -> None:
+def set_package_kind(updater: XlsxUpdater, extension: str, vba_archive: zipfile.ZipFile | None = None) -> None:
     """Give the workbook part the content type of ``extension``; a
     macro-enabled kind also gets the VBA project of ``vba_archive`` (a
     ``zipfile.ZipFile`` such as ``load_workbook(..., keep_vba=True)`` sets)."""

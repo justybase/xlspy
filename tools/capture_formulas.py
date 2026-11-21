@@ -90,18 +90,18 @@ def dump_xlsb(path):
                 data = archive.read(name)
                 print(f"  {name}: {data.hex()}")
                 for record in iter_records(data):
-                    payload = data[record.data_start:record.data_end]
+                    payload = data[record.data_start : record.data_end]
                     print(f"    {record.record_id:#06x} len={record.length} {payload.hex()}")
         data = archive.read("xl/worksheets/sheet1.bin")
         for record in iter_records(data):
-            payload = data[record.data_start:record.data_end]
+            payload = data[record.data_start : record.data_end]
             if record.record_id in FORMULA_RECORDS or record.record_id in (0x31, 0x32):
                 print(f"  record {record.record_id:#06x} len={record.length} {payload.hex()}")
         workbook = archive.read("xl/workbook.bin")
         for record in iter_records(workbook):
             if record.record_id != 0x27:
                 continue
-            payload = workbook[record.data_start:record.data_end]
+            payload = workbook[record.data_start : record.data_end]
             flags, _reserved, scope = (
                 int.from_bytes(payload[0:4], "little"),
                 int.from_bytes(payload[4:5], "little"),

@@ -109,14 +109,41 @@ class _XlsxWriterHost:
         def _split_freeze_cell(self, ref: str) -> tuple[int, int]: ...
         def _claim_cf_priority(self, rule: Any) -> int: ...
         def _check_sheet_options(
-            self, *, header_style: Any, show_grid_lines: Any, header_rows: Any, tab_color: Any, zoom: Any,
-            show_row_col_headers: Any, show_zero_values: Any, right_to_left: Any, styles: Any, merges: Any,
-            comments: Any, sheet_protection: Any, auto_filter_ref: Any, conditional_formats: Any, tables: Any,
-            sparklines: Any, slicers: Any, charts: Any, data_validations: Any, images: Any, shapes: Any,
-            print_settings: Any, column_widths: Any, hidden_columns: Any, row_heights: Any, hidden_rows: Any,
-            row_groups: Any, column_groups: Any, freeze_panes: Any,
-            autofit_rows: Any = 1000, autofit_padding: Any = 0.0,
-            check_style: Any | None = None, sort_state: Any | None = None,
+            self,
+            *,
+            header_style: Any,
+            show_grid_lines: Any,
+            header_rows: Any,
+            tab_color: Any,
+            zoom: Any,
+            show_row_col_headers: Any,
+            show_zero_values: Any,
+            right_to_left: Any,
+            styles: Any,
+            merges: Any,
+            comments: Any,
+            sheet_protection: Any,
+            auto_filter_ref: Any,
+            conditional_formats: Any,
+            tables: Any,
+            sparklines: Any,
+            slicers: Any,
+            charts: Any,
+            data_validations: Any,
+            images: Any,
+            shapes: Any,
+            print_settings: Any,
+            column_widths: Any,
+            hidden_columns: Any,
+            row_heights: Any,
+            hidden_rows: Any,
+            row_groups: Any,
+            column_groups: Any,
+            freeze_panes: Any,
+            autofit_rows: Any = 1000,
+            autofit_padding: Any = 0.0,
+            check_style: Any | None = None,
+            sort_state: Any | None = None,
         ) -> SheetSpec: ...
         def _claim_sheet_options(self, spec: SheetSpec) -> None: ...
         def _normalize_cf_rules(self, conditional_formats: Any) -> Any: ...
@@ -144,14 +171,43 @@ class _XlsxWriterHost:
         def _link_relationships(self, hyperlinks: Any, rels: Any) -> Any: ...
         def _register_tables(self, table_specs: Any, sheet_id: Any, body: Any, table_totals: Any = None) -> Any: ...
         def _resolve_slicers(self, slicer_specs: Any) -> Any: ...
-        def _sheet_head(self, body: Any, sheet_index: Any, split_freeze: Any, freeze_panes: Any, widths: Any,
-                        hidden_cols: Any, print_spec: Any, row_outline: Any = None, col_outline: Any = None,
-                        show_grid_lines: Any = True, meter: Any = None, autofit_padding: Any = 0.0, filter_cells: Any = (),
-                        tab_key: Any = None, zoom: Any = None, view: Any = (True, True, False)) -> Any: ...
-        def _sheet_tail(self, body: Any, sheet_index: Any, merge_refs: Any, cf_rules: Any, table_specs: Any,
-                        table_bounds: Any, validations: Any, link_rels: Any, auto_filter: Any, drawing_rid: Any,
-                        print_spec: Any, *, auto_filter_ref: Any = None, header_rows: Any = 1,
-                        sort_state: Any = None) -> Any: ...
+        def _sheet_head(
+            self,
+            body: Any,
+            sheet_index: Any,
+            split_freeze: Any,
+            freeze_panes: Any,
+            widths: Any,
+            hidden_cols: Any,
+            print_spec: Any,
+            row_outline: Any = None,
+            col_outline: Any = None,
+            show_grid_lines: Any = True,
+            meter: Any = None,
+            autofit_padding: Any = 0.0,
+            filter_cells: Any = (),
+            tab_key: Any = None,
+            zoom: Any = None,
+            view: Any = (True, True, False),
+        ) -> Any: ...
+        def _sheet_tail(
+            self,
+            body: Any,
+            sheet_index: Any,
+            merge_refs: Any,
+            cf_rules: Any,
+            table_specs: Any,
+            table_bounds: Any,
+            validations: Any,
+            link_rels: Any,
+            auto_filter: Any,
+            drawing_rid: Any,
+            print_spec: Any,
+            *,
+            auto_filter_ref: Any = None,
+            header_rows: Any = 1,
+            sort_state: Any = None,
+        ) -> Any: ...
         def _write_empty_sheet(self, sheet_index: int) -> None: ...
 
         # Document properties (doc_properties.DocumentPropertiesMixin)

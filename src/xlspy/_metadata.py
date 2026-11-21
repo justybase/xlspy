@@ -40,7 +40,7 @@ def relationship_kind(rel_type: str) -> str | None:
     """Last segment of a Transitional or Strict officeDocument relationship type."""
     for base in (REL, STRICT_REL):
         if rel_type.startswith(base + "/"):
-            return rel_type[len(base) + 1:]
+            return rel_type[len(base) + 1 :]
     return None
 
 
@@ -54,9 +54,12 @@ def cell_ref(ref: str) -> str:
 def xml_text(text: str) -> str:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
-    if any(not (ch in "\t\n\r" or 0x20 <= ord(ch) <= 0xD7FF
-                or 0xE000 <= ord(ch) <= 0xFFFD or 0x10000 <= ord(ch) <= 0x10FFFF)
-           for ch in text):
+    if any(
+        not (
+            ch in "\t\n\r" or 0x20 <= ord(ch) <= 0xD7FF or 0xE000 <= ord(ch) <= 0xFFFD or 0x10000 <= ord(ch) <= 0x10FFFF
+        )
+        for ch in text
+    ):
         raise ValueError("text contains a character forbidden in XML")
     return text
 
@@ -98,10 +101,9 @@ def serialize_like(root, original) -> bytes:
     start = start_match[0]
     present = {m[1] or "" for m in _DECLARATION.finditer(start)}
     missing = "".join(
-        f' xmlns{":" + prefix if prefix else ""}="{uri}"'
-        for prefix, uri in declarations if prefix not in present
+        f' xmlns{":" + prefix if prefix else ""}="{uri}"' for prefix, uri in declarations if prefix not in present
     )
-    output = start + missing + output[len(start):]
+    output = start + missing + output[len(start) :]
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + output).encode("utf-8")
 
 
@@ -111,7 +113,8 @@ def element_pattern(tag: str) -> re.Pattern[str]:
     # for every element of an unprefixed part.
     return re.compile(
         rf"<(?P<prefix>[A-Za-z_][\w.-]*:)?{tag}\b[^>]*?"
-        rf"(?:/>|>.*?</(?(prefix)(?P=prefix)){tag}\s*>|(?(prefix)>.*?</{tag}\s*>|(?!)))", re.DOTALL,
+        rf"(?:/>|>.*?</(?(prefix)(?P=prefix)){tag}\s*>|(?(prefix)>.*?</{tag}\s*>|(?!)))",
+        re.DOTALL,
     )
 
 
@@ -120,20 +123,20 @@ def replace_element(xml: str, tag: str, fragment: str, *, before=()) -> str:
     pattern = element_pattern(tag)
     match = pattern.search(xml)
     if match:
-        return xml[:match.start()] + fragment + xml[match.end():]
+        return xml[: match.start()] + fragment + xml[match.end() :]
     if not fragment:
         return xml
     for successor in before:
         match = re.search(rf"<(?:[A-Za-z_][\w.-]*:)?{successor}\b", xml)
         if match:
-            return xml[:match.start()] + fragment + xml[match.start():]
+            return xml[: match.start()] + fragment + xml[match.start() :]
     closing = list(re.finditer(r"</(?:[A-Za-z_][\w.-]*:)?[\w.-]+\s*>", xml))
     if not closing:
         # Empty documents such as <Relationships/>.
         match = re.search(r"<([\w:.-]+)\b([^>]*)/>", xml)
         if not match:
             raise ValueError("XML root element was not found")
-        return xml[:match.start()] + f"<{match[1]}{match[2]}>" + fragment + f"</{match[1]}>" + xml[match.end():]
+        return xml[: match.start()] + f"<{match[1]}{match[2]}>" + fragment + f"</{match[1]}>" + xml[match.end() :]
     pos = closing[-1].start()
     return xml[:pos] + fragment + xml[pos:]
 
@@ -145,7 +148,7 @@ def tag_attributes(fragment: str) -> dict[str, str]:
         raise ValueError("XML opening tag was not found")
     # Attribute values can contain escaped XML; ET resolves those consistently.
     attrs = {}
-    for match in re.finditer(r'''([\w:.-]+)\s*=\s*("[^"]*"|'[^']*')''', opening[1]):
+    for match in re.finditer(r"""([\w:.-]+)\s*=\s*("[^"]*"|'[^']*')""", opening[1]):
         attrs[match[1]] = unescape(match[2][1:-1], {"&quot;": '"', "&apos;": "'"})
     return attrs
 
@@ -164,7 +167,7 @@ def append_child(xml: str, container: str, fragment: str) -> str:
     else:
         pos = body.rfind("</")
         body = body[:pos] + fragment + body[pos:]
-    return xml[:match.start()] + body + xml[match.end():]
+    return xml[: match.start()] + body + xml[match.end() :]
 
 
 def password_hash(password: str) -> str:
@@ -210,8 +213,7 @@ class DefinedName:
         if self.scope is not None and not isinstance(self.scope, str):
             raise TypeError("scope must be a worksheet title or None")
         if self.localSheetId is not None and (
-            not isinstance(self.localSheetId, int) or isinstance(self.localSheetId, bool)
-            or self.localSheetId < 0
+            not isinstance(self.localSheetId, int) or isinstance(self.localSheetId, bool) or self.localSheetId < 0
         ):
             raise TypeError("localSheetId must be a non-negative int or None")
         if self.hidden is not None and not isinstance(self.hidden, bool):
@@ -279,11 +281,7 @@ def read_defined_names(xml: str | bytes, sheets) -> list[DefinedName]:
                 node.text or "",
                 scope,
                 localSheetId=local_sheet_id,
-                hidden=(
-                    None
-                    if node.get("hidden") is None
-                    else node.get("hidden", "0").lower() in {"1", "true"}
-                ),
+                hidden=(None if node.get("hidden") is None else node.get("hidden", "0").lower() in {"1", "true"}),
                 comment=node.get("comment") or None,
             )
         )
@@ -316,9 +314,11 @@ class SheetProtection:
         if not self.enabled:
             return ""
         password = "" if self.password_hash is None else f' password="{self.password_hash}"'
-        return (f'<sheetProtection xmlns="{MAIN}" sheet="1" objects="1" scenarios="1"'
-                f' selectLockedCells="{int(not self.select_locked_cells)}"'
-                f' selectUnlockedCells="{int(not self.select_unlocked_cells)}"{password}/>')
+        return (
+            f'<sheetProtection xmlns="{MAIN}" sheet="1" objects="1" scenarios="1"'
+            f' selectLockedCells="{int(not self.select_locked_cells)}"'
+            f' selectUnlockedCells="{int(not self.select_unlocked_cells)}"{password}/>'
+        )
 
 
 @dataclass(frozen=True, slots=True)

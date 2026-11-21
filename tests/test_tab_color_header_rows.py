@@ -29,16 +29,14 @@ def _xlsx_sheet(path, index=1):
 def _xlsb_records(path):
     with zipfile.ZipFile(path) as archive:
         data = archive.read("xl/worksheets/sheet1.bin")
-    return {record.record_id: data[record.data_start:record.data_end]
-            for record in iter_records(data)}
+    return {record.record_id: data[record.data_start : record.data_end] for record in iter_records(data)}
 
 
 def test_xlsx_tab_colors(tmp_path):
     path = tmp_path / "tabs.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Rgb")
-        writer.write_sheet(ROWS, tab_color="#C00000",
-                           print_settings=PrintSettings(fit_to_width=1))
+        writer.write_sheet(ROWS, tab_color="#C00000", print_settings=PrintSettings(fit_to_width=1))
         writer.add_sheet("Theme")
         writer.write_sheet(ROWS, tab_color=Color(theme=5, tint=0.4))
         writer.add_sheet("Plain")
@@ -76,8 +74,13 @@ def test_xlsx_filter_and_style_on_a_two_row_header(tmp_path):
     path = tmp_path / "header.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet(ROWS, header_rows=2, header_style=HEADER, merges=["A1:B1", "C1:D1"],
-                           styles={"C2:D4": Style(number_format="0.00")})
+        writer.write_sheet(
+            ROWS,
+            header_rows=2,
+            header_style=HEADER,
+            merges=["A1:B1", "C1:D1"],
+            styles={"C2:D4": Style(number_format="0.00")},
+        )
     xml = _xlsx_sheet(path)
     assert '<autoFilter ref="A2:D4"/>' in xml
     workbook = openpyxl.load_workbook(path)

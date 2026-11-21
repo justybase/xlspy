@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from .._output import WriteTarget
 
 
-
 def _value_for_new(cell):
     if isinstance(cell._formula, (Formula, ArrayFormula, DataTableFormula)):
         return cell._formula
@@ -40,7 +39,6 @@ def _value_for_new(cell):
         return Formula(cell._formula)
     link = cell._hyperlink
     if link is not None:
-
         text = cell._value if isinstance(cell._value, str) else link.text
         return Hyperlink(link.target, text=text, tooltip=link.tooltip)
     value = cell._value
@@ -204,7 +202,8 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
     }
     print_settings = print_settings_for(sheet)
     for name, items in (
-        ("images", sheet.images), ("data_validations", sheet.data_validations),
+        ("images", sheet.images),
+        ("data_validations", sheet.data_validations),
         ("print_settings", print_settings),
     ):
         if items:
@@ -224,9 +223,13 @@ def _set_properties(writer, props) -> None:
         # The model's default is datetime.now(): local time.
         created = created.astimezone(_datetime.UTC)
     writer.set_properties(
-        title=props.title, subject=props.subject, author=props.creator,
-        keywords=props.keywords, comments=props.description,
-        category=props.category, status=props.contentStatus,
+        title=props.title,
+        subject=props.subject,
+        author=props.creator,
+        keywords=props.keywords,
+        comments=props.description,
+        category=props.category,
+        status=props.contentStatus,
         created=created if isinstance(created, _datetime.datetime) else None,
     )
 

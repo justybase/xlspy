@@ -16,7 +16,12 @@ import pytest
 pytestmark = pytest.mark.com  # skipped unless XLSPY_RUN_EXCEL_COM=1 (conftest.py)
 
 from xlspy import (  # noqa: E402
-    ExcelTable, PivotTable, PivotValue, XlsbWriter, XlsxWriter, load_workbook,
+    ExcelTable,
+    PivotTable,
+    PivotValue,
+    XlsbWriter,
+    XlsxWriter,
+    load_workbook,
 )
 
 ROWS = [
@@ -40,53 +45,64 @@ def _table_pivot(**kwargs):
 CASES = {
     "row_one_value": (
         {"rows": "Region", "values": "Sales"},
-        "Data", "A12:B16",
+        "Data",
+        "A12:B16",
     ),
     "row_several_values": (
         {"rows": "Region", "values": ["Sales", "Units"]},
-        "Data", "A12:C16",
+        "Data",
+        "A12:C16",
     ),
     "row_column_one_value": (
         {"rows": "Region", "columns": "Quarter", "values": "Sales"},
-        "Data", "A12:D17",
+        "Data",
+        "A12:D17",
     ),
     "row_column_several_values": (
         {"rows": "Region", "columns": "Quarter", "values": ["Sales", "Units"]},
-        "Data", "A12:G18",
+        "Data",
+        "A12:G18",
     ),
     # TableRange2 takes in the page field above the report.
     "row_average_with_filter": (
         {"rows": "Region", "values": [PivotValue("Units", "average")], "filters": "Product"},
-        "Data", "A10:B16",
+        "Data",
+        "A10:B16",
     ),
     "row_column_with_filter": (
         {"rows": "Region", "columns": "Quarter", "values": "Sales", "filters": "Product"},
-        "Data", "A10:D17",
+        "Data",
+        "A10:D17",
     ),
     "text_column_field": (
         {"rows": "Region", "columns": "Product", "values": "Sales"},
-        "Data", "A12:D17",
+        "Data",
+        "A12:D17",
     ),
     "count": (
         {"rows": "Region", "values": [PivotValue("Sales", "count")]},
-        "Data", "A12:B16",
+        "Data",
+        "A12:B16",
     ),
     "min": (
         {"rows": "Region", "values": [PivotValue("Sales", "min")]},
-        "Data", "A12:B16",
+        "Data",
+        "A12:B16",
     ),
     "max": (
         {"rows": "Region", "values": [PivotValue("Sales", "max")]},
-        "Data", "A12:B16",
+        "Data",
+        "A12:B16",
     ),
     "other_sheet": (
         {"rows": "Region", "values": "Sales", "location": "A3", "sheet": "Summary"},
-        "Summary", "A3:B7",
+        "Summary",
+        "A3:B7",
     ),
     "other_sheet_row_column_several_values": (
-        {"rows": "Region", "columns": "Quarter", "values": ["Sales", "Units"],
-         "location": "B2", "sheet": "Summary"},
-        "Summary", "B2:H8",
+        {"rows": "Region", "columns": "Quarter", "values": ["Sales", "Units"], "location": "B2", "sheet": "Summary"},
+        "Summary",
+        "B2:H8",
     ),
 }
 
@@ -173,7 +189,10 @@ def _excel_range(excel, path, sheet):
 
 @pytest.mark.parametrize(("writer", "extension"), WRITERS)
 def test_pivot_still_refreshes_after_the_workbook_is_loaded_and_saved(
-    tmp_path, excel, writer, extension,
+    tmp_path,
+    excel,
+    writer,
+    extension,
 ):
     source = tmp_path / f"source.{extension}"
     _write(source, {"rows": "Region", "columns": "Quarter", "values": "Sales"}, writer)

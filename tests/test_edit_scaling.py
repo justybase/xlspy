@@ -4,6 +4,7 @@ what going through every range finds.
 The limits are far above what these take now; the loops they guard took minutes at these
 sizes, and nothing else would notice: each operation works, only slowly.
 """
+
 from __future__ import annotations
 
 import random
@@ -47,8 +48,13 @@ def _timed_update(tmp_path, ext, change, **options):
 
 @pytest.mark.parametrize("ext", FORMATS)
 def test_many_notes_at_once(tmp_path, ext):
-    out = _timed_update(tmp_path, ext, lambda updater: updater.set_comments(
-        "S", {f"C{row}": Comment(f"n{row}", f"author {row % 500}") for row in range(1, 20000)}))
+    out = _timed_update(
+        tmp_path,
+        ext,
+        lambda updater: updater.set_comments(
+            "S", {f"C{row}": Comment(f"n{row}", f"author {row % 500}") for row in range(1, 20000)}
+        ),
+    )
     updater = FORMATS[ext][1](str(out))
     try:
         notes = updater.get_comments("S")
@@ -60,8 +66,13 @@ def test_many_notes_at_once(tmp_path, ext):
 
 @pytest.mark.parametrize("ext", FORMATS)
 def test_many_links_at_once(tmp_path, ext):
-    out = _timed_update(tmp_path, ext, lambda updater: updater.set_hyperlinks(
-        "S", {f"C{row}": Hyperlink(f"https://x{row}.example/") for row in range(1, 20000)}))
+    out = _timed_update(
+        tmp_path,
+        ext,
+        lambda updater: updater.set_hyperlinks(
+            "S", {f"C{row}": Hyperlink(f"https://x{row}.example/") for row in range(1, 20000)}
+        ),
+    )
     sheet = load_workbook(str(out)).active
     assert sheet["C777"].hyperlink.target == "https://x777.example/"
 
@@ -69,8 +80,12 @@ def test_many_links_at_once(tmp_path, ext):
 @pytest.mark.parametrize("ext", FORMATS)
 def test_many_edits_on_a_sheet_with_many_merges(tmp_path, ext):
     merges = [f"G{row}:H{row}" for row in range(1, 20000)]
-    _timed_update(tmp_path, ext, lambda updater: updater.update_cells(
-        "S", {f"G{row}": row for row in range(1, 20000)}), merges=merges)
+    _timed_update(
+        tmp_path,
+        ext,
+        lambda updater: updater.update_cells("S", {f"G{row}": row for row in range(1, 20000)}),
+        merges=merges,
+    )
     with pytest.raises(ValueError, match="top-left"):
         _timed_update(tmp_path, ext, lambda updater: updater.update_cells("S", {"H19999": 1}), merges=merges)
 
@@ -95,8 +110,7 @@ def test_many_merges_in_the_model(tmp_path, ext):
 
 def _brute(ranges, query):
     c1, r1, c2, r2 = query
-    return [bounds for bounds in ranges
-            if bounds[0] <= c2 and c1 <= bounds[2] and bounds[1] <= r2 and r1 <= bounds[3]]
+    return [bounds for bounds in ranges if bounds[0] <= c2 and c1 <= bounds[2] and bounds[1] <= r2 and r1 <= bounds[3]]
 
 
 def _range(rng):

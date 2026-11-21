@@ -4,6 +4,7 @@ The tutorial is part of the product: if an example stops working, the docs build
 still succeeds but the page lies. This test runs each marked block in an isolated
 temporary directory with ``src`` on ``PYTHONPATH``.
 """
+
 from __future__ import annotations
 
 import os
@@ -47,7 +48,5 @@ def test_tutorial_blocks_run(doc: Path, tmp_path: Path) -> None:
             timeout=120,
         )
         assert result.returncode == 0, (
-            f"{doc.name} block {index} failed\n"
-            f"--- stdout ---\n{result.stdout}\n"
-            f"--- stderr ---\n{result.stderr}"
+            f"{doc.name} block {index} failed\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
         )

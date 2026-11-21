@@ -19,7 +19,7 @@ from xlspy import ExcelReader, Formula, Hyperlink, Style, XlsbWriter, XlsxWriter
 from xlspy import _accel
 
 LIMIT = 32767
-ASTRAL = "\U0001D11E"  # outside the BMP: two UTF-16 units
+ASTRAL = "\U0001d11e"  # outside the BMP: two UTF-16 units
 
 FORMATS = [
     pytest.param(XlsxWriter, "xlsx", True, id="xlsx-shared"),
@@ -36,6 +36,7 @@ def encoder(request, monkeypatch):
         if not _accel.HAVE_NATIVE:
             pytest.skip("native extension not built")
     else:
+
         def no_c(*args, **kwargs):
             return None
 
@@ -73,16 +74,19 @@ def _assert_rejected(writer_cls, shared, rows, error=ValueError, match="32767", 
 
 
 @pytest.mark.parametrize("writer_cls,ext,shared", FORMATS)
-@pytest.mark.parametrize("text", [
-    pytest.param("", id="empty"),
-    pytest.param("a" * (LIMIT - 1), id="32766"),
-    pytest.param("a" * LIMIT, id="32767"),
-    pytest.param(ASTRAL * 16383, id="astral-32766-units"),
-    pytest.param("a" + ASTRAL * 16383, id="astral-32767-units"),
-    pytest.param("ż" * LIMIT, id="non-ascii-65534-utf8-bytes"),
-    pytest.param("é" * 16383, id="combining-32766"),
-    pytest.param("&<>" * 10922 + "&", id="xml-special-32767"),
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("", id="empty"),
+        pytest.param("a" * (LIMIT - 1), id="32766"),
+        pytest.param("a" * LIMIT, id="32767"),
+        pytest.param(ASTRAL * 16383, id="astral-32766-units"),
+        pytest.param("a" + ASTRAL * 16383, id="astral-32767-units"),
+        pytest.param("ż" * LIMIT, id="non-ascii-65534-utf8-bytes"),
+        pytest.param("é" * 16383, id="combining-32766"),
+        pytest.param("&<>" * 10922 + "&", id="xml-special-32767"),
+    ],
+)
 def test_text_within_the_limit_round_trips(tmp_path, encoder, writer_cls, ext, shared, text):
     data = _write(writer_cls, shared, [["head", "tail"], [text, "after"]])
     rows = _read(data, ext, tmp_path)
@@ -91,13 +95,16 @@ def test_text_within_the_limit_round_trips(tmp_path, encoder, writer_cls, ext, s
 
 
 @pytest.mark.parametrize("writer_cls,ext,shared", FORMATS)
-@pytest.mark.parametrize("text", [
-    pytest.param("a" * (LIMIT + 1), id="32768"),
-    pytest.param("x" * 40_000, id="40000"),
-    pytest.param(ASTRAL * 16384, id="astral-32768-units"),
-    # 32,767 code points, but the astral character makes it 32,768 units.
-    pytest.param("a" * (LIMIT - 1) + ASTRAL, id="32767-code-points-32768-units"),
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("a" * (LIMIT + 1), id="32768"),
+        pytest.param("x" * 40_000, id="40000"),
+        pytest.param(ASTRAL * 16384, id="astral-32768-units"),
+        # 32,767 code points, but the astral character makes it 32,768 units.
+        pytest.param("a" * (LIMIT - 1) + ASTRAL, id="32767-code-points-32768-units"),
+    ],
+)
 def test_text_over_the_limit_is_rejected(encoder, writer_cls, ext, shared, text):
     _assert_rejected(writer_cls, shared, [["head"], [text]])
 
@@ -116,10 +123,8 @@ def test_oversized_value_deep_in_a_stream_publishes_nothing(encoder, writer_cls,
 @pytest.mark.parametrize("writer_cls,ext,shared", FORMATS)
 def test_styled_and_header_cells_are_checked(encoder, writer_cls, ext, shared):
     long_text = "x" * (LIMIT + 1)
-    _assert_rejected(writer_cls, shared, [["head"], [long_text]],
-                     styles={"A2:A2": Style(bold=True)})
-    _assert_rejected(writer_cls, shared, [[long_text], ["body"]],
-                     header_style=Style(bold=True))
+    _assert_rejected(writer_cls, shared, [["head"], [long_text]], styles={"A2:A2": Style(bold=True)})
+    _assert_rejected(writer_cls, shared, [[long_text], ["body"]], header_style=Style(bold=True))
 
 
 @pytest.mark.parametrize("writer_cls,ext,shared", FORMATS)
@@ -157,11 +162,11 @@ def test_xlsb_shared_string_record_keeps_the_full_text():
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         sst = archive.read("xl/sharedStrings.bin")
     pos = sst.index(b"\x13")  # BrtSSTItem
-    size_byte_count = 1 + sum(1 for b in sst[pos + 1:pos + 4] if b & 0x80)
-    payload = sst[pos + 1 + size_byte_count:]
+    size_byte_count = 1 + sum(1 for b in sst[pos + 1 : pos + 4] if b & 0x80)
+    payload = sst[pos + 1 + size_byte_count :]
     flags, cch = payload[0], struct.unpack_from("<I", payload, 1)[0]
     assert (flags, cch) == (0, LIMIT)
-    assert payload[5:5 + 2 * cch].decode("utf-16-le") == text
+    assert payload[5 : 5 + 2 * cch].decode("utf-16-le") == text
 
 
 def _sst_writer(strings):
@@ -172,11 +177,14 @@ def _sst_writer(strings):
     return writer
 
 
-@pytest.mark.parametrize("text", [
-    pytest.param("a" * (LIMIT + 1), id="32768"),
-    pytest.param(ASTRAL * 16384, id="astral-32768-units"),
-    pytest.param("a" * (LIMIT - 1) + ASTRAL, id="32767-code-points-32768-units"),
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("a" * (LIMIT + 1), id="32768"),
+        pytest.param(ASTRAL * 16384, id="astral-32768-units"),
+        pytest.param("a" * (LIMIT - 1) + ASTRAL, id="32767-code-points-32768-units"),
+    ],
+)
 @pytest.mark.parametrize("encoder", ["c", "python"])
 def test_shared_string_table_refuses_text_over_the_limit(encoder, text, monkeypatch):
     # The writers reject these cells first; the table must not cut them to fit.
@@ -190,11 +198,14 @@ def test_shared_string_table_refuses_text_over_the_limit(encoder, text, monkeypa
 
 
 @pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
-@pytest.mark.parametrize("text", [
-    pytest.param("a" * LIMIT, id="limit"),
-    pytest.param("a" + ASTRAL * 16383, id="astral-at-limit"),
-    pytest.param("é" * 100, id="accented"),
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("a" * LIMIT, id="limit"),
+        pytest.param("a" + ASTRAL * 16383, id="astral-at-limit"),
+        pytest.param("é" * 100, id="accented"),
+    ],
+)
 def test_native_and_python_shared_string_tables_agree(text, monkeypatch):
     strings = ["short", text]
     c_bytes = io.BytesIO()
@@ -210,8 +221,7 @@ def test_native_and_python_shared_string_tables_agree(text, monkeypatch):
 
 @pytest.mark.parametrize("writer_cls,ext,shared", FORMATS)
 def test_lone_surrogate_is_refused(encoder, writer_cls, ext, shared):
-    _assert_rejected(writer_cls, shared, [["head"], ["bad\ud800text"]],
-                     error=UnicodeEncodeError, match="surrogate")
+    _assert_rejected(writer_cls, shared, [["head"], ["bad\ud800text"]], error=UnicodeEncodeError, match="surrogate")
 
 
 # ------------------------------------------- XML-unsafe and special text
@@ -264,8 +274,9 @@ def test_xlsx_escapes_follow_ooxml():
 
 
 @pytest.mark.skipif(not _accel.HAVE_NATIVE, reason="native extension not built")
-@pytest.mark.parametrize("text", ["x" * (LIMIT + 1), "a" * (LIMIT - 1) + ASTRAL],
-                         ids=["32768", "32767-code-points-32768-units"])
+@pytest.mark.parametrize(
+    "text", ["x" * (LIMIT + 1), "a" * (LIMIT - 1) + ASTRAL], ids=["32768", "32767-code-points-32768-units"]
+)
 def test_native_shared_row_encoders_hand_long_text_back_untouched(text):
     # A row the native encoder refuses goes to the Python encoder, which raises.
     # Strings the native encoder interned earlier in that row must be removed again,
@@ -328,15 +339,13 @@ def test_failing_str_is_reported_not_dropped(encoder, writer_cls, ext, shared):
         def __str__(self):
             raise RuntimeError("str failed")
 
-    _assert_rejected(writer_cls, shared, [["head"], ["a", BrokenStr()]],
-                     error=RuntimeError, match="str failed")
+    _assert_rejected(writer_cls, shared, [["head"], ["a", BrokenStr()]], error=RuntimeError, match="str failed")
 
 
 def test_native_and_python_xlsx_encoders_agree_on_ordinary_text(monkeypatch):
     if not _accel.HAVE_NATIVE:
         pytest.skip("native extension not built")
-    rows = [["Name", "Note"], ["plain", "a&b"], ["żółw", ASTRAL + "x"],
-            ["_x", "x_"], ["_x00G0_", "tab\tand\nnewline"]]
+    rows = [["Name", "Note"], ["plain", "a&b"], ["żółw", ASTRAL + "x"], ["_x", "x_"], ["_x00G0_", "tab\tand\nnewline"]]
     outputs = []
     for native in (True, False):
         if not native:

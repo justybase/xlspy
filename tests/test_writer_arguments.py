@@ -11,8 +11,9 @@ WRITERS = [XlsxWriter, XlsbWriter]
 
 
 @pytest.mark.parametrize("writer", WRITERS)
-@pytest.mark.parametrize("old,new", [("compressionLevel", "compression_level"),
-                                     ("useSharedStrings", "use_shared_strings")])
+@pytest.mark.parametrize(
+    "old,new", [("compressionLevel", "compression_level"), ("useSharedStrings", "use_shared_strings")]
+)
 def test_camel_case_keywords_name_their_replacement(writer, old, new):
     with pytest.raises(TypeError, match=f"argument '{old}' was renamed to '{new}'"):
         writer(io.BytesIO(), **{old: 1})

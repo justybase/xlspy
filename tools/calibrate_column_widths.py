@@ -36,13 +36,15 @@ EXTRA_CHARS = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻéüßÉÜЖжΩ中日한€�
 def _autofit(cells):
     """``cells``: list of (value, Style | None) -> AutoFit width per cell."""
     import win32com.client
+
     path = os.path.join(tempfile.mkdtemp(prefix="xlspy-width-"), "probe.xlsx")
     row = [value if style is None else (value, style) for value, style in cells]
     with XlsxWriter(path) as writer:
         writer.add_sheet("Probe")
         # A blank first row: the writer bolds row 1 and filters it.
-        writer.write_sheet([[None] * len(row), row], auto_filter=False,
-                           column_widths=dict.fromkeys(range(len(row)), 8.43))
+        writer.write_sheet(
+            [[None] * len(row), row], auto_filter=False, column_widths=dict.fromkeys(range(len(row)), 8.43)
+        )
     app = win32com.client.DispatchEx("Excel.Application")
     app.Visible = False
     app.DisplayAlerts = False
@@ -84,29 +86,69 @@ def measure_chars():
 def corpus_cells():
     """Realistic cells: (value, Style | None, label)."""
     words = [
-        "Product", "Quantity", "Comment", "Customer name", "ID", "Total amount",
-        "WWWWWW", "Maximum", "illicit", "Łódź", "Zażółć gęślą jaźń",
+        "Product",
+        "Quantity",
+        "Comment",
+        "Customer name",
+        "ID",
+        "Total amount",
+        "WWWWWW",
+        "Maximum",
+        "illicit",
+        "Łódź",
+        "Zażółć gęślą jaźń",
         "The quick brown fox jumps over the lazy dog",
-        "ORDER-2024-000123", "john.smith@example.com", "https://example.com/a/b?c=1",
-        "Wrocław, ul. Świdnicka 12/4", "中文字符测试", "MIXED Case Header",
-        "A", "mmmmmmmmmm", "iiiiiiiiii", "1234567890", "first line\nsecond longer line here",
-        "Tab\tseparated", "   padded", "ÉCOLE ÉLÉMENTAIRE", "€ 1 234,50",
+        "ORDER-2024-000123",
+        "john.smith@example.com",
+        "https://example.com/a/b?c=1",
+        "Wrocław, ul. Świdnicka 12/4",
+        "中文字符测试",
+        "MIXED Case Header",
+        "A",
+        "mmmmmmmmmm",
+        "iiiiiiiiii",
+        "1234567890",
+        "first line\nsecond longer line here",
+        "Tab\tseparated",
+        "   padded",
+        "ÉCOLE ÉLÉMENTAIRE",
+        "€ 1 234,50",
     ]
     numbers = [
-        (0, None), (7, None), (42, None), (1234, None), (123456789, None),
-        (1234567890123, None), (3.14159, None), (0.1 + 0.2, None), (1 / 3, None),
-        (-98765.4321, None), (1e-7, None), (2.5e15, None),
-        (1234567.891, "#,##0.00"), (1234567.891, "#,##0"), (0.4567, "0%"),
-        (0.4567, "0.00%"), (1234.5, '#,##0.00 "zł"'), (1234.5, "#,##0.00 €"),
-        (12345, "000000000"), (1234.5678, "0.00E+00"), (-1234.5, "#,##0.00;[Red]-#,##0.00"),
-        (True, None), (False, None),
+        (0, None),
+        (7, None),
+        (42, None),
+        (1234, None),
+        (123456789, None),
+        (1234567890123, None),
+        (3.14159, None),
+        (0.1 + 0.2, None),
+        (1 / 3, None),
+        (-98765.4321, None),
+        (1e-7, None),
+        (2.5e15, None),
+        (1234567.891, "#,##0.00"),
+        (1234567.891, "#,##0"),
+        (0.4567, "0%"),
+        (0.4567, "0.00%"),
+        (1234.5, '#,##0.00 "zł"'),
+        (1234.5, "#,##0.00 €"),
+        (12345, "000000000"),
+        (1234.5678, "0.00E+00"),
+        (-1234.5, "#,##0.00;[Red]-#,##0.00"),
+        (True, None),
+        (False, None),
     ]
     dates = [
-        (datetime.date(2024, 9, 30), None), (datetime.datetime(2024, 9, 30, 13, 45, 12), None),
-        (datetime.date(2024, 9, 30), "dd.mm.yyyy"), (datetime.date(2024, 9, 30), "d mmmm yyyy"),
-        (datetime.date(2024, 9, 30), "dddd, d mmmm yyyy"), (datetime.date(2024, 9, 30), "yyyy-mm-dd"),
-        (datetime.date(2024, 9, 30), "mmmm yyyy"), (datetime.datetime(2024, 9, 30, 13, 45, 12), "dd.mm.yyyy hh:mm"),
-        (datetime.datetime(2024, 9, 30, 13, 45, 12), "yyyy-mm-dd\"T\"hh:mm:ss"),
+        (datetime.date(2024, 9, 30), None),
+        (datetime.datetime(2024, 9, 30, 13, 45, 12), None),
+        (datetime.date(2024, 9, 30), "dd.mm.yyyy"),
+        (datetime.date(2024, 9, 30), "d mmmm yyyy"),
+        (datetime.date(2024, 9, 30), "dddd, d mmmm yyyy"),
+        (datetime.date(2024, 9, 30), "yyyy-mm-dd"),
+        (datetime.date(2024, 9, 30), "mmmm yyyy"),
+        (datetime.datetime(2024, 9, 30, 13, 45, 12), "dd.mm.yyyy hh:mm"),
+        (datetime.datetime(2024, 9, 30, 13, 45, 12), 'yyyy-mm-dd"T"hh:mm:ss'),
         (datetime.datetime(2024, 9, 30, 13, 45, 12), "h:mm AM/PM"),
     ]
     cells = []
@@ -125,15 +167,17 @@ def measure_corpus():
     widths, texts = _autofit([(value, style) for value, style, _ in cells])
     records = []
     for (value, style, kind), width, text in zip(cells, widths, texts):
-        records.append({
-            "kind": kind,
-            "value": value.isoformat() if isinstance(value, (datetime.date, datetime.datetime)) else value,
-            "python_type": type(value).__name__,
-            "number_format": style.number_format if style is not None else None,
-            "bold": bool(style is not None and style.bold),
-            "excel_width": width,
-            "excel_text": text,
-        })
+        records.append(
+            {
+                "kind": kind,
+                "value": value.isoformat() if isinstance(value, (datetime.date, datetime.datetime)) else value,
+                "python_type": type(value).__name__,
+                "number_format": style.number_format if style is not None else None,
+                "bold": bool(style is not None and style.bold),
+                "excel_width": width,
+                "excel_text": text,
+            }
+        )
     return records
 
 

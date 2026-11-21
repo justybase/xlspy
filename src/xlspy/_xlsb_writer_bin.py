@@ -1,4 +1,5 @@
 """XlsbWriter worksheet record stream for one sheet."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -41,7 +42,14 @@ from ._xlsb_slicers import (
 from ._xlsb_sparklines import sparklines_bin
 from .printing import PrintSettings
 from ._writer_common import FilterData
-from ._xlsb_writer_consts import _BRT_BEGIN_MERGE_CELLS, _BRT_DRAWING, _BRT_END_MERGE_CELLS, _BRT_HLINK, _BRT_MERGE_CELL, _hlink_payload
+from ._xlsb_writer_consts import (
+    _BRT_BEGIN_MERGE_CELLS,
+    _BRT_DRAWING,
+    _BRT_END_MERGE_CELLS,
+    _BRT_HLINK,
+    _BRT_MERGE_CELL,
+    _hlink_payload,
+)
 from ._xlsb_writer_host import _XlsbWriterHost
 from ._xlsb_formulas import ArrayValue, formula_cell
 from ._xlsb_ignored_errors import ignored_errors_bin
@@ -63,7 +71,13 @@ _SPOOL_MAX_BYTES = 1 << 20
 
 # Cells the native encoders' hook leaves to the Python encoder.
 _XLSB_PYTHON_CELLS = (
-    Formula, ArrayFormula, DataTableFormula, Hyperlink, CellRichText, ArrayValue, datetime.date,
+    Formula,
+    ArrayFormula,
+    DataTableFormula,
+    Hyperlink,
+    CellRichText,
+    ArrayValue,
+    datetime.date,
 )
 
 
@@ -108,8 +122,8 @@ class _UsedRange:
         if self.first_row < 0:
             return bytes(16)
         if self.first_col < 0:
-            return struct.pack('<IIII', self.first_row, self.last_row, 0, 0)
-        return struct.pack('<IIII', self.first_row, self.last_row, self.first_col, self.last_col)
+            return struct.pack("<IIII", self.first_row, self.last_row, 0, 0)
+        return struct.pack("<IIII", self.first_row, self.last_row, self.first_col, self.last_col)
 
 
 class _SheetSpool:
@@ -137,7 +151,8 @@ class _SheetSpool:
             if self._zf.threaded_deflate():
                 self._compressed = tempfile.SpooledTemporaryFile(max_size=_SPOOL_MAX_BYTES)
                 self._segment = _zip_threads.DeflateSegment(
-                    self._zf.deflate_pool(), self._zf.compresslevel, self._compressed)
+                    self._zf.deflate_pool(), self._zf.compresslevel, self._compressed
+                )
         self._raw.write(data)
         if self._segment is not None:
             self._segment.write(data)
@@ -172,9 +187,9 @@ class _SheetSpool:
 
 def _set_dimension(head: bytearray, dimension: bytes) -> None:
     """Write the BrtWsDim payload into the sheet head (see _WS_DIM_OFFSET)."""
-    if head[_WS_DIM_OFFSET - 3:_WS_DIM_OFFSET] != _WS_DIM_HEADER:
+    if head[_WS_DIM_OFFSET - 3 : _WS_DIM_OFFSET] != _WS_DIM_HEADER:
         raise RuntimeError("internal error: BrtWsDim is not at its template offset in the sheet head")
-    head[_WS_DIM_OFFSET:_WS_DIM_OFFSET + 16] = dimension
+    head[_WS_DIM_OFFSET : _WS_DIM_OFFSET + 16] = dimension
 
 
 def _flush(buffer: io.BytesIO, spool: _SheetSpool) -> None:
@@ -192,23 +207,43 @@ class _XlsbBinMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
     def _write_worksheet_bin(
-        self, part_name: str, worksheet_data: Iterable[list[Any]],
-        worksheet_index: int, *, style_ranges: Any = (), header_style: Style | None = None,
-        merge_refs: Any = (), widths: Any = None, autofit: tuple[int | None, float] = (1000, 0.0),
-        hidden_cols: Any = frozenset(), heights: Any = None,
-        hidden_row_set: Any = frozenset(), freeze_panes: str | None = None,
-        auto_filter: bool | None = None, auto_filter_ref: str | None = None,
+        self,
+        part_name: str,
+        worksheet_data: Iterable[list[Any]],
+        worksheet_index: int,
+        *,
+        style_ranges: Any = (),
+        header_style: Style | None = None,
+        merge_refs: Any = (),
+        widths: Any = None,
+        autofit: tuple[int | None, float] = (1000, 0.0),
+        hidden_cols: Any = frozenset(),
+        heights: Any = None,
+        hidden_row_set: Any = frozenset(),
+        freeze_panes: str | None = None,
+        auto_filter: bool | None = None,
+        auto_filter_ref: str | None = None,
         sort_state: Any | None = None,
         drawing_rel: str | None = None,
         table_rel_ids: list[str] | None = None,
         cf_rules: list | None = None,
-        row_outline: Any = None, col_outline: Any = None,
-        sheet_protection: Any = None, comment_vml_rid: str | None = None, show_grid_lines: bool = True,
+        row_outline: Any = None,
+        col_outline: Any = None,
+        sheet_protection: Any = None,
+        comment_vml_rid: str | None = None,
+        show_grid_lines: bool = True,
         view: tuple[bool, bool, bool] = (True, True, False),
-        filter_cells: Any = (), header_rows: int = 1, tab_key: Any = None, zoom: int | None = None,
-        link_rids: dict | None = None, link_rid_start: int = 2,
-        print_spec: PrintSettings | None = None, validations: Any = (), sparklines: Any = (),
-        slicer_rel: str | None = None, table_bounds: frozenset = frozenset(),
+        filter_cells: Any = (),
+        header_rows: int = 1,
+        tab_key: Any = None,
+        zoom: int | None = None,
+        link_rids: dict | None = None,
+        link_rid_start: int = 2,
+        print_spec: PrintSettings | None = None,
+        validations: Any = (),
+        sparklines: Any = (),
+        slicer_rel: str | None = None,
+        table_bounds: frozenset = frozenset(),
         ignored_errors: Any = None,
     ) -> None:
         buffer = io.BytesIO()
@@ -223,8 +258,14 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 link_rids = {}
             sheet_name = self._worksheet_data[worksheet_index][0]
             self._write_sheet_head(
-                buffer, freeze_panes=freeze_panes, row_outline=row_outline, col_outline=col_outline,
-                show_grid_lines=show_grid_lines, view=view, tab_key=tab_key, zoom=zoom,
+                buffer,
+                freeze_panes=freeze_panes,
+                row_outline=row_outline,
+                col_outline=col_outline,
+                show_grid_lines=show_grid_lines,
+                view=view,
+                tab_key=tab_key,
+                zoom=zoom,
                 print_spec=print_spec,
             )
             # The head stays aside until the rows give its dimension and the
@@ -237,7 +278,8 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 button_rows.add(parse_cell_range(auto_filter_ref)[1])
             meter = ColumnWidthMeter(
                 lambda r, length: styles_for_row(r, length, style_ranges, header_style),
-                autofit_rows, button_rows,
+                autofit_rows,
+                button_rows,
             )
             measure_until = meter.limit
             fast_add, slow_rows = meter.fast_add, meter.slow_rows
@@ -330,8 +372,12 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     outline_level, outline_hidden = row_outline.state_at(row_idx)
                     outline_collapsed = row_outline.collapsed_at(row_idx)
                 if (
-                    len(row) == 0 and row_idx > array_end and not row_styles and not outline_level
-                    and not outline_collapsed and row_idx not in custom_rows
+                    len(row) == 0
+                    and row_idx > array_end
+                    and not row_styles
+                    and not outline_level
+                    and not outline_collapsed
+                    and row_idx not in custom_rows
                 ):
                     # An empty row with no height, flags or style needs no row record;
                     # XLSB rows carry their own index, so the gap is kept.
@@ -355,9 +401,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
                         first_cell += 1
                     if first_cell < cols_first:
                         cols_first = first_cell
-                if last_cell >= 0 or (
-                    row_idx in custom_rows or outline_level or outline_collapsed or outline_hidden
-                ):
+                if last_cell >= 0 or (row_idx in custom_rows or outline_level or outline_collapsed or outline_hidden):
                     # As in Excel, a row is used when it has cells or a row header
                     # that is not the default one (height, hidden, outline).
                     if rows_first < 0:
@@ -371,14 +415,18 @@ class _XlsbBinMixin(_XlsbWriterHost):
                         # styles of formatted cells in its own order.
                         try:
                             style_ids = _style_ids_for_row(
-                                row_styles, len(row), self._style_xf_map.__getitem__,
+                                row_styles,
+                                len(row),
+                                self._style_xf_map.__getitem__,
                                 row_style_ids_cache,
                             )
                         except KeyError:
                             use_native = False
                     else:
                         style_ids = _style_ids_for_row(
-                            row_styles, len(row), self._register_style,
+                            row_styles,
+                            len(row),
+                            self._register_style,
                             row_style_ids_cache,
                         )
                 if use_native:
@@ -388,19 +436,28 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     row_header = None
                     if row_idx in custom_rows or outline_level or outline_collapsed:
                         row_header = self._row_header_record(
-                            row_idx, max(len(row) - 1, 0),
+                            row_idx,
+                            max(len(row) - 1, 0),
                             self._row_height_twips(heights[row_idx]) if row_idx in heights else None,
                             row_idx in hidden_row_set or outline_hidden,
-                            outline_level, outline_collapsed,
+                            outline_level,
+                            outline_collapsed,
                         )
                     cell_data = None
                     if pending_links:
                         pending_links.clear()  # from a row that went to Python
                     if self._use_shared_strings:
                         c_result = encode_xlsb_row(
-                            row, self._shared_strings_dict, self._shared_strings,
-                            self._sst_unique_count, self._sst_all_count, row_idx,
-                            style_ids, fmt_xf, row_header, cell_hook,
+                            row,
+                            self._shared_strings_dict,
+                            self._shared_strings,
+                            self._sst_unique_count,
+                            self._sst_all_count,
+                            row_idx,
+                            style_ids,
+                            fmt_xf,
+                            row_header,
+                            cell_hook,
                         )
                         if c_result is not None:
                             cell_data, self._sst_unique_count, self._sst_all_count = c_result
@@ -416,12 +473,21 @@ class _XlsbBinMixin(_XlsbWriterHost):
 
                 height_twips = self._row_height_twips(heights[row_idx]) if row_idx in heights else None
                 self._write_python_row(
-                    buffer, row, row_idx, row_styles, height_twips=height_twips,
+                    buffer,
+                    row,
+                    row_idx,
+                    row_styles,
+                    height_twips=height_twips,
                     hidden=row_idx in hidden_row_set or outline_hidden,
-                    outline_level=outline_level, outline_collapsed=outline_collapsed,
-                    array_ranges=array_ranges, hyperlinks=hyperlinks, link_rids=link_rids,
-                    link_rid_start=link_rid_start, style_ranges=style_ranges,
-                    header_style=header_style, sheet_name=sheet_name,
+                    outline_level=outline_level,
+                    outline_collapsed=outline_collapsed,
+                    array_ranges=array_ranges,
+                    hyperlinks=hyperlinks,
+                    link_rids=link_rids,
+                    link_rid_start=link_rid_start,
+                    style_ranges=style_ranges,
+                    header_style=header_style,
+                    sheet_name=sheet_name,
                 )
                 if array_ranges:
                     array_end = max(r2 for _c1, _r1, _c2, r2 in array_ranges)
@@ -435,9 +501,17 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 used.add_cols(cols_first, cols_last)
             data_rows = row_idx + 1
             row_idx = self._write_rows_after_data(
-                buffer, spool, row_idx, last_written, array_ranges=array_ranges,
-                row_outline=row_outline, heights=heights, hidden_row_set=hidden_row_set,
-                style_ranges=style_ranges, header_style=header_style, sheet_name=sheet_name,
+                buffer,
+                spool,
+                row_idx,
+                last_written,
+                array_ranges=array_ranges,
+                row_outline=row_outline,
+                heights=heights,
+                hidden_row_set=hidden_row_set,
+                style_ranges=style_ranges,
+                header_style=header_style,
+                sheet_name=sheet_name,
                 used=used,
             )
             for c1, r1, c2, r2 in array_ranges:
@@ -446,26 +520,58 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 used.add_row(r2)
                 used.add_cols(c1, c2)
             self._write_sheet_tail(
-                buffer, row_idx, worksheet_index, stream_width, data_rows, sheet_protection=sheet_protection,
-                header_rows=header_rows, auto_filter=auto_filter, auto_filter_ref=auto_filter_ref,
+                buffer,
+                row_idx,
+                worksheet_index,
+                stream_width,
+                data_rows,
+                sheet_protection=sheet_protection,
+                header_rows=header_rows,
+                auto_filter=auto_filter,
+                auto_filter_ref=auto_filter_ref,
                 sort_state=sort_state,
-                table_bounds=table_bounds, merge_refs=merge_refs, cf_rules=cf_rules, validations=validations, hyperlinks=hyperlinks,
-                print_spec=print_spec, drawing_rel=drawing_rel, table_rel_ids=table_rel_ids,
-                comment_vml_rid=comment_vml_rid, sparklines=sparklines, slicer_rel=slicer_rel,
+                table_bounds=table_bounds,
+                merge_refs=merge_refs,
+                cf_rules=cf_rules,
+                validations=validations,
+                hyperlinks=hyperlinks,
+                print_spec=print_spec,
+                drawing_rel=drawing_rel,
+                table_rel_ids=table_rel_ids,
+                comment_vml_rid=comment_vml_rid,
+                sparklines=sparklines,
+                slicer_rel=slicer_rel,
                 ignored_errors=ignored_errors,
             )
             _set_dimension(head, used.payload())
             head += self._sheet_columns(
-                meter, autofit_padding, stream_width, data_rows, header_rows, auto_filter,
-                auto_filter_ref, filter_cells, widths, hidden_cols, col_outline,
+                meter,
+                autofit_padding,
+                stream_width,
+                data_rows,
+                header_rows,
+                auto_filter,
+                auto_filter_ref,
+                filter_cells,
+                widths,
+                hidden_cols,
+                col_outline,
             )
             spool.finish(bytes(head), buffer.getvalue())
         finally:
             spool.close()
 
     def _write_sheet_head(
-        self, buffer: io.BytesIO, *, freeze_panes: str | None, row_outline: Any, col_outline: Any,
-        show_grid_lines: bool, view: tuple[bool, bool, bool], tab_key: Any, zoom: int | None,
+        self,
+        buffer: io.BytesIO,
+        *,
+        freeze_panes: str | None,
+        row_outline: Any,
+        col_outline: Any,
+        show_grid_lines: bool,
+        view: tuple[bool, bool, bool],
+        tab_key: Any,
+        zoom: int | None,
         print_spec: PrintSettings | None,
     ) -> None:
         """Write the records before the column widths (sheet properties, view,
@@ -500,7 +606,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
         if zoom is not None:
             # wScale and wScaleNormal of BrtBeginWsView ([MS-XLSB] 2.4.304),
             # payload offsets 18 and 20.
-            scale = struct.pack('<HH', zoom, zoom)
+            scale = struct.pack("<HH", zoom, zoom)
             view_tail = view_tail[:17] + scale + view_tail[21:]
         buffer.write(view_tail)
 
@@ -508,10 +614,12 @@ class _XlsbBinMixin(_XlsbWriterHost):
 
         # The last two bytes of BrtWsFmtInfo are the maximum row and column
         # outline levels; the template holds zeros.
-        outline_levels = bytes((
-            row_outline.max_level if row_outline is not None else 0,
-            col_outline.max_level if col_outline is not None else 0,
-        ))
+        outline_levels = bytes(
+            (
+                row_outline.max_level if row_outline is not None else 0,
+                col_outline.max_level if col_outline is not None else 0,
+            )
+        )
         if freeze_panes is None:
             buffer.write(self._sheet1Bytes[84:157])
         else:
@@ -522,9 +630,18 @@ class _XlsbBinMixin(_XlsbWriterHost):
         buffer.write(outline_levels)
 
     def _sheet_columns(
-        self, meter: ColumnWidthMeter, padding: float, stream_width: int, data_rows: int,
-        header_rows: int, auto_filter: bool | None, auto_filter_ref: str | None, filter_cells: Any,
-        widths: Any, hidden_cols: Any, col_outline: Any,
+        self,
+        meter: ColumnWidthMeter,
+        padding: float,
+        stream_width: int,
+        data_rows: int,
+        header_rows: int,
+        auto_filter: bool | None,
+        auto_filter_ref: str | None,
+        filter_cells: Any,
+        widths: Any,
+        hidden_cols: Any,
+        col_outline: Any,
     ) -> bytes:
         """The column widths and BrtBeginSheetData, the end of the sheet head."""
         end_col = max(stream_width, 1)
@@ -538,7 +655,12 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 filter_cells = [*filter_cells, (header_rows - 1, 0, stream_width - 1)]
         buffer = io.BytesIO()
         self._write_cols_width(
-            buffer, 0, end_col, meter.widths(end_col, filter_cells, padding), widths, hidden_cols,
+            buffer,
+            0,
+            end_col,
+            meter.widths(end_col, filter_cells, padding),
+            widths,
+            hidden_cols,
             col_outline,
         )
         # Template offsets 159..177 hold BrtBeginSheetData plus the complete
@@ -547,10 +669,23 @@ class _XlsbBinMixin(_XlsbWriterHost):
         return buffer.getvalue()
 
     def _write_python_row(
-        self, buffer: io.BytesIO, row: Any, row_idx: int, row_styles: dict[int, Style], *,
-        height_twips: int | None, hidden: bool, outline_level: int, outline_collapsed: bool,
-        array_ranges: list[Any], hyperlinks: list[Any], link_rids: dict, link_rid_start: int,
-        style_ranges: Any, header_style: Style | None, sheet_name: str,
+        self,
+        buffer: io.BytesIO,
+        row: Any,
+        row_idx: int,
+        row_styles: dict[int, Style],
+        *,
+        height_twips: int | None,
+        hidden: bool,
+        outline_level: int,
+        outline_collapsed: bool,
+        array_ranges: list[Any],
+        hyperlinks: list[Any],
+        link_rids: dict,
+        link_rid_start: int,
+        style_ranges: Any,
+        header_style: Style | None,
+        sheet_name: str,
     ) -> None:
         """Write one row cell by cell: the path for rows the native encoder does not
         take (formulas, hyperlinks, rich text, array members, unregistered styles).
@@ -574,10 +709,16 @@ class _XlsbBinMixin(_XlsbWriterHost):
             row_styles = styles_for_row(row_idx, len(row), style_ranges, header_style)
 
         row_header_position = buffer.tell()
-        buffer.write(self._row_header_record(
-            row_idx, last_col, height_twips,
-            hidden, outline_level, outline_collapsed,
-        ))
+        buffer.write(
+            self._row_header_record(
+                row_idx,
+                last_col,
+                height_twips,
+                hidden,
+                outline_level,
+                outline_collapsed,
+            )
+        )
 
         row_cells = enumerate(row)
         for col_idx, cell in row_cells:
@@ -587,8 +728,8 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 cell_style = row_styles.get(col_idx)
                 if cell_style is not None:
                     xf_index = self._register_style(cell_style)
-                    buffer.write(b'\x01\x08')
-                    buffer.write(struct.pack('<II', col_idx, xf_index))
+                    buffer.write(b"\x01\x08")
+                    buffer.write(struct.pack("<II", col_idx, xf_index))
                 continue
 
             # (value, format) and (value, Style) cells: the overlay goes
@@ -619,18 +760,18 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     # format), so the following rows need not come here.
                     base_xf = self._register_style(cell_style)
                     xf_index = _xf_for_style_format(
-                        cell_style, overlay, self._register_style,
+                        cell_style,
+                        overlay,
+                        self._register_style,
                         self._style_format_xf,
                     )
-                    _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
-                                    base_xf, overlay, xf_index)
+                    _record_cell_xf(self._fmt_xf, self._fmt_xf_styles, base_xf, overlay, xf_index)
                 else:
                     if isinstance(overlay, str):
                         xf_index = self._register_format(overlay)
                     else:
                         xf_index = self._register_style(overlay)
-                    _record_cell_xf(self._fmt_xf, self._fmt_xf_styles,
-                                    None, overlay, xf_index)
+                    _record_cell_xf(self._fmt_xf, self._fmt_xf_styles, None, overlay, xf_index)
                 has_custom_fmt = True
             elif cell_style is not None:
                 xf_index = self._register_style(cell_style)
@@ -644,63 +785,102 @@ class _XlsbBinMixin(_XlsbWriterHost):
             if cell is None:
                 # (None, format) or (None, Style): a formatted cell without a
                 # value, written like a blank with a range style (BrtCellBlank).
-                buffer.write(b'\x01\x08')
-                buffer.write(struct.pack('<II', col_idx, xf_index))
+                buffer.write(b"\x01\x08")
+                buffer.write(struct.pack("<II", col_idx, xf_index))
             elif isinstance(cell, str):
                 if has_custom_fmt:
-                    self._write_str(buffer, cell, shared_strings_dict, shared_strings_append, row_idx, col_idx, xf_index)
+                    self._write_str(
+                        buffer, cell, shared_strings_dict, shared_strings_append, row_idx, col_idx, xf_index
+                    )
                 else:
                     self._write_str(buffer, cell, shared_strings_dict, shared_strings_append, row_idx, col_idx)
             elif isinstance(cell, bool):
                 style_ref = xf_index if has_custom_fmt else 0
-                buffer.write(b'\x04\x09')
-                buffer.write(struct.pack('<IIB', col_idx, style_ref, 1 if cell else 0))
+                buffer.write(b"\x04\x09")
+                buffer.write(struct.pack("<IIB", col_idx, style_ref, 1 if cell else 0))
             elif isinstance(cell, int):
                 style_ref = xf_index if has_custom_fmt else 0
                 if -536870912 <= cell <= 536870911:
                     rk_val = (cell << 2) | 0b10
-                    buffer.write(b'\x02\x0C')
-                    buffer.write(struct.pack('<IIi', col_idx, style_ref, rk_val))
+                    buffer.write(b"\x02\x0c")
+                    buffer.write(struct.pack("<IIi", col_idx, style_ref, rk_val))
                 else:
                     try:
                         number = float(cell)
                     except OverflowError:
                         # Past the float range: the digits, as text (as the native encoder writes them).
-                        self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx,
-                                        col_idx, xf_index if has_custom_fmt else None)
+                        self._write_str(
+                            buffer,
+                            str(cell),
+                            shared_strings_dict,
+                            shared_strings_append,
+                            row_idx,
+                            col_idx,
+                            xf_index if has_custom_fmt else None,
+                        )
                     else:
-                        buffer.write(b'\x05\x10')
-                        buffer.write(struct.pack('<IId', col_idx, style_ref, number))
+                        buffer.write(b"\x05\x10")
+                        buffer.write(struct.pack("<IId", col_idx, style_ref, number))
             elif isinstance(cell, (float, Decimal)):
                 if not math.isfinite(float(cell)):
                     raise ValueError("numeric cell values must be finite")
                 style_ref = xf_index if has_custom_fmt else 0
-                buffer.write(b'\x05\x10')
-                buffer.write(struct.pack('<IId', col_idx, style_ref, float(cell)))
+                buffer.write(b"\x05\x10")
+                buffer.write(struct.pack("<IId", col_idx, style_ref, float(cell)))
             elif isinstance(cell, datetime.datetime):
                 if cell.year < 1900 or cell.year > 9999:
-                    self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx,
-                                    xf_index if has_custom_fmt else None)
+                    self._write_str(
+                        buffer,
+                        str(cell),
+                        shared_strings_dict,
+                        shared_strings_append,
+                        row_idx,
+                        col_idx,
+                        xf_index if has_custom_fmt else None,
+                    )
                 else:
                     excel_date = datetime_to_serial(cell)
-                    style_ref = 1 if not has_custom_fmt else _date_cell_xf(
-                        self._fmt_xf, self._xf_styles, self._register_style,
-                        xf_index, DEFAULT_DATETIME_FORMAT, True,
+                    style_ref = (
+                        1
+                        if not has_custom_fmt
+                        else _date_cell_xf(
+                            self._fmt_xf,
+                            self._xf_styles,
+                            self._register_style,
+                            xf_index,
+                            DEFAULT_DATETIME_FORMAT,
+                            True,
+                        )
                     )
-                    buffer.write(b'\x05\x10')
-                    buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
+                    buffer.write(b"\x05\x10")
+                    buffer.write(struct.pack("<IId", col_idx, style_ref, excel_date))
             elif isinstance(cell, datetime.date):
                 if cell.year < 1900 or cell.year > 9999:
-                    self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx,
-                                    xf_index if has_custom_fmt else None)
+                    self._write_str(
+                        buffer,
+                        str(cell),
+                        shared_strings_dict,
+                        shared_strings_append,
+                        row_idx,
+                        col_idx,
+                        xf_index if has_custom_fmt else None,
+                    )
                 else:
                     excel_date = datetime_to_serial(cell)
-                    style_ref = 2 if not has_custom_fmt else _date_cell_xf(
-                        self._fmt_xf, self._xf_styles, self._register_style,
-                        xf_index, DEFAULT_DATE_FORMAT, False,
+                    style_ref = (
+                        2
+                        if not has_custom_fmt
+                        else _date_cell_xf(
+                            self._fmt_xf,
+                            self._xf_styles,
+                            self._register_style,
+                            xf_index,
+                            DEFAULT_DATE_FORMAT,
+                            False,
+                        )
                     )
-                    buffer.write(b'\x05\x10')
-                    buffer.write(struct.pack('<IId', col_idx, style_ref, excel_date))
+                    buffer.write(b"\x05\x10")
+                    buffer.write(struct.pack("<IId", col_idx, style_ref, excel_date))
             else:
                 # The native encoder hands rows with other objects to this path.
                 if isinstance(cell, ArrayFormula):
@@ -714,9 +894,17 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     formula = replace(cell, array_ref=cell.spill_ref, spill_ref=None) if spill else cell
                     if spill:
                         self._has_dynamic = True
-                        buffer.write(build_record(0x31, struct.pack('<I', 1)))
-                    buffer.write(formula_cell(formula, col_idx, xf_index if has_custom_fmt else 0,
-                                              self._formula_context(), sheet=sheet_name, row=row_idx))
+                        buffer.write(build_record(0x31, struct.pack("<I", 1)))
+                    buffer.write(
+                        formula_cell(
+                            formula,
+                            col_idx,
+                            xf_index if has_custom_fmt else 0,
+                            self._formula_context(),
+                            sheet=sheet_name,
+                            row=row_idx,
+                        )
+                    )
                     if formula.array_ref is not None:
                         bounds = parse_cell_range(formula.array_ref)
                         c1, r1, c2, r2 = bounds
@@ -726,7 +914,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
                         if c2 > last_col:
                             position = buffer.tell()
                             buffer.seek(row_header_position + 2 + 21)
-                            buffer.write(struct.pack('<I', c2))
+                            buffer.write(struct.pack("<I", c2))
                             buffer.seek(position)
                             last_col = c2
                         for follower_col in range(c1 + 1, c2 + 1):
@@ -736,26 +924,66 @@ class _XlsbBinMixin(_XlsbWriterHost):
                                 raise ValueError("overlapping array formulas")
                             follower_style = row_styles.get(follower_col)
                             style = self._register_style(follower_style) if follower_style is not None else 0
-                            buffer.write(formula_cell(ArrayValue(r1, c1, cache), follower_col, style,
-                                                      self._formula_context(), sheet=sheet_name, row=row_idx))
+                            buffer.write(
+                                formula_cell(
+                                    ArrayValue(r1, c1, cache),
+                                    follower_col,
+                                    style,
+                                    self._formula_context(),
+                                    sheet=sheet_name,
+                                    row=row_idx,
+                                )
+                            )
                     continue
                 if array_ranges:
                     if isinstance(cell, ArrayValue):
-                        buffer.write(formula_cell(cell, col_idx, xf_index if has_custom_fmt else 0,
-                                                  self._formula_context(), sheet=sheet_name, row=row_idx))
+                        buffer.write(
+                            formula_cell(
+                                cell,
+                                col_idx,
+                                xf_index if has_custom_fmt else 0,
+                                self._formula_context(),
+                                sheet=sheet_name,
+                                row=row_idx,
+                            )
+                        )
                         continue
                 if isinstance(cell, CellRichText):
-                    self._write_rich_str(buffer, cell, shared_strings_dict, shared_strings_append,
-                                         row_idx, col_idx, xf_index if has_custom_fmt else None)
+                    self._write_rich_str(
+                        buffer,
+                        cell,
+                        shared_strings_dict,
+                        shared_strings_append,
+                        row_idx,
+                        col_idx,
+                        xf_index if has_custom_fmt else None,
+                    )
                     continue
-                self._write_str(buffer, str(cell), shared_strings_dict, shared_strings_append, row_idx, col_idx,
-                                xf_index if has_custom_fmt else None)
-
+                self._write_str(
+                    buffer,
+                    str(cell),
+                    shared_strings_dict,
+                    shared_strings_append,
+                    row_idx,
+                    col_idx,
+                    xf_index if has_custom_fmt else None,
+                )
 
     def _write_rows_after_data(
-        self, buffer: io.BytesIO, spool: _SheetSpool, row_idx: int, last_written: int, *,
-        array_ranges: list[Any], row_outline: Any, heights: dict, hidden_row_set: Any,
-        style_ranges: Any, header_style: Style | None, sheet_name: str, used: _UsedRange,
+        self,
+        buffer: io.BytesIO,
+        spool: _SheetSpool,
+        row_idx: int,
+        last_written: int,
+        *,
+        array_ranges: list[Any],
+        row_outline: Any,
+        heights: dict,
+        hidden_row_set: Any,
+        style_ranges: Any,
+        header_style: Style | None,
+        sheet_name: str,
+        used: _UsedRange,
     ) -> int:
         """Write the row records that follow the last data row: skipped empty rows at
         the end, the rows of array formulas that reach past the data, and grouped
@@ -777,18 +1005,25 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 else:
                     extra_level, extra_hidden = row_outline.state_at(extra_row)
                     extra_collapsed = row_outline.collapsed_at(extra_row)
-                buffer.write(self._row_header_record(
-                    extra_row, final_col,
-                    self._row_height_twips(heights[extra_row]) if extra_row in heights else None,
-                    extra_row in hidden_row_set or extra_hidden,
-                    extra_level, extra_collapsed,
-                ))
+                buffer.write(
+                    self._row_header_record(
+                        extra_row,
+                        final_col,
+                        self._row_height_twips(heights[extra_row]) if extra_row in heights else None,
+                        extra_row in hidden_row_set or extra_hidden,
+                        extra_level,
+                        extra_collapsed,
+                    )
+                )
                 extra_styles = styles_for_row(extra_row, final_col + 1, style_ranges, header_style)
                 for c1, r1, c2, r2 in active:
                     for col in range(c1, c2 + 1):
                         style = self._register_style(extra_styles[col]) if col in extra_styles else 0
-                        buffer.write(formula_cell(ArrayValue(r1, c1), col, style, self._formula_context(),
-                                                  sheet=sheet_name, row=extra_row))
+                        buffer.write(
+                            formula_cell(
+                                ArrayValue(r1, c1), col, style, self._formula_context(), sheet=sheet_name, row=extra_row
+                            )
+                        )
                 _flush_if_full(buffer, spool)
             row_idx = max(row_idx, final_row)
 
@@ -800,23 +1035,44 @@ class _XlsbBinMixin(_XlsbWriterHost):
                     height_twips = self._row_height_twips(heights[extra_idx])
                 outline_level, outline_hidden = row_outline.state_at(extra_idx)
                 used.add_row(extra_idx)
-                buffer.write(self._row_header_record(
-                    extra_idx, 0, height_twips,
-                    extra_idx in hidden_row_set or outline_hidden,
-                    outline_level, row_outline.collapsed_at(extra_idx),
-                ))
+                buffer.write(
+                    self._row_header_record(
+                        extra_idx,
+                        0,
+                        height_twips,
+                        extra_idx in hidden_row_set or outline_hidden,
+                        outline_level,
+                        row_outline.collapsed_at(extra_idx),
+                    )
+                )
                 _flush_if_full(buffer, spool)
 
         return row_idx
 
     def _write_sheet_tail(
-        self, buffer: io.BytesIO, row_idx: int, worksheet_index: int, stream_width: int,
-        data_rows: int, *,
-        sheet_protection: Any, header_rows: int, auto_filter: bool | None, auto_filter_ref: str | None,
+        self,
+        buffer: io.BytesIO,
+        row_idx: int,
+        worksheet_index: int,
+        stream_width: int,
+        data_rows: int,
+        *,
+        sheet_protection: Any,
+        header_rows: int,
+        auto_filter: bool | None,
+        auto_filter_ref: str | None,
         sort_state: Any | None = None,
-        table_bounds: frozenset, merge_refs: Any, cf_rules: list | None, validations: Any, hyperlinks: list[Any],
-        print_spec: PrintSettings | None, drawing_rel: str | None, table_rel_ids: list[str] | None,
-        comment_vml_rid: Any, sparklines: Any, slicer_rel: str | None,
+        table_bounds: frozenset,
+        merge_refs: Any,
+        cf_rules: list | None,
+        validations: Any,
+        hyperlinks: list[Any],
+        print_spec: PrintSettings | None,
+        drawing_rel: str | None,
+        table_rel_ids: list[str] | None,
+        comment_vml_rid: Any,
+        sparklines: Any,
+        slicer_rel: str | None,
         ignored_errors: Any = None,
     ) -> None:
         """Write the records after the rows: protection, auto filter, merged cells,
@@ -825,9 +1081,13 @@ class _XlsbBinMixin(_XlsbWriterHost):
         if sheet_protection is None:
             buffer.write(self._sheet1Bytes[218:290])
         else:
-            buffer.write(replace_records(self._sheet1Bytes[218:290], {0x217}, sheet_protection_bin(sheet_protection), before=(0x217,)))
+            buffer.write(
+                replace_records(
+                    self._sheet1Bytes[218:290], {0x217}, sheet_protection_bin(sheet_protection), before=(0x217,)
+                )
+            )
 
-        last_row_idx = row_idx if row_idx > -1 else 0 
+        last_row_idx = row_idx if row_idx > -1 else 0
 
         # The same rule as the XLSX writer: an explicit range always; else a filter
         # when data follows the header, its buttons on the last header row, over
@@ -847,33 +1107,39 @@ class _XlsbBinMixin(_XlsbWriterHost):
         if filter_range is not None:
             filter_first_col, filter_first_row, filter_last_col, filter_last_row = filter_range
             buffer.write(self._autoFilterStartBytes)
-            buffer.write(struct.pack('<I', filter_first_row))
-            buffer.write(struct.pack('<I', filter_last_row))
-            buffer.write(struct.pack('<I', filter_first_col))
-            buffer.write(struct.pack('<I', filter_last_col))
+            buffer.write(struct.pack("<I", filter_first_row))
+            buffer.write(struct.pack("<I", filter_last_row))
+            buffer.write(struct.pack("<I", filter_first_col))
+            buffer.write(struct.pack("<I", filter_last_col))
             if sort_state is not None:
                 buffer.write(sort_state_records(range_ref(filter_range), sort_state))
             buffer.write(self._autoFilterEndBytes)
             self._filtered_data_list.append(
                 FilterData(
-                sheet_index=worksheet_index,
-                start_column=filter_first_col,
-                end_column=filter_last_col,
-                start_row=filter_first_row,
-                end_row=filter_last_row
-            ))
+                    sheet_index=worksheet_index,
+                    start_column=filter_first_col,
+                    end_column=filter_last_col,
+                    start_row=filter_first_row,
+                    end_row=filter_last_row,
+                )
+            )
 
         if merge_refs:
-            buffer.write(build_record(
-                _BRT_BEGIN_MERGE_CELLS, struct.pack('<I', len(merge_refs)),
-            ))
+            buffer.write(
+                build_record(
+                    _BRT_BEGIN_MERGE_CELLS,
+                    struct.pack("<I", len(merge_refs)),
+                )
+            )
             for ref in merge_refs:
                 first_col, first_row, last_col, last_row = parse_cell_range(ref)
-                buffer.write(build_record(
-                    _BRT_MERGE_CELL,
-                    struct.pack('<IIII', first_row, last_row, first_col, last_col),
-                ))
-            buffer.write(build_record(_BRT_END_MERGE_CELLS, b''))
+                buffer.write(
+                    build_record(
+                        _BRT_MERGE_CELL,
+                        struct.pack("<IIII", first_row, last_row, first_col, last_col),
+                    )
+                )
+            buffer.write(build_record(_BRT_END_MERGE_CELLS, b""))
 
         if cf_rules:
             buffer.write(self._cf_bin_grouped(cf_rules))
@@ -893,11 +1159,13 @@ class _XlsbBinMixin(_XlsbWriterHost):
         else:
             buffer.write(print_records(print_spec))
         if drawing_rel is not None:
-            rel_encoded = drawing_rel.encode('utf-16-le')
-            buffer.write(build_record(
-                _BRT_DRAWING,
-                struct.pack('<I', len(drawing_rel)) + rel_encoded,
-            ))
+            rel_encoded = drawing_rel.encode("utf-16-le")
+            buffer.write(
+                build_record(
+                    _BRT_DRAWING,
+                    struct.pack("<I", len(drawing_rel)) + rel_encoded,
+                )
+            )
         if table_rel_ids:
             if comment_vml_rid is not None:
                 buffer.write(build_record(0x227, wide_string(comment_vml_rid)))
@@ -906,8 +1174,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
             buffer.write(build_record(0x227, wide_string(comment_vml_rid)))
         if sparklines:
             # Future-record blocks follow LISTPARTS, before the trailing uid block and BrtEndSheet.
-            buffer.write(sparklines_bin(sparklines, self._worksheet_data[worksheet_index][0],
-                                        self._formula_context()))
+            buffer.write(sparklines_bin(sparklines, self._worksheet_data[worksheet_index][0], self._formula_context()))
         if slicer_rel is not None:
             buffer.write(sheet_slicers_bin(slicer_rel))
         # Excel writes the ignored-error block just before the trailing FRT block.

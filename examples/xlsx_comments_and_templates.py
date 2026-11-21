@@ -7,8 +7,18 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from xlspy import (  # noqa: E402
-    Comment, DefinedName, ExcelReader, Formula, Protection, SheetProtection,
-    Style, WorkbookProtection, XlsxUpdater, XlsxWriter, XlsbUpdater, XlsbWriter,
+    Comment,
+    DefinedName,
+    ExcelReader,
+    Formula,
+    Protection,
+    SheetProtection,
+    Style,
+    WorkbookProtection,
+    XlsxUpdater,
+    XlsxWriter,
+    XlsbUpdater,
+    XlsbWriter,
 )
 
 

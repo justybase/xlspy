@@ -17,10 +17,7 @@ FIXTURE = Path(__file__).parent / "data" / "xlsb" / "sorted_autofilter.xlsb"
 def _records(path):
     with zipfile.ZipFile(path) as archive:
         data = archive.read("xl/worksheets/sheet1.bin")
-    return [
-        (record.record_id, data[record.data_start:record.data_end])
-        for record in iter_records(data)
-    ]
+    return [(record.record_id, data[record.data_start : record.data_end]) for record in iter_records(data)]
 
 
 def _sort_flags(path):
@@ -31,9 +28,7 @@ def _sort_flags(path):
 
 
 def _rewrite_sheet_part(source, target, change):
-    with zipfile.ZipFile(source) as src, zipfile.ZipFile(
-        target, "w", zipfile.ZIP_DEFLATED
-    ) as dst:
+    with zipfile.ZipFile(source) as src, zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as dst:
         for item in src.infolist():
             data = src.read(item.filename)
             if item.filename == "xl/worksheets/sheet1.bin":
@@ -48,8 +43,8 @@ def test_sort_cond14_is_read_as_an_icon_sort(tmp_path):
         data = bytearray(data)
         for record in iter_records(bytes(data)):
             if record.record_id == 0x214:
-                data[record.header_start:record.header_start + 2] = b"\x80\x09"
-                data[record.data_start:record.data_start + 2] = struct.pack("<H", 0x07)
+                data[record.header_start : record.header_start + 2] = b"\x80\x09"
+                data[record.data_start : record.data_start + 2] = struct.pack("<H", 0x07)
                 break
         return bytes(data)
 
@@ -142,12 +137,10 @@ def test_sort_condition_details_are_saved(tmp_path):
         book.close()
 
     payload = dict(_records(target))[0x214]
-    _flags, _r1, _r2, _c1, _c2, dxf_id, _second = struct.unpack_from(
-        "<HIIIIII", payload
-    )
+    _flags, _r1, _r2, _c1, _c2, dxf_id, _second = struct.unpack_from("<HIIIIII", payload)
     length = struct.unpack_from("<I", payload, 26)[0]
     assert dxf_id == 7
-    assert payload[30:30 + 2 * length].decode("utf-16-le") == "alpha,beta"
+    assert payload[30 : 30 + 2 * length].decode("utf-16-le") == "alpha,beta"
     reopened = load_workbook(target)
     try:
         condition = reopened["Data"].auto_filter.sortState.sortCondition[0]
@@ -226,9 +219,7 @@ def test_custom_list_with_quotes_and_markup_round_trips(tmp_path, suffix):
             from xml.etree import ElementTree as ET
 
             root = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
-        condition = root.find(
-            ".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sortCondition"
-        )
+        condition = root.find(".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sortCondition")
         assert condition is not None
         assert condition.get("customList") == 'a"b<&'
 

@@ -5,6 +5,7 @@ LibreOffice kept the sheets but dropped every cell). Each workbook below is conv
 headless LibreOffice in one run, and the result is read back with openpyxl, an independent reader.
 Skipped when LibreOffice (soffice) is not installed.
 """
+
 import datetime
 import os
 import shutil
@@ -13,8 +14,21 @@ import subprocess
 import pytest
 
 from xlspy import (
-    CellRichText, Comment, DataValidation, DefinedName, ExcelTable, Font, Formula, Group, Hyperlink,
-    InlineFont, Style, TextBlock, XlsbUpdater, XlsbWriter, load_workbook,
+    CellRichText,
+    Comment,
+    DataValidation,
+    DefinedName,
+    ExcelTable,
+    Font,
+    Formula,
+    Group,
+    Hyperlink,
+    InlineFont,
+    Style,
+    TextBlock,
+    XlsbUpdater,
+    XlsbWriter,
+    load_workbook,
 )
 from xlspy.styles import Border, CellIsRule, DifferentialStyle, Side
 
@@ -38,8 +52,18 @@ def _find_soffice():
 SOFFICE = _find_soffice()
 
 TYPES_ROWS = [
-    ["text", 42, 3.25, True, datetime.date(2026, 11, 2), datetime.datetime(2026, 11, 2, 13, 45, 30),
-     -7, 10**12, "zażółć ✓", False],
+    [
+        "text",
+        42,
+        3.25,
+        True,
+        datetime.date(2026, 11, 2),
+        datetime.datetime(2026, 11, 2, 13, 45, 30),
+        -7,
+        10**12,
+        "zażółć ✓",
+        False,
+    ],
     [(0.125, "0.00%"), (1234.5, "#,##0.00"), "", None, 0, -0.5],
 ]
 BIG_ROWS = 30000
@@ -51,22 +75,37 @@ def _rich_workbook(path, *, shared_strings=True):
         writer.add_sheet("Types")
         writer.write_sheet(TYPES_ROWS)
         writer.add_sheet("Formulas")
-        writer.write_sheet([
-            [2, 3, Formula("A1*B1", 6), Formula("SUM(A1:B1)", 5), Formula('IF(A1>1,"big","small")', "big"),
-             Formula("Types!B1+1", 43), Formula("1/0", "#DIV/0!"), Formula("MyRange", 42)],
-            # The second value is the cached result of the array's other cell.
-            [Formula("A1:B1*2", 4, array_ref="A2:B2"), 6],
-        ])
+        writer.write_sheet(
+            [
+                [
+                    2,
+                    3,
+                    Formula("A1*B1", 6),
+                    Formula("SUM(A1:B1)", 5),
+                    Formula('IF(A1>1,"big","small")', "big"),
+                    Formula("Types!B1+1", 43),
+                    Formula("1/0", "#DIV/0!"),
+                    Formula("MyRange", 42),
+                ],
+                # The second value is the cached result of the array's other cell.
+                [Formula("A1:B1*2", 4, array_ref="A2:B2"), 6],
+            ]
+        )
         writer.add_sheet("Layout")
         writer.write_sheet(
             [["a", "b", "c", "d"], [1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], ["merged", None, 13, 14]],
-            column_widths={"A": 25, "D": 8}, hidden_columns=["C"], row_heights={2: 30}, hidden_rows=[3],
-            merges=["A5:B5"], freeze_panes="B2",
+            column_widths={"A": 25, "D": 8},
+            hidden_columns=["C"],
+            row_heights={2: 30},
+            hidden_rows=[3],
+            merges=["A5:B5"],
+            freeze_panes="B2",
         )
         writer.add_sheet("Outline")
         # Group indexes are 0-based: rows 4-6 and column C.
-        writer.write_sheet([[f"r{i}", i, i * 2] for i in range(8)],
-                           row_groups=[Group(3, 5)], column_groups=[Group(2, 2)])
+        writer.write_sheet(
+            [[f"r{i}", i, i * 2] for i in range(8)], row_groups=[Group(3, 5)], column_groups=[Group(2, 2)]
+        )
         writer.add_sheet("Sparse")
         writer.write_sheet([[], [None, None], [None, None, "C3"], [], [None, None, None, None, 5]])
         writer.add_sheet("Styles")
@@ -74,21 +113,32 @@ def _rich_workbook(path, *, shared_strings=True):
             # G1 and H1: formatted cells without a value.
             [["bold", "fill", "red", "border", "center", 0.5, (None, "0.00"), (None, Style(bold=True))]],
             styles={
-                "A1": Style(bold=True, italic=True), "B1": Style(fill="#FFFF00"), "C1": Style(font_color="#FF0000"),
+                "A1": Style(bold=True, italic=True),
+                "B1": Style(fill="#FFFF00"),
+                "C1": Style(font_color="#FF0000"),
                 "D1": Style(border=Border(bottom=Side("thin", "FF000000"))),
-                "E1": Style(horizontal="center", wrap=True), "F1": Style(number_format="0.0%", bold=True),
+                "E1": Style(horizontal="center", wrap=True),
+                "F1": Style(number_format="0.0%", bold=True),
             },
         )
         writer.add_sheet("Links")
-        writer.write_sheet([[Hyperlink("https://example.com/", "site"), Hyperlink("#Types!A1", "internal"),
-                             CellRichText(TextBlock(InlineFont(b=True), "bold "), "plain")]])
+        writer.write_sheet(
+            [
+                [
+                    Hyperlink("https://example.com/", "site"),
+                    Hyperlink("#Types!A1", "internal"),
+                    CellRichText(TextBlock(InlineFont(b=True), "bold "), "plain"),
+                ]
+            ]
+        )
         writer.add_sheet("Extras")
         writer.write_sheet(
             [["h1", "h2"], [1, "x"], [7, "y"]],
             comments={"A1": Comment("a note", "Tester")},
             data_validations=[DataValidation("list", "B2:B3", formula1='"x,y,z"')],
-            conditional_formats=[CellIsRule("A2:A3", "greaterThan", ["5"],
-                                            dxf=DifferentialStyle(font=Font(color="FF9C0006", bold=True)))],
+            conditional_formats=[
+                CellIsRule("A2:A3", "greaterThan", ["5"], dxf=DifferentialStyle(font=Font(color="FF9C0006", bold=True)))
+            ],
             tables=[ExcelTable("Tbl", "A1:B3")],
         )
         writer.add_sheet("View")
@@ -149,9 +199,20 @@ def calc(tmp_path_factory):
     # A private profile: a running LibreOffice would otherwise take the job and ignore --headless.
     profile = (root / "profile").resolve().as_uri()
     subprocess.run(
-        [SOFFICE, "--headless", "--norestore", f"-env:UserInstallation={profile}",
-         "--convert-to", "xlsx", "--outdir", str(outdir), *map(str, sources.values())],
-        check=True, capture_output=True, timeout=300,
+        [
+            SOFFICE,
+            "--headless",
+            "--norestore",
+            f"-env:UserInstallation={profile}",
+            "--convert-to",
+            "xlsx",
+            "--outdir",
+            str(outdir),
+            *map(str, sources.values()),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=300,
     )
     books = {}
     for name in sources:
@@ -176,8 +237,19 @@ def book(request, calc):
 
 def test_sheets_and_visibility(book):
     formulas, _ = book
-    assert formulas.sheetnames == ["Types", "Formulas", "Layout", "Outline", "Sparse", "Styles", "Links",
-                                   "Extras", "View", "Big", "Hidden"]
+    assert formulas.sheetnames == [
+        "Types",
+        "Formulas",
+        "Layout",
+        "Outline",
+        "Sparse",
+        "Styles",
+        "Links",
+        "Extras",
+        "View",
+        "Big",
+        "Hidden",
+    ]
     assert [sheet.sheet_state for sheet in formulas] == ["visible"] * 10 + ["hidden"]
 
 
@@ -189,8 +261,18 @@ def test_defined_name(book):
 def test_value_types(book):
     _, values = book
     first, second = _values(values["Types"])
-    assert first == ["text", 42, 3.25, True, datetime.datetime(2026, 11, 2), datetime.datetime(2026, 11, 2, 13, 45, 30),
-                     -7, 10**12, "zażółć ✓", False]
+    assert first == [
+        "text",
+        42,
+        3.25,
+        True,
+        datetime.datetime(2026, 11, 2),
+        datetime.datetime(2026, 11, 2, 13, 45, 30),
+        -7,
+        10**12,
+        "zażółć ✓",
+        False,
+    ]
     # An empty string cell reads back as no value in LibreOffice.
     assert second[:6] == [0.125, 1234.5, None, None, 0, -0.5]
 
@@ -206,9 +288,17 @@ def test_number_formats(book):
 def test_formulas_and_cached_values(book):
     formulas, values = book
     assert [cell.value for cell in formulas["Formulas"][1]][2:8] == [
-        "=A1*B1", "=SUM(A1:B1)", '=IF(A1>1,"big","small")', "=Types!B1+1", "=1/0", "=MyRange"]
-    assert _values(values["Formulas"]) == [[2, 3, 6, 5, "big", 43, "#DIV/0!", 42],
-                                           [4, 6, None, None, None, None, None, None]]
+        "=A1*B1",
+        "=SUM(A1:B1)",
+        '=IF(A1>1,"big","small")',
+        "=Types!B1+1",
+        "=1/0",
+        "=MyRange",
+    ]
+    assert _values(values["Formulas"]) == [
+        [2, 3, 6, 5, "big", 43, "#DIV/0!", 42],
+        [4, 6, None, None, None, None, None, None],
+    ]
     array = formulas["Formulas"]["A2"].value
     assert array.ref == "A2:B2" and array.text == "=A1:B1*2"
 
@@ -217,8 +307,13 @@ def test_layout(book):
     """Column widths and hidden columns are the column-info records of PR #1."""
     formulas, values = book
     sheet = formulas["Layout"]
-    assert _values(values["Layout"]) == [["a", "b", "c", "d"], [1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12],
-                                         ["merged", None, 13, 14]]
+    assert _values(values["Layout"]) == [
+        ["a", "b", "c", "d"],
+        [1, 2, 3, 4],
+        [5, 6, 7, 8],
+        [9, 10, 11, 12],
+        ["merged", None, 13, 14],
+    ]
     assert sheet.column_dimensions["A"].width == pytest.approx(25, abs=0.5)
     assert sheet.column_dimensions["C"].hidden
     assert not sheet.column_dimensions["B"].hidden
@@ -315,8 +410,14 @@ def test_libreoffice_reads_what_xlspy_reads(calc, name):
 def test_updater_output(calc):
     _, books = calc
     formulas, values = books["updated"]
-    assert _values(values["Data"]) == [["name", "value", None, None], ["a", 10, None, None],
-                                       ["b", 20, None, None], [None] * 4, [None] * 4, [None, None, None, "far"]]
+    assert _values(values["Data"]) == [
+        ["name", "value", None, None],
+        ["a", 10, None, None],
+        ["b", 20, None, None],
+        [None] * 4,
+        [None] * 4,
+        [None, None, None, "far"],
+    ]
     assert formulas["Data"].column_dimensions["A"].width == pytest.approx(20, abs=0.5)
     assert formulas["Data"].column_dimensions["C"].hidden
 

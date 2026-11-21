@@ -24,9 +24,7 @@ def test_a_formula_without_an_equals_sign_is_a_literal():
 
 
 def test_escaped_quotes_inside_a_sheet_name_stay_in_the_range():
-    assert _tokens("='My ''Sheet''!A1") == [
-        ("'My ''Sheet''!A1", Token.OPERAND, Token.RANGE)
-    ]
+    assert _tokens("='My ''Sheet''!A1") == [("'My ''Sheet''!A1", Token.OPERAND, Token.RANGE)]
 
 
 def test_an_unknown_error_code_is_a_range_operand():

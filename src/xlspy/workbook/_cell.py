@@ -43,7 +43,11 @@ _ILLEGAL_CHARACTERS = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
 # The objects openpyxl reports for a cell whose style sets nothing. They are
 # read-only views: assigning one still stores the object in the cell's style.
 _DEFAULT_BORDER = Border(
-    left=Side(), right=Side(), top=Side(), bottom=Side(), diagonal=Side(),
+    left=Side(),
+    right=Side(),
+    top=Side(),
+    bottom=Side(),
+    diagonal=Side(),
 )
 _DEFAULT_ALIGNMENT = Alignment()
 _DEFAULT_PROTECTION = Protection(locked=True, hidden=False)
@@ -56,9 +60,17 @@ class Cell:
     Get cells from the worksheet (``ws["A1"]``, ``Worksheet.cell``); they are not
     created directly.
     """
+
     __slots__ = (
-        "_sheet", "_row", "_column", "_value", "_data_type",
-        "_style_id", "_comment", "_hyperlink", "_formula",
+        "_sheet",
+        "_row",
+        "_column",
+        "_value",
+        "_data_type",
+        "_style_id",
+        "_comment",
+        "_hyperlink",
+        "_formula",
         "_named_style",
     )
 
@@ -177,8 +189,7 @@ class Cell:
         elif isinstance(value, _datetime.date) and self.number_format == "General":
             # The writers' defaults; a General date would show its serial.
             self.number_format = (
-                DEFAULT_DATETIME_FORMAT if isinstance(value, _datetime.datetime)
-                else DEFAULT_DATE_FORMAT
+                DEFAULT_DATETIME_FORMAT if isinstance(value, _datetime.datetime) else DEFAULT_DATE_FORMAT
             )
         self._mark_dirty()
 
@@ -305,8 +316,7 @@ class Cell:
     def font(self, value: Font | None) -> None:
         if value is not None and not isinstance(value, Font):
             raise TypeError("font must be a xlspy Font or None")
-        self._set_style(replace(self._style(), font=value, bold=None, italic=None,
-                                underline=None, font_color=None))
+        self._set_style(replace(self._style(), font=value, bold=None, italic=None, underline=None, font_color=None))
 
     @property
     def fill(self) -> str | PatternFill | GradientFill:
@@ -315,8 +325,12 @@ class Cell:
         A cell without a fill reports openpyxl's empty pattern fill.
         """
         fill = self._style().fill
-        if isinstance(fill, PatternFill) and fill.fill_type in (None, "none") \
-                and fill.start_color is None and fill.end_color is None:
+        if (
+            isinstance(fill, PatternFill)
+            and fill.fill_type in (None, "none")
+            and fill.start_color is None
+            and fill.end_color is None
+        ):
             return _DEFAULT_FILL
         return fill or _DEFAULT_FILL
 
@@ -346,8 +360,7 @@ class Cell:
     def alignment(self, value: Alignment | None) -> None:
         if value is not None and not isinstance(value, Alignment):
             raise TypeError("alignment must be a xlspy Alignment or None")
-        self._set_style(replace(self._style(), alignment=value,
-                                horizontal=None, vertical=None, wrap=None))
+        self._set_style(replace(self._style(), alignment=value, horizontal=None, vertical=None, wrap=None))
 
     @property
     def protection(self) -> Protection:
@@ -414,10 +427,12 @@ class Cell:
         key = (self._style_id, value)
         style_id = cache.get(key)
         if style_id is None:
-            style_id = cache[key] = styles.add(replace(
-                self._style(),
-                number_format=None if value == "General" else value,
-            ))
+            style_id = cache[key] = styles.add(
+                replace(
+                    self._style(),
+                    number_format=None if value == "General" else value,
+                )
+            )
         self._style_id = style_id
         workbook._styles_dirty = True
         self._sheet._dirty_styles.add(self.coordinate)
@@ -442,22 +457,22 @@ class Cell:
                     break
             if named is None:
                 raise UnsupportedFeatureError(
-                    "named styles are not implemented yet; "
-                    f"{value!r} is not defined, add it with add_named_style()"
+                    f"named styles are not implemented yet; {value!r} is not defined, add it with add_named_style()"
                 )
             if isinstance(named, NamedStyle):
                 current = self._style()
-                self._set_style(Style(
-                    font=named.font if named.font is not None else current.font,
-                    fill=named.fill if named.fill is not None else current.fill,
-                    border=named.border if named.border is not None else current.border,
-                    alignment=named.alignment if named.alignment is not None else current.alignment,
-                    protection=named.protection if named.protection is not None else current.protection,
-                    number_format=(
-                        named.number_format if named.number_format is not None
-                        else current.number_format
-                    ),
-                ))
+                self._set_style(
+                    Style(
+                        font=named.font if named.font is not None else current.font,
+                        fill=named.fill if named.fill is not None else current.fill,
+                        border=named.border if named.border is not None else current.border,
+                        alignment=named.alignment if named.alignment is not None else current.alignment,
+                        protection=named.protection if named.protection is not None else current.protection,
+                        number_format=(
+                            named.number_format if named.number_format is not None else current.number_format
+                        ),
+                    )
+                )
             self._named_style = value
             return
         if not isinstance(value, Style):
@@ -486,10 +501,21 @@ class Cell:
 
 
 # Slot descriptors, in the order the native loaders fill them (see rust/xlspy_core/src/model.rs).
-CELL_SLOTS = tuple(Cell.__dict__[name] for name in (
-    "_sheet", "_row", "_column", "_value", "_formula", "_data_type",
-    "_style_id", "_comment", "_hyperlink", "_named_style",
-))
+CELL_SLOTS = tuple(
+    Cell.__dict__[name]
+    for name in (
+        "_sheet",
+        "_row",
+        "_column",
+        "_value",
+        "_formula",
+        "_data_type",
+        "_style_id",
+        "_comment",
+        "_hyperlink",
+        "_named_style",
+    )
+)
 # The model's hot loops, or None: _append_new_row and workbook/_writer.py then do them.
 NATIVE_CELLS = None if _accel.ModelCells is None else _accel.ModelCells(Cell, CELL_SLOTS)
 

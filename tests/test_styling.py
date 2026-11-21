@@ -83,6 +83,7 @@ def test_xlsx_style_values_are_interpreted_by_openpyxl(tmp_path):
 @pytest.mark.parametrize("use_shared_strings", [True, False])
 def test_xlsx_c_encoder_applies_range_styles_to_cell_kinds(tmp_path, use_shared_strings):
     from xlspy._accel import HAVE_NATIVE
+
     if not HAVE_NATIVE:
         pytest.skip("requires the optional native encoder")
     openpyxl = pytest.importorskip("openpyxl")
@@ -95,7 +96,9 @@ def test_xlsx_c_encoder_applies_range_styles_to_cell_kinds(tmp_path, use_shared_
                 ["row", "value", 3.5, True, datetime.date(2024, 1, 2), None],
             ],
             header_style=Style(
-                fill="008000", font_color="FFFFFF", horizontal="center",
+                fill="008000",
+                font_color="FFFFFF",
+                horizontal="center",
             ),
             styles={
                 "B2:F2": Style(fill="FFFF00", horizontal="center"),
@@ -140,17 +143,19 @@ def test_xlsb_style_records_are_well_framed_and_blank_cells_keep_style(tmp_path)
     assert struct.unpack_from("<I", styles_bin, begin_fills.data_start)[0] == 4
     assert struct.unpack_from("<I", styles_bin, begin_cell_xfs.data_start)[0] == 7
     assert any(
-        record.record_id == 0x01
-        and struct.unpack_from("<I", sheet_bin, record.data_start + 4)[0] > 0
+        record.record_id == 0x01 and struct.unpack_from("<I", sheet_bin, record.data_start + 4)[0] > 0
         for record in sheet_records
     )
 
 
-@pytest.mark.parametrize("kwargs", [
-    {"header_style": {"fill": "008000"}},
-    {"styles": {"A0": Style(fill="008000")}},
-    {"styles": {"A1": {"fill": "008000"}}},
-])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"header_style": {"fill": "008000"}},
+        {"styles": {"A0": Style(fill="008000")}},
+        {"styles": {"A1": {"fill": "008000"}}},
+    ],
+)
 def test_style_api_rejects_invalid_input(tmp_path, kwargs):
     with XlsxWriter(tmp_path / "invalid.xlsx") as writer:
         writer.add_sheet("Data")
@@ -167,7 +172,7 @@ def test_style_validates_colors_and_a1_ranges():
 
 def _xlsb_payloads(styles_bin, record_id):
     return [
-        styles_bin[record.data_start:record.data_end]
+        styles_bin[record.data_start : record.data_end]
         for record in iter_records(styles_bin)
         if record.record_id == record_id
     ]
@@ -179,10 +184,9 @@ def _xlsb_cell_xfs(styles_bin):
     begin = next(record for record in records if record.record_id == 0x0269)
     end = next(record for record in records if record.record_id == 0x026A)
     return [
-        struct.unpack("<HHHHHBBBBH", styles_bin[record.data_start:record.data_end])
+        struct.unpack("<HHHHHBBBBH", styles_bin[record.data_start : record.data_end])
         for record in records
-        if record.record_id == 0x002F
-        and begin.data_end <= record.header_start < end.header_start
+        if record.record_id == 0x002F and begin.data_end <= record.header_start < end.header_start
     ]
 
 
@@ -231,9 +235,7 @@ def test_xlsb_structured_font_fill_and_border_records(tmp_path):
             color="FF0000",
             scheme="major",
         ),
-        fill=PatternFill(
-            fill_type="gray125", start_color="00FF00", end_color="0000FF"
-        ),
+        fill=PatternFill(fill_type="gray125", start_color="00FF00", end_color="0000FF"),
         border=Border(
             left=Side(style="thin", color="FF0000"),
             top=Side(style="double"),
@@ -248,10 +250,7 @@ def test_xlsb_structured_font_fill_and_border_records(tmp_path):
     with zipfile.ZipFile(path) as archive:
         styles_bin = archive.read("xl/styles.bin")
 
-    fonts = {
-        payload[25:].decode("utf-16-le"): payload
-        for payload in _xlsb_payloads(styles_bin, 0x002B)
-    }
+    fonts = {payload[25:].decode("utf-16-le"): payload for payload in _xlsb_payloads(styles_bin, 0x002B)}
     font = fonts["Arial"]
     height, flags, weight, baseline = struct.unpack_from("<HHHH", font, 0)
     assert (height, flags, weight, baseline) == (280, 0x0B, 700, 1)
@@ -299,9 +298,7 @@ def test_xlsb_gradient_fill_record(tmp_path):
     with zipfile.ZipFile(path) as archive:
         styles_bin = archive.read("xl/styles.bin")
     fills = _xlsb_payloads(styles_bin, 0x002D)
-    gradient = next(
-        payload for payload in fills if struct.unpack_from("<I", payload, 0)[0] == 0x28
-    )
+    gradient = next(payload for payload in fills if struct.unpack_from("<I", payload, 0)[0] == 0x28)
     gradient_type, degree = struct.unpack_from("<Id", gradient, 20)
     assert gradient_type == 0  # linear
     assert degree == 270.0  # BIFF12 angles run counter-clockwise
@@ -312,11 +309,14 @@ def test_xlsb_gradient_fill_record(tmp_path):
     assert struct.unpack_from("<d", gradient, 92)[0] == 1.0
 
 
-@pytest.mark.parametrize("style", [
-    Style(alignment=Alignment(relative_indent=1)),
-    Style(border=Border(vertical=Side(style="thin"))),
-    Style(border=Border(outline=False)),
-])
+@pytest.mark.parametrize(
+    "style",
+    [
+        Style(alignment=Alignment(relative_indent=1)),
+        Style(border=Border(vertical=Side(style="thin"))),
+        Style(border=Border(outline=False)),
+    ],
+)
 def test_xlsb_rejects_unrepresentable_style_properties(tmp_path, style):
     with XlsbWriter(tmp_path / "unsupported.xlsb") as writer:
         writer.add_sheet("Data")
@@ -401,9 +401,7 @@ def test_xlsb_number_formats_referenced_by_cell_xfs_are_defined(tmp_path):
     records = list(iter_records(styles_bin))
 
     defined = {
-        struct.unpack_from("<H", styles_bin, record.data_start)[0]
-        for record in records
-        if record.record_id == 0x2C
+        struct.unpack_from("<H", styles_bin, record.data_start)[0] for record in records if record.record_id == 0x2C
     }
     in_cell_xfs = False
     used = set()
@@ -443,7 +441,7 @@ def _xlsb_sheet_payloads(path, record_id, part="xl/worksheets/sheet1.bin"):
         blob = archive.read(part)
     records = list(iter_records(blob))
     assert records[-1].data_end == len(blob), "sheet records must tile the buffer"
-    return [blob[record.data_start:record.data_end] for record in records if record.record_id == record_id]
+    return [blob[record.data_start : record.data_end] for record in records if record.record_id == record_id]
 
 
 def test_xlsb_sheet_args_are_encoded_in_worksheet_records(tmp_path):
@@ -592,6 +590,7 @@ def test_show_grid_lines_xlsx(tmp_path, show):
         # openpyxl reads a missing attribute as None, Excel's default (shown).
         assert (sheet.sheet_view.showGridLines is not False) is show
     from xlspy import load_workbook
+
     loaded = load_workbook(path)
     try:
         assert loaded.active.sheet_view.showGridLines is show
@@ -616,6 +615,7 @@ def test_show_grid_lines_xlsb(tmp_path, show):
 @pytest.mark.parametrize("ext", ["xlsx", "xlsb"])
 def test_show_grid_lines_from_workbook_api(tmp_path, ext):
     from xlspy import Workbook
+
     path = tmp_path / f"grid.{ext}"
     workbook = Workbook()
     workbook.active.append(["x"])
@@ -647,6 +647,7 @@ def _cell_styles_via_openpyxl(path):
 @pytest.mark.parametrize("native", [True, False])
 def test_value_style_cells_xlsx(tmp_path, monkeypatch, native):
     import xlspy.xlsx_writer
+
     if not native:
         monkeypatch.setattr(xlspy._xlsx_writer_sheet, "accel_encode_xlsx_row", lambda *a, **k: None)
     bold = Style(font=Font(bold=True))
@@ -672,6 +673,7 @@ def test_value_style_cells_xlsx(tmp_path, monkeypatch, native):
 @pytest.mark.parametrize("native", [True, False])
 def test_value_style_cells_xlsb(tmp_path, monkeypatch, native):
     import xlspy.writer
+
     if not native:
         monkeypatch.setattr(xlspy._xlsb_writer_bin, "encode_xlsb_row", lambda *a, **k: None)
     bold = Style(bold=True)
@@ -713,14 +715,15 @@ def test_value_style_rejected_rich_style_in_xlsb(tmp_path):
 @pytest.mark.parametrize("writer_cls,ext", [(XlsxWriter, "xlsx"), (XlsbWriter, "xlsb")])
 def test_open_style_ranges(tmp_path, writer_cls, ext):
     from xlspy.styles import normalize_style_ranges
-    ranges = normalize_style_ranges({"B:C": Style(bold=True), "A3:A": Style(italic=True),
-                                     "1:1": Style(fill="00FF00")})
+
+    ranges = normalize_style_ranges({"B:C": Style(bold=True), "A3:A": Style(italic=True), "1:1": Style(fill="00FF00")})
     assert [r[:4] for r in ranges] == [(1, 0, 2, 1048575), (0, 2, 0, 1048575), (0, 0, 16383, 0)]
     path = tmp_path / f"open.{ext}"
     with writer_cls(path) as writer:
         writer.add_sheet("Data")
-        writer.write_sheet([[r, r, r, r] for r in range(50)],
-                           styles={"B:C": Style(bold=True), "A3:A": Style(italic=True)})
+        writer.write_sheet(
+            [[r, r, r, r] for r in range(50)], styles={"B:C": Style(bold=True), "A3:A": Style(italic=True)}
+        )
     with zipfile.ZipFile(path) as archive:
         sheet = archive.read(f"xl/worksheets/sheet1.{'xml' if ext == 'xlsx' else 'bin'}")
     # Only the written rows are styled: an open range adds no empty rows.
@@ -736,5 +739,6 @@ def test_open_style_ranges(tmp_path, writer_cls, ext):
 @pytest.mark.parametrize("reference", ["D:B", "5:2", "B2:A", "XFE:XFE", "0:1", "B:"])
 def test_open_style_ranges_reject_bad_references(reference):
     from xlspy.styles import parse_style_range
+
     with pytest.raises(ValueError):
         parse_style_range(reference)

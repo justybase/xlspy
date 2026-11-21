@@ -12,6 +12,7 @@ Every wrapper below returns None when the native module does not provide the
 function (or is disabled), and the caller then uses the pure-Python
 implementation.
 """
+
 from __future__ import annotations
 
 import importlib as _importlib
@@ -34,13 +35,27 @@ if ACCEL_MODE not in _MODES:
     raise ImportError(f"XLSPY_ACCEL must be one of {sorted(_MODES)}, not {ACCEL_MODE!r}")
 
 _NATIVE_NAMES = (
-    "encode_xlsb_row", "encode_xlsb_row_inline",
-    "read_xlsb_worksheet", "read_xlsx_worksheet", "xlsb_row_has_formatted",
-    "encode_xlsb_sst", "read_xlsb_shared_strings", "encode_xlsx_row",
+    "encode_xlsb_row",
+    "encode_xlsb_row_inline",
+    "read_xlsb_worksheet",
+    "read_xlsx_worksheet",
+    "xlsb_row_has_formatted",
+    "encode_xlsb_sst",
+    "read_xlsb_shared_strings",
+    "encode_xlsx_row",
     "read_xlsx_shared_strings",
-    "set_style_type", "set_error_type", "xlsb_load_cells", "xlsb_sheet_scan", "ModelCells", "xlsx_edit_scan", "convert_frame_row",
-    "WidthMeter", "general_number_text",
-    "encode_update_xlsx_row", "encode_update_xlsb_row", "patch_xlsb_row_headers",
+    "set_style_type",
+    "set_error_type",
+    "xlsb_load_cells",
+    "xlsb_sheet_scan",
+    "ModelCells",
+    "xlsx_edit_scan",
+    "convert_frame_row",
+    "WidthMeter",
+    "general_number_text",
+    "encode_update_xlsx_row",
+    "encode_update_xlsb_row",
+    "patch_xlsb_row_headers",
 )
 
 
@@ -140,32 +155,53 @@ def encode_xlsb_row_inline(row, row_idx, style_ids=None, fmt_xf=None, row_header
     return native(row, row_idx)
 
 
-def encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx,
-                    style_ids=None, fmt_xf=None, row_header=None, cell_hook=None):
+def encode_xlsb_row(
+    row,
+    ss_dict,
+    ss_list,
+    sst_unique_count,
+    sst_all_count,
+    row_idx,
+    style_ids=None,
+    fmt_xf=None,
+    row_header=None,
+    cell_hook=None,
+):
     if not HAVE_NATIVE:
         return None
     if cell_hook is not None:
         return _native_encode_xlsb_row(
-            row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx,
-            style_ids, fmt_xf, row_header, cell_hook,
+            row,
+            ss_dict,
+            ss_list,
+            sst_unique_count,
+            sst_all_count,
+            row_idx,
+            style_ids,
+            fmt_xf,
+            row_header,
+            cell_hook,
         )
     if fmt_xf is not None or row_header is not None:
         return _native_encode_xlsb_row(
-            row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx,
-            style_ids, fmt_xf, row_header,
+            row,
+            ss_dict,
+            ss_list,
+            sst_unique_count,
+            sst_all_count,
+            row_idx,
+            style_ids,
+            fmt_xf,
+            row_header,
         )
     if style_ids is not None:
-        return _native_encode_xlsb_row(
-            row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx, style_ids
-        )
+        return _native_encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx, style_ids)
     return _native_encode_xlsb_row(row, ss_dict, ss_list, sst_unique_count, sst_all_count, row_idx)
 
 
 def read_xlsb_worksheet(data, shared_strings, styles_list, date_num_fmts, date_1904=False):
     if HAVE_NATIVE:
-        return _native_read_xlsb_worksheet(
-            data, shared_strings, styles_list, date_num_fmts, date_1904
-        )
+        return _native_read_xlsb_worksheet(data, shared_strings, styles_list, date_num_fmts, date_1904)
     return None
 
 
@@ -209,9 +245,21 @@ def read_xlsx_shared_strings(data):
     return _native_read_xlsx_sst(data)
 
 
-def encode_xlsx_row(row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,
-                    use_shared_strings, style_ids=None, fmt_xf=None, row_attrs=None,
-                    link_xf=None, write_r=True, cell_hook=None):
+def encode_xlsx_row(
+    row,
+    ss_dict,
+    ss_list,
+    sst_uniq,
+    sst_all,
+    row_idx,
+    use_shared_strings,
+    style_ids=None,
+    fmt_xf=None,
+    row_attrs=None,
+    link_xf=None,
+    write_r=True,
+    cell_hook=None,
+):
     """(row_xml as UTF-8 bytes, uniq, all, hyperlinks) natively, or None to use the
     Python row writer (unencodable rows, and tuple-formatted cells whose xf is not
     in ``fmt_xf`` yet).  ``row_attrs`` are extra ``<row>`` attributes.  ``link_xf``
@@ -225,18 +273,47 @@ def encode_xlsx_row(row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,
         return None
     if cell_hook is not None:
         return _native_encode_xlsx_row(
-            row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,
-            use_shared_strings, style_ids, fmt_xf, row_attrs, link_xf, write_r, cell_hook,
+            row,
+            ss_dict,
+            ss_list,
+            sst_uniq,
+            sst_all,
+            row_idx,
+            use_shared_strings,
+            style_ids,
+            fmt_xf,
+            row_attrs,
+            link_xf,
+            write_r,
+            cell_hook,
         )
     if not write_r:
         return _native_encode_xlsx_row(
-            row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,
-            use_shared_strings, style_ids, fmt_xf, row_attrs, link_xf, False,
+            row,
+            ss_dict,
+            ss_list,
+            sst_uniq,
+            sst_all,
+            row_idx,
+            use_shared_strings,
+            style_ids,
+            fmt_xf,
+            row_attrs,
+            link_xf,
+            False,
         )
     if style_ids is not None or fmt_xf is not None or row_attrs is not None or link_xf:
         return _native_encode_xlsx_row(
-            row, ss_dict, ss_list, sst_uniq, sst_all, row_idx,
-            use_shared_strings, style_ids, fmt_xf, row_attrs, link_xf,
+            row,
+            ss_dict,
+            ss_list,
+            sst_uniq,
+            sst_all,
+            row_idx,
+            use_shared_strings,
+            style_ids,
+            fmt_xf,
+            row_attrs,
+            link_xf,
         )
-    return _native_encode_xlsx_row(row, ss_dict, ss_list, sst_uniq,
-                                   sst_all, row_idx, use_shared_strings)
+    return _native_encode_xlsx_row(row, ss_dict, ss_list, sst_uniq, sst_all, row_idx, use_shared_strings)

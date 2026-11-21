@@ -23,10 +23,24 @@ from .sparklines import normalize_sparklines
 from .refs import check_sheet_name, parse_cell_range
 from .updater_utils import normalize_merges
 from .styles import (
-    EXTRA_CF_RULES, CellIsRule, ColorScaleRule, DataBarRule, ExcelTable, FormulaRule,
-    IconSetRule, Style, _column_index, check_header_rows, check_sheet_view, check_zoom,
-    explicit_cf_priorities, header_style_ranges, normalize_hidden_columns, normalize_hidden_rows,
-    normalize_style_ranges, tab_color_key,
+    EXTRA_CF_RULES,
+    CellIsRule,
+    ColorScaleRule,
+    DataBarRule,
+    ExcelTable,
+    FormulaRule,
+    IconSetRule,
+    Style,
+    _column_index,
+    check_header_rows,
+    check_sheet_view,
+    check_zoom,
+    explicit_cf_priorities,
+    header_style_ranges,
+    normalize_hidden_columns,
+    normalize_hidden_rows,
+    normalize_style_ranges,
+    tab_color_key,
 )
 
 CF_RULES = (CellIsRule, FormulaRule, ColorScaleRule, DataBarRule, IconSetRule, *EXTRA_CF_RULES)
@@ -142,9 +156,7 @@ class WriterFrontEnd:
         index = self._sheet_count - 1
         if index in self._written_sheet_indexes():
             name = self._worksheet_data[index][0]
-            raise ValueError(
-                f"sheet {name!r} already has its data; call add_sheet() before write_sheet() again"
-            )
+            raise ValueError(f"sheet {name!r} already has its data; call add_sheet() before write_sheet() again")
 
     def _sheet_index_by_name(self, name: str) -> int | None:
         folded = name.casefold()
@@ -154,13 +166,39 @@ class WriterFrontEnd:
         return None
 
     def _check_sheet_options(
-        self, *, header_style: Any, show_grid_lines: Any, header_rows: Any, tab_color: Any, zoom: Any,
-        show_row_col_headers: Any, show_zero_values: Any, right_to_left: Any, styles: Any, merges: Any,
-        comments: Any, sheet_protection: Any, auto_filter_ref: Any, conditional_formats: Any, tables: Any,
-        sparklines: Any, slicers: Any, charts: Any, data_validations: Any, images: Any, shapes: Any,
-        print_settings: Any, column_widths: Any, hidden_columns: Any, row_heights: Any, hidden_rows: Any,
-        row_groups: Any, column_groups: Any, freeze_panes: Any,
-        autofit_rows: Any = 1000, autofit_padding: Any = 0.0,
+        self,
+        *,
+        header_style: Any,
+        show_grid_lines: Any,
+        header_rows: Any,
+        tab_color: Any,
+        zoom: Any,
+        show_row_col_headers: Any,
+        show_zero_values: Any,
+        right_to_left: Any,
+        styles: Any,
+        merges: Any,
+        comments: Any,
+        sheet_protection: Any,
+        auto_filter_ref: Any,
+        conditional_formats: Any,
+        tables: Any,
+        sparklines: Any,
+        slicers: Any,
+        charts: Any,
+        data_validations: Any,
+        images: Any,
+        shapes: Any,
+        print_settings: Any,
+        column_widths: Any,
+        hidden_columns: Any,
+        row_heights: Any,
+        hidden_rows: Any,
+        row_groups: Any,
+        column_groups: Any,
+        freeze_panes: Any,
+        autofit_rows: Any = 1000,
+        autofit_padding: Any = 0.0,
         check_style: Callable[[Style], None] | None = None,
         sort_state: Any = None,
     ) -> SheetSpec:
@@ -195,7 +233,11 @@ class WriterFrontEnd:
         table_specs = self._normalize_tables(tables)
         sparkline_groups = normalize_sparklines(sparklines)
         slicer_specs = normalize_slicers(
-            slicers, table_specs, self._slicer_names, self._slicer_caches, self._slicer_targets,
+            slicers,
+            table_specs,
+            self._slicer_names,
+            self._slicer_caches,
+            self._slicer_targets,
         )
         chart_specs = self._normalize_charts(charts)
         validations = normalize_validations(data_validations)
@@ -216,21 +258,42 @@ class WriterFrontEnd:
             split_freeze = self._split_freeze_cell(freeze_panes)
         # Explicit priorities are reserved up front, so automatic ones skip them.
         cf_priorities = explicit_cf_priorities(
-            cf_rules, self._seen_cf_priorities, self._reserved_cf_priorities,
+            cf_rules,
+            self._seen_cf_priorities,
+            self._reserved_cf_priorities,
         )
         if sort_state is not None:
             # The range against the filter is checked once the writer knows the
             # filter range; the conditions are format-independent and checked now.
             check_sort_state(sort_state, auto_filter_ref)
         return SheetSpec(
-            view=view, header_rows=header_rows, tab_key=tab_key, zoom=zoom,
-            style_ranges=style_ranges, header_style=header_style, merge_refs=merge_refs,
-            comments=comment_specs, cf_rules=cf_rules, cf_priorities=cf_priorities,
-            tables=table_specs, sparklines=sparkline_groups, slicers=slicer_specs,
-            charts=chart_specs, validations=validations, images=image_specs, shapes=shape_specs,
-            print_settings=print_spec, widths=widths, autofit=autofit, hidden_cols=hidden_cols, heights=heights,
-            hidden_rows=hidden_row_set, row_outline=row_outline, col_outline=col_outline,
-            split_freeze=split_freeze, sort_state=sort_state,
+            view=view,
+            header_rows=header_rows,
+            tab_key=tab_key,
+            zoom=zoom,
+            style_ranges=style_ranges,
+            header_style=header_style,
+            merge_refs=merge_refs,
+            comments=comment_specs,
+            cf_rules=cf_rules,
+            cf_priorities=cf_priorities,
+            tables=table_specs,
+            sparklines=sparkline_groups,
+            slicers=slicer_specs,
+            charts=chart_specs,
+            validations=validations,
+            images=image_specs,
+            shapes=shape_specs,
+            print_settings=print_spec,
+            widths=widths,
+            autofit=autofit,
+            hidden_cols=hidden_cols,
+            heights=heights,
+            hidden_rows=hidden_row_set,
+            row_outline=row_outline,
+            col_outline=col_outline,
+            split_freeze=split_freeze,
+            sort_state=sort_state,
         )
 
     def _claim_sheet_options(self, spec: SheetSpec) -> None:
@@ -238,9 +301,7 @@ class WriterFrontEnd:
         self._table_names.update(table.display_name for table in spec.tables)
         self._slicer_names.update(slicer.display_name.casefold() for slicer in spec.slicers)
         self._slicer_caches.update(slicer.cache_name.casefold() for slicer in spec.slicers)
-        self._slicer_targets.update(
-            (slicer.table.casefold(), slicer.column.casefold()) for slicer in spec.slicers
-        )
+        self._slicer_targets.update((slicer.table.casefold(), slicer.column.casefold()) for slicer in spec.slicers)
         for priority in spec.cf_priorities:
             self._reserved_cf_priorities.add(priority)
             self._next_cf_priority = max(self._next_cf_priority, priority + 1)
@@ -290,9 +351,7 @@ class WriterFrontEnd:
             if not isinstance(table, ExcelTable):
                 raise TypeError("tables must be ExcelTable instances")
             if table.display_name.casefold() in names:
-                raise ValueError(
-                    f"duplicate table display name {table.display_name!r} (Excel ignores case)"
-                )
+                raise ValueError(f"duplicate table display name {table.display_name!r} (Excel ignores case)")
             names.add(table.display_name.casefold())
         return list(tables)
 

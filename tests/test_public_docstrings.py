@@ -3,6 +3,7 @@ method and property, has a docstring. The API reference is built from them.
 
 ``MINIMUM_SHARE`` is the floor for methods and properties; lower it only on purpose.
 """
+
 from __future__ import annotations
 
 import inspect

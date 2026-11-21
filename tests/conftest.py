@@ -81,10 +81,12 @@ def excel():
 @pytest.fixture
 def open_workbook(excel):
     opened = []
+
     def open_file(path):
         workbook = excel.Workbooks.Open(str(path), 0, True)
         opened.append(workbook)
         return workbook
+
     yield open_file
     while opened:
         workbook = opened.pop()

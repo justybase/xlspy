@@ -171,16 +171,10 @@ class DataValidation:
 
     def __post_init__(self):
         if self.type not in VALIDATION_TYPES:
-            raise ValueError(
-                f"invalid validation type {self.type!r}; "
-                f"expected one of {sorted(VALIDATION_TYPES)}"
-            )
+            raise ValueError(f"invalid validation type {self.type!r}; expected one of {sorted(VALIDATION_TYPES)}")
         object.__setattr__(self, "sqref", _normalize_validation_sqref(self.sqref))
         if self.error_style not in ERROR_STYLES:
-            raise ValueError(
-                f"invalid error_style {self.error_style!r}; "
-                f"expected one of {sorted(ERROR_STYLES)}"
-            )
+            raise ValueError(f"invalid error_style {self.error_style!r}; expected one of {sorted(ERROR_STYLES)}")
         self._check_messages()
         self._check_flags()
         self._check_operands()
@@ -212,9 +206,7 @@ class DataValidation:
         else:
             operator = self.operator if self.operator is not None else "between"
             if operator not in OPERATORS:
-                raise ValueError(
-                    f"invalid operator {operator!r}; expected one of {sorted(OPERATORS)}"
-                )
+                raise ValueError(f"invalid operator {operator!r}; expected one of {sorted(OPERATORS)}")
             object.__setattr__(self, "operator", operator)
             if operator in _TWO_OPERAND_OPERATORS:
                 if self.formula2 is None:

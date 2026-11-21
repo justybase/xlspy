@@ -67,8 +67,10 @@ def main(path):
             value = _value(record)
             est = new_raw(value, record["number_format"], record["bold"])
             flag = "SHORT" if est < record["excel_width"] - 0.05 else ""
-            print(f"{record['excel_width']:6.2f} {est:6.2f} {flag:5s} "
-                  f"{cell_text(value, record['number_format'])!r:40.40s} excel={record['excel_text']!r}")
+            print(
+                f"{record['excel_width']:6.2f} {est:6.2f} {flag:5s} "
+                f"{cell_text(value, record['number_format'])!r:40.40s} excel={record['excel_text']!r}"
+            )
 
 
 if __name__ == "__main__":

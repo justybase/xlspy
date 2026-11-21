@@ -99,15 +99,9 @@ def _read_differential(node: ET.Element) -> DifferentialStyle:
         font=_read_font(font_node) if font_node is not None else None,
         fill=_read_fill(fill_node) if fill_node is not None else None,
         border=_read_border(border_node) if border_node is not None else None,
-        number_format=(
-            numfmt_node.get("formatCode") if numfmt_node is not None else None
-        ),
-        alignment=(
-            _read_alignment(alignment_node) if alignment_node is not None else None
-        ),
-        protection=(
-            _read_protection(protection_node) if protection_node is not None else None
-        ),
+        number_format=(numfmt_node.get("formatCode") if numfmt_node is not None else None),
+        alignment=(_read_alignment(alignment_node) if alignment_node is not None else None),
+        protection=(_read_protection(protection_node) if protection_node is not None else None),
     )
 
 
@@ -333,9 +327,14 @@ def _alignment_from_key(key) -> Alignment | None:
     if key is None or not any(value is not None for value in key):
         return None
     return Alignment(
-        horizontal=key[0], vertical=key[1], wrap_text=key[2],
-        shrink_to_fit=key[3], indent=key[4], text_rotation=key[5],
-        relative_indent=key[6], justify_last_line=key[7],
+        horizontal=key[0],
+        vertical=key[1],
+        wrap_text=key[2],
+        shrink_to_fit=key[3],
+        indent=key[4],
+        text_rotation=key[5],
+        relative_indent=key[6],
+        justify_last_line=key[7],
         reading_order=key[8],
     )
 
@@ -572,13 +571,12 @@ class XlsxStyleTable:
         border_key = _border_key(style.border) if style.border else None
         border_id = self._intern_border(border_key) if border_key is not None else 0
         number_format = style.number_format
-        numfmt_id = (
-            self._intern_numfmt(number_format)
-            if number_format and number_format != "General" else 0
-        )
+        numfmt_id = self._intern_numfmt(number_format) if number_format and number_format != "General" else 0
         attrs = [
-            f'numFmtId="{numfmt_id}"', f'fontId="{font_id}"',
-            f'fillId="{fill_id}"', f'borderId="{border_id}"',
+            f'numFmtId="{numfmt_id}"',
+            f'fontId="{font_id}"',
+            f'fillId="{fill_id}"',
+            f'borderId="{border_id}"',
         ]
         if numfmt_id:
             attrs.append('applyNumberFormat="1"')
@@ -594,7 +592,7 @@ class XlsxStyleTable:
             attrs.append('applyAlignment="1"')
         if prot_xml:
             attrs.append('applyProtection="1"')
-        return f'<xf {" ".join(attrs)}>{align_xml}{prot_xml}</xf>'
+        return f"<xf {' '.join(attrs)}>{align_xml}{prot_xml}</xf>"
 
     def add_named_style(self, style: NamedStyle) -> int:
         """Append a named style to ``cellStyleXfs``/``cellStyles``."""
@@ -604,12 +602,16 @@ class XlsxStyleTable:
             self.to_bytes()
         root = self._root
         style_xfs = self._container(
-            root, "cellStyleXfs",
+            root,
+            "cellStyleXfs",
             '<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>',
         )
         base = Style(
-            font=style.font, fill=style.fill, border=style.border,
-            number_format=style.number_format, alignment=style.alignment,
+            font=style.font,
+            fill=style.fill,
+            border=style.border,
+            number_format=style.number_format,
+            alignment=style.alignment,
             protection=style.protection,
         )
         xf_index = len(self.cell_style_xfs)
@@ -618,7 +620,9 @@ class XlsxStyleTable:
         self.cell_style_xfs.append(base)
 
         cell_styles = self._container(
-            root, "cellStyles", '<cellStyle name="Normal" xfId="0" builtinId="0"/>',
+            root,
+            "cellStyles",
+            '<cellStyle name="Normal" xfId="0" builtinId="0"/>',
         )
         attrs = f"name={quoteattr(style.name)} xfId={quoteattr(str(xf_index))}"
         if style.builtinId is not None:
@@ -646,9 +650,7 @@ class XlsxStyleTable:
         for index, key in enumerate(self._border_keys):
             if key is not None and key not in self._border_index:
                 self._border_index[key] = index
-        self._numfmt_by_code = {
-            code: num_id for num_id, code in self.num_formats.items()
-        }
+        self._numfmt_by_code = {code: num_id for num_id, code in self.num_formats.items()}
         self._xf_index = {}
         self.styles = []
         for index, xf in enumerate(self.xfs):
@@ -659,8 +661,14 @@ class XlsxStyleTable:
             if prot_key is not None and all(value is None for value in prot_key):
                 prot_key = None
             key = (
-                xf.font_id, xf.fill_id, xf.border_id, xf.num_fmt_id,
-                align_key, prot_key, xf.quote_prefix, xf.pivot_button,
+                xf.font_id,
+                xf.fill_id,
+                xf.border_id,
+                xf.num_fmt_id,
+                align_key,
+                prot_key,
+                xf.quote_prefix,
+                xf.pivot_button,
             )
             self._xf_index[key] = index
             font_key = self._font_keys[xf.font_id] if xf.font_id < len(self._font_keys) else None
@@ -748,8 +756,14 @@ class XlsxStyleTable:
         if prot_key is not None and all(value is None for value in prot_key):
             prot_key = None
         key = (
-            font_id, fill_id, border_id, numfmt_id, align_key, prot_key,
-            bool(style.quote_prefix), bool(style.pivot_button),
+            font_id,
+            fill_id,
+            border_id,
+            numfmt_id,
+            align_key,
+            prot_key,
+            bool(style.quote_prefix),
+            bool(style.pivot_button),
         )
         existing = self._xf_index.get(key)
         if existing is not None:
@@ -760,14 +774,30 @@ class XlsxStyleTable:
         quote_prefix = bool(style.quote_prefix)
         pivot_button = bool(style.pivot_button)
         self.xfs.append(
-            _Xf(font_id, fill_id, border_id, numfmt_id, alignment, protection,
-                quote_prefix=quote_prefix, pivot_button=pivot_button)
+            _Xf(
+                font_id,
+                fill_id,
+                border_id,
+                numfmt_id,
+                alignment,
+                protection,
+                quote_prefix=quote_prefix,
+                pivot_button=pivot_button,
+            )
         )
         self.styles.append(style)
-        self._xf_xml.append(self._xf_xml_for(
-            font_id, fill_id, border_id, numfmt_id, align_key, prot_key,
-            quote_prefix=quote_prefix, pivot_button=pivot_button,
-        ))
+        self._xf_xml.append(
+            self._xf_xml_for(
+                font_id,
+                fill_id,
+                border_id,
+                numfmt_id,
+                align_key,
+                prot_key,
+                quote_prefix=quote_prefix,
+                pivot_button=pivot_button,
+            )
+        )
         self._xf_index[key] = index
         return index
 
@@ -779,7 +809,7 @@ class XlsxStyleTable:
     def _color_xml(self, key) -> str:
         if key is None:
             return '<color theme="1"/>'
-        return f'<color {self._color_attrs(key)}/>'
+        return f"<color {self._color_attrs(key)}/>"
 
     def _font_xml_for(self, key) -> str:
         name = key.name
@@ -836,28 +866,38 @@ class XlsxStyleTable:
                 f'<stop position="{_format_number(position)}"><color {self._color_attrs(color)}/></stop>'
                 for color, position in stops
             )
-            return f'<fill><gradientFill {" ".join(attrs)}>{stop_xml}</gradientFill></fill>'
+            return f"<fill><gradientFill {' '.join(attrs)}>{stop_xml}</gradientFill></fill>"
         _, pattern, fg_key, bg_key = key
         pattern_type = pattern if pattern is not None else "none"
         if pattern_type == "solid":
-            fg_xml = f'<fgColor {self._color_attrs(fg_key)}/>' if fg_key is not None else ""
-            bg_xml = (
-                f'<bgColor {self._color_attrs(bg_key)}/>'
-                if bg_key is not None else '<bgColor indexed="64"/>'
-            )
+            fg_xml = f"<fgColor {self._color_attrs(fg_key)}/>" if fg_key is not None else ""
+            bg_xml = f"<bgColor {self._color_attrs(bg_key)}/>" if bg_key is not None else '<bgColor indexed="64"/>'
         else:
-            fg_xml = f'<fgColor {self._color_attrs(fg_key)}/>' if fg_key is not None else ""
-            bg_xml = f'<bgColor {self._color_attrs(bg_key)}/>' if bg_key is not None else ""
+            fg_xml = f"<fgColor {self._color_attrs(fg_key)}/>" if fg_key is not None else ""
+            bg_xml = f"<bgColor {self._color_attrs(bg_key)}/>" if bg_key is not None else ""
         return f'<fill><patternFill patternType="{pattern_type}">{fg_xml}{bg_xml}</patternFill></fill>'
 
     def _border_xml_for(self, key) -> str:
         return border_xml(key)
 
-    def _xf_xml_for(self, font_id, fill_id, border_id, numfmt_id, align_key, prot_key,
-                    *, quote_prefix: bool = False, pivot_button: bool = False) -> str:
+    def _xf_xml_for(
+        self,
+        font_id,
+        fill_id,
+        border_id,
+        numfmt_id,
+        align_key,
+        prot_key,
+        *,
+        quote_prefix: bool = False,
+        pivot_button: bool = False,
+    ) -> str:
         attrs = [
-            f'numFmtId="{numfmt_id}"', f'fontId="{font_id}"',
-            f'fillId="{fill_id}"', f'borderId="{border_id}"', 'xfId="0"',
+            f'numFmtId="{numfmt_id}"',
+            f'fontId="{font_id}"',
+            f'fillId="{fill_id}"',
+            f'borderId="{border_id}"',
+            'xfId="0"',
         ]
         if quote_prefix:
             attrs.append('quotePrefix="1"')
@@ -879,11 +919,20 @@ class XlsxStyleTable:
         prot_xml = _protection_xml(prot) if prot is not None else ""
         if prot_xml:
             attrs.append('applyProtection="1"')
-        return f'<xf {" ".join(attrs)}>{align_xml}{prot_xml}</xf>'
+        return f"<xf {' '.join(attrs)}>{align_xml}{prot_xml}</xf>"
 
     _STYLE_ORDER = (
-        "numFmts", "fonts", "fills", "borders", "cellStyleXfs", "cellXfs",
-        "cellStyles", "dxfs", "tableStyles", "colors", "extLst",
+        "numFmts",
+        "fonts",
+        "fills",
+        "borders",
+        "cellStyleXfs",
+        "cellXfs",
+        "cellStyles",
+        "dxfs",
+        "tableStyles",
+        "colors",
+        "extLst",
     )
 
     def _replace_container(self, root: ET.Element, tag: str, fragments: list[str], count: int | None = None) -> None:
@@ -896,7 +945,7 @@ class XlsxStyleTable:
         if container is None:
             container = ET.Element(qname(tag))
             position = self._STYLE_ORDER.index(tag)
-            successors = set(self._STYLE_ORDER[position + 1:])
+            successors = set(self._STYLE_ORDER[position + 1 :])
             insertion = len(root)
             for index, child in enumerate(list(root)):
                 if _local(child.tag) in successors:
@@ -923,19 +972,37 @@ class XlsxStyleTable:
             ET.SubElement(root, qname("fills"), {"count": str(len(self._fill_xml))})
             ET.SubElement(root, qname("borders"), {"count": str(len(self._border_xml))})
             cell_style_xfs = ET.SubElement(root, qname("cellStyleXfs"), {"count": "1"})
-            ET.SubElement(cell_style_xfs, qname("xf"), {
-                "numFmtId": "0", "fontId": "0", "fillId": "0", "borderId": "0",
-            })
+            ET.SubElement(
+                cell_style_xfs,
+                qname("xf"),
+                {
+                    "numFmtId": "0",
+                    "fontId": "0",
+                    "fillId": "0",
+                    "borderId": "0",
+                },
+            )
             ET.SubElement(root, qname("cellXfs"), {"count": str(len(self._xf_xml))})
             cell_styles = ET.SubElement(root, qname("cellStyles"), {"count": "1"})
-            ET.SubElement(cell_styles, qname("cellStyle"), {
-                "name": "Normal", "xfId": "0", "builtinId": "0",
-            })
+            ET.SubElement(
+                cell_styles,
+                qname("cellStyle"),
+                {
+                    "name": "Normal",
+                    "xfId": "0",
+                    "builtinId": "0",
+                },
+            )
             ET.SubElement(root, qname("dxfs"), {"count": "0"})
-            ET.SubElement(root, qname("tableStyles"), {
-                "count": "0", "defaultTableStyle": "TableStyleMedium9",
-                "defaultPivotStyle": "PivotStyleLight16",
-            })
+            ET.SubElement(
+                root,
+                qname("tableStyles"),
+                {
+                    "count": "0",
+                    "defaultTableStyle": "TableStyleMedium9",
+                    "defaultPivotStyle": "PivotStyleLight16",
+                },
+            )
             self._root = root
 
         root = self._root
@@ -981,13 +1048,13 @@ class XlsxStyleTable:
                 style = _read_differential(node)
             except (TypeError, ValueError):
                 style = None
-            if style is not None and style in self.dxfs[:len(container)]:
+            if style is not None and style in self.dxfs[: len(container)]:
                 indexes.append(self.dxfs.index(style))
                 continue
             for numfmt in node.iter(qname("numFmt")):
                 numfmt.set("numFmtId", str(self._intern_numfmt(numfmt.get("formatCode", "General"))))
             # Keep the parsed list in step with the container.
-            del self.dxfs[len(container):]
+            del self.dxfs[len(container) :]
             self.dxfs.extend([None] * (len(container) - len(self.dxfs)))
             indexes.append(len(container))
             container.append(node)

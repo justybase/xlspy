@@ -9,6 +9,7 @@ of an array formula that reaches past the data.
 The writers used to differ: XLSX counted the row length and ignored array rows, XLSB filtered a
 header with no data and a sheet with no values.
 """
+
 import pytest
 
 from xlspy import ExcelTable, Formula, Group, Style, XlsbWriter, XlsxWriter, load_workbook
@@ -65,8 +66,17 @@ def test_default_filter_range(tmp_path, writer_class, extension, case):
 
 
 @pytest.mark.com
-@pytest.mark.parametrize("case", ["trailing_formatted_blank", "array_past_the_data", "two_header_rows",
-                                  "table_has_its_own_filter", "header_only", "value_far_right"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "trailing_formatted_blank",
+        "array_past_the_data",
+        "two_header_rows",
+        "table_has_its_own_filter",
+        "header_only",
+        "value_far_right",
+    ],
+)
 @pytest.mark.parametrize("writer_class, extension", WRITERS, ids=["xlsx", "xlsb"])
 def test_excel_shows_the_same_filter(tmp_path, open_workbook, writer_class, extension, case):
     rows, options, expected = CASES[case]

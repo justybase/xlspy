@@ -23,10 +23,14 @@ def test_edited_links_notes_and_names_open_in_excel(tmp_path, ext, open_workbook
     with writer_cls(str(path)) as writer:
         for title in ("Data", "Other"):
             writer.add_sheet(title)
-            writer.write_sheet([
-                [Hyperlink("https://one.example/", "one"), Hyperlink("https://two.example/", "two")],
-                [Formula("Rate*2"), 21],
-            ], auto_filter=False, comments={"A1": Comment("same text", "Jan"), "B2": Comment("same text", "Jan")})
+            writer.write_sheet(
+                [
+                    [Hyperlink("https://one.example/", "one"), Hyperlink("https://two.example/", "two")],
+                    [Formula("Rate*2"), 21],
+                ],
+                auto_filter=False,
+                comments={"A1": Comment("same text", "Jan"), "B2": Comment("same text", "Jan")},
+            )
         writer.set_defined_name(DefinedName("Rate", "Data!$B$2"))
 
     updater = updater_cls(str(path))
@@ -67,12 +71,14 @@ def test_batched_defined_names_open_in_excel(tmp_path, ext, open_workbook):
 
     updater = updater_cls(str(path))
     try:
-        updater.set_defined_names([
-            DefinedName("Rate", "Data!$A$2"),
-            DefinedName("Markup", "Data!$B$2"),
-            DefinedName("Secret", "Data!$A$2", hidden=True),
-            DefinedName("Local", "Data!$B$2", localSheetId=0),
-        ])
+        updater.set_defined_names(
+            [
+                DefinedName("Rate", "Data!$A$2"),
+                DefinedName("Markup", "Data!$B$2"),
+                DefinedName("Secret", "Data!$A$2", hidden=True),
+                DefinedName("Local", "Data!$B$2", localSheetId=0),
+            ]
+        )
         updater.remove_defined_names([("Markup", None)])
         updater.save(str(path))
     finally:
@@ -85,8 +91,7 @@ def test_batched_defined_names_open_in_excel(tmp_path, ext, open_workbook):
     names = {
         name.Name: name
         for name in workbook.Names
-        if not name.Name.endswith("_FilterDatabase")
-        and not name.Name.startswith("_xlspy_deleted_")
+        if not name.Name.endswith("_FilterDatabase") and not name.Name.startswith("_xlspy_deleted_")
     }
     assert set(names) == {"Rate", "Secret", "Data!Local"}
     assert names["Secret"].Visible is False
@@ -115,10 +120,6 @@ def test_staged_defined_names_open_in_excel(tmp_path, ext, open_workbook):
 
     workbook = open_workbook(path)
     # Built-in _FilterDatabase names appear for sheets with the writer's filter.
-    names = {
-        name.Name
-        for name in workbook.Names
-        if not name.Name.endswith("_FilterDatabase")
-    }
+    names = {name.Name for name in workbook.Names if not name.Name.endswith("_FilterDatabase")}
     # Data kept its local name after Other moved ahead of it.
     assert names == {"Rate", "Data!Local", "Other!Moved"}

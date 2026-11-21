@@ -3,8 +3,20 @@
 import pytest
 
 from xlspy import (
-    AboveAverageRule, BlanksRule, CellIsRule, DataValidation, DifferentialStyle, DuplicateRule,
-    ExcelTable, Font, FormulaRule, Hyperlink, PatternFill, TextRule, TopBottomRule, Workbook,
+    AboveAverageRule,
+    BlanksRule,
+    CellIsRule,
+    DataValidation,
+    DifferentialStyle,
+    DuplicateRule,
+    ExcelTable,
+    Font,
+    FormulaRule,
+    Hyperlink,
+    PatternFill,
+    TextRule,
+    TopBottomRule,
+    Workbook,
     load_workbook,
 )
 
@@ -52,18 +64,15 @@ def styled_workbook():
     workbook = Workbook()
     sheet = workbook.active
     sheet["A1"] = "bold"
-    sheet["A1"].font = Font(bold=True, italic=True, color="FFFF0000", size=14, name="Arial",
-                            underline="single")
+    sheet["A1"].font = Font(bold=True, italic=True, color="FFFF0000", size=14, name="Arial", underline="single")
     sheet["B1"] = 1.5
     sheet["B1"].number_format = "0.00%"
     sheet["C1"] = "fill"
     sheet["C1"].fill = PatternFill(fill_type="solid", start_color="FF00FF00")
     sheet["D1"] = "border"
-    sheet["D1"].border = Border(left=Side(style="thin", color="FF0000FF"),
-                                bottom=Side(style="double"))
+    sheet["D1"].border = Border(left=Side(style="thin", color="FF0000FF"), bottom=Side(style="double"))
     sheet["E1"] = "align"
-    sheet["E1"].alignment = Alignment(horizontal="center", vertical="top", wrap_text=True,
-                                      indent=2, text_rotation=45)
+    sheet["E1"].alignment = Alignment(horizontal="center", vertical="top", wrap_text=True, indent=2, text_rotation=45)
     sheet["F1"] = datetime.date(2024, 5, 1)
     sheet["G1"] = "protected"
     sheet["G1"].protection = Protection(locked=False, hidden=True)
@@ -75,16 +84,17 @@ def style_view(cell):
     font, fill, border = cell.font, cell.fill, cell.border
     alignment, protection = cell.alignment, cell.protection
     return (
-        cell.value, cell.number_format,
-        (font.bold, font.italic, font.size, font.name, font.underline,
-         font.color.rgb if font.color else None),
+        cell.value,
+        cell.number_format,
+        (font.bold, font.italic, font.size, font.name, font.underline, font.color.rgb if font.color else None),
         (fill.fill_type, fill.start_color.rgb if fill.start_color else None) if fill else None,
         tuple(
             (side.style, side.color.rgb if side.color else None) if side else None
             for side in ((border.left, border.right, border.top, border.bottom) if border else ())
         ),
-        (alignment.horizontal, alignment.vertical, alignment.wrap_text, alignment.indent,
-         alignment.text_rotation) if alignment else None,
+        (alignment.horizontal, alignment.vertical, alignment.wrap_text, alignment.indent, alignment.text_rotation)
+        if alignment
+        else None,
         (protection.locked, protection.hidden) if protection else None,
     )
 
@@ -139,10 +149,7 @@ def test_style_edits_are_saved_into_loaded_xlsb(source, tmp_path):
             assert sheet["B4"].value == 99
         finally:
             loaded.close()
-    styles = [
-        zipfile.ZipFile(tmp_path / name).read("xl/styles.bin")
-        for name in ("first.xlsb", "second.xlsb")
-    ]
+    styles = [zipfile.ZipFile(tmp_path / name).read("xl/styles.bin") for name in ("first.xlsb", "second.xlsb")]
     assert styles[0] == styles[1]
 
 
@@ -244,10 +251,18 @@ def test_removing_all_merges_and_links(linked, tmp_path):
 
 def validation_rules():
     return [
-        DataValidation(type="list", sqref="A1:A5", formula1='"New,Active,Closed"',
-                       prompt="Pick", show_input_message=True),
-        DataValidation(type="whole", sqref="B1:B7 D1", formula1="1", formula2="10",
-                       error="1..10", error_title="Bad", error_style="warning"),
+        DataValidation(
+            type="list", sqref="A1:A5", formula1='"New,Active,Closed"', prompt="Pick", show_input_message=True
+        ),
+        DataValidation(
+            type="whole",
+            sqref="B1:B7 D1",
+            formula1="1",
+            formula2="10",
+            error="1..10",
+            error_title="Bad",
+            error_style="warning",
+        ),
         DataValidation(type="decimal", sqref="C1:C7", operator="greater_than", formula1="0.5"),
         DataValidation(type="custom", sqref="E1:E7", formula1="LEN(E1)<5"),
         DataValidation(type="list", sqref="F1:F3", formula1="$A$1:$A$3", show_dropdown=False),
@@ -290,7 +305,9 @@ def test_validation_edits_are_saved_into_loaded_xlsb(tmp_path):
     edited = load_workbook(tmp_path / "edited.xlsb")
     try:
         assert [(rule.type, rule.sqref) for rule in edited.active.data_validations] == [
-            ("whole", "B1:B7 D1"), ("decimal", "C1:C7"), ("custom", "E1:E7"),
+            ("whole", "B1:B7 D1"),
+            ("decimal", "C1:C7"),
+            ("custom", "E1:E7"),
         ]
         assert list(edited.active.data_validations)[2].formula1 == "LEN(E1)<5"
     finally:
@@ -332,12 +349,19 @@ def metadata_workbook():
 def metadata_view(workbook):
     sheet = workbook.active
     return (
-        sheet.column_dimensions["B"].width, sheet.column_dimensions["C"].hidden,
-        sheet.row_dimensions[3].height, sheet.row_dimensions[4].hidden,
-        sheet.freeze_panes, sheet.sheet_view.zoomScale, sheet.sheet_view.showGridLines,
+        sheet.column_dimensions["B"].width,
+        sheet.column_dimensions["C"].hidden,
+        sheet.row_dimensions[3].height,
+        sheet.row_dimensions[4].hidden,
+        sheet.freeze_panes,
+        sheet.sheet_view.zoomScale,
+        sheet.sheet_view.showGridLines,
         sheet.sheet_properties.tabColor.rgb,
-        sheet.page_setup.orientation, sheet.page_setup.paperSize, sheet.page_margins.left,
-        sheet.print_options.horizontalCentered, sheet.oddHeader.center.text,
+        sheet.page_setup.orientation,
+        sheet.page_setup.paperSize,
+        sheet.page_margins.left,
+        sheet.print_options.horizontalCentered,
+        sheet.oddHeader.center.text,
         [(chart.chart_type, chart.title) for chart in sheet.charts],
         [(image.description, image.anchor) for image in sheet.images],
         workbook.properties.title,
@@ -406,14 +430,25 @@ def formatting_view(sheet):
     for rule in sheet.conditional_formatting.all_rules():
         font = rule.dxf.font if rule.dxf else None
         fill = rule.dxf.fill if rule.dxf else None
-        rules.append((
-            type(rule).__name__, rule.sqref, getattr(rule, "operator", None),
-            getattr(rule, "formula", None), font and font.bold, font and font.color.rgb,
-            fill and fill.start_color.rgb,
-        ))
+        rules.append(
+            (
+                type(rule).__name__,
+                rule.sqref,
+                getattr(rule, "operator", None),
+                getattr(rule, "formula", None),
+                font and font.bold,
+                font and font.color.rgb,
+                fill and fill.start_color.rgb,
+            )
+        )
     tables = [
-        (table.displayName, table.ref, [column.name for column in table.tableColumns],
-         table.headerRowCount, table.tableStyleInfo and table.tableStyleInfo.name)
+        (
+            table.displayName,
+            table.ref,
+            [column.name for column in table.tableColumns],
+            table.headerRowCount,
+            table.tableStyleInfo and table.tableStyleInfo.name,
+        )
         for table in sheet.tables
     ]
     return rules, tables
@@ -472,7 +507,7 @@ def test_conditional_formats_are_added_next_to_the_files_own(formatted, tmp_path
     reloaded = load_workbook(tmp_path / "out.xlsb")
     try:
         rules = reloaded.active.conditional_formatting.all_rules()
-        assert [repr(rule) for rule in rules[:len(kept)]] == kept
+        assert [repr(rule) for rule in rules[: len(kept)]] == kept
         assert isinstance(rules[-1], FormulaRule) and list(rules[-1].formula) == ["TRUE"]
     finally:
         reloaded.close()

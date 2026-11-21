@@ -62,7 +62,7 @@ def xlsx_cells(data, sheet, ref):
 def part_records(data, name):
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         part = zf.read(name)
-    return [(r.record_id, part[r.data_start:r.data_end]) for r in iter_records(part)]
+    return [(r.record_id, part[r.data_start : r.data_end]) for r in iter_records(part)]
 
 
 def records_of(data, name, record_id):
@@ -84,9 +84,15 @@ SHAPES = {
     "max": {"values": [PivotValue("Sales", "max", number_format="#,##0")]},
 }
 RANGES = {
-    "row_one": "A12:B16", "row_two": "A12:C16", "row_col": "A12:D17",
-    "row_col_two": "A12:G18", "text_column": "A12:D17", "filter": "A10:B16",
-    "average": "A12:B16", "count": "A12:B16", "max": "A12:B16",
+    "row_one": "A12:B16",
+    "row_two": "A12:C16",
+    "row_col": "A12:D17",
+    "row_col_two": "A12:G18",
+    "text_column": "A12:D17",
+    "filter": "A10:B16",
+    "average": "A12:B16",
+    "count": "A12:B16",
+    "max": "A12:B16",
 }
 
 
@@ -102,7 +108,8 @@ def test_pivot_on_another_sheet_renders_there(tmp_path):
     with XlsbWriter(out) as w:
         w.add_sheet("Data")
         w.write_sheet(
-            ROWS, tables=[ExcelTable("SalesTable", "A1:E9")],
+            ROWS,
+            tables=[ExcelTable("SalesTable", "A1:E9")],
             pivots=[pivot(columns="Quarter", location="B2", sheet="Summary")],
         )
         w.add_sheet("Summary")
@@ -124,8 +131,14 @@ def test_pivot_parts_are_binary_and_linked():
     for number in (1, 2):
         assert f"xl/pivotTables/pivotTable{number}.bin" in names
         assert f"xl/pivotCache/pivotCacheDefinition{number}.bin" in names
-        assert f'PartName="/xl/pivotTables/pivotTable{number}.bin" ContentType="application/vnd.ms-excel.pivotTable"' in content_types
-        assert f'PartName="/xl/pivotCache/pivotCacheDefinition{number}.bin" ContentType="application/vnd.ms-excel.pivotCacheDefinition"' in content_types
+        assert (
+            f'PartName="/xl/pivotTables/pivotTable{number}.bin" ContentType="application/vnd.ms-excel.pivotTable"'
+            in content_types
+        )
+        assert (
+            f'PartName="/xl/pivotCache/pivotCacheDefinition{number}.bin" ContentType="application/vnd.ms-excel.pivotCacheDefinition"'
+            in content_types
+        )
         assert f'Target="pivotCache/pivotCacheDefinition{number}.bin"' in workbook_rels
         assert f'Target="../pivotTables/pivotTable{number}.bin"' in sheet_rels
     assert 'Target="../pivotCache/pivotCacheDefinition2.bin"' in pivot_rels
@@ -145,7 +158,7 @@ def test_workbook_lists_each_cache_before_file_recover():
     records = part_records(data, "xl/workbook.bin")
     ids = [rid for rid, _payload in records]
     start = ids.index(0x180)
-    assert ids[start:start + 6] == [0x180, 0x182, 0x183, 0x182, 0x183, 0x181]
+    assert ids[start : start + 6] == [0x180, 0x182, 0x183, 0x182, 0x183, 0x181]
     assert ids.index(0x9B) == start + 6
     assert ids.index(0x9D) < start  # after BrtCalcProp
     first, second = (p for rid, p in records if rid == 0x182)
@@ -162,8 +175,8 @@ def test_workbook_without_pivots_has_no_pivot_records():
 def test_location_matches_the_rendered_range():
     data = make(XlsbWriter, [pivot(columns="Quarter", values=["Sales", "Units"])])
     (location,) = records_of(data, TABLE, 0x13A)
-    first_row, last_row, first_col, last_col, head, first_data, data_col, row_pages, col_pages = (
-        struct.unpack("<9I", location)
+    first_row, last_row, first_col, last_col, head, first_data, data_col, row_pages, col_pages = struct.unpack(
+        "<9I", location
     )
     assert (first_row, last_row, first_col, last_col) == (11, 17, 0, 6)  # A12:G18
     assert (head, first_data, data_col) == (12, 14, 1)
@@ -179,7 +192,8 @@ def test_location_is_absolute_and_counts_page_fields():
 
 
 @pytest.mark.parametrize(
-    ("function", "code"), [("sum", 0), ("count", 1), ("average", 2), ("max", 3), ("min", 4)],
+    ("function", "code"),
+    [("sum", 0), ("count", 1), ("average", 2), ("max", 3), ("min", 4)],
 )
 def test_data_field_function_codes(function, code):
     data = make(XlsbWriter, [pivot([PivotValue("Sales", function)])])
@@ -243,7 +257,8 @@ def test_blank_and_decimal_cells_set_the_type_flags():
     data = make(
         XlsbWriter,
         [PivotTable(source="SalesTable", rows="Region", columns="Qty", values="Amount", location="A8")],
-        rows=rows, ref="A1:C5",
+        rows=rows,
+        ref="A1:C5",
     )
     flags = [struct.unpack_from("<HI", p) for p in records_of(data, CACHE, 0xBD)]
     assert flags == [(0x041B, 3), (0x0553, 0), (0x05D3, 4)]  # text+blank, decimals+blank, ints+blank
@@ -274,15 +289,23 @@ def test_dates_in_a_pivot_field_are_refused():
 
     rows = [["Day", "Sales"], [datetime.date(2024, 1, 1), 1], [datetime.date(2024, 1, 2), 2]]
     with pytest.raises(ValueError, match="dates, booleans or NaN"):
-        make(XlsbWriter, [PivotTable(source="SalesTable", rows="Day", values="Sales", location="A5")],
-             rows=rows, ref="A1:B3")
+        make(
+            XlsbWriter,
+            [PivotTable(source="SalesTable", rows="Day", values="Sales", location="A5")],
+            rows=rows,
+            ref="A1:B3",
+        )
 
 
 def test_booleans_in_a_value_field_are_refused():
     rows = [["Region", "Flag"], ["North", True], ["South", False]]
     with pytest.raises(ValueError, match="dates, booleans or NaN"):
-        make(XlsbWriter, [PivotTable(source="SalesTable", rows="Region", values="Flag", location="A5")],
-             rows=rows, ref="A1:B3")
+        make(
+            XlsbWriter,
+            [PivotTable(source="SalesTable", rows="Region", values="Flag", location="A5")],
+            rows=rows,
+            ref="A1:B3",
+        )
 
 
 def test_pivot_target_sheet_must_be_written():
@@ -290,8 +313,9 @@ def test_pivot_target_sheet_must_be_written():
     with pytest.raises(ValueError, match="never written"):
         with XlsbWriter(out) as w:
             w.add_sheet("Data")
-            w.write_sheet(ROWS, tables=[ExcelTable("SalesTable", "A1:E9")],
-                          pivots=[pivot(location="A3", sheet="Summary")])
+            w.write_sheet(
+                ROWS, tables=[ExcelTable("SalesTable", "A1:E9")], pivots=[pivot(location="A3", sheet="Summary")]
+            )
             w.add_sheet("Summary")
 
 
@@ -302,8 +326,9 @@ def test_target_sheet_written_before_its_source_is_refused():
             w.add_sheet("Summary")
             w.write_sheet([])
             w.add_sheet("Data")
-            w.write_sheet(ROWS, tables=[ExcelTable("SalesTable", "A1:E9")],
-                          pivots=[pivot(location="A3", sheet="Summary")])
+            w.write_sheet(
+                ROWS, tables=[ExcelTable("SalesTable", "A1:E9")], pivots=[pivot(location="A3", sheet="Summary")]
+            )
 
 
 def test_pivot_on_the_source_sheet_must_sit_below_the_data():

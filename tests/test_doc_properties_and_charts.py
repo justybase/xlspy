@@ -30,12 +30,26 @@ def _write(path, writer_cls, **props):
 def test_properties_parts(tmp_path, writer_cls, ext):
     path = tmp_path / f"props.{ext}"
     _write(
-        path, writer_cls, title="Q3 & <report>", author="Zoë Ångström", company="ACME",
-        manager="Boss", keywords="sales, q3", comments="notes", category="Finance",
-        status="Draft", subject="Sales",
+        path,
+        writer_cls,
+        title="Q3 & <report>",
+        author="Zoë Ångström",
+        company="ACME",
+        manager="Boss",
+        keywords="sales, q3",
+        comments="notes",
+        category="Finance",
+        status="Draft",
+        subject="Sales",
         created=datetime.datetime(2024, 5, 1, 10, 0, tzinfo=datetime.UTC),
-        custom={"Project": "X", "Count": 7, "Big": 2**40, "Ratio": 0.5, "Approved": True,
-                "Due": datetime.date(2024, 6, 1)},
+        custom={
+            "Project": "X",
+            "Count": 7,
+            "Big": 2**40,
+            "Ratio": 0.5,
+            "Approved": True,
+            "Due": datetime.date(2024, 6, 1),
+        },
     )
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
@@ -49,8 +63,14 @@ def test_properties_parts(tmp_path, writer_cls, ext):
     assert "<dc:creator>Zoë Ångström</dc:creator>" in core
     assert '<dcterms:created xsi:type="dcterms:W3CDTF">2024-05-01T10:00:00Z' in core
     assert "<Company>ACME</Company>" in app and "<Manager>Boss</Manager>" in app
-    for fragment in ('name="Project"><vt:lpwstr>X', "<vt:i4>7</vt:i4>", "<vt:r8>1099511627776.0",
-                     "<vt:r8>0.5</vt:r8>", "<vt:bool>true", "<vt:filetime>2024-06-01T00:00:00Z"):
+    for fragment in (
+        'name="Project"><vt:lpwstr>X',
+        "<vt:i4>7</vt:i4>",
+        "<vt:r8>1099511627776.0",
+        "<vt:r8>0.5</vt:r8>",
+        "<vt:bool>true",
+        "<vt:filetime>2024-06-01T00:00:00Z",
+    ):
         assert fragment in custom
     for part in ("core.xml", "app.xml", "custom.xml"):
         assert f"/docProps/{part}" in types and f"docProps/{part}" in rels
@@ -58,8 +78,15 @@ def test_properties_parts(tmp_path, writer_cls, ext):
 
 def test_properties_read_back(tmp_path):
     path = tmp_path / "props.xlsx"
-    _write(path, XlsxWriter, title="T", author="A", keywords="k", category="c",
-           created=datetime.datetime(2024, 1, 2, 3, 4, 5))
+    _write(
+        path,
+        XlsxWriter,
+        title="T",
+        author="A",
+        keywords="k",
+        category="c",
+        created=datetime.datetime(2024, 1, 2, 3, 4, 5),
+    )
     props = openpyxl.load_workbook(path).properties
     assert (props.title, props.creator, props.keywords, props.category) == ("T", "A", "k", "c")
     assert props.created == datetime.datetime(2024, 1, 2, 3, 4, 5)
@@ -108,17 +135,19 @@ def test_workbook_model_saves_its_properties(tmp_path):
     assert (props.title, props.creator) == ("Model title", "Model author")
 
 
-@pytest.mark.parametrize("chart_type,grouping,tag,expected", [
-    ("bar", "stacked", "barChart", 'grouping val="stacked"'),
-    ("barh", "percent_stacked", "barChart", 'grouping val="percentStacked"'),
-    ("line", "stacked", "lineChart", 'grouping val="stacked"'),
-    ("area", None, "areaChart", 'grouping val="standard"'),
-    ("area", "percent_stacked", "areaChart", 'grouping val="percentStacked"'),
-    ("doughnut", None, "doughnutChart", 'holeSize val="50"'),
-])
+@pytest.mark.parametrize(
+    "chart_type,grouping,tag,expected",
+    [
+        ("bar", "stacked", "barChart", 'grouping val="stacked"'),
+        ("barh", "percent_stacked", "barChart", 'grouping val="percentStacked"'),
+        ("line", "stacked", "lineChart", 'grouping val="stacked"'),
+        ("area", None, "areaChart", 'grouping val="standard"'),
+        ("area", "percent_stacked", "areaChart", 'grouping val="percentStacked"'),
+        ("doughnut", None, "doughnutChart", 'holeSize val="50"'),
+    ],
+)
 def test_new_chart_types_and_grouping(tmp_path, chart_type, grouping, tag, expected):
-    chart = Chart(chart_type, SERIES[:1] if chart_type == "doughnut" else SERIES,
-                  title="Sales", grouping=grouping)
+    chart = Chart(chart_type, SERIES[:1] if chart_type == "doughnut" else SERIES, title="Sales", grouping=grouping)
     path = tmp_path / "chart.xlsx"
     with XlsxWriter(path) as writer:
         writer.add_sheet("Data")
@@ -138,11 +167,13 @@ def test_chart_grouping_validation():
         Chart("pie", SERIES[:1], grouping="stacked")
     with pytest.raises(ValueError, match="no axes"):
         from xlspy import ChartAxis
+
         Chart("doughnut", SERIES[:1], y_axis=ChartAxis(minimum=0))
     with pytest.raises(ValueError, match="series color"):
         Chart("doughnut", [ChartSeries(values="B2:B4", color="#FF0000")])
     with pytest.raises(ValueError, match="marker"):
         from xlspy import ChartMarker
+
         Chart("area", [ChartSeries(values="B2:B4", marker=ChartMarker())])
 
 

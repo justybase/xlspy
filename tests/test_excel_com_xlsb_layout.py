@@ -1,6 +1,5 @@
 """Excel opens an Excel-written XLSB after layout and sheet-list edits by the model."""
 
-
 import pytest
 
 from xlspy import load_workbook

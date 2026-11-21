@@ -20,10 +20,12 @@ def _xlsb(path):
     return path
 
 
-@pytest.fixture(params=[
-    pytest.param((XlsxUpdater, _xlsx, "xlsx"), id="xlsx"),
-    pytest.param((XlsbUpdater, _xlsb, "xlsb"), id="xlsb"),
-])
+@pytest.fixture(
+    params=[
+        pytest.param((XlsxUpdater, _xlsx, "xlsx"), id="xlsx"),
+        pytest.param((XlsbUpdater, _xlsb, "xlsb"), id="xlsb"),
+    ]
+)
 def updater_case(request):
     return request.param
 

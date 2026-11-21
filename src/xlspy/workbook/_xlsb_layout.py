@@ -17,12 +17,28 @@ import struct
 
 from .._metadata import password_hash, DefinedName
 from .._xlsb_metadata import (
-    pane_record, read_wide, records, replace_records, selection_record, sheet_protection_record, wide_string,
+    pane_record,
+    read_wide,
+    records,
+    replace_records,
+    selection_record,
+    sheet_protection_record,
+    wide_string,
 )
 from .._xlsb_print import (
-    BRT_BEGIN_COL_BREAKS, BRT_BEGIN_HEADER_FOOTER, BRT_BEGIN_ROW_BREAKS, BRT_BREAK,
-    BRT_END_COL_BREAKS, BRT_END_HEADER_FOOTER, BRT_END_ROW_BREAKS, BRT_MARGINS,
-    BRT_PAGE_SETUP, BRT_PRINT_OPTIONS, breaks_block, header_footer_block, margins_record,
+    BRT_BEGIN_COL_BREAKS,
+    BRT_BEGIN_HEADER_FOOTER,
+    BRT_BEGIN_ROW_BREAKS,
+    BRT_BREAK,
+    BRT_END_COL_BREAKS,
+    BRT_END_HEADER_FOOTER,
+    BRT_END_ROW_BREAKS,
+    BRT_MARGINS,
+    BRT_PAGE_SETUP,
+    BRT_PRINT_OPTIONS,
+    breaks_block,
+    header_footer_block,
+    margins_record,
 )
 from .._xlsb_ignored_errors import (
     RECORD_BEGIN as BEGIN_IGNORED_ERRORS,
@@ -34,8 +50,13 @@ from ..ignored_errors import snapshot as ignored_errors_snapshot
 from .._xlsb_style_records import color_payload
 from ..biff_utils import build_record
 from .._xlsb_sort import (
-    BEGIN_SORT_COND, BEGIN_SORT_COND14, BEGIN_SORT_STATE,
-    END_SORT_COND, END_SORT_COND14, END_SORT_STATE, sort_state_records,
+    BEGIN_SORT_COND,
+    BEGIN_SORT_COND14,
+    BEGIN_SORT_STATE,
+    END_SORT_COND,
+    END_SORT_COND14,
+    END_SORT_STATE,
+    sort_state_records,
 )
 from ..printing import _paper_code, print_area_name
 from ..refs import parse_cell_range, column_label, quote_sheet_name
@@ -54,24 +75,49 @@ BEGIN_FILTER, END_FILTER = 0xA1, 0xA2
 # The sort state lives inside BrtBeginAFilter..BrtEndAFilter; its record ids
 # come from _xlsb_sort, which writes the block for the writer too.
 # Records of a value-list or blank-only auto filter; any other record means custom criteria.
-_VALUE_FILTER_RECORDS = frozenset({
-    0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
-    BEGIN_SORT_STATE, END_SORT_STATE, BEGIN_SORT_COND, END_SORT_COND,
-    BEGIN_SORT_COND14, END_SORT_COND14,
-})
+_VALUE_FILTER_RECORDS = frozenset(
+    {
+        0xA1,
+        0xA2,
+        0xA3,
+        0xA4,
+        0xA5,
+        0xA6,
+        0xA7,
+        BEGIN_SORT_STATE,
+        END_SORT_STATE,
+        BEGIN_SORT_COND,
+        END_SORT_COND,
+        BEGIN_SORT_COND14,
+        END_SORT_COND14,
+    }
+)
 BEGIN_FILTER_COLUMN, END_FILTER_COLUMN, BEGIN_FILTERS, END_FILTERS, FILTER = 0xA3, 0xA4, 0xA5, 0xA6, 0xA7
 END_SHEET = 0x82
 
-_PRINT_RECORDS = frozenset({
-    BRT_PRINT_OPTIONS, BRT_MARGINS, BRT_PAGE_SETUP, BRT_BEGIN_HEADER_FOOTER,
-    BRT_END_HEADER_FOOTER, BRT_BEGIN_ROW_BREAKS, BRT_END_ROW_BREAKS,
-    BRT_BEGIN_COL_BREAKS, BRT_END_COL_BREAKS, BRT_BREAK,
-})
+_PRINT_RECORDS = frozenset(
+    {
+        BRT_PRINT_OPTIONS,
+        BRT_MARGINS,
+        BRT_PAGE_SETUP,
+        BRT_BEGIN_HEADER_FOOTER,
+        BRT_END_HEADER_FOOTER,
+        BRT_BEGIN_ROW_BREAKS,
+        BRT_END_ROW_BREAKS,
+        BRT_BEGIN_COL_BREAKS,
+        BRT_END_COL_BREAKS,
+        BRT_BREAK,
+    }
+)
 # Records that follow a group in worksheet order ([MS-XLSB] 2.1.7.62): a group
 # the file does not have yet is inserted before the first of them.
-_AFTER_PRINT = (0x1A7, 0x1A8, 0x1AD, 0x1B1, 0x1B3, 0x226, 0x227, 0x228, 0x229,
-                0x27F, 0x280, 0x294, 0x25, END_SHEET)
-_BRT_AFTER_HYPERLINKS_AND_PRINT = (BRT_PRINT_OPTIONS, BRT_MARGINS, BRT_PAGE_SETUP, BRT_BEGIN_HEADER_FOOTER) + _AFTER_PRINT
+_AFTER_PRINT = (0x1A7, 0x1A8, 0x1AD, 0x1B1, 0x1B3, 0x226, 0x227, 0x228, 0x229, 0x27F, 0x280, 0x294, 0x25, END_SHEET)
+_BRT_AFTER_HYPERLINKS_AND_PRINT = (
+    BRT_PRINT_OPTIONS,
+    BRT_MARGINS,
+    BRT_PAGE_SETUP,
+    BRT_BEGIN_HEADER_FOOTER,
+) + _AFTER_PRINT
 _AFTER_FILTER = (BEGIN_SORT_STATE, 0x1F0, 0xB1, 0x1CD, 0x23D, 0x1EE) + _BRT_AFTER_HYPERLINKS_AND_PRINT
 _AFTER_PROTECTION = (0x1A5, 0x1A6, BEGIN_FILTER) + _AFTER_FILTER
 _AFTER_VIEWS = (FORMAT_INFO, BEGIN_COL_INFOS, BEGIN_SHEET_DATA)
@@ -80,27 +126,51 @@ _PANE_IDS = {"bottomRight": 0, "topRight": 1, "bottomLeft": 2, "topLeft": 3}
 _VIEW_KINDS = {None: 0, "normal": 0, "pageBreakPreview": 1, "pageLayout": 2}
 # BrtBeginWsView flag bits and the value a field has when it is None.
 _VIEW_FLAGS = (
-    ("windowProtection", 0x01, False), ("showFormulas", 0x02, False),
-    ("showGridLines", 0x04, True), ("showRowColHeaders", 0x08, True),
-    ("showZeros", 0x10, True), ("rightToLeft", 0x20, False),
-    ("tabSelected", 0x40, False), ("showRuler", 0x80, None),
-    ("showOutlineSymbols", 0x100, None), ("defaultGridColor", 0x200, None),
+    ("windowProtection", 0x01, False),
+    ("showFormulas", 0x02, False),
+    ("showGridLines", 0x04, True),
+    ("showRowColHeaders", 0x08, True),
+    ("showZeros", 0x10, True),
+    ("rightToLeft", 0x20, False),
+    ("tabSelected", 0x40, False),
+    ("showRuler", 0x80, None),
+    ("showOutlineSymbols", 0x100, None),
+    ("defaultGridColor", 0x200, None),
     ("showWhiteSpace", 0x400, None),
 )
 # BrtWsProp bits (24-bit flags): (model path, bit); None keeps the file's bit.
 _PROPERTY_BITS = (
-    ("published", 3), ("outlinePr.applyStyles", 5), ("outlinePr.summaryBelow", 6),
-    ("outlinePr.summaryRight", 7), ("outlinePr.showOutlineSymbols", 10),
-    ("syncHorizontal", 12), ("syncVertical", 13), ("transitionEvaluation", 14),
-    ("transitionEntry", 15), ("filterMode", 16), ("enableFormatConditionsCalculation", 17),
+    ("published", 3),
+    ("outlinePr.applyStyles", 5),
+    ("outlinePr.summaryBelow", 6),
+    ("outlinePr.summaryRight", 7),
+    ("outlinePr.showOutlineSymbols", 10),
+    ("syncHorizontal", 12),
+    ("syncVertical", 13),
+    ("transitionEvaluation", 14),
+    ("transitionEntry", 15),
+    ("filterMode", 16),
+    ("enableFormatConditionsCalculation", 17),
 )
 _FIT_TO_PAGE = 8
 # BrtSheetProtection: fLocked, then the permissions, stored as "allowed" (the
 # inverse of the OOXML attributes).
 _PROTECTION_FLAGS_NO_SHEET = (
-    "objects", "scenarios", "formatCells", "formatColumns", "formatRows",
-    "insertColumns", "insertRows", "insertHyperlinks", "deleteColumns", "deleteRows",
-    "selectLockedCells", "sort", "autoFilter", "pivotTables", "selectUnlockedCells",
+    "objects",
+    "scenarios",
+    "formatCells",
+    "formatColumns",
+    "formatRows",
+    "insertColumns",
+    "insertRows",
+    "insertHyperlinks",
+    "deleteColumns",
+    "deleteRows",
+    "selectLockedCells",
+    "sort",
+    "autoFilter",
+    "pivotTables",
+    "selectUnlockedCells",
 )
 _ERRORS = {None: None, "displayed": 0, "blank": 1, "dash": 2, "NA": 3}
 _DEFAULT_PAGE_SETUP = struct.pack("<8IH", 1, 100, 600, 600, 1, 1, 1, 1, 0x40) + b"\xff\xff\xff\xff"
@@ -120,15 +190,15 @@ def _get(obj, path: str):
 
 # --- what the model holds, per group -----------------------------------------
 
+
 def _columns_state(sheet):
     return tuple(
-        (letter, dim.min, dim.max, dim.width, dim.hidden, dim.outlineLevel, dim.collapsed,
-         dim.bestFit, dim.style)
+        (letter, dim.min, dim.max, dim.width, dim.hidden, dim.outlineLevel, dim.collapsed, dim.bestFit, dim.style)
         for letter, dim in sorted(
-            sheet.column_dimensions.items(), key=lambda item: _parse_sync_ref(f"{item[0]}1")[1],
+            sheet.column_dimensions.items(),
+            key=lambda item: _parse_sync_ref(f"{item[0]}1")[1],
         )
-        if dim.width is not None or dim.hidden or dim.outlineLevel or dim.collapsed
-        or dim.bestFit or dim.style
+        if dim.width is not None or dim.hidden or dim.outlineLevel or dim.collapsed or dim.bestFit or dim.style
     )
 
 
@@ -152,9 +222,12 @@ def _view_state(sheet):
 
 def _print_state(sheet):
     return (
-        _snapshot(sheet.page_setup), _snapshot(sheet.print_options), _snapshot(sheet.page_margins),
+        _snapshot(sheet.page_setup),
+        _snapshot(sheet.print_options),
+        _snapshot(sheet.page_margins),
         _header_footer_snapshot(sheet.HeaderFooter),
-        _break_snapshot(sheet.row_breaks), _break_snapshot(sheet.col_breaks),
+        _break_snapshot(sheet.row_breaks),
+        _break_snapshot(sheet.col_breaks),
         sheet.sheet_properties.pageSetUpPr.fitToPage,
     )
 
@@ -162,7 +235,9 @@ def _print_state(sheet):
 def _properties_state(sheet):
     properties = sheet.sheet_properties
     return (
-        repr(properties.tabColor), properties.codeName, properties.syncRef,
+        repr(properties.tabColor),
+        properties.codeName,
+        properties.syncRef,
         tuple(_get(properties, path) for path, _ in _PROPERTY_BITS),
         properties.pageSetUpPr.fitToPage,
     )
@@ -196,6 +271,7 @@ def changed_groups(sheet) -> set[str]:
 
 # --- encoders ----------------------------------------------------------------
 
+
 def _find(data: bytes, record_id: int) -> bytes | None:
     for record, payload in records(data):
         if record.record_id == record_id:
@@ -204,8 +280,11 @@ def _find(data: bytes, record_id: int) -> bytes | None:
 
 
 def _sheet_properties_payload(sheet, original: bytes | None) -> bytes:
-    payload = bytearray(original if original and len(original) >= 23
-                        else bytes.fromhex("c904020040000000000000ffffffffffffffff00000000"))
+    payload = bytearray(
+        original
+        if original and len(original) >= 23
+        else bytes.fromhex("c904020040000000000000ffffffffffffffff00000000")
+    )
     flags = int.from_bytes(payload[0:3], "little")
     properties = sheet.sheet_properties
     for path, bit in _PROPERTY_BITS:
@@ -246,9 +325,13 @@ def _view_record(sheet, original: bytes | None) -> bytes:
     if view.colorId is not None:
         payload[14] = view.colorId
     struct.pack_into(
-        "<HHHHI", payload, 18,
-        view.zoomScale or 100, view.zoomScaleNormal or 0,
-        view.zoomScaleSheetLayoutView or 0, view.zoomScalePageLayoutView or 0,
+        "<HHHHI",
+        payload,
+        18,
+        view.zoomScale or 100,
+        view.zoomScaleNormal or 0,
+        view.zoomScaleSheetLayoutView or 0,
+        view.zoomScalePageLayoutView or 0,
         view.workbookViewId or 0,
     )
     return build_record(BEGIN_VIEW, bytes(payload))
@@ -259,8 +342,9 @@ def _pane_record(pane) -> bytes:
         return b""
     top, left = _parse_sync_ref(pane.topLeftCell) if pane.topLeftCell else (0, 0)
     state = {"frozen": 0x03, "frozenSplit": 0x01}.get(pane.state, 0x00)
-    return pane_record(float(pane.xSplit or 0), float(pane.ySplit or 0), top, left,
-                       _PANE_IDS.get(pane.activePane, 3), state)
+    return pane_record(
+        float(pane.xSplit or 0), float(pane.ySplit or 0), top, left, _PANE_IDS.get(pane.activePane, 3), state
+    )
 
 
 def _selection_records(view) -> bytes:
@@ -276,8 +360,9 @@ def _selection_records(view) -> bytes:
         for part in (item.sqref or item.activeCell or "A1").split():
             c1, r1, c2, r2 = parse_cell_range(part)
             ranges.append((r1, r2, c1, c2))
-        output.append(selection_record(_PANE_IDS.get(item.pane or "topLeft", 3), row, column,
-                                       item.activeCellId or 0, ranges))
+        output.append(
+            selection_record(_PANE_IDS.get(item.pane or "topLeft", 3), row, column, item.activeCellId or 0, ranges)
+        )
     return b"".join(output)
 
 
@@ -285,28 +370,39 @@ def _views_block(sheet, data: bytes) -> bytes:
     views = [payload for record, payload in records(data) if record.record_id == BEGIN_VIEW]
     if len(views) > 1:
         raise UnsupportedFeatureError("editing a sheet with several window views is not supported")
-    return b"".join((
-        build_record(BEGIN_VIEWS),
-        _view_record(sheet, views[0] if views else None),
-        _pane_record(sheet.sheet_view.pane),
-        _selection_records(sheet.sheet_view),
-        build_record(END_VIEW),
-        build_record(END_VIEWS),
-    ))
+    return b"".join(
+        (
+            build_record(BEGIN_VIEWS),
+            _view_record(sheet, views[0] if views else None),
+            _pane_record(sheet.sheet_view.pane),
+            _selection_records(sheet.sheet_view),
+            build_record(END_VIEW),
+            build_record(END_VIEWS),
+        )
+    )
 
 
 def _format_record(sheet) -> bytes:
     fmt = sheet.sheet_format
     width = 0xFFFFFFFF if fmt.defaultColWidth is None else round(fmt.defaultColWidth * 256)
     flags = (
-        (0x01 if fmt.customHeight else 0) | (0x02 if fmt.zeroHeight else 0)
-        | (0x04 if fmt.thickTop else 0) | (0x08 if fmt.thickBottom else 0)
+        (0x01 if fmt.customHeight else 0)
+        | (0x02 if fmt.zeroHeight else 0)
+        | (0x04 if fmt.thickTop else 0)
+        | (0x08 if fmt.thickBottom else 0)
     )
-    return build_record(FORMAT_INFO, struct.pack(
-        "<IHHHBB", width, fmt.baseColWidth if fmt.baseColWidth is not None else 8,
-        round((fmt.defaultRowHeight or 15) * 20), flags,
-        fmt.outlineLevelRow or 0, fmt.outlineLevelCol or 0,
-    ))
+    return build_record(
+        FORMAT_INFO,
+        struct.pack(
+            "<IHHHBB",
+            width,
+            fmt.baseColWidth if fmt.baseColWidth is not None else 8,
+            round((fmt.defaultRowHeight or 15) * 20),
+            flags,
+            fmt.outlineLevelRow or 0,
+            fmt.outlineLevelCol or 0,
+        ),
+    )
 
 
 def _column_records(sheet) -> bytes:
@@ -316,8 +412,10 @@ def _column_records(sheet) -> bytes:
     for letter, _, _, width, hidden, level, collapsed, best_fit, style in _columns_state(sheet):
         index = _parse_sync_ref(f"{letter}1")[1]
         flags = (
-            (0x01 if hidden else 0) | (0x02 if width is not None else 0)
-            | (0x04 if best_fit else 0) | ((level or 0) & 0x07) << 8
+            (0x01 if hidden else 0)
+            | (0x02 if width is not None else 0)
+            | (0x04 if best_fit else 0)
+            | ((level or 0) & 0x07) << 8
             | (0x1000 if collapsed else 0)
         )
         key = (default if width is None else round(width * 256), style or 0, flags)
@@ -327,10 +425,11 @@ def _column_records(sheet) -> bytes:
             entries.append([index, index, key])
     if not entries:
         return b""
-    return build_record(BEGIN_COL_INFOS) + b"".join(
-        build_record(COL_INFO, struct.pack("<IIIIH", first, last, *key))
-        for first, last, key in entries
-    ) + build_record(END_COL_INFOS)
+    return (
+        build_record(BEGIN_COL_INFOS)
+        + b"".join(build_record(COL_INFO, struct.pack("<IIIIH", first, last, *key)) for first, last, key in entries)
+        + build_record(END_COL_INFOS)
+    )
 
 
 def _protection_record(sheet) -> bytes:
@@ -425,8 +524,7 @@ def _page_setup_record(sheet, original: bytes | None) -> bytes:
     errors = _ERRORS.get(setup.errors)
     if errors is not None:
         flags = (flags & ~0xC00) | errors << 10
-    struct.pack_into("<8IH", payload, 0, paper, scale, h_dpi, v_dpi, copies, first_page,
-                     fit_width, fit_height, flags)
+    struct.pack_into("<8IH", payload, 0, paper, scale, h_dpi, v_dpi, copies, first_page, fit_width, fit_height, flags)
     return build_record(BRT_PAGE_SETUP, bytes(payload))
 
 
@@ -437,8 +535,10 @@ def _header_footer_block(sheet) -> bytes:
         for name in ("oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter")
     ]
     flags = (
-        (0x01 if footer.differentOddEven else 0) | (0x02 if footer.differentFirst else 0)
-        | (0 if footer.scaleWithDoc is False else 0x04) | (0 if footer.alignWithMargins is False else 0x08)
+        (0x01 if footer.differentOddEven else 0)
+        | (0x02 if footer.differentFirst else 0)
+        | (0 if footer.scaleWithDoc is False else 0x04)
+        | (0 if footer.alignWithMargins is False else 0x08)
     )
     if not any(codes) and flags == 0x0C:
         return b""
@@ -446,9 +546,9 @@ def _header_footer_block(sheet) -> bytes:
 
 
 def _breaks_block(begin, end, container) -> bytes:
-    return breaks_block(begin, end, [
-        (item.id, item.min or 0, item.max or 0, bool(item.man), item.pt or 0) for item in container.brk
-    ])
+    return breaks_block(
+        begin, end, [(item.id, item.min or 0, item.max or 0, bool(item.man), item.pt or 0) for item in container.brk]
+    )
 
 
 def _print_block(sheet, data: bytes) -> bytes:
@@ -456,22 +556,27 @@ def _print_block(sheet, data: bytes) -> bytes:
     original = _find(data, BRT_PRINT_OPTIONS)
     flags = struct.unpack_from("<H", original)[0] if original and len(original) >= 2 else 0x10
     for mask, value in (
-        (0x01, options.horizontalCentered), (0x02, options.verticalCentered),
-        (0x04, options.headings), (0x08, options.gridLines), (0x10, options.gridLinesSet),
+        (0x01, options.horizontalCentered),
+        (0x02, options.verticalCentered),
+        (0x04, options.headings),
+        (0x08, options.gridLines),
+        (0x10, options.gridLinesSet),
     ):
         if value is not None or mask != 0x10:
             flags = flags | mask if value else flags & ~mask
     if options.gridLinesSet is None:
         flags |= 0x10
     margins = sheet.page_margins
-    return b"".join((
-        build_record(BRT_PRINT_OPTIONS, struct.pack("<H", flags)),
-        margins_record((margins.left, margins.right, margins.top, margins.bottom, margins.header, margins.footer)),
-        _page_setup_record(sheet, _find(data, BRT_PAGE_SETUP)),
-        _header_footer_block(sheet),
-        _breaks_block(BRT_BEGIN_ROW_BREAKS, BRT_END_ROW_BREAKS, sheet.row_breaks),
-        _breaks_block(BRT_BEGIN_COL_BREAKS, BRT_END_COL_BREAKS, sheet.col_breaks),
-    ))
+    return b"".join(
+        (
+            build_record(BRT_PRINT_OPTIONS, struct.pack("<H", flags)),
+            margins_record((margins.left, margins.right, margins.top, margins.bottom, margins.header, margins.footer)),
+            _page_setup_record(sheet, _find(data, BRT_PAGE_SETUP)),
+            _header_footer_block(sheet),
+            _breaks_block(BRT_BEGIN_ROW_BREAKS, BRT_END_ROW_BREAKS, sheet.row_breaks),
+            _breaks_block(BRT_BEGIN_COL_BREAKS, BRT_END_COL_BREAKS, sheet.col_breaks),
+        )
+    )
 
 
 def _replace_filter(data: bytes, block: bytes) -> bytes:
@@ -498,7 +603,7 @@ def _replace_filter(data: bytes, block: bytes) -> bytes:
         if not inserted and kind in _AFTER_FILTER:
             output.append(block)
             inserted = True
-        output.append(data[record.header_start:record.data_end])
+        output.append(data[record.header_start : record.data_end])
     if not inserted:
         raise ValueError("BIFF12 insertion point was not found")
     return b"".join(output)
@@ -506,10 +611,10 @@ def _replace_filter(data: bytes, block: bytes) -> bytes:
 
 # --- rows ----------------------------------------------------------------------
 
+
 def _row_payload(row: int, original: bytes | None, dim, default_height: int) -> bytes:
     if original is None:
-        payload = bytearray(struct.pack("<IIH", row - 1, 0, default_height) + bytes(3)
-                            + struct.pack("<III", 1, 0, 0))
+        payload = bytearray(struct.pack("<IIH", row - 1, 0, default_height) + bytes(3) + struct.pack("<III", 1, 0, 0))
     else:
         payload = bytearray(original)
     flags = payload[11] & 0x80  # keep fPhShow's neighbour bits outside the model
@@ -557,7 +662,7 @@ def _patch_xlsb_rows(data: bytes, sheet, saved_rows) -> bytes:
         if not in_data:
             continue
         if kind == END_SHEET_DATA:
-            output.append(data[cursor:record.header_start])
+            output.append(data[cursor : record.header_start])
             while next_pending < len(pending):
                 row = pending[next_pending]
                 next_pending += 1
@@ -570,13 +675,13 @@ def _patch_xlsb_rows(data: bytes, sheet, saved_rows) -> bytes:
         while next_pending < len(pending) and pending[next_pending] < row:
             new_row = pending[next_pending]
             next_pending += 1
-            output.append(data[cursor:record.header_start])
+            output.append(data[cursor : record.header_start])
             output.append(_row_payload(new_row, None, wanted[new_row], default_height))
             cursor = record.header_start
         if next_pending < len(pending) and pending[next_pending] == row:
             next_pending += 1
         if row in touched:
-            output.append(data[cursor:record.header_start])
+            output.append(data[cursor : record.header_start])
             output.append(_row_payload(row, payload, wanted.get(row), default_height))
             cursor = record.data_end
     output.append(data[cursor:])
@@ -584,6 +689,7 @@ def _patch_xlsb_rows(data: bytes, sheet, saved_rows) -> bytes:
 
 
 # --- the sheet part --------------------------------------------------------------
+
 
 def _drop_legacy_column_wrappers(data: bytes) -> bytes:
     """xlspy before 0.11 wrapped BrtColInfo in records 0x86/0x87 instead of
@@ -595,7 +701,7 @@ def _drop_legacy_column_wrappers(data: bytes) -> bytes:
     for record, _payload in records(data):
         kind = record.record_id
         if kind == BEGIN_SHEET_DATA:
-            output.append(data[record.header_start:])
+            output.append(data[record.header_start :])
             break
         if kind == END_VIEWS:
             if seen_views_end:
@@ -605,7 +711,7 @@ def _drop_legacy_column_wrappers(data: bytes) -> bytes:
         elif kind == 0x87:
             changed = True
             continue
-        output.append(data[record.header_start:record.data_end])
+        output.append(data[record.header_start : record.data_end])
     return b"".join(output) if changed else data
 
 
@@ -615,26 +721,31 @@ def patch_layout(data: bytes, sheet, groups) -> bytes:
     if {"views", "columns", "format"} & set(groups):
         data = _drop_legacy_column_wrappers(data)
     if "properties" in groups or "print" in groups:
-        data = replace_records(data, {WS_PROP}, _sheet_properties_payload(sheet, _find(data, WS_PROP)),
-                               before=(WS_DIM, BEGIN_VIEWS) + _AFTER_VIEWS)
+        data = replace_records(
+            data,
+            {WS_PROP},
+            _sheet_properties_payload(sheet, _find(data, WS_PROP)),
+            before=(WS_DIM, BEGIN_VIEWS) + _AFTER_VIEWS,
+        )
     if "views" in groups:
-        data = replace_records(data, {BEGIN_VIEWS, END_VIEWS, BEGIN_VIEW, END_VIEW, PANE, SELECTION},
-                               _views_block(sheet, data), before=_AFTER_VIEWS)
+        data = replace_records(
+            data,
+            {BEGIN_VIEWS, END_VIEWS, BEGIN_VIEW, END_VIEW, PANE, SELECTION},
+            _views_block(sheet, data),
+            before=_AFTER_VIEWS,
+        )
     if "format" in groups:
-        data = replace_records(data, {FORMAT_INFO}, _format_record(sheet),
-                               before=(BEGIN_COL_INFOS, BEGIN_SHEET_DATA))
+        data = replace_records(data, {FORMAT_INFO}, _format_record(sheet), before=(BEGIN_COL_INFOS, BEGIN_SHEET_DATA))
     if "columns" in groups or "format" in groups:
         block = _column_records(sheet)
         if block or any(record.record_id == BEGIN_COL_INFOS for record, _ in records(data)):
-            data = replace_records(data, {BEGIN_COL_INFOS, COL_INFO, END_COL_INFOS}, block,
-                                   before=(BEGIN_SHEET_DATA,))
+            data = replace_records(data, {BEGIN_COL_INFOS, COL_INFO, END_COL_INFOS}, block, before=(BEGIN_SHEET_DATA,))
     if "rows" in groups or "format" in groups:
         data = _patch_xlsb_rows(data, sheet, saved.get("rows"))
     if "protection" in groups:
         block = _protection_record(sheet)
         if block or any(record.record_id in (SHEET_PROTECTION, SHEET_PROTECTION_ISO) for record, _ in records(data)):
-            data = replace_records(data, {SHEET_PROTECTION, SHEET_PROTECTION_ISO}, block,
-                                   before=_AFTER_PROTECTION)
+            data = replace_records(data, {SHEET_PROTECTION, SHEET_PROTECTION_ISO}, block, before=_AFTER_PROTECTION)
     if "filter" in groups:
         loaded = getattr(sheet, "_saved_filter_records", None) or ()
         if sheet.auto_filter.ref and any(record_id not in _VALUE_FILTER_RECORDS for record_id, _ in loaded):
@@ -682,8 +793,7 @@ def set_builtin_name(context, name: str, formula: str | None, scope: str, *, hid
     """Set (or with ``formula=None`` remove) a built-in sheet name such as Print_Area."""
 
     for index, entry in enumerate(context.names):
-        if (entry.flags & _BUILTIN and entry.name.casefold() == name.casefold()
-                and context._scope(entry) == scope):
+        if entry.flags & _BUILTIN and entry.name.casefold() == name.casefold() and context._scope(entry) == scope:
             if formula is None:
                 _drop(context, index)
             else:
@@ -701,8 +811,12 @@ def _drop(context, index: int) -> None:
     entry = context.names[index]
     placeholder = f"_xlspy_deleted_{index}_{len(context.names)}"
     entry.name, entry.flags, entry.definition, entry.scope = placeholder, _HIDDEN, None, None
-    entry.raw = (struct.pack("<IBI", _HIDDEN, 0, 0xFFFFFFFF) + wide_string(placeholder)
-                 + parsed_formula(b"\x1c\x1d") + b"\xff" * 4)
+    entry.raw = (
+        struct.pack("<IBI", _HIDDEN, 0, 0xFFFFFFFF)
+        + wide_string(placeholder)
+        + parsed_formula(b"\x1c\x1d")
+        + b"\xff" * 4
+    )
 
 
 def save_builtin_names(updater, sheet, groups) -> None:

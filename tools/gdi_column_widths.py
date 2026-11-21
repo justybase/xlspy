@@ -34,9 +34,26 @@ from ctypes import wintypes
 UNITS = 2048  # the design units the module stores (every font here has 2048 per em)
 PIXEL_SIZES = range(8, 65)  # font heights in pixels (6 to 48 pt at 96 DPI)
 FONTS = [
-    "Calibri", "Calibri Light", "Aptos", "Aptos Narrow", "Arial", "Arial Narrow", "Arial Black",
-    "Times New Roman", "Cambria", "Consolas", "Courier New", "Lucida Console", "Segoe UI", "Tahoma",
-    "Verdana", "Georgia", "Trebuchet MS", "Century Gothic", "Lucida Sans Unicode", "Microsoft Sans Serif",
+    "Calibri",
+    "Calibri Light",
+    "Aptos",
+    "Aptos Narrow",
+    "Arial",
+    "Arial Narrow",
+    "Arial Black",
+    "Times New Roman",
+    "Cambria",
+    "Consolas",
+    "Courier New",
+    "Lucida Console",
+    "Segoe UI",
+    "Tahoma",
+    "Verdana",
+    "Georgia",
+    "Trebuchet MS",
+    "Century Gothic",
+    "Lucida Sans Unicode",
+    "Microsoft Sans Serif",
     "Comic Sans MS",
 ]
 # Office's cloud fonts (Aptos, the default since Office 2023) are not installed
@@ -45,30 +62,37 @@ CLOUD_FONTS = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Fon
 _CLOUD_FAMILIES = ["Aptos", "Aptos Narrow"]
 STYLES = [(False, False), (True, False), (False, True), (True, True)]  # (bold, italic)
 _BLOCKS = [
-    (0x20, 0x7F), (0xA0, 0x250),      # Latin
-    (0x370, 0x400), (0x400, 0x530),   # Greek, Cyrillic
-    (0x590, 0x600),                   # Hebrew
-    (0x1E00, 0x1F00),                 # Latin Extended Additional (Vietnamese)
-    (0x2000, 0x2070),                 # General Punctuation, with the Unicode spaces
-    (0x2070, 0x20D0),                 # super- and subscripts, currency signs
-    (0x2100, 0x2200),                 # letterlike symbols, number forms, arrows
-    (0x2200, 0x2400),                 # mathematical operators, technical symbols
-    (0x2460, 0x2500),                 # enclosed alphanumerics
-    (0x2500, 0x2600),                 # box drawing, blocks, geometric shapes
-    (0x2600, 0x27C0),                 # miscellaneous symbols, dingbats
-    (0x2B00, 0x2C00),                 # miscellaneous symbols and arrows
+    (0x20, 0x7F),
+    (0xA0, 0x250),  # Latin
+    (0x370, 0x400),
+    (0x400, 0x530),  # Greek, Cyrillic
+    (0x590, 0x600),  # Hebrew
+    (0x1E00, 0x1F00),  # Latin Extended Additional (Vietnamese)
+    (0x2000, 0x2070),  # General Punctuation, with the Unicode spaces
+    (0x2070, 0x20D0),  # super- and subscripts, currency signs
+    (0x2100, 0x2200),  # letterlike symbols, number forms, arrows
+    (0x2200, 0x2400),  # mathematical operators, technical symbols
+    (0x2460, 0x2500),  # enclosed alphanumerics
+    (0x2500, 0x2600),  # box drawing, blocks, geometric shapes
+    (0x2600, 0x27C0),  # miscellaneous symbols, dingbats
+    (0x2B00, 0x2C00),  # miscellaneous symbols and arrows
 ]
 # Scripts only the fallback fonts draw (Devanagari, Thai).
 _FALLBACK_BLOCKS = [(0x900, 0x980), (0xE00, 0xE80)]
 # Emoji outside the BMP: Excel draws them all with Segoe UI Emoji.
-_EMOJI_BLOCKS = [(0x1F000, 0x1F100), (0x1F1E6, 0x1F200), (0x1F300, 0x1F650), (0x1F680, 0x1F700),
-                 (0x1F7E0, 0x1F7F0), (0x1F900, 0x1FA00), (0x1FA70, 0x1FB00)]
+_EMOJI_BLOCKS = [
+    (0x1F000, 0x1F100),
+    (0x1F1E6, 0x1F200),
+    (0x1F300, 0x1F650),
+    (0x1F680, 0x1F700),
+    (0x1F7E0, 0x1F7F0),
+    (0x1F900, 0x1FA00),
+    (0x1FA70, 0x1FB00),
+]
 # BMP characters with Emoji_Presentation=Yes: Excel takes them from Segoe UI
 # Emoji, the other symbols from Segoe UI Symbol.
 _EMOJI_PRESENTATION = (
-    "⌚⌛⏩⏪⏫⏬⏰⏳◽◾☔☕"
-    + "".join(chr(c) for c in range(0x2648, 0x2654))
-    + "♿⚓⚡⚪⚫⚽⚾⛄⛅⛎⛔⛪⛲⛳⛵⛺"
+    "⌚⌛⏩⏪⏫⏬⏰⏳◽◾☔☕" + "".join(chr(c) for c in range(0x2648, 0x2654)) + "♿⚓⚡⚪⚫⚽⚾⛄⛅⛎⛔⛪⛲⛳⛵⛺"
     "⛽✅✊✋✨❌❎❓❔❕❗➕➖➗➰➿"
     "⬛⬜⭐⭕"
 )
@@ -97,12 +121,32 @@ class SIZE(ctypes.Structure):
 
 
 class TEXTMETRICW(ctypes.Structure):
-    _fields_ = [(name, ctypes.c_long) for name in (
-        "tmHeight", "tmAscent", "tmDescent", "tmInternalLeading", "tmExternalLeading", "tmAveCharWidth",
-        "tmMaxCharWidth", "tmWeight", "tmOverhang", "tmDigitizedAspectX", "tmDigitizedAspectY")] + [
-        ("tmFirstChar", ctypes.c_wchar), ("tmLastChar", ctypes.c_wchar), ("tmDefaultChar", ctypes.c_wchar),
-        ("tmBreakChar", ctypes.c_wchar), ("tmItalic", ctypes.c_byte), ("tmUnderlined", ctypes.c_byte),
-        ("tmStruckOut", ctypes.c_byte), ("tmPitchAndFamily", ctypes.c_byte), ("tmCharSet", ctypes.c_byte)]
+    _fields_ = [
+        (name, ctypes.c_long)
+        for name in (
+            "tmHeight",
+            "tmAscent",
+            "tmDescent",
+            "tmInternalLeading",
+            "tmExternalLeading",
+            "tmAveCharWidth",
+            "tmMaxCharWidth",
+            "tmWeight",
+            "tmOverhang",
+            "tmDigitizedAspectX",
+            "tmDigitizedAspectY",
+        )
+    ] + [
+        ("tmFirstChar", ctypes.c_wchar),
+        ("tmLastChar", ctypes.c_wchar),
+        ("tmDefaultChar", ctypes.c_wchar),
+        ("tmBreakChar", ctypes.c_wchar),
+        ("tmItalic", ctypes.c_byte),
+        ("tmUnderlined", ctypes.c_byte),
+        ("tmStruckOut", ctypes.c_byte),
+        ("tmPitchAndFamily", ctypes.c_byte),
+        ("tmCharSet", ctypes.c_byte),
+    ]
 
 
 class Gdi:
@@ -115,8 +159,7 @@ class Gdi:
         gdi.SelectObject.restype = wintypes.HGDIOBJ
         gdi.DeleteObject.argtypes = [wintypes.HGDIOBJ]
         gdi.GetTextExtentPoint32W.argtypes = [wintypes.HDC, ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
-        gdi.GetGlyphIndicesW.argtypes = [wintypes.HDC, ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p,
-                                         wintypes.DWORD]
+        gdi.GetGlyphIndicesW.argtypes = [wintypes.HDC, ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
         gdi.GetTextFaceW.argtypes = [wintypes.HDC, ctypes.c_int, wintypes.LPWSTR]
         gdi.GetTextMetricsW.argtypes = [wintypes.HDC, ctypes.c_void_p]
         self.dc = gdi.CreateCompatibleDC(None)
@@ -255,7 +298,7 @@ def generate() -> str:
     fallback = _pack(_fallback(g))
 
     def wrapped(text: str, indent: str) -> list[str]:
-        return [f'{indent}"{text[i:i + 96]}"' for i in range(0, len(text), 96)]
+        return [f'{indent}"{text[i : i + 96]}"' for i in range(0, len(text), 96)]
 
     lines = [
         '"""Font advance widths for the column-width estimate (generated; do not edit).',

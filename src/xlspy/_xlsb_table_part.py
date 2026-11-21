@@ -25,8 +25,15 @@ _BEGIN_LIST, _BEGIN_LIST_COL, _TABLE_STYLE_CLIENT, _BEGIN_AUTO_FILTER = 0x157, 0
 _END_LIST = 0x158
 _LIST_TR_FMLA = 0x160
 _TOTALS_FUNCTIONS = {
-    1: "average", 2: "count", 3: "countNums", 4: "max", 5: "min",
-    6: "sum", 7: "stdDev", 8: "var", 9: "custom",
+    1: "average",
+    2: "count",
+    3: "countNums",
+    4: "max",
+    5: "min",
+    6: "sum",
+    7: "stdDev",
+    8: "var",
+    9: "custom",
 }
 
 
@@ -77,8 +84,12 @@ def parse_table_part(data: bytes) -> TablePart | None:
             _display, offset = read_wide(payload, offset, nullable=True)
             comment, offset = read_wide(payload, offset, nullable=True)
             table = TablePart(
-                id=ident, name=name, ref=_range(r1, r2, c1, c2), comment=comment or None,
-                header_rows=header, totals_rows=totals or None,
+                id=ident,
+                name=name,
+                ref=_range(r1, r2, c1, c2),
+                comment=comment or None,
+                header_rows=header,
+                totals_rows=totals or None,
             )
         elif table is None:
             continue
@@ -90,7 +101,8 @@ def parse_table_part(data: bytes) -> TablePart | None:
             caption, offset = read_wide(payload, offset, nullable=True)
             label, offset = read_wide(payload, offset, nullable=True)
             current_column = TablePartColumn(
-                id=ident, name=caption or name,
+                id=ident,
+                name=caption or name,
                 totals_function=_TOTALS_FUNCTIONS.get(totals_function),
                 totals_label=label or None,
             )
@@ -102,8 +114,10 @@ def parse_table_part(data: bytes) -> TablePart | None:
             style, _ = read_wide(payload, 2, nullable=True)
             table.style = TablePartStyle(
                 name=style,
-                first_column=bool(flags & 0x01), last_column=bool(flags & 0x02),
-                row_stripes=bool(flags & 0x04), column_stripes=bool(flags & 0x08),
+                first_column=bool(flags & 0x01),
+                last_column=bool(flags & 0x02),
+                row_stripes=bool(flags & 0x04),
+                column_stripes=bool(flags & 0x08),
             )
     return table
 
@@ -133,8 +147,10 @@ def _rfx(ref: str) -> bytes:
 
 def _style_payload(style: TablePartStyle, rest: bytes, old_flags: int = 0) -> bytes:
     flags = (old_flags & ~0x0F) | (
-        (0x01 if style.first_column else 0) | (0x02 if style.last_column else 0)
-        | (0x04 if style.row_stripes else 0) | (0x08 if style.column_stripes else 0)
+        (0x01 if style.first_column else 0)
+        | (0x02 if style.last_column else 0)
+        | (0x04 if style.row_stripes else 0)
+        | (0x08 if style.column_stripes else 0)
     )
     return struct.pack("<H", flags) + _nullable(style.name) + rest
 
@@ -154,7 +170,7 @@ def patch_table_part(data: bytes, edit: TableEdit) -> bytes:
     seen_list = seen_filter = seen_style = False
     for record, payload in records(data):
         kind = record.record_id
-        original = data[record.header_start:record.data_end]
+        original = data[record.header_start : record.data_end]
         if kind == _BEGIN_LIST and not seen_list:
             seen_list = True
             head = struct.unpack_from("<9I", payload, 0)
@@ -166,8 +182,11 @@ def patch_table_part(data: bytes, edit: TableEdit) -> bytes:
                 strings = _nullable(edit.name) + _nullable(edit.name)
             flags = head[8] | 0x01 if edit.totals_rows else head[8]
             new = (
-                _rfx(edit.ref) + struct.pack("<5I", head[4], head[5], edit.header_rows, edit.totals_rows, flags)
-                + payload[36:64] + strings + payload[after_display:]
+                _rfx(edit.ref)
+                + struct.pack("<5I", head[4], head[5], edit.header_rows, edit.totals_rows, flags)
+                + payload[36:64]
+                + strings
+                + payload[after_display:]
             )
             out.append(build_record(kind, new))
         elif kind == _BEGIN_AUTO_FILTER and not seen_filter:
@@ -196,16 +215,24 @@ def patch_table_part(data: bytes, edit: TableEdit) -> bytes:
             current_ilta = new_ilta
             column += 1
             if (new_ilta, new_name, new_caption, new_label) == (
-                struct.unpack_from("<I", payload, 4)[0], name, caption, label,
+                struct.unpack_from("<I", payload, 4)[0],
+                name,
+                caption,
+                label,
             ):
                 out.append(original)
             else:
                 column_head = payload[:4] + struct.pack("<I", new_ilta) + payload[8:24]
-                out.append(build_record(
-                    kind,
-                    column_head + _nullable(new_name) + _nullable(new_caption)
-                    + _nullable(new_label) + payload[after_label:],
-                ))
+                out.append(
+                    build_record(
+                        kind,
+                        column_head
+                        + _nullable(new_name)
+                        + _nullable(new_caption)
+                        + _nullable(new_label)
+                        + payload[after_label:],
+                    )
+                )
         elif kind == _LIST_TR_FMLA and edit.totals_cells is not None:
             if current_ilta == ILTA_CUSTOM:
                 out.append(original)
@@ -252,8 +279,9 @@ def _table_sheets(read: Callable[[str], bytes | None], sheets: Mapping[str, str]
     return owners
 
 
-def table_catalog(names: Iterable[str], read: Callable[[str], bytes | None],
-                  sheets: Mapping[str, str] | None = None) -> dict[int, tuple[str, list[str], str | None]]:
+def table_catalog(
+    names: Iterable[str], read: Callable[[str], bytes | None], sheets: Mapping[str, str] | None = None
+) -> dict[int, tuple[str, list[str], str | None]]:
     """The tables of a package by id: ``{id: (display name, column names, sheet title)}``.
 
     ``names`` are the package's part names and ``read(name)`` gives a part's bytes;

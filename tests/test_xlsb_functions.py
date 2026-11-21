@@ -70,14 +70,14 @@ def test_newer_functions_get_the_xlfn_prefix_in_xlsx(tmp_path, name):
 def test_newer_functions_are_written_to_xlsb(tmp_path):
     workbook = Workbook()
     workbook.active["A1"] = "=BITAND(12,10)"
-    workbook.active["A2"] = "=NUMBERVALUE(\"1.5\",\".\")"
+    workbook.active["A2"] = '=NUMBERVALUE("1.5",".")'
     path = tmp_path / "f.xlsb"
     workbook.save(path)
     workbook.close()
     loaded = load_workbook(path)
     try:
         assert loaded.active["A1"].value == "=_xlfn.BITAND(12,10)"
-        assert loaded.active["A2"].value == "=_xlfn.NUMBERVALUE(\"1.5\",\".\")"
+        assert loaded.active["A2"].value == '=_xlfn.NUMBERVALUE("1.5",".")'
     finally:
         loaded.close()
 

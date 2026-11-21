@@ -46,12 +46,8 @@ def test_metadata_edits_survive_save(tmp_path):
         assert sheet.protection.formatCells is False
         assert len(sheet.row_breaks.brk) == initial_breaks + 1
         assert sheet.column_dimensions["A"].bestFit is True
-        added_column = next(
-            item for item in sheet.auto_filter.filterColumn if item.colId == 1
-        )
-        filter_values = [
-            getattr(item, "val", item) for item in added_column.filters.filter
-        ]
+        added_column = next(item for item in sheet.auto_filter.filterColumn if item.colId == 1)
+        filter_values = [getattr(item, "val", item) for item in added_column.filters.filter]
         assert filter_values == ["10"]
         assert sheet.auto_filter.sortState.sortCondition[0].descending is True
         assert book.calculation.calcMode == "manual"
@@ -73,9 +69,7 @@ def test_metadata_edits_survive_save(tmp_path):
         assert sheet.protection.formatCells is False
         assert len(sheet.row_breaks.brk) == initial_breaks + 1
         assert sheet.column_dimensions["A"].bestFit is True
-        added_column = next(
-            item for item in sheet.auto_filter.filterColumn if item.colId == 1
-        )
+        added_column = next(item for item in sheet.auto_filter.filterColumn if item.colId == 1)
         assert added_column.vals == ["10"]
         assert sheet.auto_filter.sortState.sortCondition[0].descending is True
         assert reloaded.calculation.calcMode == "manual"

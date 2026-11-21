@@ -16,10 +16,7 @@ FIXTURE = Path(__file__).parent / "data" / "xlsb" / "protected_iso.xlsb"
 def _records(path):
     with zipfile.ZipFile(path) as archive:
         data = archive.read("xl/worksheets/sheet1.bin")
-    return [
-        (record.record_id, data[record.data_start:record.data_end])
-        for record in iter_records(data)
-    ]
+    return [(record.record_id, data[record.data_start : record.data_end]) for record in iter_records(data)]
 
 
 def test_hashed_protection_is_read_and_flags_are_kept(tmp_path):

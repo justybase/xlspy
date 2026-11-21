@@ -11,7 +11,13 @@ import pytest
 from xlspy import Comment, DataValidation, Hyperlink, Workbook, load_workbook
 from xlspy._metadata import password_hash
 from xlspy.styles import (
-    CellIsRule, ColorScaleRule, DataBarRule, DifferentialStyle, Font, FormatObject, IconSetRule,
+    CellIsRule,
+    ColorScaleRule,
+    DataBarRule,
+    DifferentialStyle,
+    Font,
+    FormatObject,
+    IconSetRule,
     PatternFill,
 )
 from xlspy.workbook import CustomProperty
@@ -196,17 +202,25 @@ def _check_properties(workbook):
     assert [(item.name, item.value) for item in workbook.custom_doc_props] == [("Project", "Apollo")]
 
 
-_RED = DifferentialStyle(font=Font(color="FF9C0006", bold=True),
-                         fill=PatternFill("solid", start_color="FFFFC7CE"))
+_RED = DifferentialStyle(font=Font(color="FF9C0006", bold=True), fill=PatternFill("solid", start_color="FFFFC7CE"))
 
 
 def _set_conditional(workbook):
     formats = workbook["Data"].conditional_formatting
     formats.add("B1:B10", CellIsRule("B1", "greaterThan", ["5"], dxf=_RED))
-    formats.add("C1:C10", ColorScaleRule("C1", FormatObject("min"), FormatObject("formula", "$B$1"),
-                                         FormatObject("max"), ["FFF8696B", "FFFFEB84", "FF63BE7B"]))
-    formats.add("B1:B5 C1:C5", DataBarRule("B1", FormatObject("num", 1), FormatObject("max"),
-                                           "FF638EC6", show_value=False))
+    formats.add(
+        "C1:C10",
+        ColorScaleRule(
+            "C1",
+            FormatObject("min"),
+            FormatObject("formula", "$B$1"),
+            FormatObject("max"),
+            ["FFF8696B", "FFFFEB84", "FF63BE7B"],
+        ),
+    )
+    formats.add(
+        "B1:B5 C1:C5", DataBarRule("B1", FormatObject("num", 1), FormatObject("max"), "FF638EC6", show_value=False)
+    )
     formats.add("B1:B10", IconSetRule("B1", "5Rating", [0, 20, 40, 60, 80], reverse=True))
     new = workbook.create_sheet("Fresh")
     new["A1"] = 1
@@ -216,11 +230,14 @@ def _set_conditional(workbook):
 def _check_conditional(workbook):
     found = {
         (item.sqref, type(rule).__name__): rule
-        for item in workbook["Data"].conditional_formatting for rule in item.rules
+        for item in workbook["Data"].conditional_formatting
+        for rule in item.rules
     }
     assert set(found) == {
-        ("B1:B10", "CellIsRule"), ("C1:C10", "ColorScaleRule"),
-        ("B1:B5 C1:C5", "DataBarRule"), ("B1:B10", "IconSetRule"),
+        ("B1:B10", "CellIsRule"),
+        ("C1:C10", "ColorScaleRule"),
+        ("B1:B5 C1:C5", "DataBarRule"),
+        ("B1:B10", "IconSetRule"),
     }
     cell_is = found["B1:B10", "CellIsRule"]
     assert cell_is.formula == ("5",) or list(cell_is.formula) == ["5"]
@@ -326,8 +343,10 @@ def test_column_records_use_spec_ids_and_legacy_wrappers_are_dropped(tmp_path):
 
     # Files from xlspy < 0.11 used 0x86/0x87, and 0x86 is also BrtEndWsViews.
     legacy = b"".join(
-        build_record({0x186: 0x86, 0x187: 0x87}.get(record.record_id, record.record_id),
-                     data[record.data_start:record.data_end])
+        build_record(
+            {0x186: 0x86, 0x187: 0x87}.get(record.record_id, record.record_id),
+            data[record.data_start : record.data_end],
+        )
         for record in iter_records(data)
     )
     legacy_path = tmp_path / "legacy.xlsb"

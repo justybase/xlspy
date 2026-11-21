@@ -11,10 +11,13 @@ import re
 DATA = Path(__file__).parent / "data"  # both made by Excel
 
 
-@pytest.mark.parametrize("name,part", [
-    ("external_ref.xlsx", "xl/externalLinks/externalLink1.xml"),
-    ("external_ref.xlsb", "xl/externalLinks/externalLink1.bin"),
-])
+@pytest.mark.parametrize(
+    "name,part",
+    [
+        ("external_ref.xlsx", "xl/externalLinks/externalLink1.xml"),
+        ("external_ref.xlsb", "xl/externalLinks/externalLink1.bin"),
+    ],
+)
 def test_external_links_are_listed(name, part):
     workbook = load_workbook(DATA / name)
     try:

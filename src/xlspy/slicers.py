@@ -29,10 +29,7 @@ _MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 _EMU_PER_PIXEL = 9525
 # Excel's default item row height for a slicer, in EMU.
 _ITEM_ROW_HEIGHT = 241300
-_FALLBACK_TEXT = (
-    "This shape represents a table slicer. Table slicers are not supported "
-    "in this version of Excel."
-)
+_FALLBACK_TEXT = "This shape represents a table slicer. Table slicers are not supported in this version of Excel."
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,8 +109,9 @@ class Slicer:
         return "Slicer_" + re.sub(r"\W", "_", self.column)
 
 
-def normalize_slicers(slicers: Any, tables: Any, used_names: set[str], used_caches: set[str],
-                      used_targets: set[tuple[str, str]]) -> list[Slicer]:
+def normalize_slicers(
+    slicers: Any, tables: Any, used_names: set[str], used_caches: set[str], used_targets: set[tuple[str, str]]
+) -> list[Slicer]:
     """Validate slicers against this sheet's tables and the names already in the workbook.
 
     ``used_*`` hold casefolded names from earlier sheets; the caller adds the
@@ -131,9 +129,7 @@ def normalize_slicers(slicers: Any, tables: Any, used_names: set[str], used_cach
             raise TypeError("slicers must be Slicer instances")
         table = tables_by_name.get(slicer.table.casefold())
         if table is None:
-            raise ValueError(
-                f"slicer table {slicer.table!r} is not a table written to this sheet"
-            )
+            raise ValueError(f"slicer table {slicer.table!r} is not a table written to this sheet")
         if not table.header_row:
             raise ValueError(f"slicer table {slicer.table!r} needs a header row")
         if table.columns is not None and slicer.column not in table.columns:
@@ -144,9 +140,7 @@ def normalize_slicers(slicers: Any, tables: Any, used_names: set[str], used_cach
         if slicer.display_name.casefold() in names:
             raise ValueError(f"duplicate slicer name {slicer.display_name!r}; pass name=")
         if slicer.cache_name.casefold() in caches:
-            raise ValueError(
-                f"slicer cache name {slicer.cache_name!r} is already used by another slicer"
-            )
+            raise ValueError(f"slicer cache name {slicer.cache_name!r} is already used by another slicer")
         names.add(slicer.display_name.casefold())
         caches.add(slicer.cache_name.casefold())
         targets.add(key)
@@ -221,5 +215,9 @@ def slicer_frame_xml(slicer: Slicer, object_id: int) -> str:
 
 
 __all__ = [
-    "Slicer", "normalize_slicers", "slicer_part_xml", "slicer_cache_xml", "slicer_frame_xml",
+    "Slicer",
+    "normalize_slicers",
+    "slicer_part_xml",
+    "slicer_cache_xml",
+    "slicer_frame_xml",
 ]

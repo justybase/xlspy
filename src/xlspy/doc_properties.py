@@ -65,7 +65,7 @@ def _custom_value(name: str, value: Any) -> str:
     if isinstance(value, bool):
         return f"<vt:bool>{'true' if value else 'false'}</vt:bool>"
     if isinstance(value, int):
-        if -2**31 <= value < 2**31:
+        if -(2**31) <= value < 2**31:
             return f"<vt:i4>{value}</vt:i4>"
         value = float(value)
     if isinstance(value, float):
@@ -78,9 +78,7 @@ def _custom_value(name: str, value: Any) -> str:
         return f"<vt:filetime>{value.isoformat()}T00:00:00Z</vt:filetime>"
     if isinstance(value, str):
         return f"<vt:lpwstr>{escape(_check_doc_text(f'custom property {name!r}', value))}</vt:lpwstr>"
-    raise TypeError(
-        f"custom property {name!r} must be str, int, float, bool, date or datetime"
-    )
+    raise TypeError(f"custom property {name!r} must be str, int, float, bool, date or datetime")
 
 
 class DocumentPropertiesMixin:
@@ -119,9 +117,15 @@ class DocumentPropertiesMixin:
         """
         self._require_writable()
         values = {
-            "title": title, "subject": subject, "author": author,
-            "manager": manager, "company": company, "category": category,
-            "keywords": keywords, "comments": comments, "status": status,
+            "title": title,
+            "subject": subject,
+            "author": author,
+            "manager": manager,
+            "company": company,
+            "category": category,
+            "keywords": keywords,
+            "comments": comments,
+            "status": status,
         }
         props: dict[str, Any] = {key: _check_doc_text(key, value) for key, value in values.items() if value is not None}
         if created is None:
@@ -172,43 +176,46 @@ class DocumentPropertiesMixin:
         props = self._doc_props
         if props is None:
             return
-        core = "".join(
-            f"<{tag}>{escape(props[key])}</{tag}>"
-            for key, tag in _CORE_FIELDS.items() if key in props
-        )
+        core = "".join(f"<{tag}>{escape(props[key])}</{tag}>" for key, tag in _CORE_FIELDS.items() if key in props)
         if "author" in props:
             core += f"<cp:lastModifiedBy>{escape(props['author'])}</cp:lastModifiedBy>"
         stamp = props["created"]
-        self._zf.writestr("docProps/core.xml", (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-            '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
-            'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" '
-            'xmlns:dcmitype="http://purl.org/dc/dcmitype/" '
-            'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
-            f'{core}'
-            f'<dcterms:created xsi:type="dcterms:W3CDTF">{stamp}</dcterms:created>'
-            f'<dcterms:modified xsi:type="dcterms:W3CDTF">{stamp}</dcterms:modified>'
-            '</cp:coreProperties>'
-        ))
-        app = "".join(
-            f"<{tag}>{escape(props[key])}</{tag}>"
-            for key, tag in _APP_FIELDS.items() if key in props
+        self._zf.writestr(
+            "docProps/core.xml",
+            (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+                'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" '
+                'xmlns:dcmitype="http://purl.org/dc/dcmitype/" '
+                'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+                f"{core}"
+                f'<dcterms:created xsi:type="dcterms:W3CDTF">{stamp}</dcterms:created>'
+                f'<dcterms:modified xsi:type="dcterms:W3CDTF">{stamp}</dcterms:modified>'
+                "</cp:coreProperties>"
+            ),
         )
-        self._zf.writestr("docProps/app.xml", (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-            '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" '
-            'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
-            f'<Application>Microsoft Excel</Application>{app}</Properties>'
-        ))
+        app = "".join(f"<{tag}>{escape(props[key])}</{tag}>" for key, tag in _APP_FIELDS.items() if key in props)
+        self._zf.writestr(
+            "docProps/app.xml",
+            (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" '
+                'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
+                f"<Application>Microsoft Excel</Application>{app}</Properties>"
+            ),
+        )
         if props["custom"]:
             items = "".join(
                 f'<property fmtid="{_CUSTOM_FMTID}" pid="{pid}" name="{escape(name, {chr(34): "&quot;"})}">'
-                f'{value}</property>'
+                f"{value}</property>"
                 for pid, (name, value) in enumerate(props["custom"], start=2)
             )
-            self._zf.writestr("docProps/custom.xml", (
-                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-                '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" '
-                'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
-                f'{items}</Properties>'
-            ))
+            self._zf.writestr(
+                "docProps/custom.xml",
+                (
+                    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                    '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" '
+                    'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
+                    f"{items}</Properties>"
+                ),
+            )

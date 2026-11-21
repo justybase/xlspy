@@ -3,6 +3,7 @@
 The URIs and element names come from a workbook saved by Excel itself, so the
 writer and Excel agree byte for byte on what an extension means.
 """
+
 from __future__ import annotations
 from collections.abc import Iterable
 

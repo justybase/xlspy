@@ -25,36 +25,87 @@ def _is_reference_like(name: str) -> bool:
 _UNDERLINES = {"none", "single", "double", "singleAccounting", "doubleAccounting"}
 _VERT_ALIGNS = frozenset({"superscript", "subscript", "baseline"})
 _PATTERN_TYPES = {
-    "none", "solid", "gray125",
-    "darkGray", "mediumGray", "lightGray", "gray0625",
-    "darkHorizontal", "darkVertical", "darkDown", "darkUp",
-    "darkGrid", "darkTrellis",
-    "lightHorizontal", "lightVertical", "lightDown", "lightUp",
-    "lightGrid", "lightTrellis",
+    "none",
+    "solid",
+    "gray125",
+    "darkGray",
+    "mediumGray",
+    "lightGray",
+    "gray0625",
+    "darkHorizontal",
+    "darkVertical",
+    "darkDown",
+    "darkUp",
+    "darkGrid",
+    "darkTrellis",
+    "lightHorizontal",
+    "lightVertical",
+    "lightDown",
+    "lightUp",
+    "lightGrid",
+    "lightTrellis",
 }
 _SIDE_STYLES = {
-    "thin", "medium", "thick", "double", "dotted", "dashed",
-    "dashDot", "dashDotDot", "slantDashDot", "hair",
-    "mediumDashed", "mediumDashDot", "mediumDashDotDot",
+    "thin",
+    "medium",
+    "thick",
+    "double",
+    "dotted",
+    "dashed",
+    "dashDot",
+    "dashDotDot",
+    "slantDashDot",
+    "hair",
+    "mediumDashed",
+    "mediumDashDot",
+    "mediumDashDotDot",
 }
 _DIAGONAL_DIRECTIONS = {"up", "down", "both"}
 _HORIZONTAL = {
-    "general", "left", "center", "right",
-    "fill", "justify", "centerContinuous", "distributed",
+    "general",
+    "left",
+    "center",
+    "right",
+    "fill",
+    "justify",
+    "centerContinuous",
+    "distributed",
 }
 _VERTICAL = {"top", "center", "bottom", "justify", "distributed"}
 _FONT_SCHEMES = {"major", "minor"}
 _GRADIENT_TYPES = {"linear", "path"}
 _ICON_SETS = {
-    "3Arrows", "3ArrowsGray", "3Flags", "3TrafficLights1", "3TrafficLights2",
-    "3Signs", "3Symbols", "3Symbols2",
-    "4Arrows", "4ArrowsGray", "4RedToBlack", "4Rating", "4TrafficLights",
-    "5Arrows", "5ArrowsGray", "5Rating", "5Quarters",
+    "3Arrows",
+    "3ArrowsGray",
+    "3Flags",
+    "3TrafficLights1",
+    "3TrafficLights2",
+    "3Signs",
+    "3Symbols",
+    "3Symbols2",
+    "4Arrows",
+    "4ArrowsGray",
+    "4RedToBlack",
+    "4Rating",
+    "4TrafficLights",
+    "5Arrows",
+    "5ArrowsGray",
+    "5Rating",
+    "5Quarters",
 }
 _CELL_IS_OPERATORS = {
-    "between", "notBetween", "equal", "notEqual",
-    "greaterThan", "lessThan", "greaterThanOrEqual", "lessThanOrEqual",
-    "containsText", "notContains", "beginsWith", "endsWith",
+    "between",
+    "notBetween",
+    "equal",
+    "notEqual",
+    "greaterThan",
+    "lessThan",
+    "greaterThanOrEqual",
+    "lessThanOrEqual",
+    "containsText",
+    "notContains",
+    "beginsWith",
+    "endsWith",
 }
 _FORMAT_OBJECT_TYPES = {"min", "max", "num", "percent", "percentile", "formula"}
 _CFVO_TYPES = {"num", "percent", "percentile", "formula"}
@@ -90,9 +141,7 @@ def _with_aliases(cls: type) -> type:
             value = kwargs.pop(alias)
             if name in kwargs:
                 if kwargs[name] is not None and value is not None:
-                    raise TypeError(
-                        f"got both {name!r} and its openpyxl alias {alias!r}"
-                    )
+                    raise TypeError(f"got both {name!r} and its openpyxl alias {alias!r}")
                 if kwargs[name] is not None:
                     continue  # the long name wins, as in openpyxl
             kwargs[name] = value
@@ -123,19 +172,14 @@ class _Copyable:
             value = changes.pop(alias)
             if name in changes:
                 if changes[name] is not None and value is not None:
-                    raise TypeError(
-                        f"{type(self).__name__}.copy() got both {name!r} and "
-                        f"its openpyxl alias {alias!r}"
-                    )
+                    raise TypeError(f"{type(self).__name__}.copy() got both {name!r} and its openpyxl alias {alias!r}")
                 if changes[name] is not None:
                     continue  # the long name wins, as in the constructor
             changes[name] = value
         values = {field.name: getattr(self, field.name) for field in fields(self)}  # type: ignore[arg-type]  # a frozen dataclass instance
         for key, value in changes.items():
             if key not in values:
-                raise TypeError(
-                    f"{type(self).__name__}.copy() got an unexpected keyword argument {key!r}"
-                )
+                raise TypeError(f"{type(self).__name__}.copy() got an unexpected keyword argument {key!r}")
             values[key] = value
         return type(self)(**values)
 
@@ -148,9 +192,7 @@ def _normalize_argb(value: str) -> str:
     if len(text) == 6:
         text = "FF" + text
     if len(text) != 8 or _ARGB_RE.fullmatch(text) is None:
-        raise ValueError(
-            f"invalid ARGB color {value!r}; expected '#RRGGBB' or '#AARRGGBB'"
-        )
+        raise ValueError(f"invalid ARGB color {value!r}; expected '#RRGGBB' or '#AARRGGBB'")
     return text
 
 
@@ -158,10 +200,7 @@ def _coerce_color(value: Color | str | None, field: str) -> Color | None:
     if value is None or isinstance(value, Color):
         return value
     if type(value).__name__ == "GradientFill":
-        raise TypeError(
-            f"{field} must be a Color or color string; a gradient is only "
-            "valid as a fill"
-        )
+        raise TypeError(f"{field} must be a Color or color string; a gradient is only valid as a fill")
     if isinstance(value, str):
         return Color(rgb=value)
     raise TypeError(f"{field} must be a Color, color string, or None")
@@ -185,14 +224,9 @@ class Color:
     def __post_init__(self):
         if self.auto is not None and self.auto is not True:
             raise ValueError("auto must be True or None")
-        set_count = sum(
-            value is not None
-            for value in (self.rgb, self.indexed, self.theme, self.auto)
-        )
+        set_count = sum(value is not None for value in (self.rgb, self.indexed, self.theme, self.auto))
         if set_count != 1:
-            raise ValueError(
-                "Color needs exactly one of rgb, indexed, theme, or auto"
-            )
+            raise ValueError("Color needs exactly one of rgb, indexed, theme, or auto")
         if self.rgb is not None:
             object.__setattr__(self, "rgb", _normalize_argb(self.rgb))
         if self.indexed is not None:
@@ -226,7 +260,10 @@ class Font(_Copyable):
     """
 
     _ALIASES: ClassVar[dict[str, str]] = {
-        "sz": "size", "b": "bold", "i": "italic", "u": "underline",
+        "sz": "size",
+        "b": "bold",
+        "i": "italic",
+        "u": "underline",
         "strikethrough": "strike",
     }
 
@@ -308,12 +345,8 @@ class PatternFill(_Copyable):
     def __post_init__(self):
         if self.fill_type is not None and self.fill_type not in _PATTERN_TYPES:
             raise ValueError(f"invalid fill_type {self.fill_type!r}")
-        object.__setattr__(
-            self, "start_color", _coerce_color(self.start_color, "start_color")
-        )
-        object.__setattr__(
-            self, "end_color", _coerce_color(self.end_color, "end_color")
-        )
+        object.__setattr__(self, "start_color", _coerce_color(self.start_color, "start_color"))
+        object.__setattr__(self, "end_color", _coerce_color(self.end_color, "end_color"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,9 +361,7 @@ class Stop:
         if color is None:
             raise TypeError("stop color is required")
         object.__setattr__(self, "color", color)
-        if isinstance(self.position, bool) or not isinstance(
-            self.position, (int, float)
-        ):
+        if isinstance(self.position, bool) or not isinstance(self.position, (int, float)):
             raise TypeError("position must be a number")
         if not 0 <= self.position <= 1:
             raise ValueError("position must be between 0 and 1")
@@ -438,19 +469,21 @@ class Border(_Copyable):
 
     def __post_init__(self):
         for attr in (
-            "left", "right", "top", "bottom",
-            "diagonal", "vertical", "horizontal", "start", "end",
+            "left",
+            "right",
+            "top",
+            "bottom",
+            "diagonal",
+            "vertical",
+            "horizontal",
+            "start",
+            "end",
         ):
             value = getattr(self, attr)
             if value is not None and not isinstance(value, Side):
                 raise TypeError(f"{attr} must be a Side or None")
-        if (
-            self.diagonal_direction is not None
-            and self.diagonal_direction not in _DIAGONAL_DIRECTIONS
-        ):
-            raise ValueError(
-                f"invalid diagonal_direction {self.diagonal_direction!r}"
-            )
+        if self.diagonal_direction is not None and self.diagonal_direction not in _DIAGONAL_DIRECTIONS:
+            raise ValueError(f"invalid diagonal_direction {self.diagonal_direction!r}")
         for attr in ("diagonal_up", "diagonal_down", "outline"):
             value = getattr(self, attr)
             if value is not None and not isinstance(value, bool):
@@ -505,15 +538,10 @@ class Alignment(_Copyable):
         if self.text_rotation is not None:
             if not isinstance(self.text_rotation, int):
                 raise TypeError("text_rotation must be an int or None")
-            if not (0 <= self.text_rotation <= 180
-                    or self.text_rotation == 255):
-                raise ValueError(
-                    "text_rotation must be 0..180 or 255 (vertical text)"
-                )
+            if not (0 <= self.text_rotation <= 180 or self.text_rotation == 255):
+                raise ValueError("text_rotation must be 0..180 or 255 (vertical text)")
         if self.reading_order is not None:
-            if not isinstance(self.reading_order, int) or isinstance(
-                self.reading_order, bool
-            ):
+            if not isinstance(self.reading_order, int) or isinstance(self.reading_order, bool):
                 raise TypeError("reading_order must be an int or None")
             if self.reading_order not in (0, 1, 2):
                 raise ValueError("reading_order must be 0, 1, or 2")

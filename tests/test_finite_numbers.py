@@ -1,4 +1,5 @@
 """NaN and infinity are refused by the writers; finite numbers are written."""
+
 from __future__ import annotations
 
 import math

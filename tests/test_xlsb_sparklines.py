@@ -24,9 +24,19 @@ ROWS = [
 # BrtBeginSparklineGroup and BrtSparkline exactly as Excel saved the default group.
 EXCEL_GROUP = bytes.fromhex(
     "00000000 0218"
-    "05ff0000376092ff" "05ff0000d00000ff" "05ff0000000000ff" "05ff0000d00000ff"
-    "05ff0000d00000ff" "05ff0000d00000ff" "05ff0000d00000ff" "05ff0000d00000ff"
-    "0000000000000000" "0000000000000000" "000000000000e83f" "0000" "0000"
+    "05ff0000376092ff"
+    "05ff0000d00000ff"
+    "05ff0000000000ff"
+    "05ff0000d00000ff"
+    "05ff0000d00000ff"
+    "05ff0000d00000ff"
+    "05ff0000d00000ff"
+    "05ff0000d00000ff"
+    "0000000000000000"
+    "0000000000000000"
+    "000000000000e83f"
+    "0000"
+    "0000"
 )
 EXCEL_SPARKLINE = bytes.fromhex(
     "06000000 01000000 02000000 01000000"
@@ -46,7 +56,7 @@ def _write(path, groups, rows=ROWS, sheet="Sheet1"):
 def _records(path, part="xl/worksheets/sheet1.bin"):
     with zipfile.ZipFile(path) as archive:
         data = archive.read(part)
-    return [(record.record_id, data[record.data_start:record.data_end]) for record in iter_records(data)]
+    return [(record.record_id, data[record.data_start : record.data_end]) for record in iter_records(data)]
 
 
 def test_default_group_matches_excel_byte_for_byte(tmp_path):
@@ -61,44 +71,47 @@ def test_block_order_and_position(tmp_path):
     ids = [record_id for record_id, _ in records]
     start = ids.index(0x422)
     assert records[start - 1] == (0x23, b"\x02\x0e\x00\x00")  # BrtFRTBegin, Excel 2010 block
-    assert ids[start:start + 9] == [0x422, 0x411, 0x420, 0x413, 0x413, 0x421, 0x412, 0x423, 0x24]
+    assert ids[start : start + 9] == [0x422, 0x411, 0x420, 0x413, 0x413, 0x421, 0x412, 0x423, 0x24]
     assert ids[-1] == 0x82  # BrtEndSheet still closes the sheet
     second = records[start + 4][1]
     assert struct.unpack_from("<II", second, 16) == (2, 2)  # E3: row index 2
     assert second[51] == 2  # data row 3
 
 
-@pytest.mark.parametrize(("options", "offset", "value"), [
-    ({"kind": "column"}, 94, 1),
-    ({"kind": "win_loss"}, 94, 2),
-    ({"markers": True}, 4, 0x0A),
-    ({"high_point": True}, 4, 0x12),
-    ({"low_point": True}, 4, 0x22),
-    ({"first_point": True}, 4, 0x42),
-    ({"last_point": True}, 4, 0x82),
-    ({"empty_cells": "zero"}, 4, 0x00),
-    ({"empty_cells": "connect"}, 4, 0x04),
-    ({"negative_points": True}, 5, 0x19),
-    ({"show_axis": True}, 5, 0x1A),
-    ({"show_hidden": True}, 5, 0x1C),
-    ({"right_to_left": True}, 5, 0x98),
-    ({"axis_min": -5}, 5, 0x08),
-    ({"axis_min": "group", "axis_max": "group"}, 5, 0x60),
-])
+@pytest.mark.parametrize(
+    ("options", "offset", "value"),
+    [
+        ({"kind": "column"}, 94, 1),
+        ({"kind": "win_loss"}, 94, 2),
+        ({"markers": True}, 4, 0x0A),
+        ({"high_point": True}, 4, 0x12),
+        ({"low_point": True}, 4, 0x22),
+        ({"first_point": True}, 4, 0x42),
+        ({"last_point": True}, 4, 0x82),
+        ({"empty_cells": "zero"}, 4, 0x00),
+        ({"empty_cells": "connect"}, 4, 0x04),
+        ({"negative_points": True}, 5, 0x19),
+        ({"show_axis": True}, 5, 0x1A),
+        ({"show_hidden": True}, 5, 0x1C),
+        ({"right_to_left": True}, 5, 0x98),
+        ({"axis_min": -5}, 5, 0x08),
+        ({"axis_min": "group", "axis_max": "group"}, 5, 0x60),
+    ],
+)
 def test_options_set_the_bytes_excel_sets(options, offset, value):
     payload = _group_payload(SparklineGroup(data="B2:D2", location="E2", **options))
     assert len(payload) == 98
     assert payload[offset] == value
     # Bytes 70..93 hold the manual axis values and line weight, checked below.
-    changed = [index for index in range(98)
-               if not 70 <= index < 94 and payload[index] != EXCEL_GROUP[index]]
+    changed = [index for index in range(98) if not 70 <= index < 94 and payload[index] != EXCEL_GROUP[index]]
     expected = [] if EXCEL_GROUP[offset] == value else [offset]
     assert changed == expected
 
 
 def test_manual_axis_values_colour_and_line_weight():
-    payload = _group_payload(SparklineGroup(data="B2:D2", location="E2", axis_min=-5, axis_max=50,
-                                            color="#112233", line_width=2.25))
+    payload = _group_payload(
+        SparklineGroup(data="B2:D2", location="E2", axis_min=-5, axis_max=50, color="#112233", line_width=2.25)
+    )
     assert payload[5] == 0x00
     assert struct.unpack_from("<ddd", payload, 70) == (50.0, -5.0, 2.25)
     assert payload[6:14] == bytes.fromhex("05ff0000112233ff")
@@ -145,12 +158,25 @@ def test_excel_reads_xlsb_sparklines(tmp_path):
     path = tmp_path / "com.xlsb"
     with XlsbWriter(path) as writer:
         writer.add_sheet("Data sheet")
-        writer.write_sheet(ROWS, sparklines=[
-            SparklineGroup(data="B2:D3", location="E2:E3", markers=True, color="#112233",
-                           first_color="#550000", low_color="#880000", line_width=2.25,
-                           empty_cells="zero", axis_min=-5, axis_max="group", show_axis=True),
-            SparklineGroup(data="B2:D2", location="F2", kind="win_loss", right_to_left=True),
-        ])
+        writer.write_sheet(
+            ROWS,
+            sparklines=[
+                SparklineGroup(
+                    data="B2:D3",
+                    location="E2:E3",
+                    markers=True,
+                    color="#112233",
+                    first_color="#550000",
+                    low_color="#880000",
+                    line_width=2.25,
+                    empty_cells="zero",
+                    axis_min=-5,
+                    axis_max="group",
+                    show_axis=True,
+                ),
+                SparklineGroup(data="B2:D2", location="F2", kind="win_loss", right_to_left=True),
+            ],
+        )
         writer.add_sheet("Second")
         writer.write_sheet([["x"]], sparklines=[SparklineGroup(data="'Data sheet'!B2:D2", location="B2")])
     excel = win32.DispatchEx("Excel.Application")
