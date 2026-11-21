@@ -141,6 +141,7 @@ class ThreadedComment:
 def normalize_threaded_comments(
     comments: Mapping[str, ThreadedComment | None] | None,
     *,
+    allow_none: bool = False,
     merges: Iterable[str] = (),
 ) -> dict[str, ThreadedComment | None]:
     """Check a cell-to-conversation mapping and normalize its cell references."""
@@ -154,8 +155,10 @@ def normalize_threaded_comments(
         ref = cell_ref(ref)
         if ref in result:
             raise ValueError(f"duplicate threaded comment reference: {ref}")
-        if not isinstance(thread, ThreadedComment) and thread is not None:
-            raise TypeError("threaded comment values must be ThreadedComment objects or None")
+        if not isinstance(thread, ThreadedComment) and not (allow_none and thread is None):
+            raise TypeError(
+                "threaded comment values must be ThreadedComment objects" + (" or None" if allow_none else "")
+            )
         if thread is not None:
             c, r, _, _ = parse_cell_range(ref)
             if merged is None:
@@ -338,6 +341,7 @@ def threaded_comments_xml(
     safe_fromstring(xml)
     replacement_refs = {cell_ref(ref) for ref in (changed if changed is not None else threads)}
     seen_refs = set()
+    kept_ids: set[str] = set()
 
     def keep(match: re.Match[str]) -> str:
         node = _fragment_node(xml, match.group(0))
@@ -345,11 +349,14 @@ def threaded_comments_xml(
         if ref in replacement_refs:
             seen_refs.add(ref)
             return ""
+        message_id = node.get("id")
+        if message_id:
+            kept_ids.add(message_id)
         return match.group(0)
 
     xml = element_pattern("threadedComment").sub(keep, xml)
     all_persons = collect_persons({ref: thread for ref, thread in threads.items() if thread is not None}, persons)
-    used_ids: set[str] = set()
+    used_ids: set[str] = set(kept_ids)
     for ref in threads:
         if ref not in replacement_refs:
             continue

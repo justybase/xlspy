@@ -112,6 +112,12 @@ def test_writer_refuses_note_and_thread_on_one_cell(tmp_path):
         )
 
 
+def test_writer_refuses_none_threaded_comment(tmp_path):
+    path = tmp_path / "none.xlsx"
+    with pytest.raises(TypeError, match="ThreadedComment objects"):
+        write_book(path, threaded_comments={"A1": None})
+
+
 def test_xlsb_writer_refuses_threaded_comments(tmp_path):
     path = tmp_path / "threads.xlsb"
     with pytest.raises(UnsupportedFeatureError, match="threaded comments"):
@@ -173,6 +179,19 @@ def test_updater_threaded_comment_cannot_replace_classic_note(tmp_path):
     with XlsxUpdater(path) as updater:
         with pytest.raises(ValueError, match="classic note"):
             updater.set_threaded_comments("Data", {"A1": conversation()})
+
+
+def test_updater_rejects_a_duplicate_thread_id(tmp_path):
+    path = tmp_path / "duplicate.xlsx"
+    write_book(
+        path,
+        threaded_comments={"A1": conversation("One", "Jan"), "B1": conversation("Two", "Ola")},
+    )
+    with XlsxUpdater(path) as updater:
+        current = updater.get_threaded_comments("Data")
+        duplicate = ThreadedComment("Three", "Ewa", id=current["A1"].id)
+        with pytest.raises(ValueError, match="duplicate threaded comment id"):
+            updater.set_threaded_comments("Data", {"B1": duplicate})
 
 
 def test_editing_classic_notes_keeps_threaded_companions(tmp_path):

@@ -268,7 +268,7 @@ class XlsxEditMixin(SheetEditMixin):
         """
         path, sheet, sheet_root = self._sheet_root(sheet_name)
         merges = [n.attrib["ref"] for n in sheet_root.findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell")]
-        changes = normalize_threaded_comments(comments, merges=merges)
+        changes = normalize_threaded_comments(comments, allow_none=True, merges=merges)
         if not changes:
             return
         names = set(self._package.names())
