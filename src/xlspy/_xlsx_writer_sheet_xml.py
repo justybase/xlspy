@@ -168,20 +168,10 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         self,
         body,
         sheet_index,
-        split_freeze,
-        freeze_panes,
-        widths,
-        hidden_cols,
-        print_spec,
-        row_outline=None,
-        col_outline=None,
-        show_grid_lines=True,
+        spec,
+        *,
         meter=None,
-        autofit_padding=0.0,
         filter_cells=(),
-        tab_key=None,
-        zoom=None,
-        view=(True, True, False),
     ):
         """Everything before ``<sheetData>`` content: properties, views, widths."""
         parts = [
@@ -190,9 +180,9 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
         ]
         sheet_pr = ""
-        if tab_key is not None:
-            sheet_pr += f"<tabColor {self._color_attrs(tab_key)}/>"
-        if print_spec is not None and print_spec.fit_to_page:
+        if spec.tab_key is not None:
+            sheet_pr += f"<tabColor {self._color_attrs(spec.tab_key)}/>"
+        if spec.print_settings is not None and spec.print_settings.fit_to_page:
             sheet_pr += '<pageSetUpPr fitToPage="1"/>'
         if sheet_pr:
             parts.append(f"<sheetPr>{sheet_pr}</sheetPr>")
@@ -201,13 +191,15 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         parts.append(
             self._sheet_views_xml(
                 sheet_index,
-                split_freeze,
-                freeze_panes,
-                show_grid_lines,
-                zoom,
-                view,
+                spec.split_freeze,
+                spec.freeze_panes,
+                spec.show_grid_lines,
+                spec.zoom,
+                spec.view,
             )
         )
+        row_outline = spec.row_outline
+        col_outline = spec.col_outline
         max_row_level = row_outline.max_level if row_outline is not None else 0
         max_col_level = col_outline.max_level if col_outline is not None else 0
         if max_row_level or max_col_level:
@@ -219,11 +211,11 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             parts.append(f'<sheetFormatPr defaultRowHeight="15"{level_attrs}/>')
         if meter is None:
             meter = ColumnWidthMeter(rows=0)
-        col_widths = meter.widths(body.max_cols, filter_cells, autofit_padding)
-        for col, width in widths.items():
+        col_widths = meter.widths(body.max_cols, filter_cells, spec.autofit[1])
+        for col, width in spec.widths.items():
             if 0 <= col < body.max_cols:
                 col_widths[col] = width
-        parts.append(self._cols_xml(col_widths, widths, hidden_cols, body.max_cols, col_outline))
+        parts.append(self._cols_xml(col_widths, spec.widths, spec.hidden_cols, body.max_cols, col_outline))
         parts.append("<sheetData>")
         return "".join(parts)
 
@@ -323,21 +315,21 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         self,
         body,
         sheet_index,
-        merge_refs,
-        cf_rules,
-        table_specs,
+        spec,
         table_bounds,
-        validations,
         link_rels,
-        auto_filter,
         drawing_rid,
-        print_spec,
-        *,
-        auto_filter_ref=None,
-        header_rows=1,
-        sort_state=None,
     ):
         """Everything after the row data, in schema order."""
+        merge_refs = spec.merge_refs
+        cf_rules = spec.cf_rules
+        table_specs = spec.tables
+        validations = spec.validations
+        print_spec = spec.print_settings
+        auto_filter = spec.auto_filter
+        auto_filter_ref = spec.auto_filter_ref
+        header_rows = spec.header_rows
+        sort_state = spec.sort_state
         parts = ["</sheetData>"]
         data_filter = None
         if body.num_rows > header_rows and body.value_cols > 0:

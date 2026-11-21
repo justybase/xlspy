@@ -58,14 +58,8 @@ class SheetOptions:
     right_to_left: bool = False
     sort_state: Any | None = None
 
-    def as_kwargs(self, names: frozenset[str] | None = None) -> dict[str, Any]:
-        """The fields in ``names`` (all of them by default) as keyword arguments.
-        Values are not copied."""
-        return {name: getattr(self, name) for name in _ORDER if names is None or name in names}
 
-
-_ORDER = tuple(field.name for field in fields(SheetOptions))
-_FIELD_NAMES = frozenset(_ORDER)
+_FIELD_NAMES = frozenset(field.name for field in fields(SheetOptions))
 _DEFAULTS = {field.name: field.default for field in fields(SheetOptions)}
 
 # The options each writer accepts; both writers take every option.

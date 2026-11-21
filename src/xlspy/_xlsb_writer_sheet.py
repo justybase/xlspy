@@ -7,14 +7,12 @@ from collections.abc import Iterable, Mapping
 from ._sheet_options import XLSB_OPTIONS, SheetOptions, resolve_sheet_options
 from . import chart_parts
 from .styles import (
-    Chart,
     Style,
     capture_table_headers,
     capture_table_totals,
     parse_cell_range,
     table_column_names,
 )
-from .images import Image
 from .pivots import (
     PivotFeeder,
     append_rows,
@@ -23,7 +21,6 @@ from .pivots import (
     tee_rows,
 )
 from .printing import PrintSettings
-from .data_validation import DataValidation
 from ._xlsb_writer_consts import _capture_cells
 from ._xlsb_writer_host import _XlsbWriterHost
 from ._writer_common import SheetSpec
@@ -46,87 +43,14 @@ class _XlsbSheetMixin(_XlsbWriterHost):
         field of ``options``.
         """
         opts = resolve_sheet_options(options, kwargs, XLSB_OPTIONS, "XlsbWriter")
-        self._write_sheet(data, **opts.as_kwargs(XLSB_OPTIONS))
+        self._write_sheet(data, opts)
 
-    def _write_sheet(
-        self,
-        data: Iterable[list[Any]],
-        *,
-        header_style: Style | None = None,
-        styles: dict[str, Style] | None = None,
-        merges: list[str] | tuple[str, ...] | None = None,
-        column_widths: dict | None = None,
-        autofit_rows: int | None = 1000,
-        autofit_padding: float = 0.0,
-        hidden_columns: list | tuple | set | None = None,
-        row_heights: dict | None = None,
-        hidden_rows: list | tuple | set | None = None,
-        row_groups: list | tuple | None = None,
-        column_groups: list | tuple | None = None,
-        freeze_panes: str | None = None,
-        auto_filter: bool | None = None,
-        auto_filter_ref: str | None = None,
-        charts: list[Chart] | tuple[Chart, ...] | None = None,
-        images: list[Image] | tuple[Image, ...] | None = None,
-        print_settings: PrintSettings | None = None,
-        data_validations: list[DataValidation] | tuple[DataValidation, ...] | None = None,
-        tables: list | tuple | None = None,
-        conditional_formats: list | tuple | None = None,
-        comments: Mapping[str, Comment] | None = None,
-        sheet_protection: SheetProtection | None = None,
-        show_grid_lines: bool = True,
-        header_rows: int = 1,
-        tab_color: Color | str | None = None,
-        zoom: int | None = None,
-        ignored_errors: list | tuple | None = None,
-        sparklines: Any = None,
-        slicers: Any = None,
-        shapes: Any = None,
-        show_row_col_headers: bool = True,
-        show_zero_values: bool = True,
-        right_to_left: bool = False,
-        pivots: list | tuple | None = None,
-        sort_state: Any | None = None,
-    ) -> None:
+    def _write_sheet(self, data: Iterable[list[Any]], options: SheetOptions) -> None:
         self._require_writable()
-        spec = self._check_sheet_options(
-            header_style=header_style,
-            show_grid_lines=show_grid_lines,
-            header_rows=header_rows,
-            tab_color=tab_color,
-            zoom=zoom,
-            show_row_col_headers=show_row_col_headers,
-            show_zero_values=show_zero_values,
-            right_to_left=right_to_left,
-            styles=styles,
-            merges=merges,
-            comments=comments,
-            sheet_protection=sheet_protection,
-            auto_filter_ref=auto_filter_ref,
-            conditional_formats=conditional_formats,
-            tables=tables,
-            sparklines=sparklines,
-            slicers=slicers,
-            charts=charts,
-            data_validations=data_validations,
-            images=images,
-            shapes=shapes,
-            print_settings=print_settings,
-            column_widths=column_widths,
-            hidden_columns=hidden_columns,
-            row_heights=row_heights,
-            hidden_rows=hidden_rows,
-            row_groups=row_groups,
-            column_groups=column_groups,
-            freeze_panes=freeze_panes,
-            autofit_rows=autofit_rows,
-            autofit_padding=autofit_padding,
-            check_style=self._reject_rich_style,
-            sort_state=sort_state,
-        )
+        spec = self._check_sheet_options(options, check_style=self._reject_rich_style)
         current_sheet = self._worksheet_data[-1][0] if self._worksheet_data else "Sheet1"
         pivot_names = set(self._pivot_names)
-        pivot_plans = normalize_pivots(pivots, spec.tables, pivot_names, current_sheet)
+        pivot_plans = normalize_pivots(spec.pivots, spec.tables, pivot_names, current_sheet)
         for plan in pivot_plans:
             target_index = self._sheet_index_by_name(plan.target_sheet)
             if (
@@ -197,9 +121,6 @@ class _XlsbSheetMixin(_XlsbWriterHost):
             data = overlay_rows(data, pending_pivots)
         if pivot_plans:
             data = append_rows(data, feeders, sheet_name, pivot_renders)
-        if spec.tables and auto_filter is None:
-            # Tables carry their own AutoFilter; skip sheet-level filter.
-            auto_filter = False
         drawing_rel = f"rId{2 + len(table_ids)}" if has_drawing else None
         # External hyperlinks take the relationship ids after the others
         # (binary index, tables, drawing, comments).
@@ -215,44 +136,13 @@ class _XlsbSheetMixin(_XlsbWriterHost):
                 f"xl/worksheets/sheet{sheet_id}.bin",
                 data,
                 self._sheet_count - 1,
-                style_ranges=spec.style_ranges,
-                header_style=spec.header_style,
-                merge_refs=spec.merge_refs,
-                widths=spec.widths,
-                autofit=spec.autofit,
-                hidden_cols=spec.hidden_cols,
-                heights=spec.heights,
-                hidden_row_set=spec.hidden_rows,
-                freeze_panes=freeze_panes,
-                auto_filter=auto_filter,
-                auto_filter_ref=auto_filter_ref,
-                sort_state=spec.sort_state,
+                spec,
                 drawing_rel=drawing_rel,
                 table_rel_ids=table_rel_ids,
-                cf_rules=spec.cf_rules,
-                row_outline=spec.row_outline,
-                col_outline=spec.col_outline,
-                sheet_protection=sheet_protection,
-                show_grid_lines=show_grid_lines,
-                view=spec.view,
-                header_rows=spec.header_rows,
-                tab_key=spec.tab_key,
-                zoom=spec.zoom,
-                filter_cells=[
-                    (r1, c1, c2)
-                    for table in spec.tables
-                    if table.header_row
-                    for c1, r1, c2, _r2 in (parse_cell_range(table.ref),)
-                ],
-                table_bounds=frozenset(parse_cell_range(table.ref) for table in spec.tables),
                 comment_vml_rid=(f"rId{3 + len(table_ids) + int(has_drawing)}" if spec.comments else None),
                 link_rids=link_rids,
                 link_rid_start=link_rid_start,
-                print_spec=spec.print_settings,
-                validations=spec.validations,
-                sparklines=spec.sparklines,
                 slicer_rel=slicer_rid,
-                ignored_errors=ignored_errors,
             )
             self._sheet_link_rels[sheet_id] = link_rids
             self._register_sheet_parts(
@@ -413,4 +303,5 @@ class _XlsbSheetMixin(_XlsbWriterHost):
 
     def _write_empty_sheet(self, sheet_index: int) -> None:
         """A sheet that was added but never written holds no rows."""
-        self._write_worksheet_bin(f"xl/worksheets/sheet{sheet_index + 1}.bin", [], sheet_index)
+        spec = self._check_sheet_options(SheetOptions())
+        self._write_worksheet_bin(f"xl/worksheets/sheet{sheet_index + 1}.bin", [], sheet_index, spec)

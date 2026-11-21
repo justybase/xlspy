@@ -40,8 +40,7 @@ from ._xlsb_slicers import (
     sheet_slicers_bin,
 )
 from ._xlsb_sparklines import sparklines_bin
-from .printing import PrintSettings
-from ._writer_common import FilterData
+from ._writer_common import FilterData, SheetSpec
 from ._xlsb_writer_consts import (
     _BRT_BEGIN_MERGE_CELLS,
     _BRT_DRAWING,
@@ -211,41 +210,35 @@ class _XlsbBinMixin(_XlsbWriterHost):
         part_name: str,
         worksheet_data: Iterable[list[Any]],
         worksheet_index: int,
+        spec: SheetSpec,
         *,
-        style_ranges: Any = (),
-        header_style: Style | None = None,
-        merge_refs: Any = (),
-        widths: Any = None,
-        autofit: tuple[int | None, float] = (1000, 0.0),
-        hidden_cols: Any = frozenset(),
-        heights: Any = None,
-        hidden_row_set: Any = frozenset(),
-        freeze_panes: str | None = None,
-        auto_filter: bool | None = None,
-        auto_filter_ref: str | None = None,
-        sort_state: Any | None = None,
         drawing_rel: str | None = None,
         table_rel_ids: list[str] | None = None,
-        cf_rules: list | None = None,
-        row_outline: Any = None,
-        col_outline: Any = None,
-        sheet_protection: Any = None,
         comment_vml_rid: str | None = None,
-        show_grid_lines: bool = True,
-        view: tuple[bool, bool, bool] = (True, True, False),
-        filter_cells: Any = (),
-        header_rows: int = 1,
-        tab_key: Any = None,
-        zoom: int | None = None,
         link_rids: dict | None = None,
         link_rid_start: int = 2,
-        print_spec: PrintSettings | None = None,
-        validations: Any = (),
-        sparklines: Any = (),
         slicer_rel: str | None = None,
-        table_bounds: frozenset = frozenset(),
-        ignored_errors: Any = None,
     ) -> None:
+        # The checked options travel as one object; these locals keep the record
+        # writer below reading like the records it emits.
+        style_ranges = spec.style_ranges
+        header_style = spec.header_style
+        widths = spec.widths
+        autofit = spec.autofit
+        hidden_cols = spec.hidden_cols
+        heights = spec.heights
+        hidden_row_set = spec.hidden_rows
+        auto_filter_ref = spec.auto_filter_ref
+        row_outline = spec.row_outline
+        col_outline = spec.col_outline
+        header_rows = spec.header_rows
+        auto_filter = spec.auto_filter
+        filter_cells = [
+            (r1, c1, c2)
+            for table in spec.tables
+            if table.header_row
+            for c1, r1, c2, _r2 in (parse_cell_range(table.ref),)
+        ]
         buffer = io.BytesIO()
         spool = _SheetSpool(self._zf, part_name)
         try:
@@ -257,17 +250,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
             if link_rids is None:
                 link_rids = {}
             sheet_name = self._worksheet_data[worksheet_index][0]
-            self._write_sheet_head(
-                buffer,
-                freeze_panes=freeze_panes,
-                row_outline=row_outline,
-                col_outline=col_outline,
-                show_grid_lines=show_grid_lines,
-                view=view,
-                tab_key=tab_key,
-                zoom=zoom,
-                print_spec=print_spec,
-            )
+            self._write_sheet_head(buffer, spec)
             # The head stays aside until the rows give its dimension and the
             # column widths, which are measured as the rows stream past.
             head = bytearray(buffer.getvalue())
@@ -525,23 +508,12 @@ class _XlsbBinMixin(_XlsbWriterHost):
                 worksheet_index,
                 stream_width,
                 data_rows,
-                sheet_protection=sheet_protection,
-                header_rows=header_rows,
-                auto_filter=auto_filter,
-                auto_filter_ref=auto_filter_ref,
-                sort_state=sort_state,
-                table_bounds=table_bounds,
-                merge_refs=merge_refs,
-                cf_rules=cf_rules,
-                validations=validations,
-                hyperlinks=hyperlinks,
-                print_spec=print_spec,
-                drawing_rel=drawing_rel,
-                table_rel_ids=table_rel_ids,
-                comment_vml_rid=comment_vml_rid,
-                sparklines=sparklines,
-                slicer_rel=slicer_rel,
-                ignored_errors=ignored_errors,
+                spec,
+                hyperlinks,
+                drawing_rel,
+                table_rel_ids,
+                comment_vml_rid,
+                slicer_rel,
             )
             _set_dimension(head, used.payload())
             head += self._sheet_columns(
@@ -564,24 +536,19 @@ class _XlsbBinMixin(_XlsbWriterHost):
     def _write_sheet_head(
         self,
         buffer: io.BytesIO,
-        *,
-        freeze_panes: str | None,
-        row_outline: Any,
-        col_outline: Any,
-        show_grid_lines: bool,
-        view: tuple[bool, bool, bool],
-        tab_key: Any,
-        zoom: int | None,
-        print_spec: PrintSettings | None,
+        spec: SheetSpec,
     ) -> None:
         """Write the records before the column widths (sheet properties, view,
         pane, selection, format info); ``_sheet_columns`` writes the rest."""
-        if tab_key is None:
+        freeze_panes = spec.freeze_panes
+        row_outline = spec.row_outline
+        col_outline = spec.col_outline
+        if spec.tab_key is None:
             head = self._sheet1Bytes[:54]
         else:
             # Bytes 9-16 are brtcolorTab, the BrtColor inside BrtWsProp.
-            head = self._sheet1Bytes[:9] + self._color_payload(tab_key) + self._sheet1Bytes[17:54]
-        if print_spec is not None and print_spec.fit_to_page:
+            head = self._sheet1Bytes[:9] + self._color_payload(spec.tab_key) + self._sheet1Bytes[17:54]
+        if spec.print_settings is not None and spec.print_settings.fit_to_page:
             # The BrtWsProp payload starts at byte 6; fFitToPage is in its second byte.
             patched = bytearray(head)
             patched[6 + FIT_TO_PAGE_BYTE] |= FIT_TO_PAGE_BIT
@@ -590,8 +557,8 @@ class _XlsbBinMixin(_XlsbWriterHost):
         # First flag byte of BrtBeginWsView: fDspGrid (0x04), fDspRwCol,
         # fDspZeros, fSelected (0x40, first sheet only) and fDspRuler.
         view_flags = 0xDC if self._sheet_number == 1 else 0x9C
-        headers, zeros, right_to_left = view
-        if not show_grid_lines:
+        headers, zeros, right_to_left = spec.view
+        if not spec.show_grid_lines:
             view_flags &= ~0x04
         if not headers:
             view_flags &= ~0x08  # fDspRwCol
@@ -603,10 +570,10 @@ class _XlsbBinMixin(_XlsbWriterHost):
         self._sheet_number += 1
 
         view_tail = self._sheet1Bytes[55:84]
-        if zoom is not None:
+        if spec.zoom is not None:
             # wScale and wScaleNormal of BrtBeginWsView ([MS-XLSB] 2.4.304),
             # payload offsets 18 and 20.
-            scale = struct.pack("<HH", zoom, zoom)
+            scale = struct.pack("<HH", spec.zoom, spec.zoom)
             view_tail = view_tail[:17] + scale + view_tail[21:]
         buffer.write(view_tail)
 
@@ -1056,28 +1023,28 @@ class _XlsbBinMixin(_XlsbWriterHost):
         worksheet_index: int,
         stream_width: int,
         data_rows: int,
-        *,
-        sheet_protection: Any,
-        header_rows: int,
-        auto_filter: bool | None,
-        auto_filter_ref: str | None,
-        sort_state: Any | None = None,
-        table_bounds: frozenset,
-        merge_refs: Any,
-        cf_rules: list | None,
-        validations: Any,
+        spec: SheetSpec,
         hyperlinks: list[Any],
-        print_spec: PrintSettings | None,
         drawing_rel: str | None,
         table_rel_ids: list[str] | None,
         comment_vml_rid: Any,
-        sparklines: Any,
         slicer_rel: str | None,
-        ignored_errors: Any = None,
     ) -> None:
         """Write the records after the rows: protection, auto filter, merged cells,
         conditional formats, validations, hyperlinks, print settings, drawing, table
         parts, sparklines, slicers and BrtEndSheet."""
+        sheet_protection = spec.sheet_protection
+        header_rows = spec.header_rows
+        auto_filter = spec.auto_filter
+        auto_filter_ref = spec.auto_filter_ref
+        sort_state = spec.sort_state
+        table_bounds = frozenset(parse_cell_range(table.ref) for table in spec.tables)
+        merge_refs = spec.merge_refs
+        cf_rules = spec.cf_rules
+        validations = spec.validations
+        print_spec = spec.print_settings
+        sparklines = spec.sparklines
+        ignored_errors = spec.ignored_errors
         if sheet_protection is None:
             buffer.write(self._sheet1Bytes[218:290])
         else:

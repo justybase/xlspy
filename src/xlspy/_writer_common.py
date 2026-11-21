@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ._metadata import SheetProtection
+from ._sheet_options import SheetOptions
 from .charts import Chart
 from .comments import normalize_comments
 from .data_validation import normalize_validations
@@ -115,6 +116,19 @@ class SheetSpec:
     col_outline: Any
     split_freeze: tuple[int, int] | None
     sort_state: Any | None = None
+    # Raw options the format encoders still need beside the normalized values.
+    show_grid_lines: bool = True
+    freeze_panes: str | None = None
+    auto_filter: bool | None = None
+    auto_filter_ref: str | None = None
+    ignored_errors: Any = None
+    pivots: Any = None
+    sheet_protection: SheetProtection | None = None
+
+    @property
+    def has_styles(self) -> bool:
+        """Whether any row carries a style (header or range styles)."""
+        return bool(self.style_ranges) or self.header_style is not None
 
 
 class WriterFrontEnd:
@@ -167,105 +181,79 @@ class WriterFrontEnd:
 
     def _check_sheet_options(
         self,
+        options: SheetOptions,
         *,
-        header_style: Any,
-        show_grid_lines: Any,
-        header_rows: Any,
-        tab_color: Any,
-        zoom: Any,
-        show_row_col_headers: Any,
-        show_zero_values: Any,
-        right_to_left: Any,
-        styles: Any,
-        merges: Any,
-        comments: Any,
-        sheet_protection: Any,
-        auto_filter_ref: Any,
-        conditional_formats: Any,
-        tables: Any,
-        sparklines: Any,
-        slicers: Any,
-        charts: Any,
-        data_validations: Any,
-        images: Any,
-        shapes: Any,
-        print_settings: Any,
-        column_widths: Any,
-        hidden_columns: Any,
-        row_heights: Any,
-        hidden_rows: Any,
-        row_groups: Any,
-        column_groups: Any,
-        freeze_panes: Any,
-        autofit_rows: Any = 1000,
-        autofit_padding: Any = 0.0,
         check_style: Callable[[Style], None] | None = None,
-        sort_state: Any = None,
     ) -> SheetSpec:
-        """Check and normalize the options of ``write_sheet``; raise before anything
+        """Check and normalize a resolved ``SheetOptions``; raise before anything
         is recorded, so a rejected call leaves the writer as it was.
 
         ``check_style`` sees the header style and every range style before they are
         combined (the XLSB writer refuses rich-text styles there)."""
+        header_style = options.header_style
         if header_style is not None and not isinstance(header_style, Style):
             raise TypeError("header_style must be a Style instance")
-        if not isinstance(show_grid_lines, bool):
+        if not isinstance(options.show_grid_lines, bool):
             raise TypeError("show_grid_lines must be a bool")
-        header_rows = check_header_rows(header_rows)
-        tab_key = tab_color_key(tab_color)
-        zoom = check_zoom(zoom)
-        view = check_sheet_view(show_row_col_headers, show_zero_values, right_to_left)
-        style_ranges = normalize_style_ranges(styles)
+        header_rows = check_header_rows(options.header_rows)
+        tab_key = tab_color_key(options.tab_color)
+        zoom = check_zoom(options.zoom)
+        view = check_sheet_view(options.show_row_col_headers, options.show_zero_values, options.right_to_left)
+        style_ranges = normalize_style_ranges(options.styles)
         if check_style is not None:
             for candidate in ([header_style] if header_style is not None else []) + [item[-1] for item in style_ranges]:
                 check_style(candidate)
         style_ranges, header_style = header_style_ranges(style_ranges, header_style, header_rows)
-        merge_refs = self._normalize_merges(merges)
-        comment_specs = normalize_comments(comments, merges=merge_refs)
-        if sheet_protection is not None and not isinstance(sheet_protection, SheetProtection):
+        merge_refs = self._normalize_merges(options.merges)
+        comment_specs = normalize_comments(options.comments, merges=merge_refs)
+        if options.sheet_protection is not None and not isinstance(options.sheet_protection, SheetProtection):
             raise TypeError("sheet_protection must be SheetProtection")
-        if auto_filter_ref is not None:
+        if options.auto_filter_ref is not None:
             # Checked before the rows stream: a late error aborts the writer.
-            if not isinstance(auto_filter_ref, str):
+            if not isinstance(options.auto_filter_ref, str):
                 raise TypeError("auto_filter_ref must be an A1 range string")
-            parse_cell_range(auto_filter_ref)
-        cf_rules = self._normalize_cf_rules(conditional_formats)
-        table_specs = self._normalize_tables(tables)
-        sparkline_groups = normalize_sparklines(sparklines)
+            parse_cell_range(options.auto_filter_ref)
+        cf_rules = self._normalize_cf_rules(options.conditional_formats)
+        table_specs = self._normalize_tables(options.tables)
+        auto_filter = options.auto_filter
+        if table_specs and auto_filter is None:
+            # Tables carry their own AutoFilter; skip the sheet-level filter.
+            auto_filter = False
+        sparkline_groups = normalize_sparklines(options.sparklines)
         slicer_specs = normalize_slicers(
-            slicers,
+            options.slicers,
             table_specs,
             self._slicer_names,
             self._slicer_caches,
             self._slicer_targets,
         )
-        chart_specs = self._normalize_charts(charts)
-        validations = normalize_validations(data_validations)
-        image_specs = normalize_images(images)
-        shape_specs = normalize_shapes(shapes)
-        print_spec = normalize_print_settings(print_settings)
-        widths = self._normalize_widths(column_widths, "column_widths")
-        autofit = check_autofit(autofit_rows, autofit_padding)
-        hidden_cols = normalize_hidden_columns(hidden_columns)
-        heights = self._normalize_row_heights(row_heights)
-        hidden_row_set = normalize_hidden_rows(hidden_rows)
-        row_outline = build_outline(row_groups, "row")
-        col_outline = build_outline(column_groups, "column")
+        chart_specs = self._normalize_charts(options.charts)
+        validations = normalize_validations(options.data_validations)
+        image_specs = normalize_images(options.images)
+        shape_specs = normalize_shapes(options.shapes)
+        print_spec = normalize_print_settings(options.print_settings)
+        widths = self._normalize_widths(options.column_widths, "column_widths")
+        autofit = check_autofit(options.autofit_rows, options.autofit_padding)
+        hidden_cols = normalize_hidden_columns(options.hidden_columns)
+        heights = self._normalize_row_heights(options.row_heights)
+        hidden_row_set = normalize_hidden_rows(options.hidden_rows)
+        row_outline = build_outline(options.row_groups, "row")
+        col_outline = build_outline(options.column_groups, "column")
         if col_outline is not None:
             hidden_cols = hidden_cols | col_outline.hidden_indices()
         split_freeze = None
-        if freeze_panes is not None and freeze_panes != "":
-            split_freeze = self._split_freeze_cell(freeze_panes)
+        if options.freeze_panes is not None and options.freeze_panes != "":
+            split_freeze = self._split_freeze_cell(options.freeze_panes)
         # Explicit priorities are reserved up front, so automatic ones skip them.
         cf_priorities = explicit_cf_priorities(
             cf_rules,
             self._seen_cf_priorities,
             self._reserved_cf_priorities,
         )
-        if sort_state is not None:
+        if options.sort_state is not None:
             # The range against the filter is checked once the writer knows the
             # filter range; the conditions are format-independent and checked now.
-            check_sort_state(sort_state, auto_filter_ref)
+            check_sort_state(options.sort_state, options.auto_filter_ref)
         return SheetSpec(
             view=view,
             header_rows=header_rows,
@@ -293,7 +281,14 @@ class WriterFrontEnd:
             row_outline=row_outline,
             col_outline=col_outline,
             split_freeze=split_freeze,
-            sort_state=sort_state,
+            sort_state=options.sort_state,
+            show_grid_lines=options.show_grid_lines,
+            freeze_panes=options.freeze_panes,
+            auto_filter=auto_filter,
+            auto_filter_ref=options.auto_filter_ref,
+            ignored_errors=options.ignored_errors,
+            pivots=options.pivots,
+            sheet_protection=options.sheet_protection,
         )
 
     def _claim_sheet_options(self, spec: SheetSpec) -> None:

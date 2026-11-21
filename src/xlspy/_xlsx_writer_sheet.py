@@ -14,8 +14,6 @@ from collections.abc import Iterable, Mapping
 from . import _zip_threads
 from ._accel import encode_xlsx_row as accel_encode_xlsx_row
 from ._text import check_cell_text, xml_space_attribute, xstring_escape
-from .charts import Chart
-from .data_validation import DataValidation
 from .excel_dates import datetime_to_serial
 from .formats import DEFAULT_DATE_FORMAT, DEFAULT_DATETIME_FORMAT, _is_formatted_cell, _unwrap_cell
 from .formulas import ArrayFormula, DataTableFormula, Formula
@@ -42,7 +40,6 @@ from .pivots import (
 )
 from .hyperlinks import Hyperlink
 from ._scalars import is_pandas_missing, native_cell_value, plain_value
-from .images import Image
 from .printing import (
     PrintSettings,
 )
@@ -115,48 +112,9 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         formulas and the other options are described in the documentation.
         """
         opts = resolve_sheet_options(options, kwargs, XLSX_OPTIONS, "XlsxWriter")
-        self._write_sheet(data, **opts.as_kwargs(XLSX_OPTIONS))
+        self._write_sheet(data, opts)
 
-    def _write_sheet(
-        self,
-        data: Iterable[list[Any]],
-        *,
-        header_style: Style | None = None,
-        styles: dict[str, Style] | None = None,
-        merges: list[str] | tuple[str, ...] | None = None,
-        conditional_formats: list | tuple | None = None,
-        tables: list[ExcelTable] | tuple[ExcelTable, ...] | None = None,
-        column_widths: dict | None = None,
-        autofit_rows: int | None = 1000,
-        autofit_padding: float = 0.0,
-        hidden_columns: list | tuple | set | None = None,
-        row_heights: dict | None = None,
-        hidden_rows: list | tuple | set | None = None,
-        row_groups: list | tuple | None = None,
-        column_groups: list | tuple | None = None,
-        freeze_panes: str | None = None,
-        auto_filter: bool | None = None,
-        auto_filter_ref: str | None = None,
-        charts: list[Chart] | tuple[Chart, ...] | None = None,
-        data_validations: list[DataValidation] | tuple[DataValidation, ...] | None = None,
-        images: list[Image] | tuple[Image, ...] | None = None,
-        print_settings: PrintSettings | None = None,
-        comments: Mapping[str, Comment] | None = None,
-        sheet_protection: SheetProtection | None = None,
-        show_grid_lines: bool = True,
-        header_rows: int = 1,
-        tab_color: Color | str | None = None,
-        zoom: int | None = None,
-        ignored_errors: list | tuple | None = None,
-        sparklines: list | tuple | None = None,
-        slicers: list | tuple | None = None,
-        pivots: list | tuple | None = None,
-        shapes: list | tuple | None = None,
-        show_row_col_headers: bool = True,
-        show_zero_values: bool = True,
-        right_to_left: bool = False,
-        sort_state: Any | None = None,
-    ):
+    def _write_sheet(self, data: Iterable[list[Any]], options: SheetOptions) -> None:
         """Write rows to the current sheet.
 
         ``data`` is consumed once, row by row. The rows are encoded into a
@@ -165,40 +123,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         formulas and the other options are described in the documentation.
         """
         self._require_writable()
-        spec = self._check_sheet_options(
-            header_style=header_style,
-            show_grid_lines=show_grid_lines,
-            header_rows=header_rows,
-            tab_color=tab_color,
-            zoom=zoom,
-            show_row_col_headers=show_row_col_headers,
-            show_zero_values=show_zero_values,
-            right_to_left=right_to_left,
-            styles=styles,
-            merges=merges,
-            comments=comments,
-            sheet_protection=sheet_protection,
-            auto_filter_ref=auto_filter_ref,
-            conditional_formats=conditional_formats,
-            tables=tables,
-            sparklines=sparklines,
-            slicers=slicers,
-            charts=charts,
-            data_validations=data_validations,
-            images=images,
-            shapes=shapes,
-            print_settings=print_settings,
-            column_widths=column_widths,
-            hidden_columns=hidden_columns,
-            row_heights=row_heights,
-            hidden_rows=hidden_rows,
-            row_groups=row_groups,
-            column_groups=column_groups,
-            freeze_panes=freeze_panes,
-            autofit_rows=autofit_rows,
-            autofit_padding=autofit_padding,
-            sort_state=sort_state,
-        )
+        spec = self._check_sheet_options(options)
         # Every option is valid; only now record what this sheet claims. A second
         # write to the same sheet is refused after the options are checked, so a
         # bad argument still reports its own error.
@@ -211,9 +136,9 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         sheet_name, _, hidden = self._worksheet_data[sheet_index]
         self._worksheet_data[sheet_index] = (sheet_name, None, hidden)
         sheet_id = self._sheet_count
-        has_styles = bool(spec.style_ranges) or spec.header_style is not None
+        has_styles = spec.has_styles
 
-        pivot_plans = normalize_pivots(pivots, spec.tables, self._pivot_names, sheet_name)
+        pivot_plans = normalize_pivots(spec.pivots, spec.tables, self._pivot_names, sheet_name)
         for plan in pivot_plans:
             target_index = self._sheet_index_by_name(plan.target_sheet)
             if target_index is not None and target_index != sheet_index and target_index in self._sheet_written:
@@ -239,8 +164,8 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             if pending:
                 data = overlay_rows(data, pending)
             button_rows = {spec.header_rows - 1, *(parse_cell_range(t.ref)[1] for t in spec.tables)}
-            if auto_filter_ref is not None:
-                button_rows.add(parse_cell_range(auto_filter_ref)[1])
+            if spec.auto_filter_ref is not None:
+                button_rows.add(parse_cell_range(spec.auto_filter_ref)[1])
             width_styles = (spec.style_ranges, spec.header_style if has_styles else None)
             meter = ColumnWidthMeter(
                 lambda r, length: styles_for_row(r, length, *width_styles),
@@ -251,13 +176,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             body = self._write_body(
                 data,
                 row_sink,
-                spec.style_ranges,
-                spec.header_style if has_styles else None,
-                spec.heights,
-                spec.hidden_rows,
-                has_styles,
-                spec.tables,
-                row_outline=spec.row_outline,
+                spec,
                 meter=meter,
                 table_totals=table_totals,
             )
@@ -274,49 +193,28 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 table_rels,
                 (pending or []) + same_sheet,
             )
-            if auto_filter is None and spec.tables:
-                auto_filter = False
             filter_cells = _filter_cells(
                 spec.tables,
                 table_bounds,
-                auto_filter,
-                auto_filter_ref,
+                spec.auto_filter,
+                spec.auto_filter_ref,
                 body,
                 spec.header_rows,
             )
             head = self._sheet_head(
                 body,
                 sheet_index,
-                spec.split_freeze,
-                freeze_panes,
-                spec.widths,
-                spec.hidden_cols,
-                spec.print_settings,
-                row_outline=spec.row_outline,
-                col_outline=spec.col_outline,
-                show_grid_lines=show_grid_lines,
+                spec,
                 meter=meter,
-                autofit_padding=spec.autofit[1],
                 filter_cells=filter_cells,
-                tab_key=spec.tab_key,
-                zoom=spec.zoom,
-                view=spec.view,
             )
             tail = self._sheet_tail(
                 body,
                 sheet_index,
-                spec.merge_refs,
-                spec.cf_rules,
-                spec.tables,
+                spec,
                 table_bounds,
-                spec.validations,
                 link_rels,
-                auto_filter,
                 drawing_rid,
-                spec.print_settings,
-                auto_filter_ref=auto_filter_ref,
-                header_rows=spec.header_rows,
-                sort_state=spec.sort_state,
             )
             tail = self._finish_tail(
                 tail,
@@ -324,8 +222,6 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 sheet_id,
                 sheet_name,
                 spec,
-                sheet_protection,
-                ignored_errors,
                 slicer_rids,
             )
             if rels:
@@ -441,19 +337,17 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         sheet_id: int,
         sheet_name: str,
         spec: SheetSpec,
-        sheet_protection: SheetProtection | None,
-        ignored_errors: Any,
         slicer_rids: list[str],
     ) -> str:
         """Add the protection, ignored errors, comment parts (to ``rels``) and the
         sparkline and slicer extensions to the sheet's closing XML."""
-        if sheet_protection is not None:
-            tail = "</sheetData>" + sheet_protection.to_xml() + tail[len("</sheetData>") :]
-        if ignored_errors:
+        if spec.sheet_protection is not None:
+            tail = "</sheetData>" + spec.sheet_protection.to_xml() + tail[len("</sheetData>") :]
+        if spec.ignored_errors:
             tail = replace_element(
                 tail,
                 "ignoredErrors",
-                ignored_errors_xml(ignored_errors),
+                ignored_errors_xml(spec.ignored_errors),
                 before=("drawing", "legacyDrawing", "tableParts"),
             )
         if spec.comments:
@@ -573,23 +467,25 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         self,
         data,
         spool,
-        style_ranges,
-        header_style,
-        heights,
-        hidden_row_set,
-        has_styles,
-        table_headers=(),
-        row_outline=None,
+        spec: SheetSpec,
+        *,
         meter=None,
         table_totals=None,
     ):
         """Encode every row into ``spool`` and return a ``_SheetBody``.
 
         ``meter`` measures the automatic column widths of the first rows (its
-        ``limit``); the header rows of ``table_headers`` are kept, and checked
+        ``limit``); the header rows of the spec's tables are kept, and checked
         as soon as they stream past.
         Hyperlink cells are recorded so the trailer can link them.
         """
+        style_ranges = spec.style_ranges
+        header_style = spec.header_style if spec.has_styles else None
+        heights = spec.heights
+        hidden_row_set = spec.hidden_rows
+        table_headers = spec.tables
+        row_outline = spec.row_outline
+        has_styles = spec.has_styles
         head: list = []  # kept empty: the meter measures the rows
         measure_until = meter.limit if meter is not None else 0
         fast_add = meter.fast_add if meter is not None else None

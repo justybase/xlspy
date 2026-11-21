@@ -214,6 +214,15 @@ layout to `_rows.py`, and moved XML serialization and regex helpers to
 XML-only methods it never used are gone from its MRO. The duplicated COM
 fixtures in eight test modules were replaced by the `conftest.py` fixtures.
 
+The writer option contract now carries a single resolved `SheetOptions` from
+`write_sheet` down to the format encoders. `_check_sheet_options` returns one
+normalized `SheetSpec` (including the raw view and filter fields the encoders
+still need), and the XLSX sheet head/tail, the XLSB record writer and the
+`_SheetBody` encoder take that object instead of 15-37 keyword arguments. The
+duplicated parameter lists in `_xlsx_writer_host.py` and `_xlsb_writer_host.py`
+shrank to the same contract, and the unused `SheetOptions.as_kwargs()` helper
+was removed.
+
 The full native suite passed **10,376 tests, 345 skipped, 1 xfailed** in 4:58;
 the pure-Python pass took **9,270 tests, 1,452 skipped** in 2:51. Combined
 coverage is **92%** branch coverage over 27,651 statements. `ruff check`,
