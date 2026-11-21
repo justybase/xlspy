@@ -64,7 +64,7 @@ from .pivots import PivotTable, PivotValue
 from .outline import Group
 from .printing import PageMargins, PrintSettings
 from ._sheet_options import SheetOptions
-from .dataframe import dataframe_to_rows, to_xlsb, to_xlsx
+from .dataframe import dataframe_to_rows, read_dataframe, to_xlsb, to_xlsx
 
 try:  # pyproject.toml is the single source of the version
     __version__ = _metadata_version("xlspy")
@@ -189,6 +189,7 @@ __all__ = [
     "SheetOptions",
     "PrintSettings",
     "dataframe_to_rows",
+    "read_dataframe",
     "to_xlsx",
     "to_xlsb",
     "Workbook",

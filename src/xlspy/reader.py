@@ -404,6 +404,21 @@ class ExcelReader:
         """Return all rows of a sheet as a list; see ``get_rows``."""
         return list(self.get_rows(sheet_name, data_only=data_only, streaming=streaming))
 
+    def to_pandas(self, sheet_name: str | int | None = 0, **kwargs: Any) -> Any:
+        """Read a sheet into a pandas DataFrame; see `read_dataframe`.
+
+        The reader stays open; the returned frame owns its data.
+        """
+        from .dataframe import read_dataframe
+
+        return read_dataframe(self, sheet_name, engine="pandas", **kwargs)
+
+    def to_polars(self, sheet_name: str | int | None = 0, **kwargs: Any) -> Any:
+        """Read a sheet into a polars DataFrame; see `read_dataframe`."""
+        from .dataframe import read_dataframe
+
+        return read_dataframe(self, sheet_name, engine="polars", **kwargs)
+
     def get_comments(self, sheet_name: str) -> dict[str, Comment]:
         """Return classic note text and authors, without reading worksheet rows.
 
