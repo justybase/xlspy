@@ -18,7 +18,9 @@ import xlspy
 ROOT = pathlib.Path(xlspy.__file__).parent
 
 # Raise only with a reason in the import's comment; lower it when one goes away.
-MAX_FUNCTION_LEVEL_IMPORTS = 21
+# 24: fsspec (remote URIs), pandas/polars (DataFrame reading) and the reader's
+# lazy dataframe import (the object is optional or the import is a cycle).
+MAX_FUNCTION_LEVEL_IMPORTS = 24
 
 
 def _module(path: pathlib.Path) -> str:

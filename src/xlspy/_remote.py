@@ -14,7 +14,7 @@ import tempfile
 from typing import IO, Any, TypeGuard
 from urllib.parse import urlsplit
 
-_COPY_CHUNK = 1 << 20
+_TRANSFER_CHUNK = 1 << 20
 _SCHEME = re.compile(r"^([A-Za-z][A-Za-z0-9+.\-]*)://")
 # "C:\..." and "C:/..." are local paths, not "C" URIs.
 _WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
@@ -35,6 +35,7 @@ def uri_extension(uri: str, default: str = "xlsx") -> str:
 
 
 def _fsspec() -> Any:
+    # fsspec is optional: xlspy[remote] installs it; import it on first use.
     try:
         import fsspec
     except ImportError as exc:  # pragma: no cover - depends on the environment
@@ -53,7 +54,7 @@ def open_remote(uri: str) -> IO[bytes]:
     stream = tempfile.SpooledTemporaryFile(max_size=_STAGING_BYTES, mode="w+b")
     try:
         with _fsspec().open(uri, "rb") as data:
-            shutil.copyfileobj(data, stream, _COPY_CHUNK)
+            shutil.copyfileobj(data, stream, _TRANSFER_CHUNK)
         stream.seek(0)
     except BaseException:
         stream.close()
@@ -64,13 +65,13 @@ def open_remote(uri: str) -> IO[bytes]:
 def download_remote(uri: str, destination: str) -> None:
     """Copy the remote package at ``uri`` to the local file ``destination``."""
     with _fsspec().open(uri, "rb") as source, open(destination, "wb") as target:
-        shutil.copyfileobj(source, target, _COPY_CHUNK)
+        shutil.copyfileobj(source, target, _TRANSFER_CHUNK)
 
 
 def upload_stream(source: IO[bytes], uri: str) -> None:
     """Copy an open binary stream to the remote target ``uri``."""
     with _fsspec().open(uri, "wb") as target:
-        shutil.copyfileobj(source, target, _COPY_CHUNK)
+        shutil.copyfileobj(source, target, _TRANSFER_CHUNK)
 
 
 def upload_remote(source: str, uri: str) -> None:

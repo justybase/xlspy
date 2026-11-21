@@ -9,9 +9,9 @@ import sys
 import zipfile
 from typing import Any
 
+from . import load_workbook
 from .exceptions import XlspyError
 from .reader import ExcelReader
-from .workbook import load_workbook
 
 _EXTENSIONS = (".xlsx", ".xlsm", ".xltx", ".xltm", ".xlsb")
 

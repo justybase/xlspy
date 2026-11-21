@@ -81,7 +81,7 @@ _XLSB_PYTHON_CELLS = (
     datetime.date,
 )
 # The one-byte error code of a BrtCellError, from its Excel label.
-_ERROR_CODES = {
+_ERROR_CODE_IDS = {
     "#NULL!": 0,
     "#DIV/0!": 7,
     "#VALUE!": 15,
@@ -953,7 +953,7 @@ class _XlsbBinMixin(_XlsbWriterHost):
         if isinstance(cell, CellError):
             label = cell[6:] if cell.startswith("error:") else str(cell)
             buffer.write(b"\x03\x09")
-            buffer.write(struct.pack("<IIB", col_idx, style_ref, _ERROR_CODES.get(label, 15)))
+            buffer.write(struct.pack("<IIB", col_idx, style_ref, _ERROR_CODE_IDS.get(label, 15)))
             return True
         if isinstance(cell, str):
             if has_custom_fmt:

@@ -40,15 +40,13 @@ from .printing import (
 from .refs import quote_sheet_name
 from ._xlsx_writer_xml import _ATTR_ENTITIES, _CT_PIVOT_CACHE, _CT_PIVOT_TABLE, _REL_PIVOT_CACHE, _SST_CHUNK_STRINGS
 from ._xlsx_writer_host import _XlsxWriterHost
+from ._vba import VBA_CONTENT_TYPE, VBA_PART, VBA_RELATIONSHIP
 
 
 # A chunk joined on NUL: a text that starts or ends with whitespace, or holds a
 # tab or a line break, sits next to a NUL or at an end of the chunk.
 _NEEDS_PRESERVE = re.compile(r"[\t\n\r]|\A\s|\s\Z|\s\x00|\x00\s")
 
-_VBA_PART = "xl/vbaProject.bin"
-_VBA_TYPE = "application/vnd.ms-office.vbaProject"
-_VBA_REL = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
 _PLAIN_MAIN = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
 _MACRO_MAIN = "application/vnd.ms-excel.sheet.macroEnabled.main+xml"
 
@@ -144,7 +142,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
         self._zf.writestr("_rels/.rels", self._create_root_rels())
         self._zf.writestr("xl/workbook.xml", self._create_workbook_xml())
         if self._vba_project is not None:
-            self._zf.writestr(_VBA_PART, self._vba_project)
+            self._zf.writestr(VBA_PART, self._vba_project)
         self._zf.writestr("xl/styles.xml", self._create_styles_xml())
         self._zf.writestr("xl/_rels/workbook.xml.rels", self._create_workbook_rels())
         self._write_doc_props()
@@ -211,7 +209,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
         if self._sheet_drawings:
             theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
 
-        vba_default = f'<Default Extension="bin" ContentType="{_VBA_TYPE}"/>' if self._vba_project else ""
+        vba_default = f'<Default Extension="bin" ContentType="{VBA_CONTENT_TYPE}"/>' if self._vba_project else ""
         workbook_type = _MACRO_MAIN if self._vba_project else _PLAIN_MAIN
         shared_strings_part = ""
         comment_parts = "".join(
@@ -320,7 +318,7 @@ class _XlsxPartsMixin(_XlsxWriterHost):
             )
         if self._vba_project is not None:
             relationships.append(
-                f'<Relationship Id="rId{len(relationships) + 1}" Type="{_VBA_REL}" Target="vbaProject.bin"/>'
+                f'<Relationship Id="rId{len(relationships) + 1}" Type="{VBA_RELATIONSHIP}" Target="vbaProject.bin"/>'
             )
 
         return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

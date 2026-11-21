@@ -23,7 +23,7 @@ from .hyperlinks import Hyperlink
 
 # A decimal number with an optional sign and exponent. Deliberately stricter
 # than ``float()``: "nan", "inf", "0x10" and "1_000" stay text.
-_NUMBER_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
+_COERCION_NUMBER_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
 # What XlsxWriter treats as a URL by default.
 _URL_RE = re.compile(r"^(?:https?|ftp)://|^mailto:", re.IGNORECASE)
 
@@ -83,7 +83,7 @@ def _coerce_scalar(value: Any, coercion: Coercion) -> Any:
             return Formula(value)
         except (TypeError, ValueError):
             return value
-    if coercion.strings_to_numbers and _NUMBER_RE.match(value):
+    if coercion.strings_to_numbers and _COERCION_NUMBER_RE.match(value):
         try:
             if "." in value or "e" in value.lower():
                 return float(value)

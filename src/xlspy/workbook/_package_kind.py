@@ -8,6 +8,7 @@ from xml.etree import ElementTree as ET
 
 from .._metadata import CT, MAIN, element_bytes
 from .._safe_xml import fromstring as safe_fromstring
+from .._vba import VBA_CONTENT_TYPE as _VBA_TYPE, VBA_PART as _VBA_PART, VBA_RELATIONSHIP as _VBA_REL
 from ._objects import _Package
 from ._chartsheets import _set_rels
 
@@ -20,9 +21,6 @@ _MAIN_TYPES = {
     "xltx": "application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml",
     "xltm": "application/vnd.ms-excel.template.macroEnabled.main+xml",
 }
-_VBA_PART = "xl/vbaProject.bin"
-_VBA_TYPE = "application/vnd.ms-office.vbaProject"
-_VBA_REL = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
 
 
 def set_package_kind(

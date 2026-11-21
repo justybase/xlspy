@@ -10,6 +10,7 @@ import datetime as _datetime
 from typing import TYPE_CHECKING, Any
 from ..formulas import ArrayFormula, DataTableFormula, Formula
 from .._metadata import DefinedName
+from .._vba import check_vba_name, read_vba_project
 from ..refs import check_sheet_name, quote_sheet_name
 from ..styles import (
     NamedStyle,
@@ -123,8 +124,6 @@ class Workbook:
         workbook as ``.xlsm`` or ``.xltm``; another extension is refused rather
         than dropping the project silently.
         """
-        from .._vba import read_vba_project
-
         data = read_vba_project(project)
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
@@ -137,8 +136,6 @@ class Workbook:
 
     def set_vba_name(self, name: str) -> None:
         """Set the VBA project's code name (``workbookPr/@codeName``)."""
-        from .._vba import check_vba_name
-
         self.code_name = check_vba_name(name)
 
     @property

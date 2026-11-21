@@ -20,6 +20,7 @@ import importlib.util
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from ._dataframe_rows import dataframe_to_rows as dataframe_to_rows
+from .reader import ExcelReader
 from .writer import XlsbWriter
 from .xlsx_writer import XlsxWriter
 
@@ -279,6 +280,7 @@ def _read_sheet(
         data = [[row[index] for index in indices] for row in data]
 
     if engine == "pandas":
+        # pandas is optional: import it only when it is actually used.
         import pandas as pd
 
         frame = pd.DataFrame(data, columns=columns)
@@ -286,6 +288,7 @@ def _read_sheet(
             frame = frame.astype(dtype)
         return frame
 
+    # polars is optional: import it only when it is actually used.
     import polars as pl
 
     if data:
@@ -347,8 +350,6 @@ def read_dataframe(
     if dtype is not None and not isinstance(dtype, Mapping):
         raise TypeError("dtype must be a mapping of column names to dtypes")
     chosen_engine = _frame_engine(engine)
-
-    from .reader import ExcelReader
 
     def read_all(reader: ExcelReader) -> Any:
         names = reader.get_sheet_names()

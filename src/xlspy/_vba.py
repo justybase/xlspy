@@ -5,6 +5,11 @@ from __future__ import annotations
 import os
 from typing import Any
 
+# Shared by the XLSX writer and the workbook model.
+VBA_PART = "xl/vbaProject.bin"
+VBA_CONTENT_TYPE = "application/vnd.ms-office.vbaProject"
+VBA_RELATIONSHIP = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
+
 
 def read_vba_project(project: Any) -> bytes:
     """Return the bytes of a ``vbaProject.bin`` given as a path, bytes or stream."""
