@@ -9,7 +9,7 @@ from dataclasses import replace
 import os
 import shutil
 import tempfile
-from typing import TYPE_CHECKING, Any, NoReturn, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from ..refs import parse_cell_range
 from . import _props
@@ -49,8 +49,8 @@ def remember_workbook_state(workbook: Workbook) -> None:
     _props.remember(workbook)
 
 
-def _unsupported_loaded_feature(what: str) -> NoReturn:
-    raise UnsupportedFeatureError(
+def _unsupported_loaded_feature(what: str) -> UnsupportedFeatureError:
+    return UnsupportedFeatureError(
         f"{what} cannot be saved into a loaded XLSB workbook yet; "
         "build the workbook with Workbook() and save it as .xlsb instead"
     )
