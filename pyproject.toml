@@ -184,11 +184,8 @@ required-imports = ["from __future__ import annotations"]
 # Windows environment variable names are case-insensitive; the spelling is the point.
 "tests/test_libreoffice_xlsb.py" = ["SIM112"]
 # Known complexity debt: remove an entry when the listed functions are split.
-"src/xlspy/_xlsb_formulas.py" = ["C901"]
 "src/xlspy/_xlsb_read.py" = ["C901"]
 "src/xlspy/biff_reader.py" = ["C901"]
-"src/xlspy/formula/tokenizer.py" = ["C901"]
-"src/xlspy/formulas.py" = ["C901"]
 "src/xlspy/pivots.py" = ["C901"]
 "src/xlspy/workbook/_fast_sheet.py" = ["C901"]
 "src/xlspy/workbook/_styles.py" = ["C901"]

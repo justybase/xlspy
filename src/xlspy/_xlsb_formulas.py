@@ -14,7 +14,7 @@ import math
 import posixpath
 import re
 import struct
-from typing import Any
+from typing import Any, cast
 
 from ._metadata import DefinedName
 from ._xlsb_functions import FUNCTIONS, BY_ID
@@ -181,60 +181,10 @@ class _Parser:
         return token
 
     def expression(self, minimum=0):
-        token = self.pop()
-        if isinstance(token, _Structured):
-            left: tuple[Any, ...] = ("table", token.name, token.spec)
-        elif token in ("+", "-"):
-            left = ("unary", token, self.expression(7))
-        elif token == "(":
-            left = ("paren", self.expression())
-            if self.pop() != ")":
-                raise ValueError("missing closing parenthesis")
-        elif token.startswith('"'):
-            left = ("string", token[1:-1].replace('""', '"'))
-        elif token.startswith("#"):
-            left = ("error", token.upper())
-        else:
-            sheet = None
-            if self.peek() == "!":
-                self.pop()
-                sheet = token[1:-1].replace("''", "'") if token.startswith("'") else token
-                token = self.pop()
-            if self.peek() == "(" and sheet is None:
-                self.pop()
-                args = []
-                if self.peek() != ")":
-                    while True:
-                        args.append(("missing",) if self.peek() in (",", ")") else self.expression(2))
-                        if self.peek() != ",":
-                            break
-                        self.pop()
-                if self.pop() != ")":
-                    raise ValueError("invalid function argument list")
-                left = ("function", token.upper(), args)
-            elif re.fullmatch(_ADDRESS, token):
-                left = ("reference", token, sheet)
-            elif re.fullmatch(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?", token):
-                left = ("number", token)
-            elif token.upper() in ("TRUE", "FALSE") and sheet is None:
-                left = ("bool", token.upper() == "TRUE")
-            else:
-                left = ("name", token, sheet)
-        # An immediate invocation: LAMBDA(...)(...), LET(...)(...) or
-        # (expr)(args). Excel stores it as another PtgFuncVar with id 255
-        # whose first stack item is the callee.
+        left = self._primary()
         while self.peek() == "(":
             self.pop()
-            call_args = []
-            if self.peek() != ")":
-                while True:
-                    call_args.append(("missing",) if self.peek() in (",", ")") else self.expression(2))
-                    if self.peek() != ",":
-                        break
-                    self.pop()
-            if self.pop() != ")":
-                raise ValueError("invalid function argument list")
-            left = ("call", left, call_args)
+            left = ("call", left, self._argument_list())
         while True:
             operator = self.peek()
             if operator == "%":
@@ -248,6 +198,52 @@ class _Parser:
             right = self.expression(precedence + 1)
             left = ("binary", operator, left, right)
         return left
+
+    def _primary(self):
+        token = self.pop()
+        if isinstance(token, _Structured):
+            return ("table", token.name, token.spec)
+        if token in ("+", "-"):
+            return ("unary", token, self.expression(7))
+        if token == "(":
+            left = ("paren", self.expression())
+            if self.pop() != ")":
+                raise ValueError("missing closing parenthesis")
+            return left
+        if token.startswith('"'):
+            return ("string", token[1:-1].replace('""', '"'))
+        if token.startswith("#"):
+            return ("error", token.upper())
+        return self._name_or_value(token)
+
+    def _name_or_value(self, token):
+        sheet = None
+        if self.peek() == "!":
+            self.pop()
+            sheet = token[1:-1].replace("''", "'") if token.startswith("'") else token
+            token = self.pop()
+        if self.peek() == "(" and sheet is None:
+            self.pop()
+            return ("function", token.upper(), self._argument_list())
+        if re.fullmatch(_ADDRESS, token):
+            return ("reference", token, sheet)
+        if re.fullmatch(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?", token):
+            return ("number", token)
+        if token.upper() in ("TRUE", "FALSE") and sheet is None:
+            return ("bool", token.upper() == "TRUE")
+        return ("name", token, sheet)
+
+    def _argument_list(self):
+        args = []
+        if self.peek() != ")":
+            while True:
+                args.append(("missing",) if self.peek() in (",", ")") else self.expression(2))
+                if self.peek() != ",":
+                    break
+                self.pop()
+        if self.pop() != ")":
+            raise ValueError("invalid function argument list")
+        return args
 
 
 def parse_expression(text):
@@ -315,9 +311,237 @@ def encode_reference(ref, sheet, context, operand, origin, name_formula, cell_re
     return token + payload
 
 
+class _Compiler:
+    """Encode one formula expression into XLSB tokens."""
+
+    def __init__(
+        self,
+        context: Any,
+        *,
+        sheet: str | None,
+        origin: tuple[int, int],
+        name_formula: bool,
+        cell_relative: bool,
+    ) -> None:
+        self.context = context
+        self.sheet = sheet
+        self.origin = origin
+        self.name_formula = name_formula
+        self.cell_relative = cell_relative
+        self.references = 0
+        self.volatile = False
+
+    def compile(self, text: str, operand: str | None, stats: dict | None) -> bytes:
+        tree = parse_expression(text)
+        top = operand or ("R" if self.name_formula else "V")
+        tokens = self.emit(tree, top)
+        if self.volatile:
+            # PtgAttrSemi opens every formula with a volatile function.
+            tokens = b"\x19\x01\x00\x00" + tokens
+        if stats is not None:
+            stats["references"] = self.references
+        return cast(bytes, parsed_formula(tokens))
+
+    def table_token(self, table: str, spec: Any, operand_class: str) -> bytes:
+        self.references += 1
+        if self.name_formula:
+            raise UnsupportedFeatureError(
+                "a defined name cannot refer to a table: Excel does not accept a structured reference in a name"
+            )
+        return cast(bytes, encode_table(table, spec, self.context, operand_class))
+
+    def emit(self, node: tuple, operand: str = "V") -> bytes:
+        kind = node[0]
+        if kind == "number":
+            return self._emit_number(node[1])
+        if kind == "string":
+            return self._emit_string(node[1])
+        if kind == "bool":
+            return b"\x1d" + bytes([node[1]])
+        if kind == "error":
+            return self._emit_error(node[1])
+        if kind == "missing":
+            return b"\x16"
+        if kind == "reference":
+            return self._emit_reference(node, operand)
+        if kind == "table":
+            return self.table_token(node[1], node[2], operand)
+        if kind == "name":
+            return self._emit_name(node, operand)
+        if kind == "paren":
+            return self.emit(node[1], operand) + b"\x15"
+        if kind == "percent":
+            return self.emit(node[1]) + b"\x14"
+        if kind == "unary":
+            return self.emit(node[2]) + (b"\x12" if node[1] == "+" else b"\x13")
+        if kind == "binary":
+            arg_type = "R" if node[1] in (",", " ", ":") else "V"
+            return self.emit(node[2], arg_type) + self.emit(node[3], arg_type) + bytes([_OP_IDS[node[1]]])
+        if kind == "function":
+            return self._emit_function(node, operand)
+        if kind == "call":
+            return self._emit_call(node, operand)
+        raise UnsupportedFeatureError(f"unsupported XLSB formula node {kind}")
+
+    @staticmethod
+    def _emit_number(text: str) -> bytes:
+        value = float(text)
+        if not math.isfinite(value):
+            raise ValueError("XLSB formula numeric constants must be finite")
+        return (
+            b"\x1e" + struct.pack("<H", int(value))
+            if value.is_integer() and 0 <= value <= 65535
+            else b"\x1f" + struct.pack("<d", value)
+        )
+
+    @staticmethod
+    def _emit_string(text: str) -> bytes:
+        data = text.encode("utf-16le")
+        if len(data) // 2 > 255:
+            raise ValueError("XLSB formula string literals are limited to 255 UTF-16 units")
+        return b"\x17" + struct.pack("<H", len(data) // 2) + data
+
+    @staticmethod
+    def _emit_error(label: str) -> bytes:
+        return b"\x1c" + bytes([next(code for code, name in ERRORS.items() if name == label)])
+
+    def _emit_reference(self, node: tuple, operand: str) -> bytes:
+        self.references += 1
+        return encode_reference(
+            node[1],
+            node[2],
+            self.context,
+            operand,
+            self.origin,
+            self.name_formula,
+            self.cell_relative,
+        )
+
+    def _emit_name(self, node: tuple, operand: str) -> bytes:
+        if node[2] is None and self.context.has_table(node[1]):
+            return self.table_token(node[1], None, operand)  # a table alone is the whole table
+        if node[2] is None and node[1].startswith("_xlpm."):
+            index = self.context.lambda_name(node[1])
+        else:
+            index = self.context.name_reference(
+                node[1],
+                node[2] or self.sheet,
+                qualified=node[2] is not None,
+            )
+        return bytes([0x23 if operand == "R" else 0x63 if operand == "A" else 0x43]) + struct.pack("<I", index + 1)
+
+    @staticmethod
+    def _result_class(operand: str) -> int:
+        return 0x20 if operand == "R" else 0x60 if operand == "A" else 0x40
+
+    def _emit_function(self, node: tuple, operand: str) -> bytes:
+        function, args = node[1], node[2]
+        base = function.removeprefix("_XLFN.")
+        info = FUNCTIONS.get(base)
+        result_class = self._result_class(operand)
+        if info is None:
+            return self._emit_future_function(function, base, args, result_class)
+        identifier, minimum, maximum, fixed, classes = info
+        if base in _VOLATILE_FUNCTIONS:
+            self.volatile = True
+        if not minimum <= len(args) <= maximum:
+            raise ValueError(f"{function} expects {minimum}..{maximum} arguments")
+        encoded = [self.emit(arg, self._argument_class(identifier, index, classes)) for index, arg in enumerate(args)]
+        ending = (
+            bytes([result_class | 1]) + struct.pack("<H", identifier)
+            if fixed is not None
+            else bytes([result_class | 2, len(args)]) + struct.pack("<H", identifier)
+        )
+        if identifier == 1:  # IF, including its short-circuit jump records.
+            return self._emit_if(encoded, ending)
+        if identifier == 480:  # IFERROR
+            return self._emit_iferror(encoded, ending)
+        if identifier == 100:  # CHOOSE jump table and per-branch exits.
+            return self._emit_choose(encoded, ending)
+        return b"".join(encoded) + ending
+
+    def _emit_future_function(self, function: str, base: str, args: list, result_class: int) -> bytes:
+        if base not in _XLFN_FUNCTIONS:
+            raise UnsupportedFeatureError(f"unsupported XLSB function {function!r}")
+        index = self.context.future_function(function)
+        if len(args) > 254:
+            raise ValueError("too many XLSB function arguments")
+        return (
+            b"\x23"
+            + struct.pack("<I", index + 1)
+            + b"".join(self.emit(arg, "R") for arg in args)
+            + bytes([result_class | 2, len(args) + 1])
+            + struct.pack("<H", 255)
+        )
+
+    @staticmethod
+    def _argument_class(identifier: int, index: int, classes: Any) -> str:
+        if identifier == 481:
+            return "R" if index % 2 == 0 else "V"
+        if identifier in (482, 484):
+            return "R" if index == 0 or index % 2 else "V"
+        return classes[min(index, len(classes) - 1)] if classes else "V"
+
+    @staticmethod
+    def _emit_if(encoded: list[bytes], ending: bytes) -> bytes:
+        yes = encoded[1]
+        no = encoded[2] if len(encoded) == 3 else b""
+        first_goto = b"\x19\x08" + struct.pack("<H", len(no) + (4 if no else 0) + len(ending) - 1)
+        last_goto = b"\x19\x08" + struct.pack("<H", len(ending) - 1) if no else b""
+        return encoded[0] + b"\x19\x02" + struct.pack("<H", len(yes) + 4) + yes + first_goto + no + last_goto + ending
+
+    @staticmethod
+    def _emit_iferror(encoded: list[bytes], ending: bytes) -> bytes:
+        return (
+            encoded[0]
+            + b"\x19\x80"
+            + struct.pack("<H", len(encoded[1]))
+            + encoded[1]
+            + b"\x19\x08"
+            + struct.pack("<H", len(ending) - 1)
+            + ending
+        )
+
+    @staticmethod
+    def _emit_choose(encoded: list[bytes], ending: bytes) -> bytes:
+        alternatives = encoded[1:]
+        offsets = [2 * (len(alternatives) + 1)]
+        for branch in alternatives:
+            offsets.append(offsets[-1] + len(branch) + 4)
+        chunks = [
+            encoded[0],
+            b"\x19\x04"
+            + struct.pack("<H", len(alternatives))
+            + b"".join(struct.pack("<H", offset) for offset in offsets),
+        ]
+        for index, branch in enumerate(alternatives):
+            remaining = sum(len(value) + 4 for value in alternatives[index + 1 :]) + len(ending) - 1
+            chunks.append(branch + b"\x19\x08" + struct.pack("<H", remaining))
+        return b"".join(chunks) + ending
+
+    def _emit_call(self, node: tuple, operand: str) -> bytes:
+        # An immediate invocation: LAMBDA(...)(args). Excel stores the
+        # callee and the call arguments, then a PtgFuncVar with id 255
+        # whose first stack item is the callee.
+        callee, call_args = node[1], node[2]
+        result_class = self._result_class(operand)
+        if len(call_args) + 1 > 254:
+            raise ValueError("too many XLSB function arguments")
+        encoded = [self.emit(callee, "R")] + [self.emit(arg, "R") for arg in call_args]
+        return b"".join(encoded) + bytes([result_class | 2, len(call_args) + 1]) + struct.pack("<H", 255)
+
+
 def compile_formula(
-    text, context, *, sheet=None, origin=(0, 0), name_formula=False, cell_relative=False, operand=None, stats=None
-):
+    text: str,
+    context: Any,
+    *,
+    sheet: str | None = None,
+    origin: tuple[int, int] = (0, 0),
+    name_formula: bool = False,
+    cell_relative: bool = False,
+    operand: str | None = None,
+    stats: dict | None = None,
+) -> bytes:
     """Encode formula text as a CellParsedFormula.
 
     ``stats``, when given, is a dict that receives the number of reference
@@ -325,162 +549,14 @@ def compile_formula(
     """
     if not isinstance(text, str) or not text or len(text) > 8192:
         raise ValueError("invalid XLSB formula text or length")
-    references = 0
-    volatile = False
-
-    def table_token(table, spec, operand_class):
-        nonlocal references
-        references += 1
-        if name_formula:
-            raise UnsupportedFeatureError(
-                "a defined name cannot refer to a table: Excel does not accept a structured reference in a name"
-            )
-        return encode_table(table, spec, context, operand_class)
-
-    def emit(node, operand="V"):
-        kind = node[0]
-        if kind == "number":
-            value = float(node[1])
-            if not math.isfinite(value):
-                raise ValueError("XLSB formula numeric constants must be finite")
-            return (
-                b"\x1e" + struct.pack("<H", int(value))
-                if value.is_integer() and 0 <= value <= 65535
-                else b"\x1f" + struct.pack("<d", value)
-            )
-        if kind == "string":
-            data = node[1].encode("utf-16le")
-            if len(data) // 2 > 255:
-                raise ValueError("XLSB formula string literals are limited to 255 UTF-16 units")
-            return b"\x17" + struct.pack("<H", len(data) // 2) + data
-        if kind == "bool":
-            return b"\x1d" + bytes([node[1]])
-        if kind == "error":
-            return b"\x1c" + bytes([next(code for code, label in ERRORS.items() if label == node[1])])
-        if kind == "missing":
-            return b"\x16"
-        if kind == "reference":
-            nonlocal references
-            references += 1
-            return encode_reference(node[1], node[2], context, operand, origin, name_formula, cell_relative)
-        if kind == "table":
-            return table_token(node[1], node[2], operand)
-        if kind == "name":
-            if node[2] is None and context.has_table(node[1]):
-                return table_token(node[1], None, operand)  # a table alone is the whole table
-            if node[2] is None and node[1].startswith("_xlpm."):
-                index = context.lambda_name(node[1])
-            else:
-                index = context.name_reference(node[1], node[2] or sheet, qualified=node[2] is not None)
-            return bytes([0x23 if operand == "R" else 0x63 if operand == "A" else 0x43]) + struct.pack("<I", index + 1)
-        if kind == "paren":
-            return emit(node[1], operand) + b"\x15"
-        if kind == "percent":
-            return emit(node[1]) + b"\x14"
-        if kind == "unary":
-            return emit(node[2]) + (b"\x12" if node[1] == "+" else b"\x13")
-        if kind == "binary":
-            arg_type = "R" if node[1] in (",", " ", ":") else "V"
-            return emit(node[2], arg_type) + emit(node[3], arg_type) + bytes([_OP_IDS[node[1]]])
-        if kind == "function":
-            function, args = node[1], node[2]
-            base = function.removeprefix("_XLFN.")
-            info = FUNCTIONS.get(base)
-            result_class = 0x20 if operand == "R" else 0x60 if operand == "A" else 0x40
-            if info is None:
-                if base not in _XLFN_FUNCTIONS:
-                    raise UnsupportedFeatureError(f"unsupported XLSB function {function!r}")
-                index = context.future_function(function)
-                if len(args) > 254:
-                    raise ValueError("too many XLSB function arguments")
-                return (
-                    b"\x23"
-                    + struct.pack("<I", index + 1)
-                    + b"".join(emit(arg, "R") for arg in args)
-                    + bytes([result_class | 2, len(args) + 1])
-                    + struct.pack("<H", 255)
-                )
-            identifier, minimum, maximum, fixed, classes = info
-            if base in _VOLATILE_FUNCTIONS:
-                nonlocal volatile
-                volatile = True
-            if not minimum <= len(args) <= maximum:
-                raise ValueError(f"{function} expects {minimum}..{maximum} arguments")
-
-            def argument_class(index):
-                if identifier == 481:
-                    return "R" if index % 2 == 0 else "V"
-                if identifier in (482, 484):
-                    return "R" if index == 0 or index % 2 else "V"
-                return classes[min(index, len(classes) - 1)] if classes else "V"
-
-            encoded = [emit(arg, argument_class(index)) for index, arg in enumerate(args)]
-            ending = (
-                bytes([result_class | 1]) + struct.pack("<H", identifier)
-                if fixed is not None
-                else bytes([result_class | 2, len(args)]) + struct.pack("<H", identifier)
-            )
-            if identifier == 1:  # IF, including its short-circuit jump records.
-                yes = encoded[1]
-                no = encoded[2] if len(encoded) == 3 else b""
-                first_goto = b"\x19\x08" + struct.pack("<H", len(no) + (4 if no else 0) + len(ending) - 1)
-                last_goto = b"\x19\x08" + struct.pack("<H", len(ending) - 1) if no else b""
-                return (
-                    encoded[0]
-                    + b"\x19\x02"
-                    + struct.pack("<H", len(yes) + 4)
-                    + yes
-                    + first_goto
-                    + no
-                    + last_goto
-                    + ending
-                )
-            if identifier == 480:  # IFERROR
-                return (
-                    encoded[0]
-                    + b"\x19\x80"
-                    + struct.pack("<H", len(encoded[1]))
-                    + encoded[1]
-                    + b"\x19\x08"
-                    + struct.pack("<H", len(ending) - 1)
-                    + ending
-                )
-            if identifier == 100:  # CHOOSE jump table and per-branch exits.
-                alternatives = encoded[1:]
-                offsets = [2 * (len(alternatives) + 1)]
-                for branch in alternatives:
-                    offsets.append(offsets[-1] + len(branch) + 4)
-                chunks = [
-                    encoded[0],
-                    b"\x19\x04"
-                    + struct.pack("<H", len(alternatives))
-                    + b"".join(struct.pack("<H", offset) for offset in offsets),
-                ]
-                for index, branch in enumerate(alternatives):
-                    remaining = sum(len(value) + 4 for value in alternatives[index + 1 :]) + len(ending) - 1
-                    chunks.append(branch + b"\x19\x08" + struct.pack("<H", remaining))
-                return b"".join(chunks) + ending
-            return b"".join(encoded) + ending
-        if kind == "call":
-            # An immediate invocation: LAMBDA(...)(args). Excel stores the
-            # callee and the call arguments, then a PtgFuncVar with id 255
-            # whose first stack item is the callee.
-            callee, call_args = node[1], node[2]
-            result_class = 0x20 if operand == "R" else 0x60 if operand == "A" else 0x40
-            if len(call_args) + 1 > 254:
-                raise ValueError("too many XLSB function arguments")
-            encoded = [emit(callee, "R")] + [emit(arg, "R") for arg in call_args]
-            return b"".join(encoded) + bytes([result_class | 2, len(call_args) + 1]) + struct.pack("<H", 255)
-        raise UnsupportedFeatureError(f"unsupported XLSB formula node {kind}")
-
-    top = operand or ("R" if name_formula else "V")
-    tokens = emit(parse_expression(text), top)
-    if volatile:
-        # PtgAttrSemi opens every formula with a volatile function.
-        tokens = b"\x19\x01\x00\x00" + tokens
-    if stats is not None:
-        stats["references"] = references
-    return parsed_formula(tokens)
+    compiler = _Compiler(
+        context,
+        sheet=sheet,
+        origin=origin,
+        name_formula=name_formula,
+        cell_relative=cell_relative,
+    )
+    return compiler.compile(text, operand, stats)
 
 
 def _decode_ref(row, column, origin, relative_offsets):
@@ -496,121 +572,181 @@ def _decode_ref(row, column, origin, relative_offsets):
     return ("" if col_relative else "$") + column_label(col) + ("" if row_relative else "$") + str(row + 1)
 
 
-def decode_formula(data, context, *, sheet=None, origin=(0, 0), name_formula=False):
-    tokens, extra, _ = read_parsed(data)
-    stack = []
-    position = 0
+class _Decoder:
+    """Turn XLSB formula tokens back into formula text."""
 
-    def push(text, precedence=100):
-        stack.append((text, precedence))
+    def __init__(
+        self,
+        data: bytes,
+        context: Any,
+        *,
+        sheet: str | None = None,
+        origin: tuple[int, int] = (0, 0),
+        name_formula: bool = False,
+    ) -> None:
+        self.tokens: bytes = read_parsed(data)[0]
+        self.context = context
+        self.sheet = sheet
+        self.origin = origin
+        self.name_formula = name_formula
+        self.stack: list[tuple[str, int]] = []
+        self.position = 0
 
-    def pop():
-        if not stack:
+    def decode(self) -> str:
+        while self.position < len(self.tokens):
+            self._step()
+        if len(self.stack) != 1:
+            raise ValueError("invalid XLSB formula stack result")
+        return self.stack[0][0]
+
+    def push(self, text: str, precedence: int = 100) -> None:
+        self.stack.append((text, precedence))
+
+    def pop(self) -> tuple[str, int]:
+        if not self.stack:
             raise ValueError("invalid XLSB formula operand stack")
-        return stack.pop()
+        return self.stack.pop()
 
-    def take(size):
-        nonlocal position
-        end = position + size
-        if end > len(tokens):
+    def take(self, size: int) -> bytes:
+        end = self.position + size
+        if end > len(self.tokens):
             raise ValueError("truncated XLSB formula token")
-        value = tokens[position:end]
-        position = end
+        value = self.tokens[self.position : end]
+        self.position = end
         return value
 
-    while position < len(tokens):
-        token = take(1)[0]
-        base = (token & 0x1F) | 0x20 if token >= 0x20 else token
+    def _step(self) -> None:
+        token = self.take(1)[0]
         if token in _OPS:
-            right, rp = pop()
-            left, lp = pop()
-            op = _OPS[token]
-            prec = _PREC[op]
-            if lp < prec:
-                left = "(" + left + ")"
-            if rp < prec or (rp == prec and op in ("-", "/", "^", "<", ">", "=", "<=", ">=", "<>")):
-                right = "(" + right + ")"
-            push(left + op + right, prec)
-        elif token in (0x12, 0x13):
-            text, prec = pop()
-            push(("+" if token == 0x12 else "-") + ("(" + text + ")" if prec < 7 else text), 7)
+            self._binary(token)
+        elif token < 0x18:
+            self._small(token)
+        elif token in (0x18, 0x19):
+            self._extended(token)
+        elif token <= 0x1F:
+            self._constant(token)
+        else:
+            self._reference(token)
+
+    def _binary(self, token: int) -> None:
+        right, rp = self.pop()
+        left, lp = self.pop()
+        op = _OPS[token]
+        prec = _PREC[op]
+        if lp < prec:
+            left = "(" + left + ")"
+        if rp < prec or (rp == prec and op in ("-", "/", "^", "<", ">", "=", "<=", ">=", "<>")):
+            right = "(" + right + ")"
+        self.push(left + op + right, prec)
+
+    def _small(self, token: int) -> None:
+        if token in (0x12, 0x13):
+            text, prec = self.pop()
+            self.push(("+" if token == 0x12 else "-") + ("(" + text + ")" if prec < 7 else text), 7)
         elif token == 0x14:
-            text, prec = pop()
-            push(("(" + text + ")" if prec < 8 else text) + "%", 8)
+            text, prec = self.pop()
+            self.push(("(" + text + ")" if prec < 8 else text) + "%", 8)
         elif token == 0x15:
-            push("(" + pop()[0] + ")")
+            self.push("(" + self.pop()[0] + ")")
         elif token == 0x16:
-            push("")
+            self.push("")
         elif token == 0x17:
-            length = struct.unpack("<H", take(2))[0]
-            push('"' + take(length * 2).decode("utf-16le").replace('"', '""') + '"')
-        elif token == 0x1C:
-            push(ERRORS.get(take(1)[0], "#VALUE!"))
-        elif token == 0x1D:
-            push("TRUE" if take(1)[0] else "FALSE")
-        elif token == 0x1E:
-            push(str(struct.unpack("<H", take(2))[0]))
-        elif token == 0x1F:
-            push(format(struct.unpack("<d", take(8))[0], ".15g"))
-        elif token == 0x18:
-            if take(1)[0] != 0x19:  # PtgList; the other extended tokens are not read
-                raise UnsupportedFeatureError("unsupported XLSB formula token 0x18")
-            _ixti, list_flags, ident, first, last = struct.unpack("<HHIHH", take(12))
-            push(context.table_reference(ident, list_flags, first, last))
-        elif token == 0x19:
-            flags = take(1)[0]
-            value = struct.unpack("<H", take(2))[0]
-            if flags & 4:  # CHOOSE jump table.
-                take(2 * (value + 1))
-            elif flags & 0x10:
-                push("SUM(" + pop()[0] + ")")
-        elif base in (0x24, 0x2C, 0x3A):
-            qualifier = context.sheet_label(struct.unpack("<H", take(2))[0]) if base == 0x3A else ""
-            row, col = struct.unpack("<IH", take(6))
-            push(qualifier + _decode_ref(row, col, origin, name_formula or base == 0x2C))
-        elif base in (0x25, 0x2D, 0x3B):
-            qualifier = context.sheet_label(struct.unpack("<H", take(2))[0]) if base == 0x3B else ""
-            r1, r2, c1, c2 = struct.unpack("<IIHH", take(12))
-            a = _decode_ref(r1, c1, origin, name_formula or base == 0x2D)
-            b = _decode_ref(r2, c2, origin, name_formula or base == 0x2D)
-            # Excel stores whole-column/row references as full worksheet ranges.
-            if r1 == 0 and r2 == 1048575 and not (c1 & 0x8000 or c2 & 0x8000):
-                a, b = re.sub(r"\$?\d+$", "", a), re.sub(r"\$?\d+$", "", b)
-            elif c1 & 0x3FFF == 0 and c2 & 0x3FFF == 16383 and not (c1 & 0x4000 or c2 & 0x4000):
-                a, b = re.sub(r"^\$?[A-Za-z]+", "", a), re.sub(r"^\$?[A-Za-z]+", "", b)
-            push(qualifier + a + ":" + b)
-        elif base == 0x23:
-            index = struct.unpack("<I", take(4))[0] - 1
-            push(context.name_label(index, sheet))
-        elif base in (0x21, 0x22):
-            count = take(1)[0] & 0x7F if base == 0x22 else None
-            identifier = struct.unpack("<H", take(2))[0]
-            if identifier not in BY_ID and identifier != 255:
-                raise UnsupportedFeatureError(f"unsupported XLSB function ID {identifier}")
-            if identifier == 255:
-                if count is None or count < 1:
-                    raise ValueError("invalid XLSB future function")
-                args = [pop()[0] for _ in range(count)][::-1]
-                function, args = args[0], args[1:]
-            else:
-                function, info = BY_ID[identifier]
-                count = info[3] if count is None else count
-                if count is None:
-                    raise ValueError("variable-argument function used as fixed")
-                args = [pop()[0] for _ in range(count)][::-1]
-            push(function + "(" + ",".join(args) + ")")
-        elif base in (0x2A, 0x2B, 0x3C, 0x3D):
-            take((2 if base in (0x3C, 0x3D) else 0) + (6 if base in (0x2A, 0x3C) else 12))
-            push("#REF!")
-        elif base in (0x26, 0x27, 0x28):
-            take(6)  # Memory/cache tokens do not change the expression stack.
-        elif base == 0x29:
-            take(2)
+            length = struct.unpack("<H", self.take(2))[0]
+            self.push('"' + self.take(length * 2).decode("utf-16le").replace('"', '""') + '"')
         else:
             raise UnsupportedFeatureError(f"unsupported XLSB formula token 0x{token:02x}")
-    if len(stack) != 1:
-        raise ValueError("invalid XLSB formula stack result")
-    return stack[0][0]
+
+    def _constant(self, token: int) -> None:
+        if token == 0x1C:
+            self.push(ERRORS.get(self.take(1)[0], "#VALUE!"))
+        elif token == 0x1D:
+            self.push("TRUE" if self.take(1)[0] else "FALSE")
+        elif token == 0x1E:
+            self.push(str(struct.unpack("<H", self.take(2))[0]))
+        elif token == 0x1F:
+            self.push(format(struct.unpack("<d", self.take(8))[0], ".15g"))
+        else:
+            raise UnsupportedFeatureError(f"unsupported XLSB formula token 0x{token:02x}")
+
+    def _extended(self, token: int) -> None:
+        if token == 0x18:
+            if self.take(1)[0] != 0x19:  # PtgList; the other extended tokens are not read
+                raise UnsupportedFeatureError("unsupported XLSB formula token 0x18")
+            _ixti, list_flags, ident, first, last = struct.unpack("<HHIHH", self.take(12))
+            self.push(self.context.table_reference(ident, list_flags, first, last))
+            return
+        flags = self.take(1)[0]
+        value = struct.unpack("<H", self.take(2))[0]
+        if flags & 4:  # CHOOSE jump table.
+            self.take(2 * (value + 1))
+        elif flags & 0x10:
+            self.push("SUM(" + self.pop()[0] + ")")
+
+    def _reference(self, token: int) -> None:
+        base = (token & 0x1F) | 0x20 if token >= 0x20 else token
+        if base in (0x24, 0x2C, 0x3A):
+            self._cell(base)
+        elif base in (0x25, 0x2D, 0x3B):
+            self._area(base)
+        elif base == 0x23:
+            self.push(self.context.name_label(struct.unpack("<I", self.take(4))[0] - 1, self.sheet))
+        elif base in (0x21, 0x22):
+            self._function(base)
+        elif base in (0x2A, 0x2B, 0x3C, 0x3D):
+            self.take((2 if base in (0x3C, 0x3D) else 0) + (6 if base in (0x2A, 0x3C) else 12))
+            self.push("#REF!")
+        elif base in (0x26, 0x27, 0x28):
+            self.take(6)  # Memory/cache tokens do not change the expression stack.
+        elif base == 0x29:
+            self.take(2)
+        else:
+            raise UnsupportedFeatureError(f"unsupported XLSB formula token 0x{token:02x}")
+
+    def _cell(self, base: int) -> None:
+        qualifier = self.context.sheet_label(struct.unpack("<H", self.take(2))[0]) if base == 0x3A else ""
+        row, col = struct.unpack("<IH", self.take(6))
+        self.push(qualifier + _decode_ref(row, col, self.origin, self.name_formula or base == 0x2C))
+
+    def _area(self, base: int) -> None:
+        qualifier = self.context.sheet_label(struct.unpack("<H", self.take(2))[0]) if base == 0x3B else ""
+        r1, r2, c1, c2 = struct.unpack("<IIHH", self.take(12))
+        first = _decode_ref(r1, c1, self.origin, self.name_formula or base == 0x2D)
+        last = _decode_ref(r2, c2, self.origin, self.name_formula or base == 0x2D)
+        # Excel stores whole-column/row references as full worksheet ranges.
+        if r1 == 0 and r2 == 1048575 and not (c1 & 0x8000 or c2 & 0x8000):
+            first, last = re.sub(r"\$?\d+$", "", first), re.sub(r"\$?\d+$", "", last)
+        elif c1 & 0x3FFF == 0 and c2 & 0x3FFF == 16383 and not (c1 & 0x4000 or c2 & 0x4000):
+            first, last = re.sub(r"^\$?[A-Za-z]+", "", first), re.sub(r"^\$?[A-Za-z]+", "", last)
+        self.push(qualifier + first + ":" + last)
+
+    def _function(self, base: int) -> None:
+        count = self.take(1)[0] & 0x7F if base == 0x22 else None
+        identifier = struct.unpack("<H", self.take(2))[0]
+        if identifier not in BY_ID and identifier != 255:
+            raise UnsupportedFeatureError(f"unsupported XLSB function ID {identifier}")
+        if identifier == 255:
+            if count is None or count < 1:
+                raise ValueError("invalid XLSB future function")
+            args = [self.pop()[0] for _ in range(count)][::-1]
+            function, args = args[0], args[1:]
+        else:
+            function, info = BY_ID[identifier]
+            count = info[3] if count is None else count
+            if count is None:
+                raise ValueError("variable-argument function used as fixed")
+            args = [self.pop()[0] for _ in range(count)][::-1]
+        self.push(function + "(" + ",".join(args) + ")")
+
+
+def decode_formula(
+    data: bytes,
+    context: Any,
+    *,
+    sheet: str | None = None,
+    origin: tuple[int, int] = (0, 0),
+    name_formula: bool = False,
+) -> str:
+    return _Decoder(data, context, sheet=sheet, origin=origin, name_formula=name_formula).decode()
 
 
 # PtgList flags ([MS-XLSB] 2.5.97.52): bits 0-1 say how the columns are given, the others

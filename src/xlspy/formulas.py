@@ -294,45 +294,42 @@ def _split_arguments(tokens: list[tuple[str, str, int, int]], start: int, end: i
     return ranges
 
 
-def _prefix_lambda_parameters(text: str) -> str:
-    """Prefix the names bound by ``LET`` and ``LAMBDA`` with ``_xlpm.``.
+class _LambdaPrefixer:
+    """Rewrite the names bound by ``LET`` and ``LAMBDA`` in one formula."""
 
-    Excel stores ``LET(x,1,x+1)`` as ``_xlfn.LET(_xlpm.x,1,_xlpm.x+1)``: the
-    binding and every use of it. ``LET`` is sequential (a value sees the names
-    bound before it); a ``LAMBDA`` body sees all of its parameters. Nested calls
-    and a lambda call (``LAMBDA(x,x*2)(3)``) are handled.
-    """
-    lowered = text.lower()
-    if "let" not in lowered and "lambda" not in lowered:
-        return text
-    tokens = list(_scan_tokens(text))
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.tokens: list[tuple[str, str, int, int]] = list(_scan_tokens(text))
 
-    def significant(first: int, last: int) -> list[tuple[str, str, int, int]]:
-        return [token for token in tokens[first:last] if not (token[0] == "char" and token[1].isspace())]
+    def prefix(self) -> str:
+        return self.render(0, len(self.tokens), frozenset())
 
-    def following_significant(index: int, last: int) -> str:
+    def significant(self, first: int, last: int) -> list[tuple[str, str, int, int]]:
+        return [token for token in self.tokens[first:last] if not (token[0] == "char" and token[1].isspace())]
+
+    def following_significant(self, index: int, last: int) -> str:
         for next_index in range(index + 1, last):
-            kind, value, _start, _end = tokens[next_index]
+            kind, value, _start, _end = self.tokens[next_index]
             if not (kind == "char" and value.isspace()):
                 return value
         return ""
 
-    def is_call(index: int, end: int) -> int | None:
-        if index + 1 >= end or tokens[index + 1][1] != "(":
+    def is_call(self, index: int, end: int) -> int | None:
+        if index + 1 >= end or self.tokens[index + 1][1] != "(":
             return None
-        close = _matching_paren(tokens, index + 1)
+        close = _matching_paren(self.tokens, index + 1)
         return close if close is not None and close < end else None
 
-    def render(start: int, end: int, names: frozenset[str]) -> str:
+    def render(self, start: int, end: int, names: frozenset[str]) -> str:
         if start >= end:
             return ""
         pieces = []
-        cursor = tokens[start][2]
+        cursor = self.tokens[start][2]
         index = start
         bracket_depth = 0
         previous = ""
         while index < end:
-            kind, value, token_start, token_end = tokens[index]
+            kind, value, token_start, token_end = self.tokens[index]
             if kind == "char":
                 if value == "[":
                     bracket_depth += 1
@@ -345,11 +342,11 @@ def _prefix_lambda_parameters(text: str) -> str:
             upper = value.upper()
             close = None
             if kind == "ident" and upper in ("LET", "LAMBDA"):
-                close = is_call(index, end)
+                close = self.is_call(index, end)
             if close is not None:
-                pieces.append(text[cursor:token_end])
-                pieces.append(render_call(index, close, names))
-                cursor = tokens[close][3]
+                pieces.append(self.text[cursor:token_end])
+                pieces.append(self.render_call(index, close, names))
+                cursor = self.tokens[close][3]
                 index = close + 1
                 previous = ")"
                 continue
@@ -359,25 +356,25 @@ def _prefix_lambda_parameters(text: str) -> str:
                 and value.casefold() in names
                 and not value.lower().startswith("_xlpm.")
                 and previous not in ("!", ".")
-                and following_significant(index, end) not in ("!", "[", ":")
+                and self.following_significant(index, end) not in ("!", "[", ":")
             ):
-                pieces.append(text[cursor:token_start])
+                pieces.append(self.text[cursor:token_start])
                 pieces.append("_xlpm.")
                 cursor = token_start
             previous = value
             index += 1
-        pieces.append(text[cursor : tokens[end - 1][3]])
+        pieces.append(self.text[cursor : self.tokens[end - 1][3]])
         return "".join(pieces)
 
-    def render_call(index: int, close: int, names: frozenset[str]) -> str:
-        upper = tokens[index][1].upper()
-        arguments = _split_arguments(tokens, index + 2, close)
+    def render_call(self, index: int, close: int, names: frozenset[str]) -> str:
+        upper = self.tokens[index][1].upper()
+        arguments = _split_arguments(self.tokens, index + 2, close)
         rendered = []
         if upper == "LET":
             scope = set(names)
             last = len(arguments) - 1
             for argument_index, (first, last_token) in enumerate(arguments):
-                tokens_here = significant(first, last_token)
+                tokens_here = self.significant(first, last_token)
                 if (
                     argument_index < last
                     and argument_index % 2 == 0
@@ -387,26 +384,38 @@ def _prefix_lambda_parameters(text: str) -> str:
                     name = tokens_here[0][1]
                     rendered.append(name if name.lower().startswith("_xlpm.") else "_xlpm." + name)
                     continue
-                rendered.append(render(first, last_token, frozenset(scope)))
+                rendered.append(self.render(first, last_token, frozenset(scope)))
                 if argument_index < last and argument_index % 2 == 1:
-                    name_token = significant(*arguments[argument_index - 1])
+                    name_token = self.significant(*arguments[argument_index - 1])
                     if len(name_token) == 1 and name_token[0][0] == "ident":
                         scope.add(name_token[0][1].casefold())
         else:
             bindings = set()
-            for argument_index, (first, last_token) in enumerate(arguments[:-1]):
-                tokens_here = significant(first, last_token)
+            for first, last_token in arguments[:-1]:
+                tokens_here = self.significant(first, last_token)
                 if len(tokens_here) == 1 and tokens_here[0][0] == "ident":
                     name = tokens_here[0][1]
                     bindings.add(name.casefold())
                     rendered.append(name if name.lower().startswith("_xlpm.") else "_xlpm." + name)
                 else:
-                    rendered.append(render(first, last_token, names))
+                    rendered.append(self.render(first, last_token, names))
             if arguments:
-                rendered.append(render(*arguments[-1], names | frozenset(bindings)))
+                rendered.append(self.render(*arguments[-1], names | frozenset(bindings)))
         return "(" + ",".join(rendered) + ")"
 
-    return render(0, len(tokens), frozenset())
+
+def _prefix_lambda_parameters(text: str) -> str:
+    """Prefix the names bound by ``LET`` and ``LAMBDA`` with ``_xlpm.``.
+
+    Excel stores ``LET(x,1,x+1)`` as ``_xlfn.LET(_xlpm.x,1,_xlpm.x+1)``: the
+    binding and every use of it. ``LET`` is sequential (a value sees the names
+    bound before it); a ``LAMBDA`` body sees all of its parameters. Nested calls
+    and a lambda call (``LAMBDA(x,x*2)(3)``) are handled.
+    """
+    lowered = text.lower()
+    if "let" not in lowered and "lambda" not in lowered:
+        return text
+    return _LambdaPrefixer(text).prefix()
 
 
 def _check_balance(text: str) -> None:
