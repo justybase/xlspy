@@ -11,6 +11,8 @@ the file stay as they are.
 from __future__ import annotations
 from .._package_handle import PackageHandle
 
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, cast
 from ..exceptions import UnsupportedFeatureError
 import re
 from xml.etree import ElementTree as ET
@@ -20,6 +22,9 @@ from .._metadata import CT, PKG_REL
 from .._metadata import element_bytes as _bytes
 from ._objects import _Package, _rels_path, _resolve_part_target
 
+if TYPE_CHECKING:
+    from ._worksheet import Chartsheet, Worksheet
+
 _ANCHORS = frozenset(("twoCellAnchor", "oneCellAnchor", "absoluteAnchor"))
 _TAG = re.compile(r"<(/?)([\w.-]+:)?([\w.-]+)\b[^>]*?(/?)>|<!--.*?-->|<\?.*?\?>|<!\[CDATA\[.*?\]\]>", re.S)
 _REFERENCE = re.compile(r'\s[\w.-]+:(?:id|embed|link)="([^"]+)"')
@@ -27,21 +32,21 @@ _REFERENCE = re.compile(r'\s[\w.-]+:(?:id|embed|link)="([^"]+)"')
 _CHART_COMPANIONS = ("/chartStyle", "/chartColorStyle")
 
 
-def _drawing_objects(sheet) -> list:
+def _drawing_objects(sheet: Worksheet) -> list[Any]:
     return [*sheet._charts, *sheet._images]
 
 
-def _contains(items, item) -> bool:
+def _contains(items: Iterable[Any], item: Any) -> bool:
     return any(existing is item for existing in items)
 
 
-def removed_drawing_objects(sheet) -> list[tuple[str, int, object]]:
+def removed_drawing_objects(sheet: Worksheet) -> list[tuple[str, int, Any]]:
     """The loaded charts and images no longer on the sheet."""
     current = _drawing_objects(sheet)
     return [entry for entry in getattr(sheet, "_drawing_sources", ()) if not _contains(current, entry[2])]
 
 
-def new_drawing_objects(sheet) -> dict[str, list]:
+def new_drawing_objects(sheet: Worksheet) -> dict[str, list[Any]]:
     """The charts and images not in the file yet."""
     saved = getattr(sheet, "_saved_drawing_objects", None)
     if saved is None:
@@ -51,11 +56,11 @@ def new_drawing_objects(sheet) -> dict[str, list]:
     }
 
 
-def remember_drawing_objects(sheet) -> None:
+def remember_drawing_objects(sheet: Worksheet) -> None:
     sheet._saved_drawing_objects = _drawing_objects(sheet)
 
 
-def check_removals(sheet) -> None:
+def check_removals(sheet: Worksheet) -> None:
     """Refuse removals that a save cannot make exactly."""
     saved = getattr(sheet, "_saved_drawing_objects", None)
     if saved is None:
@@ -136,7 +141,7 @@ def _drop_part(package: _Package, part: str) -> None:
             package.types.remove(node)
 
 
-def remove_drawing_objects(updater, sheet) -> None:
+def remove_drawing_objects(updater: Any, sheet: Worksheet) -> None:
     """Remove the anchors of the loaded charts and images no longer on the sheet."""
     removed = removed_drawing_objects(sheet)
     if not removed:
@@ -194,10 +199,10 @@ def remove_drawing_objects(updater, sheet) -> None:
     sheet._drawing_sources = kept
 
 
-def save_chart_edits(updater, sheet) -> None:
+def save_chart_edits(updater: Any, sheet: Worksheet | Chartsheet) -> None:
     """Write the chart parts whose title, axes or legend were changed."""
     handle = PackageHandle(updater)
-    for chart in sheet._charts:
+    for chart in cast(list[Any], sheet._charts):
         if getattr(chart, "edited", False) and chart.part:
             handle.package.set(chart.part, chart.xml)
             chart._mark_saved()

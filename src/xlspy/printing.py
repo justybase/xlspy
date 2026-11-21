@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from .refs import column_label, parse_cell_range, quote_sheet_name
@@ -44,7 +45,7 @@ class PageMargins:
     header: float = 0.3
     footer: float = 0.3
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         for name in ("left", "right", "top", "bottom", "header", "footer"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -53,7 +54,7 @@ class PageMargins:
                 raise ValueError(f"margin {name} must be between 0 and 50 inches")
 
 
-def _paper_code(value) -> int:
+def _paper_code(value: int | str) -> int:
     if isinstance(value, bool):
         raise TypeError("paper_size must be a name such as 'A4' or an int code")
     if isinstance(value, int):
@@ -68,7 +69,7 @@ def _paper_code(value) -> int:
     raise TypeError("paper_size must be a name such as 'A4' or an int code")
 
 
-def _check_optional_int(value, name: str, minimum: int, maximum: int) -> None:
+def _check_optional_int(value: int | None, name: str, minimum: int, maximum: int) -> None:
     if value is None:
         return
     if isinstance(value, bool) or not isinstance(value, int):
@@ -77,7 +78,7 @@ def _check_optional_int(value, name: str, minimum: int, maximum: int) -> None:
         raise ValueError(f"{name} must be between {minimum} and {maximum}")
 
 
-def _check_header(value, name: str) -> None:
+def _check_header(value: str | None, name: str) -> None:
     if value is None:
         return
     if not isinstance(value, str):
@@ -86,7 +87,7 @@ def _check_header(value, name: str) -> None:
         raise ValueError(f"{name} must be at most {_MAX_HEADER_LENGTH} characters")
 
 
-def _check_breaks(values, name: str, limit: int) -> tuple[int, ...] | None:
+def _check_breaks(values: Iterable[int] | None, name: str, limit: int) -> tuple[int, ...] | None:
     if values is None:
         return None
     result = []
@@ -178,7 +179,7 @@ class PrintSettings:
     row_breaks: tuple[int, ...] | list[int] | None = None
     col_breaks: tuple[int, ...] | list[int] | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.orientation is not None and self.orientation not in ORIENTATIONS:
             raise ValueError(f"orientation must be 'portrait' or 'landscape', got {self.orientation!r}")
         if self.paper_size is not None:
@@ -214,7 +215,7 @@ class PrintSettings:
         return self.fit_to_width is not None or self.fit_to_height is not None
 
 
-def normalize_print_settings(settings) -> PrintSettings | None:
+def normalize_print_settings(settings: PrintSettings | None) -> PrintSettings | None:
     """The ``print_settings`` option of ``write_sheet``."""
     if settings is None:
         return None

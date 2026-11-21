@@ -51,6 +51,8 @@ def add_drawing_objects(updater: XlsbUpdater, sheet: Worksheet) -> None:
     package.set(_rels_path(path), _bytes(rels))
     if hook.rid is not None:
         data = package.get(path)
+        if data is None:
+            raise ValueError(f"worksheet part {path!r} is missing")
         package.set(
             path,
             replace_records(

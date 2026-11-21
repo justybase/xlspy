@@ -122,6 +122,8 @@ class Worksheet:
         self._tables = TableList()
         self._charts: list[Chart] = []
         self._images: list[Image] = []
+        self._drawing_sources: list[tuple[str, int, Any]] = []
+        self._saved_drawing_objects: list[Any] | None = None
         self._conditional_formats = ConditionalFormattingList()
         # For a loaded workbook: how many objects of each list a save already
         # put into the package (see _objects.pending_objects).

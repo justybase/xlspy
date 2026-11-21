@@ -221,7 +221,7 @@ class Color:
     tint: float | None = None
     auto: bool | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.auto is not None and self.auto is not True:
             raise ValueError("auto must be True or None")
         set_count = sum(value is not None for value in (self.rgb, self.indexed, self.theme, self.auto))
@@ -283,7 +283,7 @@ class Font(_Copyable):
     condense: bool | None = None
     extend: bool | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.name is not None and not isinstance(self.name, str):
             raise TypeError("name must be a string or None")
         if self.size is not None:
@@ -342,7 +342,7 @@ class PatternFill(_Copyable):
     start_color: Color | str | None = None
     end_color: Color | str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.fill_type is not None and self.fill_type not in _PATTERN_TYPES:
             raise ValueError(f"invalid fill_type {self.fill_type!r}")
         object.__setattr__(self, "start_color", _coerce_color(self.start_color, "start_color"))
@@ -356,7 +356,7 @@ class Stop:
     color: Color | str
     position: float
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         color = _coerce_color(self.color, "color")
         if color is None:
             raise TypeError("stop color is required")
@@ -387,7 +387,7 @@ class GradientFill(_Copyable):
     bottom: float | None = None
     stop: tuple[Stop | Color | str, ...] = ()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.fill_type not in _GRADIENT_TYPES:
             raise ValueError(f"invalid gradient type {self.fill_type!r}")
         degree = self.degree
@@ -433,7 +433,7 @@ class Side(_Copyable):
     style: str | None = None
     color: Color | str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.style is not None and self.style not in _SIDE_STYLES:
             raise ValueError(f"invalid border style {self.style!r}")
         object.__setattr__(self, "color", _coerce_color(self.color, "color"))
@@ -467,7 +467,7 @@ class Border(_Copyable):
     diagonal_down: bool | None = None
     outline: bool | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         for attr in (
             "left",
             "right",
@@ -519,7 +519,7 @@ class Alignment(_Copyable):
     justify_last_line: bool | None = None
     reading_order: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.horizontal is not None and self.horizontal not in _HORIZONTAL:
             raise ValueError(f"invalid horizontal alignment {self.horizontal!r}")
         if self.vertical is not None and self.vertical not in _VERTICAL:
@@ -554,7 +554,7 @@ class Protection(_Copyable):
     locked: bool | None = None
     hidden: bool | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         for attr in ("locked", "hidden"):
             value = getattr(self, attr)
             if value is not None and not isinstance(value, bool):

@@ -5,7 +5,7 @@ format priorities. The writers keep only what differs between the formats.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -301,7 +301,7 @@ class WriterFrontEnd:
             self._reserved_cf_priorities.add(priority)
             self._next_cf_priority = max(self._next_cf_priority, priority + 1)
 
-    def _check_unknown_cf_rule(self, rule) -> None:
+    def _check_unknown_cf_rule(self, rule: Any) -> None:
         if hasattr(rule, "sqref") and not isinstance(rule, CF_RULES):
             raise TypeError(
                 f"unsupported conditional formatting rule {type(rule).__name__}; "
@@ -310,7 +310,7 @@ class WriterFrontEnd:
                 "AboveAverageRule, TextRule, DuplicateRule, TimePeriodRule, BlanksRule)"
             )
 
-    def _claim_cf_priority(self, rule) -> int:
+    def _claim_cf_priority(self, rule: Any) -> int:
         priority: int = rule.priority
         if priority is None:
             while (
@@ -331,10 +331,12 @@ class WriterFrontEnd:
         return priority
 
     @staticmethod
-    def _normalize_merges(merges):
+    def _normalize_merges(merges: Iterable[str] | None) -> list[str]:
+        if merges is None:
+            return []
         return normalize_merges(merges)
 
-    def _normalize_tables(self, tables):
+    def _normalize_tables(self, tables: Iterable[ExcelTable] | None) -> list[ExcelTable]:
         if not tables:
             return []
         # Names are only checked here; write_sheet registers them once every
@@ -351,7 +353,7 @@ class WriterFrontEnd:
         return list(tables)
 
     @staticmethod
-    def _normalize_widths(mapping, kind):
+    def _normalize_widths(mapping: Mapping[str | int, int | float] | None, kind: str) -> dict[int, float]:
         if mapping is None:
             return {}
         if not isinstance(mapping, Mapping):
@@ -374,7 +376,7 @@ class WriterFrontEnd:
         return result
 
     @staticmethod
-    def _normalize_row_heights(mapping):
+    def _normalize_row_heights(mapping: Mapping[int, int | float] | None) -> dict[int, float]:
         if mapping is None:
             return {}
         if not isinstance(mapping, Mapping):
@@ -397,7 +399,7 @@ class WriterFrontEnd:
         return first_col, first_row
 
     @staticmethod
-    def _normalize_charts(charts) -> list:
+    def _normalize_charts(charts: Iterable[Chart] | None) -> list[Chart]:
         if not charts:
             return []
         if not isinstance(charts, (list, tuple)):

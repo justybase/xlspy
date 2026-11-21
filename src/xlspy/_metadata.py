@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, fields, replace
 import re
+from typing import Any
 from xml.etree import ElementTree as ET
 from ._safe_xml import fromstring as safe_fromstring
 from xml.sax.saxutils import escape, quoteattr, unescape
@@ -81,7 +82,7 @@ def xml_text(text: str) -> str:
 _DECLARATION = re.compile(r"""\sxmlns(?::([\w.-]+))?\s*=\s*(?:"([^"]*)"|'([^']*)')""")
 
 
-def serialize_like(root, original) -> bytes:
+def serialize_like(root: ET.Element, original: str | bytes) -> bytes:
     """Serialize an ElementTree root with the source part's namespace prefixes.
 
     ElementTree renames prefixes (``ns0``...) and drops declarations that no
@@ -132,7 +133,7 @@ def element_pattern(tag: str) -> re.Pattern[str]:
     )
 
 
-def replace_element(xml: str, tag: str, fragment: str, *, before=()) -> str:
+def replace_element(xml: str, tag: str, fragment: str, *, before: Iterable[str] = ()) -> str:
     """Replace a top-level metadata element, preserving all other XML bytes."""
     pattern = element_pattern(tag)
     match = pattern.search(xml)
@@ -209,7 +210,7 @@ class DefinedName:
         """openpyxl's name for the formula text."""
         return self.formula
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not re.fullmatch(r"[^\W\d][\w.]*|\\[\w.]*", self.name):
             raise ValueError("invalid defined name")
         if len(self.name) > 255 or self.name.upper() in {"R", "C"} or self.name.lower().startswith("_xlnm."):
@@ -275,7 +276,7 @@ class DefinedName:
         )
 
 
-def read_defined_names(xml: str | bytes, sheets) -> list[DefinedName]:
+def read_defined_names(xml: str | bytes, sheets: Iterable[str]) -> list[DefinedName]:
     result = []
     root = safe_fromstring(xml)
     ns = namespace_of(root.tag) or MAIN
@@ -313,7 +314,7 @@ class SheetProtection:
     # The legacy hash itself (four hex digits), e.g. from a loaded workbook.
     hashed_password: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _validate_protection(self)
 
     @property
@@ -342,7 +343,7 @@ class WorkbookProtection:
     lock_structure: bool = True
     password: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _validate_protection(self)
 
     def to_xml(self) -> str:
@@ -355,7 +356,7 @@ class WorkbookProtection:
         return f'<workbookProtection xmlns="{MAIN}" lockStructure="1"{password}/>'
 
 
-def _validate_protection(obj):
+def _validate_protection(obj: Any) -> None:
     for field in fields(obj):
         value = getattr(obj, field.name)
         if field.name == "password":

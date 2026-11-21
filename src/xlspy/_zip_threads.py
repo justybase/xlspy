@@ -22,7 +22,7 @@ when that attribute is not there, and callers then write sequentially.
 
 from __future__ import annotations
 
-from typing import BinaryIO
+from typing import Any, BinaryIO, cast
 import shutil
 import zipfile
 import zlib
@@ -48,7 +48,7 @@ def new_deflater(level: int | None) -> zlib._Compress:
 class _Pipeline:
     """Feed one ``compressobj`` from the caller and run it on ``executor``."""
 
-    def __init__(self, executor: ThreadPoolExecutor, level: int | None):
+    def __init__(self, executor: ThreadPoolExecutor, level: int | None) -> None:
         # A compressobj is not thread-safe and its input order is the output:
         # one worker runs the blocks one at a time, in submission order.
         if getattr(executor, "_max_workers", 1) != 1:
@@ -59,7 +59,7 @@ class _Pipeline:
         self._buffered = 0
         self._pending: deque[Future] = deque()
 
-    def _feed(self, data) -> list[bytes]:
+    def _feed(self, data: bytes) -> list[bytes]:
         """Queue ``data``; return the compressed output that is ready."""
         if data:
             self._buffer.append(bytes(data))
@@ -96,7 +96,7 @@ class _Pipeline:
 class ThreadedDeflate(_Pipeline):
     """A drop-in ``compressobj`` for an open ZIP member."""
 
-    def compress(self, data) -> bytes:
+    def compress(self, data: bytes) -> bytes:
         return b"".join(self._feed(data))
 
     def flush(self, mode: int = zlib.Z_FINISH) -> bytes:
@@ -106,11 +106,11 @@ class ThreadedDeflate(_Pipeline):
 class DeflateSegment(_Pipeline):
     """Compress a stream into ``out`` (a binary file) as a mid-stream segment."""
 
-    def __init__(self, executor, level, out):
+    def __init__(self, executor: ThreadPoolExecutor, level: int | None, out: Any) -> None:
         super().__init__(executor, level)
         self._out = out
 
-    def write(self, data) -> int:
+    def write(self, data: bytes) -> int:
         for chunk in self._feed(data):
             self._out.write(chunk)
         return len(data)
@@ -123,12 +123,12 @@ class DeflateSegment(_Pipeline):
 class _Replay:
     """Compressor that returns precompressed bytes instead of compressing."""
 
-    def __init__(self, head: bytes, body: BinaryIO, tail: bytes):
+    def __init__(self, head: bytes, body: BinaryIO, tail: bytes) -> None:
         self._head = head
         self._body = body
         self._tail = tail
 
-    def compress(self, data) -> bytes:
+    def compress(self, data: bytes) -> bytes:
         out = self._head + self._body.read(1 << 20)
         self._head = b""
         return out
@@ -139,12 +139,19 @@ class _Replay:
         return out
 
 
-def _segment(level, data: bytes, mode: int) -> bytes:
+def _segment(level: int | None, data: bytes, mode: int) -> bytes:
     deflater = new_deflater(level)
     return deflater.compress(data) + deflater.flush(mode)
 
 
-def replay_member(zf, name: str, head: bytes, raw_body, compressed_body, tail: bytes) -> None:
+def replay_member(
+    zf: zipfile.ZipFile,
+    name: str,
+    head: bytes,
+    raw_body: Any,
+    compressed_body: Any,
+    tail: bytes,
+) -> None:
     """Write ``head + raw_body + tail`` as member ``name`` of ``zf``.
 
     ``compressed_body`` holds ``raw_body`` compressed by a finished
@@ -154,7 +161,7 @@ def replay_member(zf, name: str, head: bytes, raw_body, compressed_body, tail: b
     """
     level = zf.compresslevel
     with zf.open(name, "w") as member:
-        member._compressor = _Replay(
+        cast(Any, member)._compressor = _Replay(
             _segment(level, head, zlib.Z_SYNC_FLUSH),
             compressed_body,
             _segment(level, tail, zlib.Z_FINISH),

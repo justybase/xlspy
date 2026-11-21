@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import struct
 import uuid
+from typing import cast
 
-from ._metadata import password_hash
-from collections.abc import Iterator, Sequence
+from ._metadata import SheetProtection, WorkbookProtection, password_hash
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
+from typing import Literal, overload
 
 from .biff_utils import Biff12Record, build_record, iter_records, read_utf16
 from .comments import Comment
@@ -29,7 +31,15 @@ def wide_string(text: str) -> bytes:
     return struct.pack("<I", len(encoded) // 2) + encoded
 
 
-def read_wide(data, offset=0, *, nullable=False):
+@overload
+def read_wide(data: bytes, offset: int = 0, *, nullable: Literal[False] = False) -> tuple[str, int]: ...
+
+
+@overload
+def read_wide(data: bytes, offset: int = 0, *, nullable: bool = ...) -> tuple[str | None, int]: ...
+
+
+def read_wide(data: bytes, offset: int = 0, *, nullable: bool = False) -> tuple[str | None, int]:
     if offset + 4 > len(data):
         raise ValueError("Truncated BIFF12 string length")
     length = struct.unpack_from("<I", data, offset)[0]
@@ -43,7 +53,13 @@ def records(data: bytes) -> Iterator[tuple[Biff12Record, bytes]]:
         yield record, data[record.data_start : record.data_end]
 
 
-def replace_records(data, record_ids, replacement=b"", *, before=(0x82,)):
+def replace_records(
+    data: bytes,
+    record_ids: Collection[int],
+    replacement: bytes = b"",
+    *,
+    before: Collection[int] = (0x82,),
+) -> bytes:
     """Preserve every untargeted binary record, inserting once in schema order."""
     chunks = []
     inserted = False
@@ -62,7 +78,9 @@ def replace_records(data, record_ids, replacement=b"", *, before=(0x82,)):
     return b"".join(chunks)
 
 
-def parse_comments(data):
+def parse_comments(
+    data: bytes,
+) -> tuple[dict[str, Comment], list[str], dict[str, tuple[int, bytes]]]:
     """Return notes plus their original binary blocks, retaining rich text."""
     authors = []
     notes = {}
@@ -73,7 +91,7 @@ def parse_comments(data):
     for record, payload in records(data):
         kind = record.record_id
         if kind == AUTHOR:
-            authors.append(read_wide(payload)[0])
+            authors.append(cast(str, read_wide(payload)[0]))
         elif kind == 0x25 and current is None:
             pending_start = record.header_start
         elif kind == BEGIN_COMMENT:
@@ -93,13 +111,13 @@ def parse_comments(data):
             if not payload:
                 raise ValueError("Truncated XLSB rich comment text")
             text, _ = read_wide(payload, 1)
-            current = (current[0], current[1], text)
+            current = (current[0], current[1], cast(str, text))
         elif kind == END_COMMENT:
             if current is None:
                 raise ValueError("XLSB comment end without header")
             ref, author, text = current
             notes[ref] = Comment(text, author)
-            blocks[ref] = (start, data[start : record.data_end])
+            blocks[ref] = (cast(int, start), data[start : record.data_end])
             current = None
     if current is not None:
         raise ValueError("Unterminated XLSB comment")
@@ -111,7 +129,7 @@ def parse_comments(data):
 _COMMENT_NAMESPACE = uuid.UUID("c1f3a9d2-5e47-4b8c-a6d1-7f20e94b3c58")
 
 
-def comments_bin(changes, existing=None, *, part=""):
+def comments_bin(changes: Mapping[str, Comment | None], existing: bytes | None = None, *, part: str = "") -> bytes:
     if existing is None:
         existing = b"".join(
             build_record(kind)
@@ -163,7 +181,7 @@ def sheet_protection_record(password: int, flags: Sequence[int]) -> bytes:
     return build_record(SHEET_PROTECTION, struct.pack("<H16I", password, *flags))
 
 
-def sheet_protection_bin(protection):
+def sheet_protection_bin(protection: SheetProtection) -> bytes:
     if not protection.enabled:
         return b""
     flags = [
@@ -188,18 +206,22 @@ def sheet_protection_bin(protection):
     return sheet_protection_record(password, flags)
 
 
-def workbook_protection_bin(protection):
+def workbook_protection_bin(protection: WorkbookProtection) -> bytes:
     if not protection.lock_structure:
         return b""
     password = 0 if protection.password is None else int(password_hash(protection.password), 16)
     return build_record(BOOK_PROTECTION, struct.pack("<HHH", password, 0, 1))
 
 
-def merge_ranges(data):
+def merge_ranges(data: bytes) -> list[tuple[int, int, int, int]]:
     return [struct.unpack("<IIII", payload) for record, payload in records(data) if record.record_id == 0xB0]
 
 
-def check_merged_refs(data, refs, ranges=None):
+def check_merged_refs(
+    data: bytes,
+    refs: Iterable[str],
+    ranges: Iterable[tuple[int, int, int, int]] | None = None,
+) -> None:
     """``ranges`` (already decoded BrtMergeCell tuples) saves a scan of ``data``."""
     ranges = merge_ranges(data) if ranges is None else ranges
     if not ranges:
