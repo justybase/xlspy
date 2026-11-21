@@ -149,14 +149,18 @@ def _comment_xml(ref: str, comment: Comment | None, authors: dict[str, int]) -> 
     )
 
 
-def read_comments(data: bytes) -> dict[str, Comment]:
+def read_comments(data: bytes, *, include_threaded: bool = False) -> dict[str, Comment]:
+    """Read classic notes; by default the compatibility copies of threaded comments are skipped."""
     root = safe_fromstring(data)
     ns = namespace_of(root.tag) or MAIN  # Transitional or Strict
     authors = [xstring_unescape(n.text or "") for n in root.findall(f"{{{ns}}}authors/{{{ns}}}author")]
     result = {}
     for node in root.findall(f"{{{ns}}}commentList/{{{ns}}}comment"):
         text = "".join(n.text or "" for n in node.findall(f"{{{ns}}}text//{{{ns}}}t"))
-        result[cell_ref(node.attrib["ref"])] = Comment(xstring_unescape(text), authors[int(node.attrib["authorId"])])
+        author = authors[int(node.attrib["authorId"])]
+        if not include_threaded and author.startswith("tc={") and author.endswith("}"):
+            continue
+        result[cell_ref(node.attrib["ref"])] = Comment(xstring_unescape(text), author)
     return result
 
 
