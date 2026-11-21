@@ -69,6 +69,7 @@ from ._xlsb_cf import (
     rule_bin as rule_bin,
 )
 from ._output import StagedWriter as StagedWriter, WriteTarget as WriteTarget
+from ._coercion import Coercion as Coercion, check_options as check_options, coerce_rows as coerce_rows
 from .doc_properties import DocumentPropertiesMixin as DocumentPropertiesMixin
 from .rich_text import CellRichText as CellRichText, InlineFont as InlineFont, TextBlock as TextBlock
 from ._text import check_cell_text as check_cell_text
@@ -244,9 +245,18 @@ class XlsbWriter(
     """
 
     def __init__(
-        self, file: WriteTarget, compression_level: int = 3, use_shared_strings: bool = True, **unknown: object
+        self,
+        file: WriteTarget,
+        compression_level: int = 3,
+        use_shared_strings: bool = True,
+        strings_to_formulas: bool = False,
+        strings_to_numbers: bool = False,
+        strings_to_urls: bool = False,
+        nan_inf_to_errors: bool = False,
+        **unknown: object,
     ) -> None:
         reject_unknown_arguments(type(self).__name__, unknown)
+        self._coercion = check_options(strings_to_formulas, strings_to_numbers, strings_to_urls, nan_inf_to_errors)
         self._file = file
         self._use_shared_strings = use_shared_strings
         self._aborted = False

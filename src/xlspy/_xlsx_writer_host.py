@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from ._output import PackageZip
     from ._sheet_options import SheetOptions
     from ._writer_common import FilterData, SheetSpec
+    from ._coercion import Coercion
     from .comments import Comment
     from .threaded_comments import ThreadedComment
     from .images import Image, MediaParts
@@ -31,6 +32,7 @@ class _XlsxWriterHost:
     if TYPE_CHECKING:
         # Workbook and sheet bookkeeping
         _zf: PackageZip
+        _coercion: Coercion
         _aborted: bool
         _spool_max_bytes: int
         _worksheet_data: list[tuple[str, Iterable[list[Any]] | None, bool]]

@@ -36,6 +36,7 @@ from .exceptions import UnsupportedFeatureError
 from .formulas import ArrayFormula, DataTableFormula, Formula
 from .hyperlinks import Hyperlink
 from ._scalars import is_pandas_missing, native_cell_value, plain_value
+from ._errors import CellError
 from ._xlsb_slicers import (
     sheet_slicers_bin,
 )
@@ -75,9 +76,21 @@ _XLSB_PYTHON_CELLS = (
     DataTableFormula,
     Hyperlink,
     CellRichText,
+    CellError,
     ArrayValue,
     datetime.date,
 )
+# The one-byte error code of a BrtCellError, from its Excel label.
+_ERROR_CODES = {
+    "#NULL!": 0,
+    "#DIV/0!": 7,
+    "#VALUE!": 15,
+    "#REF!": 23,
+    "#NAME?": 29,
+    "#NUM!": 36,
+    "#N/A": 42,
+    "#GETTING_DATA": 43,
+}
 
 
 def _link_rid(link: Hyperlink, link_rids: dict, start: int) -> str | None:
@@ -937,6 +950,11 @@ class _XlsbBinMixin(_XlsbWriterHost):
     ) -> bool:
         """Write a scalar cell; return False for the formula/rich-text path."""
         style_ref = xf_index if has_custom_fmt else 0
+        if isinstance(cell, CellError):
+            label = cell[6:] if cell.startswith("error:") else str(cell)
+            buffer.write(b"\x03\x09")
+            buffer.write(struct.pack("<IIB", col_idx, style_ref, _ERROR_CODES.get(label, 15)))
+            return True
         if isinstance(cell, str):
             if has_custom_fmt:
                 self._write_str(buffer, cell, shared_strings_dict, shared_strings_append, row_idx, col_idx, xf_index)

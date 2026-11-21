@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from ._coercion import Coercion
     from ._metadata import WorkbookProtection
     from ._sheet_options import SheetOptions
     from ._writer_common import FilterData, SheetSpec
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 class _XlsbWriterHost:
     if TYPE_CHECKING:
         _aborted: bool
+        _coercion: Coercion
         _autoFilterEndBytes: bytes
         _autoFilterStartBytes: bytes
         _binaryIndexBin: bytes

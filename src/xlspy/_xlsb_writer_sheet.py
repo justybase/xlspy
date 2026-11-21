@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 from collections.abc import Iterable, Mapping
 from ._sheet_options import XLSB_OPTIONS, SheetOptions, resolve_sheet_options
+from ._coercion import coerce_rows
 from . import chart_parts
 from .styles import (
     Style,
@@ -49,6 +50,7 @@ class _XlsbSheetMixin(_XlsbWriterHost):
     def _write_sheet(self, data: Iterable[list[Any]], options: SheetOptions) -> None:
         self._require_writable()
         spec = self._check_sheet_options(options, check_style=self._reject_rich_style)
+        data = coerce_rows(data, self._coercion)
         if spec.threaded_comments:
             raise UnsupportedFeatureError("XLSB output does not support threaded comments; write them to XLSX")
         current_sheet = self._worksheet_data[-1][0] if self._worksheet_data else "Sheet1"

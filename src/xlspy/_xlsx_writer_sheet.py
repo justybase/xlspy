@@ -41,6 +41,8 @@ from .pivots import (
 )
 from .hyperlinks import Hyperlink
 from ._scalars import is_pandas_missing, native_cell_value, plain_value
+from ._coercion import coerce_rows
+from ._errors import CellError
 from .printing import (
     PrintSettings,
 )
@@ -96,7 +98,7 @@ def _filter_cells(
 
 
 # Cells the native encoder's hook leaves to the Python writer.
-_XLSX_PYTHON_CELLS = (Formula, ArrayFormula, DataTableFormula, Hyperlink, CellRichText, datetime.date)
+_XLSX_PYTHON_CELLS = (Formula, ArrayFormula, DataTableFormula, Hyperlink, CellRichText, CellError, datetime.date)
 
 
 class _XlsxSheetMixin(_XlsxWriterHost):
@@ -125,6 +127,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         """
         self._require_writable()
         spec = self._check_sheet_options(options)
+        data = coerce_rows(data, self._coercion)
         # Every option is valid; only now record what this sheet claims. A second
         # write to the same sheet is refused after the options are checked, so a
         # bad argument still reports its own error.
@@ -867,7 +870,11 @@ class _XlsxSheetMixin(_XlsxWriterHost):
 
     def _write_scalar_cell(self, buf: io.StringIO, cell: Any, row_idx: int, xf_index: int | None) -> None:
         """Write a non-formula cell (the types the native encoder may hand back)."""
-        if isinstance(cell, str):
+        if isinstance(cell, CellError):
+            label = cell[6:] if cell.startswith("error:") else str(cell)
+            s_attr = f' s="{xf_index}"' if xf_index is not None else ""
+            buf.write(f'<c t="e"{s_attr}><v>{saxutils.escape(label)}</v></c>')
+        elif isinstance(cell, str):
             self._write_string_cell(buf, cell, row_idx == 0, xf_index)
         elif isinstance(cell, bool):
             s_attr = f' s="{xf_index}"' if xf_index is not None else ""

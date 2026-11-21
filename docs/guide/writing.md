@@ -84,6 +84,30 @@ writer.write_sheet(other_rows, options=report, zoom=100)   # a keyword overrides
 `SheetOptions` is frozen. An unknown name raises `TypeError`. Both writers take
 `ignored_errors`.
 
+## Input coercion
+
+Both writers accept XlsxWriter-style options for values whose intended type is
+ambiguous. All are off by default, so a string stays text and a non-finite
+number raises `ValueError`:
+
+```python
+with XlsxWriter(
+    "report.xlsx",
+    strings_to_formulas=True,   # "=SUM(A1:A3)" becomes a formula
+    strings_to_numbers=True,    # "42" becomes the number 42
+    strings_to_urls=True,       # "https://..." becomes a hyperlink
+    nan_inf_to_errors=True,     # NaN -> #NUM!, Inf -> #DIV/0!
+) as writer:
+    writer.add_sheet("Data")
+    writer.write_sheet(rows)
+```
+
+`strings_to_numbers` accepts only a plain decimal literal: `"nan"`, `"inf"`,
+`"0x10"` and `"1_000"` stay text. A `(value, number_format)` cell keeps its
+format while its value is coerced. `XlsbWriter` takes the same keywords. Unlike
+XlsxWriter, `strings_to_formulas` defaults to off: xlspy has always written a
+leading `=` as text unless the value is a `Formula`.
+
 ## Streaming large exports
 
 `write_sheet` consumes its input exactly once, row by row:

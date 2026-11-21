@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Writer input coercion: `XlsxWriter` and `XlsbWriter` take
+  `strings_to_formulas`, `strings_to_numbers`, `strings_to_urls` and
+  `nan_inf_to_errors`. They are off by default, so existing output is
+  unchanged; `nan_inf_to_errors` writes NaN as `#NUM!` and infinity as
+  `#DIV/0!` instead of raising.
 - Microsoft 365 threaded comments: `ThreadedComment` reads, writes and edits
   Excel 365 conversations (a first message with its replies) and the classic
   companion note Excel uses to link them to a cell. `Cell.threaded_comment`,
