@@ -1442,6 +1442,13 @@ def _dirty_comment_updates(sheet: Worksheet) -> dict[str, Any]:
     return comments
 
 
+def _dirty_threaded_comment_updates(sheet: Worksheet) -> dict[str, Any]:
+    threads = {}
+    for ref in _in_sheet_order(sheet._dirty_threaded_comments):
+        threads[ref] = sheet._threaded_comments.get(ref)
+    return threads
+
+
 def _save_loaded_sheets(workbook: Workbook, updater: Any, handle: PackageHandle, added: set[str]) -> None:
     for sheet in workbook._sheets:
         name = sheet.title
@@ -1470,10 +1477,14 @@ def _save_loaded_sheets(workbook: Workbook, updater: Any, handle: PackageHandle,
                 patch_cell_styles(updater, name, style_updates)
             if sheet._dirty_comments:
                 updater.set_comments(name, _dirty_comment_updates(sheet))
+            if sheet._dirty_threaded_comments:
+                updater.set_threaded_comments(name, _dirty_threaded_comment_updates(sheet))
             _save_hyperlinks(updater, sheet, name)
         else:
             if sheet._dirty_comments:
                 updater.set_comments(name, _dirty_comment_updates(sheet))
+            if sheet._dirty_threaded_comments:
+                updater.set_threaded_comments(name, _dirty_threaded_comment_updates(sheet))
             # A new sheet's part has no links yet: write all of them.
             sheet._dirty_hyperlinks.update(
                 cell.coordinate

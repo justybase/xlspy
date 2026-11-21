@@ -61,6 +61,13 @@ from .comments import (
     rels_path,
     resolve_part,
 )
+from .threaded_comments import (
+    classic_comments_only,
+    find_person_part,
+    find_threaded_part,
+    read_persons,
+    read_threaded_comments,
+)
 from .excel_dates import datetime_to_serial
 from .formulas import ArrayFormula, DataTableFormula, Formula
 from .refs import column_label, parse_cell_range
@@ -180,6 +187,7 @@ class XlsbEditMixin(SheetEditMixin):
     if TYPE_CHECKING:
         from .data_validation import DataValidation
         from .hyperlinks import Hyperlink
+        from .threaded_comments import ThreadedComment
         from .updater_utils import DiskStringIndex
 
         # Provided by XlsbUpdater.
@@ -202,10 +210,29 @@ class XlsbEditMixin(SheetEditMixin):
         return path, data
 
     def get_comments(self, sheet_name: str) -> dict[str, Comment]:
-        """The notes of a sheet, keyed by cell reference."""
+        """The classic notes of a sheet, keyed by cell reference.
+
+        The compatibility notes of Excel 365 conversations are not included;
+        use `get_threaded_comments` for those.
+        """
         path, _ = self._sheet_bin(sheet_name)
         _, _, parts = find_comment_parts(self._package.get, self._package.names(), path)
-        return parse_comments(self._package.get(parts["comments"][0]))[0] if "comments" in parts else {}
+        return (
+            classic_comments_only(parse_comments(self._package.get(parts["comments"][0]))[0])
+            if "comments" in parts
+            else {}
+        )
+
+    def get_threaded_comments(self, sheet_name: str) -> dict[str, ThreadedComment]:
+        """Read the sheet's Excel 365 conversations, keyed by cell reference."""
+        path, _ = self._sheet_bin(sheet_name)
+        names = self._package.names()
+        part = find_threaded_part(self._package.get, names, path)
+        if part is None:
+            return {}
+        people_part = find_person_part(self._package.get, names, "xl/workbook.bin")
+        people = read_persons(self._package.get(people_part[0])) if people_part is not None else {}
+        return read_threaded_comments(self._package.get(part[0]), people)
 
     def set_comments(self, sheet_name: str, comments: Mapping[str, Comment | None]) -> None:
         """Add or replace notes on a sheet, keyed by cell reference; None removes one."""
@@ -269,6 +296,12 @@ class XlsbEditMixin(SheetEditMixin):
             removed.append(rp)
         updates["[Content_Types].xml"] = ET.tostring(types, encoding="utf-8")
         self._apply_parts(updates, removed)
+
+    def set_threaded_comments(self, sheet_name: str, comments: Mapping[str, ThreadedComment | None]) -> None:
+        """Editing Excel 365 conversations in XLSB is not supported."""
+        raise UnsupportedFeatureError(
+            "XLSB workbooks keep threaded comments for reading only; save as XLSX to edit them"
+        )
 
     def _context(self, workbook: bytes | None, parts: Callable[[str], bytes | None] | None = None) -> FormulaContext:
         """A formula context over ``workbook`` whose structured references see this package's tables."""

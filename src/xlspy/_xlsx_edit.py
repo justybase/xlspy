@@ -10,6 +10,7 @@ import datetime
 from decimal import Decimal
 import math
 import numbers
+import posixpath
 import re
 from xml.etree import ElementTree as ET
 from . import _accel
@@ -52,6 +53,26 @@ from .comments import (
     read_comments,
     resolve_part,
     rels_path,
+)
+from .threaded_comments import (
+    PERSONS_PART,
+    PERSONS_TYPE,
+    PERSON_REL,
+    THREADED_COMMENTS_TYPE,
+    THREADED_REL,
+    Person,
+    ThreadedComment,
+    add_relationship,
+    classic_companion,
+    collect_people,
+    find_person_part,
+    find_threaded_part,
+    is_threaded_companion,
+    normalize_threaded_comments,
+    persons_xml,
+    read_persons,
+    read_threaded_comments,
+    threaded_comments_xml,
 )
 from .data_validation import DataValidation, data_validation_xml, normalize_validations
 from .excel_dates import datetime_to_serial
@@ -147,6 +168,17 @@ class XlsxEditMixin(SheetEditMixin):
         _, _, parts = find_comment_parts(self._package.get, self._package.names(), path)
         return read_comments(self._package.get(parts["comments"][0])) if "comments" in parts else {}
 
+    def get_threaded_comments(self, sheet_name: str) -> dict[str, ThreadedComment]:
+        """Read Excel 365 conversations from the current staged package."""
+        path, _ = self._sheet_xml(sheet_name)
+        names = self._package.names()
+        part = find_threaded_part(self._package.get, names, path)
+        if part is None:
+            return {}
+        people_part = find_person_part(self._package.get, names, "xl/workbook.xml")
+        people = read_persons(self._package.get(people_part[0])) if people_part is not None else {}
+        return read_threaded_comments(self._package.get(part[0]), people)
+
     def set_comments(self, sheet_name: str, comments: Mapping[str, Comment | None]) -> None:
         """Set selected classic notes; None removes a note, other notes are kept."""
         path, sheet, sheet_root = self._sheet_root(sheet_name)
@@ -164,7 +196,9 @@ class XlsxEditMixin(SheetEditMixin):
                 occupied = {cell_ref(node.attrib["ref"]) for node in threaded if "ref" in node.attrib}
                 if any(ref in occupied and value is not None for ref, value in changes.items()):
                     raise ValueError("a classic note cannot replace a threaded comment")
-        current = read_comments(self._package.get(parts["comments"][0])) if "comments" in parts else {}
+        current = (
+            read_comments(self._package.get(parts["comments"][0]), include_threaded=True) if "comments" in parts else {}
+        )
         changes = {ref: value for ref, value in changes.items() if value is not None or ref in current}
         if not changes:
             return
@@ -182,7 +216,7 @@ class XlsxEditMixin(SheetEditMixin):
         vp = edit.ensure("vmlDrawing", "xl/drawings", "commentsDrawing", "vml")
         comment_data = comments_xml(changes, self._package.get(cp) if cp in names else None)
         vml_data = vml_xml(changes, self._package.get(vp) if vp in names else None)
-        remaining = read_comments(comment_data)
+        remaining = read_comments(comment_data, include_threaded=True)
         removed: list[str] = []
         updates: dict[str, Any] = {cp: comment_data, vp: vml_data}
         types = safe_fromstring(self._package.get("[Content_Types].xml"))
@@ -224,6 +258,263 @@ class XlsxEditMixin(SheetEditMixin):
             removed.append(rp)
         updates["[Content_Types].xml"] = element_bytes(types)
         self._apply_parts(updates, removed)
+
+    def set_threaded_comments(self, sheet_name: str, comments: Mapping[str, ThreadedComment | None]) -> None:
+        """Set selected Excel 365 conversations; None removes a conversation.
+
+        The first message of each conversation owns its replies. Excel needs a
+        classic note whose author is ``tc={id}`` to link a conversation to its
+        cell, so this method writes that companion note too.
+        """
+        path, sheet, sheet_root = self._sheet_root(sheet_name)
+        merges = [n.attrib["ref"] for n in sheet_root.findall(f"{{{MAIN}}}mergeCells/{{{MAIN}}}mergeCell")]
+        changes = normalize_threaded_comments(comments, merges=merges)
+        if not changes:
+            return
+        names = set(self._package.names())
+        legacy = sheet_root.find(f"{{{MAIN}}}legacyDrawing")
+        legacy_rid = None if legacy is None else legacy.get(f"{{{REL}}}id")
+        rp, relationships, parts = find_comment_parts(self._package.get, names, path, legacy_rid)
+
+        existing_comments = (
+            read_comments(self._package.get(parts["comments"][0]), include_threaded=True) if "comments" in parts else {}
+        )
+        classic_notes = {
+            ref: comment for ref, comment in existing_comments.items() if not is_threaded_companion(comment)
+        }
+        replaced = [ref for ref, thread in changes.items() if thread is not None and ref in classic_notes]
+        if replaced:
+            raise ValueError(f"a threaded comment cannot replace the classic note on {replaced[0]}")
+
+        threaded = find_threaded_part(self._package.get, names, path)
+        people_part = find_person_part(self._package.get, names, "xl/workbook.xml")
+        people = read_persons(self._package.get(people_part[0])) if people_part is not None else {}
+        current_threads = read_threaded_comments(self._package.get(threaded[0]), people) if threaded is not None else {}
+        updated_threads = dict(current_threads)
+        for ref, thread in changes.items():
+            if thread is None:
+                updated_threads.pop(ref, None)
+            else:
+                updated_threads[ref] = thread
+
+        updated_data = None
+        if updated_threads:
+            updated_data, _ = threaded_comments_xml(
+                updated_threads,
+                existing=self._package.get(threaded[0]) if threaded is not None else None,
+                changed=set(changes),
+                persons=people,
+                scope=path,
+            )
+
+        updates: dict[str, Any] = {}
+        removed: list[str] = []
+        types = safe_fromstring(self._package.get("[Content_Types].xml"))
+
+        companion_changes = self._threaded_companion_changes(changes, existing_comments)
+        if companion_changes:
+            sheet = self._write_threaded_companions(
+                path, sheet, parts, relationships, names, legacy, types, updates, removed, companion_changes
+            )
+        self._write_threaded_part(
+            path, names, relationships, threaded, updated_threads, updated_data, types, updates, removed
+        )
+        self._write_people_part(path, names, people, people_part, updated_threads, types, updates, removed)
+
+        if len(relationships):
+            updates[rp] = element_bytes(relationships)
+        elif rp in names:
+            removed.append(rp)
+        updates["[Content_Types].xml"] = element_bytes(types)
+        self._apply_parts(updates, removed)
+
+    @staticmethod
+    def _threaded_companion_changes(
+        changes: Mapping[str, ThreadedComment | None],
+        existing_comments: Mapping[str, Comment],
+    ) -> dict[str, Comment | None]:
+        """The classic notes that link the changed conversations to their cells."""
+        companion_changes: dict[str, Comment | None] = {}
+        for ref, thread in changes.items():
+            current = existing_comments.get(ref)
+            if thread is None:
+                if current is not None and is_threaded_companion(current):
+                    companion_changes[ref] = None
+            else:
+                companion_changes[ref] = classic_companion(thread)
+        return companion_changes
+
+    def _write_threaded_companions(
+        self,
+        path: str,
+        sheet: str,
+        parts: dict[str, tuple[str, str]],
+        relationships: Any,
+        names: Collection[str],
+        legacy: Any,
+        types: Any,
+        updates: dict[str, Any],
+        removed: list[str],
+        companion_changes: Mapping[str, Comment | None],
+    ) -> str:
+        """Write the companion notes and return the sheet XML after legacyDrawing."""
+        if legacy is not None and "vmlDrawing" not in parts:
+            raise ValueError("unsupported legacy drawing relationship")
+        for other_path in self._sheets.values():
+            if other_path == path:
+                continue
+            other_parts = comment_part_targets(self._package.get, names, other_path)
+            if any(value[0] in other_parts for value in parts.values()):
+                raise ValueError("editing comment/VML parts shared by worksheets is unsupported")
+        edit = NotePartsEdit(path, relationships, parts, names)
+        cp = edit.ensure("comments", "xl/comments", "comment", "xml")
+        vp = edit.ensure("vmlDrawing", "xl/drawings", "commentsDrawing", "vml")
+        comment_data = comments_xml(companion_changes, self._package.get(cp) if cp in names else None)
+        vml_data = vml_xml(companion_changes, self._package.get(vp) if vp in names else None)
+        remaining = read_comments(comment_data, include_threaded=True)
+        has_shapes = any(node.tag == f"{{{V}}}shape" for node in safe_fromstring(vml_data).iter())
+        if remaining:
+            updates[cp] = comment_data
+            if not any(node.get("PartName") == "/" + cp for node in types):
+                ET.SubElement(types, f"{{{CT}}}Override", {"PartName": "/" + cp, "ContentType": COMMENTS_TYPE})
+        else:
+            edit.drop(cp, "comments", types, updates, removed)
+        if has_shapes:
+            updates[vp] = vml_data
+            if not any(node.get("PartName") == "/" + vp for node in types) and not any(
+                node.get("Extension") == "vml" for node in types
+            ):
+                ET.SubElement(types, f"{{{CT}}}Override", {"PartName": "/" + vp, "ContentType": VML_TYPE})
+            if legacy is None:
+                fragment = f'<legacyDrawing xmlns="{MAIN}" xmlns:r="{REL}" r:id="{parts["vmlDrawing"][1]}"/>'
+                return replace_element(
+                    sheet,
+                    "legacyDrawing",
+                    fragment,
+                    before=(
+                        "legacyDrawingHF",
+                        "picture",
+                        "oleObjects",
+                        "controls",
+                        "webPublishItems",
+                        "tableParts",
+                        "extLst",
+                    ),
+                )
+        else:
+            edit.drop(vp, "vmlDrawing", types, updates, removed)
+            if legacy is not None:
+                return replace_element(sheet, "legacyDrawing", "")
+        return sheet
+
+    def _write_threaded_part(
+        self,
+        path: str,
+        names: set[str],
+        relationships: Any,
+        threaded: tuple[str, str] | None,
+        updated_threads: Mapping[str, ThreadedComment],
+        updated_data: bytes | None,
+        types: Any,
+        updates: dict[str, Any],
+        removed: list[str],
+    ) -> None:
+        """Write, create or drop the sheet's threaded-comment part."""
+        if updated_threads:
+            if threaded is not None:
+                tp = threaded[0]
+            else:
+                index = 1
+                while f"xl/threadedComments/threadedComment{index}.xml" in names:
+                    index += 1
+                tp = f"xl/threadedComments/threadedComment{index}.xml"
+                add_relationship(
+                    relationships,
+                    rel_type=THREADED_REL,
+                    target=posixpath.relpath(tp, posixpath.dirname(path)),
+                    used_ids={rid for relationship in relationships if (rid := relationship.get("Id")) is not None},
+                )
+            updates[tp] = updated_data
+            if not any(node.get("PartName") == "/" + tp for node in types):
+                ET.SubElement(
+                    types,
+                    f"{{{CT}}}Override",
+                    {"PartName": "/" + tp, "ContentType": THREADED_COMMENTS_TYPE},
+                )
+            return
+        if threaded is None:
+            return
+        tp, rid = threaded
+        for relationship in list(relationships):
+            if relationship.get("Id") == rid:
+                relationships.remove(relationship)
+        removed.append(tp)
+        for node in list(types):
+            if node.get("PartName") == "/" + tp:
+                types.remove(node)
+
+    def _write_people_part(
+        self,
+        path: str,
+        names: set[str],
+        people: Mapping[str, Person],
+        people_part: tuple[str, str] | None,
+        updated_threads: Mapping[str, ThreadedComment],
+        types: Any,
+        updates: dict[str, Any],
+        removed: list[str],
+    ) -> None:
+        """Write the workbook people used by every sheet, or drop the part."""
+        all_threads = list(updated_threads.values())
+        for other_path in self._sheets.values():
+            if other_path == path:
+                continue
+            other_threaded = find_threaded_part(self._package.get, names, other_path)
+            if other_threaded is not None:
+                all_threads.extend(read_threaded_comments(self._package.get(other_threaded[0]), people).values())
+        required_people = collect_people(all_threads)
+        workbook_rels = "xl/_rels/workbook.xml.rels"
+        if required_people:
+            if people_part is None:
+                person_path = PERSONS_PART
+                workbook_root = (
+                    safe_fromstring(self._package.get(workbook_rels))
+                    if workbook_rels in names
+                    else ET.Element(f"{{{PKG_REL}}}Relationships")
+                )
+                add_relationship(
+                    workbook_root,
+                    rel_type=PERSON_REL,
+                    target="persons/person.xml",
+                    used_ids={rid for relationship in workbook_root if (rid := relationship.get("Id")) is not None},
+                )
+                updates[workbook_rels] = element_bytes(workbook_root)
+            else:
+                person_path = people_part[0]
+            updates[person_path] = persons_xml(required_people)
+            if not any(node.get("PartName") == "/" + person_path for node in types):
+                ET.SubElement(
+                    types,
+                    f"{{{CT}}}Override",
+                    {"PartName": "/" + person_path, "ContentType": PERSONS_TYPE},
+                )
+            return
+        if people_part is None:
+            return
+        person_path, person_rid = people_part
+        if workbook_rels in names:
+            workbook_root = safe_fromstring(self._package.get(workbook_rels))
+            for relationship in list(workbook_root):
+                if relationship.get("Id") == person_rid:
+                    workbook_root.remove(relationship)
+            if len(workbook_root):
+                updates[workbook_rels] = element_bytes(workbook_root)
+            else:
+                removed.append(workbook_rels)
+        removed.append(person_path)
+        for node in list(types):
+            if node.get("PartName") == "/" + person_path:
+                types.remove(node)
 
     def set_hyperlinks(self, sheet_name: str, links: Mapping[str, Hyperlink | None]) -> None:
         """Set selected cells' hyperlinks; None removes one, other links are kept.

@@ -225,25 +225,32 @@ def _person_for(author: str, persons: dict[str, Person], by_name: dict[str, Pers
     return person
 
 
+def collect_people(
+    threads: Iterable[ThreadedComment],
+    existing: Mapping[str, Person] | None = None,
+) -> dict[str, Person]:
+    """The people part entries needed by ``threads``, keeping existing ids."""
+    people = dict(existing or {})
+    by_name: dict[str, Person] = {}
+    for person in people.values():
+        by_name.setdefault(person.display_name, person)
+    for thread in threads:
+        for message in thread.messages:
+            existing_person: Person | None = message._person
+            if existing_person is not None and existing_person.display_name == message.author:
+                people.setdefault(existing_person.id, existing_person)
+                by_name.setdefault(existing_person.display_name, existing_person)
+                continue
+            message._person = _person_for(message.author, people, by_name)
+    return people
+
+
 def collect_persons(
     threads: Mapping[str, ThreadedComment],
     existing: Mapping[str, Person] | None = None,
 ) -> dict[str, Person]:
     """The people part entries needed by ``threads``, keeping existing ids."""
-    persons = dict(existing or {})
-    by_name: dict[str, Person] = {}
-    for person in persons.values():
-        by_name.setdefault(person.display_name, person)
-    for thread in threads.values():
-        for message in thread.messages:
-            existing_person: Person | None = message._person
-            if existing_person is not None and existing_person.display_name == message.author:
-                persons.setdefault(existing_person.id, existing_person)
-                by_name.setdefault(existing_person.display_name, existing_person)
-                continue
-            person = _person_for(message.author, persons, by_name)
-            message._person = person
-    return persons
+    return collect_people((thread for thread in threads.values() if thread is not None), existing)
 
 
 def read_persons(data: bytes) -> dict[str, Person]:
