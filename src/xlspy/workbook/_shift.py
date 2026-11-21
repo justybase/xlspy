@@ -11,10 +11,14 @@ their rows and columns (``insert_*``/``delete_*``), as they do in Excel.
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING, Any
 
 from ..formulas import ArrayFormula, Formula
 from ..refs import column_label, parse_cell_range, shift_references as translate_formula, _MAX_ROW as _MAX_ROW
+
+if TYPE_CHECKING:
+    from ._worksheet import Worksheet
 
 _MAX_COL = 16384
 _CELL_REF = re.compile(r"(?<![A-Za-z0-9_.])(\$?)([A-Za-z]{1,3})(\$?)([0-9]+)(?![A-Za-z0-9_(.])")
@@ -45,7 +49,7 @@ def _translate_array_ref(ref: str, rows: int, cols: int) -> str:
     return _CELL_REF.sub(cell, ref)
 
 
-def _check_amount(idx, amount, limit: int, what: str) -> None:
+def _check_amount(idx: int, amount: int, limit: int, what: str) -> None:
     for name, value in (("idx", idx), ("amount", amount)):
         if isinstance(value, bool) or not isinstance(value, int):
             raise TypeError(f"{what} {name} must be an int")
@@ -64,7 +68,7 @@ def _shifted(number: int, idx: int, amount: int, delete: bool) -> int | None:
     return None if number < idx + amount else number - amount
 
 
-def shift_rows(sheet, idx: int, amount: int, *, delete: bool) -> None:
+def shift_rows(sheet: Worksheet, idx: int, amount: int, *, delete: bool) -> None:
     _check_amount(idx, amount, _MAX_ROW, "row")
     if not delete and sheet._cells and max(sheet._cells) >= idx and max(sheet._cells) + amount > _MAX_ROW:
         raise ValueError("the insert pushes cells past Excel's last row")
@@ -94,7 +98,7 @@ def shift_rows(sheet, idx: int, amount: int, *, delete: bool) -> None:
     _shift_dimensions(sheet.row_dimensions, idx, amount, delete, int, int, _MAX_ROW)
 
 
-def shift_cols(sheet, idx: int, amount: int, *, delete: bool) -> None:
+def shift_cols(sheet: Worksheet, idx: int, amount: int, *, delete: bool) -> None:
     _check_amount(idx, amount, _MAX_COL, "column")
     if not delete and any(
         cells and max(cells) >= idx and max(cells) + amount > _MAX_COL for cells in sheet._cells.values()
@@ -136,7 +140,7 @@ def shift_cols(sheet, idx: int, amount: int, *, delete: bool) -> None:
     )
 
 
-def move_range(sheet, cell_range, rows: int = 0, cols: int = 0, translate: bool = False) -> None:
+def move_range(sheet: Worksheet, cell_range: Any, rows: int = 0, cols: int = 0, translate: bool = False) -> None:
     for name, value in (("rows", rows), ("cols", cols)):
         if isinstance(value, bool) or not isinstance(value, int):
             raise TypeError(f"move_range {name} must be an int")
@@ -147,7 +151,7 @@ def move_range(sheet, cell_range, rows: int = 0, cols: int = 0, translate: bool 
     ):
         raise ValueError(f"moving {cell_range} by ({rows}, {cols}) leaves the sheet")
 
-    def target(row, col):
+    def target(row: int, col: int) -> tuple[int, int]:
         if first_row <= row <= last_row and first_col <= col <= last_col:
             return row + rows, col + cols
         return row, col
@@ -183,7 +187,7 @@ def move_range(sheet, cell_range, rows: int = 0, cols: int = 0, translate: bool 
             cell._formula = translated_formulas[id(cell)]
 
 
-def _relocate(sheet, target) -> list:
+def _relocate(sheet: Worksheet, target: Callable[[int, int], tuple[int, int] | None]) -> list[Any]:
     """Move every cell to ``target(row, col)`` (None deletes it) and return
     the cells that moved. Moved cells replace cells already at their
     destination, as in openpyxl."""
@@ -210,7 +214,14 @@ def _relocate(sheet, target) -> list:
     return moved
 
 
-def _install(sheet, cells_by_row, vacated, moved, *, recompute: bool) -> None:
+def _install(
+    sheet: Worksheet,
+    cells_by_row: dict[int, dict[int, Any]],
+    vacated: Iterable[Any],
+    moved: Iterable[Any],
+    *,
+    recompute: bool,
+) -> None:
     sheet._cells = cells_by_row
     if sheet._loaded:
         _mark_loaded_changes(sheet, vacated, moved)
@@ -218,7 +229,7 @@ def _install(sheet, cells_by_row, vacated, moved, *, recompute: bool) -> None:
         _recompute_extent(sheet)
 
 
-def _mark_loaded_changes(sheet, vacated, moved) -> None:
+def _mark_loaded_changes(sheet: Worksheet, vacated: Iterable[Any], moved: Iterable[Any]) -> None:
     """A loaded sheet is saved cell by cell: record what changed, and clear
     the cells that were left behind."""
     from ._model import Cell
@@ -243,7 +254,7 @@ def _mark_loaded_changes(sheet, vacated, moved) -> None:
             sheet._dirty_hyperlinks.add(cell.coordinate)
 
 
-def _recompute_extent(sheet) -> None:
+def _recompute_extent(sheet: Worksheet) -> None:
     max_row = max_col = 0
     for row, cells in sheet._cells.items():
         for col, cell in cells.items():
@@ -259,11 +270,21 @@ def _recompute_extent(sheet) -> None:
     sheet._max_row, sheet._max_column = max_row, max_col
 
 
-def _shift_dimensions(holder, idx, amount, delete, to_number, to_key, limit) -> None:
+def _shift_dimensions(
+    holder: Any,
+    idx: int,
+    amount: int,
+    delete: bool,
+    to_number: Callable[[str], int | None],
+    to_key: Callable[[int], Any],
+    limit: int,
+) -> None:
     items = list(dict.items(holder))
     dict.clear(holder)
     for key, dimension in items:
         number = to_number(key)
+        if number is None:
+            continue
         if number >= idx:
             if delete:
                 if number < idx + amount:

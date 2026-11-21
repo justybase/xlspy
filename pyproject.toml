@@ -218,9 +218,6 @@ module = [
     "xlspy._widths",
     "xlspy._xlsb_cf",
     "xlspy._xlsb_formulas",
-    "xlspy._xlsb_read",
-    "xlspy._xlsb_writer_parts",
-    "xlspy._xlsx_read",
     "xlspy._xlsx_writer_sheet",
     "xlspy._xlsx_writer_sheet_xml",
     "xlspy._xlsx_writer_styles",
@@ -229,12 +226,9 @@ module = [
     "xlspy.pivots",
     "xlspy.workbook._loaded",
     "xlspy.workbook._objects",
-    "xlspy.workbook._properties",
     "xlspy.workbook._reader",
-    "xlspy.workbook._shift",
     "xlspy.workbook._styles",
     "xlspy.workbook._tables",
-    "xlspy.workbook._writer",
     "xlspy.workbook._xlsb_layout",
     "xlspy.workbook._xlsb_loaded",
     "xlspy.workbook._xlsb_sheet_meta",
@@ -258,7 +252,6 @@ source_modules = [
     "xlspy.workbook._worksheet",
     "xlspy.workbook._workbook",
     "xlspy.workbook._model",
-    "xlspy.workbook._properties",
     "xlspy.workbook._tables",
 ]
 forbidden_modules = [
@@ -287,8 +280,6 @@ source_modules = [
     "xlspy.xlsb_updater",
     "xlspy._xlsx_edit",
     "xlspy._xlsb_edit",
-    "xlspy._xlsx_read",
-    "xlspy._xlsb_read",
     "xlspy._xlsx_sheets",
     "xlspy._xlsb_sheets",
 ]
@@ -306,7 +297,6 @@ source_modules = [
     "xlspy._xlsb_ignored_errors",
     "xlspy._xlsb_pivots",
     "xlspy._xlsb_print",
-    "xlspy._xlsb_read",
     "xlspy._xlsb_sheets",
     "xlspy._xlsb_slicers",
     "xlspy._xlsb_sort",
@@ -317,7 +307,6 @@ source_modules = [
     "xlspy._xlsb_writer_bin",
     "xlspy._xlsb_writer_consts",
     "xlspy._xlsb_writer_host",
-    "xlspy._xlsb_writer_parts",
     "xlspy._xlsb_writer_sheet",
     "xlspy._xlsb_writer_strings",
     "xlspy._xlsb_writer_styles",
@@ -332,7 +321,6 @@ source_modules = [
 ]
 forbidden_modules = [
     "xlspy._xlsx_edit",
-    "xlspy._xlsx_read",
     "xlspy._xlsx_sheets",
     "xlspy._xlsx_writer_host",
     "xlspy._xlsx_writer_parts",

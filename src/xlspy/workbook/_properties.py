@@ -438,26 +438,26 @@ class Break:
 
 
 class RowBreak:
-    def __init__(self, brk=()):
+    def __init__(self, brk: Iterable[Break] = ()) -> None:
         self.brk = list(brk)
 
     @property
-    def count(self):
+    def count(self) -> int:
         return len(self.brk)
 
     @property
-    def manualBreakCount(self):
+    def manualBreakCount(self) -> int:
         return len(self.brk)
 
-    def append(self, brk=None):
+    def append(self, brk: Break | None = None) -> None:
         if not isinstance(brk, Break):
             brk = Break(id=self.count + 1)
         self.brk.append(brk)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.brk)
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self.brk)
 
 
@@ -489,7 +489,7 @@ class WorksheetProtection:
     spinCount: int | None = None
     hashValue: str | None = None
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         # As in openpyxl, a password set directly is stored as its legacy hash.
         if name == "password" and value is not None:
             value = password_hash(value)
@@ -513,7 +513,9 @@ class WorksheetProtection:
         return self.sheet
 
 
-def _as_model_protection(value) -> WorksheetProtection:
+def _as_model_protection(
+    value: WorksheetProtection | PublicSheetProtection | None,
+) -> WorksheetProtection:
     """Return the model WorksheetProtection for ``ws.protection`` assignments.
 
     Accepts the model class (openpyxl-style fields) or the public
@@ -538,7 +540,7 @@ def _as_model_protection(value) -> WorksheetProtection:
     raise TypeError("protection must be an xlspy.SheetProtection, a WorksheetProtection or None")
 
 
-def _as_model_page_margins(value) -> WorksheetPageMargins:
+def _as_model_page_margins(value: WorksheetPageMargins | PublicPageMargins) -> WorksheetPageMargins:
     """Return the model WorksheetPageMargins for ``ws.page_margins`` (mutable holder)."""
     if isinstance(value, WorksheetPageMargins):
         return value

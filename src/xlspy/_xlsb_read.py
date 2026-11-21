@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import struct
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from ._errors import CellError
@@ -18,7 +19,7 @@ from .excel_dates import serial_to_datetime
 from .exceptions import InvalidFileError
 
 
-def cached_cell(kind, payload, reader):
+def cached_cell(kind: int, payload: bytes, reader: Any) -> tuple[Any, bytes | None, int]:
     if len(payload) < 8:
         raise ValueError("truncated XLSB cell header")
     style = struct.unpack_from("<I", payload, 4)[0] & 0xFFFFFF
@@ -82,7 +83,7 @@ def _date_or_number(serial: float, date_1904: bool) -> Any:
         return int(serial) if serial.is_integer() else serial
 
 
-def formula_groups(records):
+def formula_groups(records: Iterable[tuple[int, bytes]]) -> dict[tuple[int, int], tuple[int, bytes]]:
     """Shared (0x1AB) and array (0x1AA) formula definitions by their master cell."""
     groups = {}
     for kind, payload in records:
@@ -91,7 +92,14 @@ def formula_groups(records):
     return groups
 
 
-def formula_text(formula, groups, context, sheet_name, row, column):
+def formula_text(
+    formula: bytes,
+    groups: dict[tuple[int, int], tuple[int, bytes]],
+    context: FormulaContext,
+    sheet_name: str,
+    row: int,
+    column: int,
+) -> str | None:
     """The text (without ``=``) of a cell formula, or None for a member of an
     array formula other than its master cell, which keeps its cached value."""
     tokens, extra, _ = read_parsed(formula)
@@ -108,7 +116,14 @@ def formula_text(formula, groups, context, sheet_name, row, column):
     return decode_formula(formula, context, sheet=sheet_name, origin=(column, row))
 
 
-def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, with_styles=False):
+def iter_xlsb_indexed_rows(
+    reader: Any,
+    sheet_name: str,
+    *,
+    data_only: bool = True,
+    data: bytes | None = None,
+    with_styles: bool = False,
+) -> Iterator[Any]:
     """Yield ``(row_number, [(column, value), ...])`` for every BrtRowHdr, with
     1-based rows and 0-based columns; formulas are decoded when not data_only.
     With ``with_styles`` the cells are ``(column, value, style_id)``."""
@@ -132,13 +147,15 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
     cells: list[Any] = []
     previous_column = -1
 
-    def cell_value(column, value, formula):
+    def cell_value(column: int, value: Any, formula: bytes | None) -> Any:
         if formula is None or data_only:
+            return value
+        if context is None or current_row is None:
             return value
         text = formula_text(formula, groups, context, sheet_name, current_row, column)
         return value if text is None else "=" + text
 
-    def finish():
+    def finish() -> tuple[int, list[Any]]:
         if current_row is None:
             raise ValueError("XLSB row end without a row")
         # Formula groups follow their master cell, so decode at row end.
@@ -150,7 +167,7 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
             (column, cell_value(column, value, formula)) for column, value, formula, _style in cells
         ]
 
-    def scan(source):
+    def scan(source: Iterable[tuple[int, bytes]]) -> Iterator[tuple[int, list[Any]]]:
         nonlocal current_row, cells, previous_column
         in_data = False
         for kind, payload in source:
@@ -205,7 +222,7 @@ def iter_xlsb_indexed_rows(reader, sheet_name, *, data_only=True, data=None, wit
         yield from scan((record.record_id, payload) for record, payload in iter_records_stream(stream))
 
 
-def sheet_dimension(reader, sheet_name):
+def sheet_dimension(reader: Any, sheet_name: str) -> tuple[int, int, int, int] | None:
     """Return ``(min_col, min_row, max_col, max_row)`` (1-based) from BrtWsDim,
     or None when the sheet has no usable dimension record."""
     path = reader._sheet_part(sheet_name)
@@ -225,10 +242,10 @@ def sheet_dimension(reader, sheet_name):
     return None
 
 
-def read_xlsb_rows(reader, sheet_name, *, data_only=True):
+def read_xlsb_rows(reader: Any, sheet_name: str, *, data_only: bool = True) -> Iterator[Any]:
     """Yield rows with each value at its own position, as the bulk reader and XLSX."""
 
-    def checked():
+    def checked() -> Iterator[Any]:
         for row_number, cells in iter_xlsb_indexed_rows(reader, sheet_name, data_only=data_only):
             if cells:
                 check_column_span(0, max(column for column, _ in cells))

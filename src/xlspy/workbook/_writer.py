@@ -8,7 +8,8 @@ import os
 import re
 import shutil
 import tempfile
-from typing import TYPE_CHECKING
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 
 from ..utils.datetime import time_to_days, timedelta_to_days
 from .._metadata import SheetProtection as MetadataProtection
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
     from .._output import WriteTarget
 
 
-def _value_for_new(cell):
+def _value_for_new(cell: Any) -> Any:
     if isinstance(cell._formula, (Formula, ArrayFormula, DataTableFormula)):
         return cell._formula
     if isinstance(cell._formula, str):
@@ -55,7 +56,7 @@ _PLAIN_STYLE = Style()
 _WRITER_PLAIN_TYPES = frozenset({int, float, bool, str, _datetime.date, _datetime.datetime, type(None)})
 
 
-def _cell_values(sheet: Worksheet):
+def _cell_values(sheet: Worksheet) -> Iterator[Any]:
     """Rows for the writer. A styled cell with a value is written as
     ``(value, Style)``; styled empty cells go to ``_styles``."""
     if isinstance(sheet, WriteOnlyWorksheet):
@@ -122,7 +123,7 @@ def _cell_values(sheet: Worksheet):
         yield row
 
 
-def _styles_and_comments(sheet: Worksheet):
+def _styles_and_comments(sheet: Worksheet) -> tuple[Any, Any]:
     """Styles of empty cells, which ``_cell_values`` cannot carry, and the notes."""
     if isinstance(sheet, WriteOnlyWorksheet):
         return None, None
@@ -143,7 +144,7 @@ def _styles_and_comments(sheet: Worksheet):
     return styles or None, comments or None
 
 
-def _sheet_protection(sheet: Worksheet):
+def _sheet_protection(sheet: Worksheet) -> MetadataProtection | None:
     protection = sheet.protection
     if not protection.sheet:
         return None
@@ -159,7 +160,7 @@ def _sheet_protection(sheet: Worksheet):
     )
 
 
-def _common_options(sheet: Worksheet, *, xlsb: bool = False):
+def _common_options(sheet: Worksheet, *, xlsb: bool = False) -> dict[str, Any]:
     widths = {}
     hidden_columns = []
     for letter in sheet.column_dimensions:
@@ -217,7 +218,7 @@ def _common_options(sheet: Worksheet, *, xlsb: bool = False):
     return options
 
 
-def _set_properties(writer, props) -> None:
+def _set_properties(writer: Any, props: Any) -> None:
     created = props.created
     if isinstance(created, _datetime.datetime) and created.tzinfo is None:
         # The model's default is datetime.now(): local time.
@@ -234,7 +235,7 @@ def _set_properties(writer, props) -> None:
     )
 
 
-def _save_new(workbook: Workbook, filename) -> None:
+def _save_new(workbook: Workbook, filename: WriteTarget) -> None:
     extension = ""
     if isinstance(filename, (str, os.PathLike)):
         extension = os.fspath(filename).lower().rsplit(".", 1)[-1]
@@ -266,7 +267,7 @@ def _save_new(workbook: Workbook, filename) -> None:
     _write_new(workbook, filename, writer_class, extension)
 
 
-def _write_new(workbook: Workbook, filename, writer_class, extension: str) -> None:
+def _write_new(workbook: Workbook, filename: WriteTarget, writer_class: type[Any], extension: str) -> None:
     with writer_class(filename) as writer:
         _set_properties(writer, workbook.properties)
         for definition in workbook.defined_names:
@@ -280,7 +281,7 @@ def _write_new(workbook: Workbook, filename, writer_class, extension: str) -> No
         writer.save()
 
 
-def _save_new_with_named_styles(workbook: Workbook, filename, extension: str) -> None:
+def _save_new_with_named_styles(workbook: Workbook, filename: WriteTarget, extension: str) -> None:
     """Write a new workbook, then add named styles through the loaded-workbook path."""
     with tempfile.TemporaryDirectory(prefix="xlspy-workbook-") as directory:
         temporary = os.path.join(directory, f"workbook.{extension}")
@@ -295,7 +296,7 @@ def _save_new_with_named_styles(workbook: Workbook, filename, extension: str) ->
             loaded.close()
 
 
-def _save_loaded_to_path(workbook: Workbook, filename) -> None:
+def _save_loaded_to_path(workbook: Workbook, filename: WriteTarget) -> None:
     if isinstance(filename, (str, os.PathLike)):
         save_loaded(workbook, os.fspath(filename))
         return

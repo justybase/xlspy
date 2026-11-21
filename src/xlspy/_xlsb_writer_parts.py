@@ -7,6 +7,8 @@ import io
 import re
 import uuid
 import xml.sax.saxutils as saxutils
+from collections.abc import Iterable
+from typing import Any
 from ._accel import encode_xlsb_sst as accel_encode_xlsb_sst
 from . import chart_parts
 from .styles import (
@@ -69,7 +71,7 @@ from ._table_totals_names import ILTA_BY_NAME, ILTA_CUSTOM
 class _XlsbPartsMixin(_XlsbWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
-    def _normalize_cf_rules(self, conditional_formats):
+    def _normalize_cf_rules(self, conditional_formats: Iterable[Any] | None) -> list[Any]:
         if not conditional_formats:
             return []
         for rule in conditional_formats:
@@ -111,7 +113,13 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         return out
 
     def _table_bin(
-        self, table, table_id: int, names: list[str], totals_cells=None, formula_context=None, sheet_name=None
+        self,
+        table: Any,
+        table_id: int,
+        names: list[str],
+        totals_cells: Any = None,
+        formula_context: Any = None,
+        sheet_name: str | None = None,
     ) -> bytes:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
         totals_row = bool(table.totals_row)
@@ -225,19 +233,19 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         out.extend(build_record(_BRT_END_LIST_PARTS, b""))
         return bytes(out)
 
-    def _register_dxf(self, dxf) -> int:
+    def _register_dxf(self, dxf: DifferentialStyle | None) -> int:
         """Index of ``dxf`` in the styles part; equal styles share one BrtDXF."""
         if dxf is None:
             return -1
         payload = dxf_payload(dxf, self._register_numfmt)
         return self._dxf_index.setdefault(payload, len(self._dxf_index))
 
-    def _cf_bin_for_rule(self, rule, priority: int) -> bytes:
+    def _cf_bin_for_rule(self, rule: Any, priority: int) -> bytes:
         return rule_bin(
             rule, priority, self._register_dxf(getattr(rule, "dxf", None)), self._formula_context(), self._letters
         )
 
-    def _cf_bin_grouped(self, rules) -> bytes:
+    def _cf_bin_grouped(self, rules: Iterable[Any]) -> bytes:
         # Group by sqref like XLSX, claim priorities in order.
         by_range: dict[str, list] = {}
         for rule in rules:
@@ -287,7 +295,7 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         first = self._sheet_count + 4 + len(self._slicer_cache_names)
         return [f"rId{first + index}" for index in range(len(self._pivot_renders))]
 
-    def _write_workbook_parts(self):
+    def _write_workbook_parts(self) -> None:
         # A sheet that was added but never written still has a part: the content
         # types and workbook relationships name it, and XlsxWriter writes one too.
         for sheet_index in range(self._sheet_count):
@@ -472,7 +480,7 @@ class _XlsbPartsMixin(_XlsbWriterHost):
 {"".join(relationships)}
 </Relationships>"""
 
-    def _write_slicer_parts(self, sheet_id, rel_id, slicers, table_columns) -> None:
+    def _write_slicer_parts(self, sheet_id: int, rel_id: str, slicers: Any, table_columns: Any) -> None:
         """Write the sheet's slicer part and one cache part per slicer.
 
         Runs after the rows streamed, when the tables' column names are known.
@@ -494,7 +502,7 @@ class _XlsbPartsMixin(_XlsbWriterHost):
         self._sheet_slicer_parts[sheet_id] = (part_no, rel_id)
         self._zf.writestr(f"xl/slicers/slicer{part_no}.bin", slicers_part_bin(slicers))
 
-    def _create_worksheet_rels(self, sheet_id) -> str:
+    def _create_worksheet_rels(self, sheet_id: int) -> str:
         tables = self._sheet_tables.get(sheet_id, [])
         rels = (
             '<Relationship Id="rId1" '
@@ -609,7 +617,7 @@ class _XlsbPartsMixin(_XlsbWriterHost):
                 break
         return bytes(buffer)
 
-    def _write_shared_strings_bin(self, sst_file: io.BufferedWriter):
+    def _write_shared_strings_bin(self, sst_file: io.BufferedWriter) -> None:
         c_sst = (
             None
             if self._sst_has_rich

@@ -5,6 +5,7 @@ from __future__ import annotations
 import codecs
 import datetime
 import re
+from collections.abc import Iterator
 from typing import Any
 from ._rows import rows_in_place
 from ._safe_xml import fromstring as safe_fromstring, iterparse as safe_iterparse
@@ -41,14 +42,14 @@ class _Fallback(Exception):
     """Raised by the fast path for a row it does not handle exactly."""
 
 
-def translate_formula(text, origin, target):
+def translate_formula(text: str, origin: str, target: str) -> str:
     """Translate relative A1 references in a shared formula (without evaluating)."""
     c1, r1, _, _ = parse_cell_range(origin)
     c2, r2, _, _ = parse_cell_range(target)
     return shift_references(text, r2 - r1, c2 - c1)
 
 
-def iter_xlsx_indexed_rows(reader, sheet_name, data_only=True):
+def iter_xlsx_indexed_rows(reader: Any, sheet_name: str, data_only: bool = True) -> Iterator[Any]:
     """Yield ``(row_number, [(column, value), ...])`` with worksheet coordinates
     (1-based rows, 0-based columns). Rows absent from the XML are not yielded."""
     path = reader._sheet_part(sheet_name)
@@ -67,12 +68,12 @@ def iter_xlsx_indexed_rows(reader, sheet_name, data_only=True):
     yield from _iter_etree(reader, path, data_only)
 
 
-def read_xlsx_rows(reader, sheet_name, data_only=True):
+def read_xlsx_rows(reader: Any, sheet_name: str, data_only: bool = True) -> Iterator[Any]:
     """Yield one list per worksheet row: see ``rows_in_place``."""
     return rows_in_place(iter_xlsx_indexed_rows(reader, sheet_name, data_only))
 
 
-def _iter_etree(reader, path, data_only):
+def _iter_etree(reader: Any, path: str, data_only: bool) -> Iterator[Any]:
     shared: dict[Any, Any] = {}
     next_row = 1
     ns = MAIN
@@ -95,7 +96,16 @@ def _iter_etree(reader, path, data_only):
             stack.pop()
 
 
-def _row_from_element(reader, node, ns, next_row, data_only, shared):
+def _row_from_element(
+    reader: Any,
+    node: Any,
+    ns: str,
+    next_row: int,
+    data_only: bool,
+    shared: dict[Any, Any] | None,
+) -> tuple[int, list[Any]]:
+    if shared is None:
+        shared = {}
     row_number = int(node.get("r", next_row))
     cells = []
     next_col = 0
@@ -124,7 +134,7 @@ def _row_from_element(reader, node, ns, next_row, data_only, shared):
     return row_number, cells
 
 
-def _date_style_flags(reader):
+def _date_style_flags(reader: Any) -> list[bool]:
     """Per cell-style flag: True when the style's number format is a date."""
     formats = reader._number_formats_type_dict
     return [formats.get(xf["numFmtId"]) is datetime.datetime for xf in reader._styles_cell_xfs_array]
@@ -133,17 +143,17 @@ def _date_style_flags(reader):
 class _FastSheet:
     """Per-sheet state of the fast path: workbook tables and a column-letter cache."""
 
-    def __init__(self, reader, ns, root_tag):
+    def __init__(self, reader: Any, ns: str, root_tag: str) -> None:
         self.strings = reader._shared_string_array
         self.date_1904 = reader._date_1904
         self.is_date_style = _date_style_flags(reader)
-        self.columns = {}
+        self.columns: dict[str, int] = {}
         self.reader = reader
         self.ns = ns
         self.root_tag = root_tag
 
 
-def _probe_fast(stream, with_head=False):
+def _probe_fast(stream: Any, with_head: bool = False) -> tuple[Any, ...] | None:
     """Read up to the sheetData start tag. Return ``(text, decoder, root_tag, ns, raw)``
     when the fast path applies (UTF-8, unprefixed tags, non-empty sheetData), otherwise
     ``None``. ``text`` and ``decoder`` continue the Python reader; ``raw`` is the same
@@ -176,7 +186,7 @@ def _probe_fast(stream, with_head=False):
     return result + (head,) if with_head else result
 
 
-def _iter_native(reader, stream, probe):
+def _iter_native(reader: Any, stream: Any, probe: Any) -> Iterator[Any] | None:
     """Rows from the native scanner, or None when the extension does not provide it."""
     _text, _decoder, root_tag, ns, raw = probe
     rows = _accel.read_xlsx_worksheet(
@@ -187,7 +197,7 @@ def _iter_native(reader, stream, probe):
     return _native_rows(reader, rows, root_tag, ns)
 
 
-def _native_rows(reader, rows, root_tag, ns):
+def _native_rows(reader: Any, rows: Any, root_tag: str, ns: str) -> Iterator[Any]:
     """Resolve the native scanner's fallback rows with the XML parser, as _iter_fast does."""
     next_row = 1
     for item in rows:
@@ -201,7 +211,7 @@ def _native_rows(reader, rows, root_tag, ns):
         yield row_number, cells
 
 
-def _iter_fast(reader, stream, probe):
+def _iter_fast(reader: Any, stream: Any, probe: Any) -> Iterator[Any]:
     text, decoder, root_tag, ns, _raw = probe
     sheet = _FastSheet(reader, ns, root_tag)
     next_row = 1
@@ -224,7 +234,7 @@ def _iter_fast(reader, stream, probe):
             return
 
 
-def _fast_row(sheet, attrs, body, next_row):
+def _fast_row(sheet: _FastSheet, attrs: str, body: str | None, next_row: int) -> tuple[int, list[Any]]:
     row_match = _ROW_NUM.search(attrs)
     if row_match:
         row_number = int(row_match.group(1))
@@ -283,7 +293,7 @@ def _fast_row(sheet, attrs, body, next_row):
     return row_number, cells
 
 
-def _fast_value(sheet, attributes, v, inline):
+def _fast_value(sheet: _FastSheet, attributes: dict[str, str], v: str | None, inline: str | None) -> Any:
     kind = attributes.get("t", "n")
     if kind == "inlineStr":
         if inline is None:
@@ -317,7 +327,7 @@ def _fast_value(sheet, attributes, v, inline):
     return float(v) if ("." in v or "e" in v or "E" in v) else int(v)
 
 
-def _xlsx_cell_value(reader, cell, ns=MAIN):
+def _xlsx_cell_value(reader: Any, cell: Any, ns: str = MAIN) -> Any:
     kind = cell.get("t", "n")
     if kind == "inlineStr":
         inline = cell.find(f"{{{ns}}}is")

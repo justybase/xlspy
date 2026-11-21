@@ -126,7 +126,7 @@ def _load_cells(
             value, formula, style = cached_cell(kind, payload, reader)
             column = struct.unpack_from("<I", payload)[0]
             text = None
-            if not data_only and formula is not None:
+            if context is not None and formula is not None:
                 text = formula_text(formula, shared, context, name, row - 1, column)
             _set_loaded_cell(sheet, row, column + 1, value, style, text)
     if start < 0:
