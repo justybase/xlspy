@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 from dataclasses import replace
 from ._ranges import merge_styles
@@ -79,7 +79,7 @@ def _date_cell_xf(
 
 
 def _style_ids_for_row(
-    row_styles: dict[int, Style] | None, row_length: int, register_style: Callable[[Style], Any], cache: dict
+    row_styles: Mapping[int, Style] | None, row_length: int, register_style: Callable[[Style], Any], cache: dict
 ) -> Any:
     """Convert a shared row-style map once per distinct row-style pattern."""
     if not row_styles:

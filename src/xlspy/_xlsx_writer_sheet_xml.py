@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import xml.sax.saxutils as saxutils
+from collections.abc import Mapping, Sequence
+from typing import Any
 from ._writer_common import FilterData
 from ._sort_state import check_sort_state
 from .refs import sort_state_ref
@@ -30,7 +32,9 @@ from ._table_totals import totals_choice
 class _XlsxSheetXmlMixin(_XlsxWriterHost):
     """Methods of the writer class, mixed into it; see the facade module."""
 
-    def _table_xml(self, table: ExcelTable, table_id: int, names: list[str], totals_cells=None) -> str:
+    def _table_xml(
+        self, table: ExcelTable, table_id: int, names: list[str], totals_cells: list[Any] | None = None
+    ) -> str:
         first_col, first_row, last_col, last_row = parse_cell_range(table.ref)
         ref = f"{self._letters[first_col]}{first_row + 1}:{self._letters[last_col]}{last_row + 1}"
         filter_last_row = last_row - 1 if table.totals_row else last_row
@@ -82,7 +86,13 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             f"{style_xml}</table>"
         )
 
-    def _register_tables(self, table_specs, sheet_id, body, table_totals=None):
+    def _register_tables(
+        self,
+        table_specs: list[ExcelTable],
+        sheet_id: int,
+        body: Any,
+        table_totals: dict[int, list[Any]] | None = None,
+    ) -> tuple[list[tuple[str, str, str, bool]], list[tuple[int, int, int, int]]]:
         """Assign table ids and relationships; returns ``(rels, bounds)``."""
         rels = []
         bounds = [parse_cell_range(table.ref) for table in table_specs]
@@ -105,7 +115,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         body.tables = sheet_tables
         return rels, bounds
 
-    def _resolve_slicers(self, slicer_specs):
+    def _resolve_slicers(self, slicer_specs: list[Any]) -> list[tuple[Any, int]]:
         """Write the slicer and cache parts; returns ``[(slicer, part number)]``.
 
         Runs once the sheet's tables are registered, so their ids and column
@@ -150,7 +160,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             count += 1
         return count
 
-    def _link_relationships(self, hyperlinks, rels):
+    def _link_relationships(self, hyperlinks: list[Any], rels: list[Any]) -> list[tuple[str, str, str, bool]]:
         """External hyperlink relationships; ``rels`` supplies the next free ids."""
         link_rels = []
         seen: dict[str, str] = {}
@@ -166,13 +176,13 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
 
     def _sheet_head(
         self,
-        body,
-        sheet_index,
-        spec,
+        body: Any,
+        sheet_index: int,
+        spec: Any,
         *,
-        meter=None,
-        filter_cells=(),
-    ):
+        meter: ColumnWidthMeter | None = None,
+        filter_cells: Sequence[tuple[int, int, int]] = (),
+    ) -> str:
         """Everything before ``<sheetData>`` content: properties, views, widths."""
         parts = [
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -220,7 +230,13 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         return "".join(parts)
 
     def _sheet_views_xml(
-        self, sheet_index, split_freeze, freeze_panes, show_grid_lines=True, zoom=None, view=(True, True, False)
+        self,
+        sheet_index: int,
+        split_freeze: tuple[int, int] | None,
+        freeze_panes: Any,
+        show_grid_lines: bool = True,
+        zoom: int | None = None,
+        view: tuple[bool, bool, bool] = (True, True, False),
     ) -> str:
         headers, zeros, right_to_left = view
         # CT_SheetView attribute order: showGridLines, showRowColHeaders, showZeros,
@@ -267,7 +283,14 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             "</sheetView></sheetViews>"
         )
 
-    def _cols_xml(self, col_widths, widths, hidden_cols, max_cols, col_outline=None) -> str:
+    def _cols_xml(
+        self,
+        col_widths: list[float],
+        widths: Mapping[int, float],
+        hidden_cols: Any,
+        max_cols: int,
+        col_outline: Any = None,
+    ) -> str:
         covered = set(widths) | set(hidden_cols)
         if col_outline is not None:
             covered |= col_outline.indices()
@@ -313,13 +336,13 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
 
     def _sheet_tail(
         self,
-        body,
-        sheet_index,
-        spec,
-        table_bounds,
-        link_rels,
-        drawing_rid,
-    ):
+        body: Any,
+        sheet_index: int,
+        spec: Any,
+        table_bounds: list[Any],
+        link_rels: list[Any],
+        drawing_rid: str | None,
+    ) -> str:
         """Everything after the row data, in schema order."""
         parts = ["</sheetData>"]
         data_filter = self._implicit_filter_range(body, spec.header_rows)
@@ -359,7 +382,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         parts.append("</worksheet>")
         return "".join(parts)
 
-    def _implicit_filter_range(self, body, header_rows: int) -> str | None:
+    def _implicit_filter_range(self, body: Any, header_rows: int) -> str | None:
         """The filter range of data with a header, or None for an empty sheet."""
         if body.num_rows > header_rows and body.value_cols > 0:
             # The filter buttons sit on the last header row; the range spans the
@@ -371,13 +394,13 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
             )
         return None
 
-    def _auto_filter_xml(self, data_filter: str, sort_state) -> str:
+    def _auto_filter_xml(self, data_filter: str, sort_state: Any) -> str:
         sort_xml = self._sort_state_xml(data_filter, sort_state)
         if sort_xml:
             return f'<autoFilter ref="{data_filter}">{sort_xml}</autoFilter>'
         return f'<autoFilter ref="{data_filter}"/>'
 
-    def _sort_state_xml(self, data_filter: str, sort_state) -> str:
+    def _sort_state_xml(self, data_filter: str, sort_state: Any) -> str:
         if sort_state is None:
             return ""
         conditions = check_sort_state(sort_state, data_filter)
@@ -413,7 +436,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         return f"<sortState {' '.join(sort_attrs)}>{''.join(conds)}</sortState>"
 
     @staticmethod
-    def _merge_cells_xml(merge_refs) -> list[str]:
+    def _merge_cells_xml(merge_refs: list[Any]) -> list[str]:
         if not merge_refs:
             return []
         parts = [f'<mergeCells count="{len(merge_refs)}">']
@@ -421,7 +444,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         parts.append("</mergeCells>")
         return parts
 
-    def _conditional_formatting_xml(self, cf_rules, table_bounds) -> list[str]:
+    def _conditional_formatting_xml(self, cf_rules: list[Any], table_bounds: list[Any]) -> list[str]:
         if not cf_rules:
             return []
         parts = []
@@ -436,7 +459,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         return parts
 
     @staticmethod
-    def _data_validations_xml(validations) -> list[str]:
+    def _data_validations_xml(validations: list[Any]) -> list[str]:
         if not validations:
             return []
         parts = [f'<dataValidations count="{len(validations)}">']
@@ -444,7 +467,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         parts.append("</dataValidations>")
         return parts
 
-    def _print_settings_xml(self, print_spec) -> list[str]:
+    def _print_settings_xml(self, print_spec: Any) -> list[str]:
         parts = []
         if print_spec is not None:
             attrs = ""
@@ -468,7 +491,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
                 parts.append(self._breaks_xml("colBreaks", print_spec.col_breaks, 1048575))
         return parts
 
-    def _hyperlinks_xml(self, hyperlinks, link_rels) -> str:
+    def _hyperlinks_xml(self, hyperlinks: list[Any], link_rels: list[Any]) -> str:
         rid_by_target = {target: rid for rid, _type, target, _ext in link_rels}
         parts = ["<hyperlinks>"]
         for row_idx, col_idx, link in hyperlinks:
@@ -485,7 +508,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         return "".join(parts)
 
     @staticmethod
-    def _page_margins_xml(print_spec) -> str:
+    def _page_margins_xml(print_spec: Any) -> str:
         margins = _DEFAULT_MARGINS
         if print_spec is not None and print_spec.margins is not None:
             margins = print_spec.margins
@@ -496,7 +519,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         )
 
     @staticmethod
-    def _page_setup_xml(print_spec) -> str:
+    def _page_setup_xml(print_spec: Any) -> str:
         attrs = []
         if print_spec.paper_size is not None:
             attrs.append(f'paperSize="{_paper_code(print_spec.paper_size)}"')
@@ -513,7 +536,7 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         return f"<pageSetup {' '.join(attrs)}/>"
 
     @staticmethod
-    def _header_footer_xml(print_spec) -> str:
+    def _header_footer_xml(print_spec: Any) -> str:
         parts = []
         if print_spec.header is not None:
             parts.append(f"<oddHeader>{saxutils.escape(print_spec.header)}</oddHeader>")
@@ -524,6 +547,6 @@ class _XlsxSheetXmlMixin(_XlsxWriterHost):
         return f"<headerFooter>{''.join(parts)}</headerFooter>"
 
     @staticmethod
-    def _breaks_xml(tag: str, breaks, max_value: int) -> str:
+    def _breaks_xml(tag: str, breaks: Sequence[int], max_value: int) -> str:
         items = "".join(f'<brk id="{value}" max="{max_value}" man="1"/>' for value in breaks)
         return f'<{tag} count="{len(breaks)}" manualBreakCount="{len(breaks)}">{items}</{tag}>'

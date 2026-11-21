@@ -10,7 +10,7 @@ import math
 import shutil
 import tempfile
 import xml.sax.saxutils as saxutils
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from . import _zip_threads
 from ._accel import encode_xlsx_row as accel_encode_xlsx_row
 from ._text import check_cell_text, xml_space_attribute, xstring_escape
@@ -465,13 +465,13 @@ class _XlsxSheetMixin(_XlsxWriterHost):
 
     def _write_body(
         self,
-        data,
-        spool,
+        data: Iterable[list[Any]],
+        spool: Any,
         spec: SheetSpec,
         *,
-        meter=None,
-        table_totals=None,
-    ):
+        meter: Any = None,
+        table_totals: Any = None,
+    ) -> _SheetBody:
         """Encode every row into ``spool`` and return a ``_SheetBody``.
 
         ``meter`` measures the automatic column widths of the first rows (its
@@ -582,11 +582,11 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             array_rows=max((r2 + 1 for _c1, _r1, _c2, r2 in arrays), default=0),
         )
 
-    def _body_cell_hook(self, pending_links):
+    def _body_cell_hook(self, pending_links: list[Any]) -> Callable[..., Any]:
         """The native encoder's hook for cells only the Python row writer handles."""
         fmt_xf = self._fmt_xf
 
-        def cell_hook(cell, col, style, row):
+        def cell_hook(cell: Any, col: int, style: Any, row: int) -> Any:
             if isinstance(cell, Hyperlink):
                 # The link's xf, once the Python writer has written a link in
                 # this range style (see _write_row_cells).
@@ -602,20 +602,20 @@ class _XlsxSheetMixin(_XlsxWriterHost):
 
     def _encode_body_row(
         self,
-        buf,
-        text,
-        row,
-        row_idx,
-        row_styles,
-        row_attrs,
-        write_r,
-        row_style_ids_cache,
-        pending_links,
-        hyperlinks,
-        arrays,
-        link_xf,
-        cell_hook,
-    ):
+        buf: io.BytesIO,
+        text: io.StringIO,
+        row: Sequence[Any],
+        row_idx: int,
+        row_styles: Mapping[int, Style],
+        row_attrs: str,
+        write_r: bool,
+        row_style_ids_cache: dict[Any, Any],
+        pending_links: list[Any],
+        hyperlinks: list[Any],
+        arrays: list[Any],
+        link_xf: int,
+        cell_hook: Any,
+    ) -> int:
         """Write one row natively, or through the Python row writer; return link_xf."""
         # The native encoder handles common scalar rows with optional style ids
         # and <row> attributes; it hands back rows it cannot write as None
@@ -669,7 +669,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         return link_xf
 
     @staticmethod
-    def _write_trailing_rows(buf, spool, num_rows, last_written) -> None:
+    def _write_trailing_rows(buf: io.BytesIO, spool: Any, num_rows: int, last_written: int) -> None:
         trailing = num_rows - last_written - 1
         while trailing > 0:
             chunk = min(trailing, 4096)
@@ -683,7 +683,15 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             buf.seek(0)
             buf.truncate()
 
-    def _write_outline_tail(self, buf, spool, row_outline, num_rows, heights, hidden_row_set) -> None:
+    def _write_outline_tail(
+        self,
+        buf: io.BytesIO,
+        spool: Any,
+        row_outline: Any,
+        num_rows: int,
+        heights: Mapping[int, Any],
+        hidden_row_set: Any,
+    ) -> None:
         for row_idx in row_outline.indices_from(num_rows):
             row_attrs = self._row_attrs(row_idx, heights, hidden_row_set, row_outline)
             buf.write(f'<row r="{row_idx + 1}"{row_attrs}/>'.encode())
@@ -692,7 +700,12 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 buf = io.BytesIO()
 
     @staticmethod
-    def _row_attrs(row_idx, heights, hidden_row_set, row_outline) -> str:
+    def _row_attrs(
+        row_idx: int,
+        heights: Mapping[int, Any],
+        hidden_row_set: Any,
+        row_outline: Any,
+    ) -> str:
         """``<row>`` attributes for height, outline level, collapsed and hidden flags."""
         row_attrs = ""
         if row_idx in heights:
@@ -708,7 +721,15 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             row_attrs += ' hidden="1"'
         return row_attrs
 
-    def _write_row_cells(self, buf, row, row_idx, row_styles, hyperlinks, arrays=None):
+    def _write_row_cells(
+        self,
+        buf: io.StringIO,
+        row: Sequence[Any],
+        row_idx: int,
+        row_styles: Mapping[int, Style],
+        hyperlinks: list[Any],
+        arrays: list[Any] | None = None,
+    ) -> None:
         """Write one row's cells; array formulas are added to ``arrays`` when given."""
         uniform_style, uniform_xf = self._uniform_row_style(row, row_styles)
         for col_idx, cell in enumerate(row):
@@ -741,7 +762,9 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             else:
                 self._write_scalar_cell(buf, cell, row_idx, xf_index)
 
-    def _uniform_row_style(self, row, row_styles):
+    def _uniform_row_style(
+        self, row: Sequence[Any], row_styles: Mapping[int, Style] | None
+    ) -> tuple[Style | None, int | None]:
         """A style shared by every cell of the row, registered once."""
         if row_styles and len(row_styles) == len(row):
             first_style = next(iter(row_styles.values()))
@@ -749,7 +772,13 @@ class _XlsxSheetMixin(_XlsxWriterHost):
                 return first_style, self._register_style(first_style)
         return None, None
 
-    def _write_blank_cell(self, buf, cell_style, uniform_style, uniform_xf) -> None:
+    def _write_blank_cell(
+        self,
+        buf: io.StringIO,
+        cell_style: Style | None,
+        uniform_style: Style | None,
+        uniform_xf: int | None,
+    ) -> None:
         # Every cell of the row is written, so none needs its r (as the
         # native encoder writes them).
         if cell_style is None:
@@ -758,7 +787,14 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             xf_index = uniform_xf if cell_style is uniform_style else self._register_style(cell_style)
             buf.write(f'<c s="{xf_index}"/>')
 
-    def _cell_value_and_style(self, cell, cell_style, row_idx, col_idx, hyperlinks):
+    def _cell_value_and_style(
+        self,
+        cell: Any,
+        cell_style: Style | None,
+        row_idx: int,
+        col_idx: int,
+        hyperlinks: list[Any],
+    ) -> tuple[Any, Style | None, Any, int | None]:
         """Unwrap the cell overlay, record a hyperlink, and return the resolved value."""
         overlay = None
         link_base = None
@@ -782,8 +818,16 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             cell_style = HYPERLINK_STYLE if cell_style is None else merge_styles(HYPERLINK_STYLE, cell_style)
         return cell, cell_style, overlay, link_base
 
-    def _cell_xf_index(self, overlay, cell_style, uniform_style, uniform_xf, link_base):
+    def _cell_xf_index(
+        self,
+        overlay: Any,
+        cell_style: Style | None,
+        uniform_style: Style | None,
+        uniform_xf: int | None,
+        link_base: int | None,
+    ) -> int | None:
         """The cell's XF index, registering the overlay or style as needed."""
+        xf_index: int | None
         if overlay is not None:
             xf_index = self._overlay_xf_index(overlay, cell_style)
         elif cell_style is not None:
@@ -794,7 +838,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             self._fmt_xf.setdefault(("link", link_base), xf_index)
         return xf_index
 
-    def _overlay_xf_index(self, overlay, cell_style):
+    def _overlay_xf_index(self, overlay: Any, cell_style: Style | None) -> int:
         if cell_style is not None:
             xf_index = _xf_for_style_format(
                 cell_style,
@@ -814,7 +858,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         _record_cell_xf(self._fmt_xf, self._fmt_xf_styles, None, overlay, xf_index)
         return xf_index
 
-    def _write_scalar_cell(self, buf, cell, row_idx, xf_index) -> None:
+    def _write_scalar_cell(self, buf: io.StringIO, cell: Any, row_idx: int, xf_index: int | None) -> None:
         """Write a non-formula cell (the types the native encoder may hand back)."""
         if isinstance(cell, str):
             self._write_string_cell(buf, cell, row_idx == 0, xf_index)
@@ -832,7 +876,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         else:
             self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
 
-    def _write_number_cell(self, buf, cell, row_idx, xf_index) -> None:
+    def _write_number_cell(self, buf: io.StringIO, cell: Any, row_idx: int, xf_index: int | None) -> None:
         if isinstance(cell, (float, Decimal)) and not math.isfinite(float(cell)):
             raise ValueError("numeric cell values must be finite")
         try:
@@ -846,7 +890,9 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             s_attr = f' s="{xf_index}"' if xf_index is not None else ""
             buf.write(f"<c{s_attr}><v>{number}</v></c>")
 
-    def _write_datetime_cell(self, buf, cell, row_idx, xf_index) -> None:
+    def _write_datetime_cell(
+        self, buf: io.StringIO, cell: datetime.datetime, row_idx: int, xf_index: int | None
+    ) -> None:
         if cell.year < 1900 or cell.year > 9999:
             self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
             return
@@ -867,7 +913,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         )
         buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
 
-    def _write_date_cell(self, buf, cell, row_idx, xf_index) -> None:
+    def _write_date_cell(self, buf: io.StringIO, cell: datetime.date, row_idx: int, xf_index: int | None) -> None:
         if cell.year < 1900 or cell.year > 9999:
             self._write_string_cell(buf, str(cell), row_idx == 0, xf_index)
             return
@@ -886,7 +932,12 @@ class _XlsxSheetMixin(_XlsxWriterHost):
         )
         buf.write(f'<c s="{style_ref}"><v>{excel_date}</v></c>')
 
-    def _write_formula_cell(self, buf, formula: Formula | ArrayFormula | DataTableFormula, xf_index):
+    def _write_formula_cell(
+        self,
+        buf: io.StringIO,
+        formula: Formula | ArrayFormula | DataTableFormula,
+        xf_index: int | None,
+    ) -> None:
         s_attr = f' s="{xf_index}"' if xf_index is not None else ""
         if isinstance(formula, ArrayFormula):
             buf.write(
@@ -923,7 +974,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             self._has_dynamic = True
         buf.write(f"<c{cm_attr}{s_attr}{t_attr}><f{f_attr}>{saxutils.escape(formula.text)}</f>{v_xml}</c>")
 
-    def _append_pivot_rows(self, sink, renders, body) -> None:
+    def _append_pivot_rows(self, sink: Any, renders: Any, body: _SheetBody) -> None:
         """Write pivot cells below the streamed rows of the source sheet."""
         merged = merge_cells(renders)
         if not merged:
@@ -952,7 +1003,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             body.max_cols = max(body.max_cols, width)
             body.value_cols = max(body.value_cols, width)
 
-    def _write_pivot_sheet(self, sheet_index: int, renders) -> None:
+    def _write_pivot_sheet(self, sheet_index: int, renders: Any) -> None:
         """A sheet that only holds pivot output (and its worksheet rels)."""
         merged = merge_cells(renders)
         by_row: dict[int, dict[int, object]] = {}
@@ -1011,7 +1062,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
             "<sheetData/></worksheet>",
         )
 
-    def _write_rich_cell(self, buffer, rich: CellRichText, is_header: bool, xf_index):
+    def _write_rich_cell(self, buffer: io.StringIO, rich: CellRichText, is_header: bool, xf_index: int | None) -> None:
         runs = rich.runs_xml()
         if xf_index is not None:
             style_ref = f' s="{xf_index}"'
@@ -1034,7 +1085,7 @@ class _XlsxSheetMixin(_XlsxWriterHost):
 
     def _write_string_cell(
         self, buffer: io.StringIO, cell_value: str, is_header: bool = False, xf_index: int | None = None
-    ):
+    ) -> None:
         check_cell_text(cell_value)
         if self._use_shared_strings:
             self._sst_all_count += 1
