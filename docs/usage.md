@@ -21,4 +21,21 @@ The guide is split by task:
 
 The [API reference](api/index.md) lists every public class and function with its arguments.
 
+## Command line
+
+Installing xlspy puts an `xlspy` command on the PATH; `python -m xlspy` works
+without installing the script:
+
+```bash
+xlspy sheets report.xlsx
+xlspy inspect report.xlsb --json
+xlspy validate report.xlsx
+xlspy convert report.xlsx report.xlsb
+```
+
+`inspect` shows sheet sizes and counts of tables, charts, images, notes and
+conversations. `validate` parses every sheet and exits non-zero on a broken
+file. `convert` rewrites through the workbook model, carrying the objects the
+model supports between XLSX and XLSB.
+
 Run commands and examples from the repository root unless stated otherwise.

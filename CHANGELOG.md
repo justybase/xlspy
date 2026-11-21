@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The `xlspy` command line (`python -m xlspy`): `inspect` reports sheet sizes
+  and object counts, `sheets` lists worksheet names, `validate` parses every
+  sheet, and `convert` rewrites a workbook between XLSX and XLSB.
 - `read_dataframe()` reads an XLSX or XLSB sheet straight into pandas or
   polars, with `header`, `usecols`, `nrows` and `dtype` options and a
   `sheet_name=None` mapping for every sheet. `ExcelReader.to_pandas()` and

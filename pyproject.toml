@@ -55,6 +55,9 @@ classifiers = [
 dependencies = [
 ]
 
+[project.scripts]
+xlspy = "xlspy.cli:main"
+
 [project.urls]
 Repository = "https://github.com/justybase/xlspy/"
 Documentation = "https://justybase.github.io/xlspy/"
