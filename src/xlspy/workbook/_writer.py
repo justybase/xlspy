@@ -240,6 +240,8 @@ def _save_new(workbook: Workbook, filename: WriteTarget) -> None:
     extension = ""
     if isinstance(filename, (str, os.PathLike)):
         extension = os.fspath(filename).lower().rsplit(".", 1)[-1]
+    if workbook._vba_added and extension not in {"xlsm", "xltm"}:
+        raise ValueError("a workbook with a VBA project must be saved as .xlsm or .xltm")
 
     chartsheets = pending_chartsheets(workbook)
     if chartsheets:
@@ -256,7 +258,7 @@ def _save_new(workbook: Workbook, filename: WriteTarget) -> None:
             updater = XlsxUpdater(temporary)
             try:
                 add_chartsheets(updater, workbook)
-                set_package_kind(updater, extension, workbook.vba_archive)
+                set_package_kind(updater, extension, workbook.vba_archive, vba_codename=workbook.code_name)
                 if isinstance(filename, (str, os.PathLike)):
                     updater.save(os.fspath(filename))
                 else:

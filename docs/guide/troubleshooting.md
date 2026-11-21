@@ -89,9 +89,11 @@ before overwriting it.
 
 ## Macros disappeared
 
-Use `XlsmUpdater` or `XlsbUpdater` on the existing macro-enabled file. Creating a
-new `.xlsm` from scratch is not supported. Do not save an `.xlsm` as `.xlsx` and
-expect the VBA project to remain.
+Use `XlsmUpdater` or `XlsbUpdater` on the existing macro-enabled file, or give
+`XlsxWriter` (or `Workbook`) a project with `add_vba_project()`. Do not save an
+`.xlsm` as `.xlsx` and expect the VBA project to remain. A `Workbook` with a
+project added through `add_vba_project()` refuses any extension other than
+`.xlsm`/`.xltm` instead of dropping it.
 
 ## Strict Open XML
 

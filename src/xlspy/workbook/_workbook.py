@@ -3,6 +3,7 @@
 from __future__ import annotations
 from ..exceptions import UnsupportedFeatureError
 import copy
+import io
 import zipfile
 from dataclasses import replace
 import datetime as _datetime
@@ -84,6 +85,7 @@ class Workbook:
         self.encoding = "utf-8"
         self.epoch = _datetime.datetime(1899, 12, 30)
         self.vba_archive: zipfile.ZipFile | None = None
+        self._vba_added = False
         self.security = WorkbookSecurity()
         self.calculation = CalcProperties()
         self.views = [BookView()]
@@ -113,6 +115,31 @@ class Workbook:
 
     def __repr__(self) -> str:
         return f"<Workbook {self.sheetnames!r}>"
+
+    def add_vba_project(self, project: Any) -> None:
+        """Embed a VBA project (``vbaProject.bin``) in a new macro-enabled workbook.
+
+        ``project`` may be a path, bytes or a binary file object. Save the
+        workbook as ``.xlsm`` or ``.xltm``; another extension is refused rather
+        than dropping the project silently.
+        """
+        from .._vba import read_vba_project
+
+        data = read_vba_project(project)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("xl/vbaProject.bin", data)
+        buffer.seek(0)
+        if self.vba_archive is not None:
+            self.vba_archive.close()
+        self.vba_archive = zipfile.ZipFile(buffer, "r")
+        self._vba_added = True
+
+    def set_vba_name(self, name: str) -> None:
+        """Set the VBA project's code name (``workbookPr/@codeName``)."""
+        from .._vba import check_vba_name
+
+        self.code_name = check_vba_name(name)
 
     @property
     def sheetnames(self) -> list[str]:

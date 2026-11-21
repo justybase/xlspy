@@ -4,8 +4,10 @@ and, for .xlsm/.xltm, the VBA project taken from ``Workbook.vba_archive``."""
 from __future__ import annotations
 import zipfile
 from typing import TYPE_CHECKING
+from xml.etree import ElementTree as ET
 
-from .._metadata import CT
+from .._metadata import CT, MAIN, element_bytes
+from .._safe_xml import fromstring as safe_fromstring
 from ._objects import _Package
 from ._chartsheets import _set_rels
 
@@ -23,10 +25,17 @@ _VBA_TYPE = "application/vnd.ms-office.vbaProject"
 _VBA_REL = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
 
 
-def set_package_kind(updater: XlsxUpdater, extension: str, vba_archive: zipfile.ZipFile | None = None) -> None:
+def set_package_kind(
+    updater: XlsxUpdater,
+    extension: str,
+    vba_archive: zipfile.ZipFile | None = None,
+    *,
+    vba_codename: str | None = None,
+) -> None:
     """Give the workbook part the content type of ``extension``; a
     macro-enabled kind also gets the VBA project of ``vba_archive`` (a
-    ``zipfile.ZipFile`` such as ``load_workbook(..., keep_vba=True)`` sets)."""
+    ``zipfile.ZipFile`` such as ``load_workbook(..., keep_vba=True)`` sets)
+    and, when given, the project's ``vba_codename``."""
     main = _MAIN_TYPES.get(extension)
     if main is None or extension == "xlsx":
         return
@@ -45,4 +54,14 @@ def set_package_kind(updater: XlsxUpdater, extension: str, vba_archive: zipfile.
         next(node for node in rels if node.get("Id") == rid).set("Type", _VBA_REL)
 
         _set_rels(package, "xl/workbook.xml", rels)
+        if vba_codename:
+            root = safe_fromstring(package.require("xl/workbook.xml"))
+            workbook_pr = root.find(f"{{{MAIN}}}workbookPr")
+            if workbook_pr is None:
+                workbook_pr = ET.Element(f"{{{MAIN}}}workbookPr")
+                file_version = root.find(f"{{{MAIN}}}fileVersion")
+                index = list(root).index(file_version) + 1 if file_version is not None else 0
+                root.insert(index, workbook_pr)
+            workbook_pr.set("codeName", vba_codename)
+            package.set("xl/workbook.xml", element_bytes(root))
     package.commit()

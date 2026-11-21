@@ -108,6 +108,27 @@ format while its value is coerced. `XlsbWriter` takes the same keywords. Unlike
 XlsxWriter, `strings_to_formulas` defaults to off: xlspy has always written a
 leading `=` as text unless the value is a `Formula`.
 
+## VBA projects
+
+`XlsxWriter` and a new `Workbook` can embed a VBA project, which makes the
+output a macro-enabled workbook. Save it as `.xlsm` or `.xltm`:
+
+```python
+from xlspy import Workbook, XlsxWriter
+
+with XlsxWriter("macro.xlsm") as writer:
+    writer.add_sheet("Data")
+    writer.write_sheet(rows)
+    writer.add_vba_project("vbaProject.bin")   # path, bytes or a binary stream
+    writer.set_vba_name("MyProject")            # workbookPr/@codeName
+```
+
+The project is written as `xl/vbaProject.bin` with the macro-enabled workbook
+content type and relationship. `Workbook.add_vba_project()` does the same for
+the object model; saving that workbook with another extension raises instead of
+dropping the project. An existing `.xlsm` is updated with `XlsmUpdater`, which
+copies the project unchanged.
+
 ## Streaming large exports
 
 `write_sheet` consumes its input exactly once, row by row:

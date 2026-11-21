@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import re
+import uuid
 import xml.sax.saxutils as saxutils
 from typing import Any
 from . import chart_parts
@@ -44,6 +45,12 @@ from ._xlsx_writer_host import _XlsxWriterHost
 # A chunk joined on NUL: a text that starts or ends with whitespace, or holds a
 # tab or a line break, sits next to a NUL or at an end of the chunk.
 _NEEDS_PRESERVE = re.compile(r"[\t\n\r]|\A\s|\s\Z|\s\x00|\x00\s")
+
+_VBA_PART = "xl/vbaProject.bin"
+_VBA_TYPE = "application/vnd.ms-office.vbaProject"
+_VBA_REL = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
+_PLAIN_MAIN = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+_MACRO_MAIN = "application/vnd.ms-excel.sheet.macroEnabled.main+xml"
 
 
 class _XlsxPartsMixin(_XlsxWriterHost):
@@ -136,6 +143,8 @@ class _XlsxPartsMixin(_XlsxWriterHost):
         self._zf.writestr("[Content_Types].xml", self._create_content_types())
         self._zf.writestr("_rels/.rels", self._create_root_rels())
         self._zf.writestr("xl/workbook.xml", self._create_workbook_xml())
+        if self._vba_project is not None:
+            self._zf.writestr(_VBA_PART, self._vba_project)
         self._zf.writestr("xl/styles.xml", self._create_styles_xml())
         self._zf.writestr("xl/_rels/workbook.xml.rels", self._create_workbook_rels())
         self._write_doc_props()
@@ -202,6 +211,8 @@ class _XlsxPartsMixin(_XlsxWriterHost):
         if self._sheet_drawings:
             theme_part = '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
 
+        vba_default = f'<Default Extension="bin" ContentType="{_VBA_TYPE}"/>' if self._vba_project else ""
+        workbook_type = _MACRO_MAIN if self._vba_project else _PLAIN_MAIN
         shared_strings_part = ""
         comment_parts = "".join(
             f'<Override PartName="/xl/comments/comment{sheet_id}.xml" ContentType="{COMMENTS_TYPE}"/>'
@@ -235,7 +246,8 @@ class _XlsxPartsMixin(_XlsxWriterHost):
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
 {image_defaults}
-<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+{vba_default}
+<Override PartName="/xl/workbook.xml" ContentType="{workbook_type}"/>
 {parts}
 <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
 {metadata_part}
@@ -306,6 +318,10 @@ class _XlsxPartsMixin(_XlsxWriterHost):
                 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata" '
                 'Target="metadata.xml"/>'
             )
+        if self._vba_project is not None:
+            relationships.append(
+                f'<Relationship Id="rId{len(relationships) + 1}" Type="{_VBA_REL}" Target="vbaProject.bin"/>'
+            )
 
         return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -355,6 +371,17 @@ class _XlsxPartsMixin(_XlsxWriterHost):
         )
         defined_names = f"<definedNames>{''.join(names)}</definedNames>" if names else ""
         protection = self._workbook_protection.to_xml() if self._workbook_protection else ""
+        file_version = '<fileVersion appName="xl" lastEdited="4" lowestEdited="4" rupBuild="4505"/>'
+        workbook_pr = '<workbookPr defaultThemeVersion="124226"/>'
+        if self._vba_project is not None:
+            guid = str(uuid.uuid5(uuid.NAMESPACE_URL, "xlspy:vba:" + (self._vba_name or "ThisWorkbook"))).upper()
+            file_version = (
+                f'<fileVersion appName="xl" lastEdited="4" lowestEdited="4" rupBuild="4505" codeName="{{{guid}}}"/>'
+            )
+            code_name = (
+                "" if self._vba_name is None else f' codeName="{saxutils.escape(self._vba_name, _ATTR_ENTITIES)}"'
+            )
+            workbook_pr = f'<workbookPr{code_name} defaultThemeVersion="124226"/>'
         workbook_ext = self._workbook_extensions()
         pivot_caches = ""
         if self._pivot_renders:
@@ -367,8 +394,8 @@ class _XlsxPartsMixin(_XlsxWriterHost):
 
         return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<fileVersion appName="xl" lastEdited="4" lowestEdited="4" rupBuild="4505"/>
-<workbookPr defaultThemeVersion="124226"/>
+{file_version}
+{workbook_pr}
 {protection}
 <bookViews><workbookView xWindow="240" yWindow="15" windowWidth="16095" windowHeight="9660"/></bookViews>
 <sheets>{sheets}</sheets>

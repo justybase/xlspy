@@ -1,10 +1,12 @@
 from __future__ import annotations
+import os
 from typing import Any
 from collections.abc import Iterable
 from . import _zip_threads as _zip_threads, chart_parts as chart_parts
 from ._output import PackageZip as PackageZip, StagedWriter as StagedWriter, WriteTarget as WriteTarget
 from ._writer_common import FilterData as FilterData, WriterFrontEnd as WriterFrontEnd, reject_unknown_arguments
 from ._coercion import Coercion as Coercion, check_options as check_options, coerce_rows as coerce_rows
+from ._vba import check_vba_name as check_vba_name, read_vba_project as read_vba_project
 from .doc_properties import DocumentPropertiesMixin as DocumentPropertiesMixin
 from ._text import check_cell_text as check_cell_text, xstring_escape as xstring_escape
 from .charts import Chart as Chart
@@ -315,6 +317,23 @@ class XlsxWriter(
         self._sheet_threaded_comments: dict[int, dict[str, ThreadedComment]] = {}
         self._defined_names: dict[tuple[str, str | None], DefinedName] = {}
         self._workbook_protection: WorkbookProtection | None = None
+        self._vba_project: bytes | None = None
+        self._vba_name: str | None = None
+
+    def add_vba_project(self, project: str | os.PathLike[str] | bytes | bytearray | memoryview | Any) -> None:
+        """Embed a VBA project (``vbaProject.bin``) in the workbook.
+
+        The package becomes macro-enabled, so save it with an ``.xlsm`` (or
+        ``.xltm``) extension. ``project`` may be a path, bytes or a binary file
+        object. Call `set_vba_name` to set the project's code name.
+        """
+        self._require_writable()
+        self._vba_project = read_vba_project(project)
+
+    def set_vba_name(self, name: str) -> None:
+        """Set the workbook code name (``workbookPr/@codeName``) for the VBA project."""
+        self._require_writable()
+        self._vba_name = check_vba_name(name)
 
     def set_defined_name(self, definition: DefinedName) -> None:
         """Set a global or worksheet-local name; local titles are checked on save."""

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `XlsxWriter.add_vba_project()` / `set_vba_name()` and
+  `Workbook.add_vba_project()` / `set_vba_name()` embed a `vbaProject.bin`
+  and make the output macro-enabled. A new `Workbook` with a project refuses
+  any extension other than `.xlsm`/`.xltm` instead of dropping it.
 - The `xlspy` command line (`python -m xlspy`): `inspect` reports sheet sizes
   and object counts, `sheets` lists worksheet names, `validate` parses every
   sheet, and `convert` rewrites a workbook between XLSX and XLSB.

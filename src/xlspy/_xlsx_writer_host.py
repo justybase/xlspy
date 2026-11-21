@@ -33,6 +33,8 @@ class _XlsxWriterHost:
         # Workbook and sheet bookkeeping
         _zf: PackageZip
         _coercion: Coercion
+        _vba_project: bytes | None
+        _vba_name: str | None
         _aborted: bool
         _spool_max_bytes: int
         _worksheet_data: list[tuple[str, Iterable[list[Any]] | None, bool]]
